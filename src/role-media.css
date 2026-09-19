@@ -1,0 +1,27 @@
+.media-delete {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 2;
+  display: grid;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  place-items: center;
+  color: #fff;
+  background: rgba(35, 29, 26, 0.72);
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.media-option:hover .media-delete,
+.media-delete:focus-visible {
+  opacity: 1;
+}
+
+.media-delete:hover {
+  background: #c94f45;
+}

@@ -1,0 +1,22 @@
+.logo-mark,
+.hero-logo {
+  display: block;
+  object-fit: contain;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-weight: inherit;
+  box-shadow: none;
+}
+
+.logo-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 0;
+}
+
+.hero-logo {
+  width: 78px;
+  height: 78px;
+  border-radius: 0;
+}
