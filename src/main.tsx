@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import {
   Avatar,
   Checkbox,
@@ -59,89 +59,8 @@ import "./logo.css";
 import "./studio-modern.css";
 const logoSrc = "/ximeng-logo-s.png";
 
-type Media = {
-  id: number;
-  name: string;
-  path: string;
-  kind: string;
-  created_at: string;
-};
-type Role = {
-  id: number;
-  name: string;
-  description: string;
-  design_media_id: number | null;
-  images: Media[];
-};
-type FrameKey = "first" | "last" | "reference";
-type GenerationOptions = {
-  custom?: boolean;
-  first: boolean;
-  last: boolean;
-  reference: boolean;
-  duration: number;
-  aspect_ratio: string;
-};
-const defaultOptions: GenerationOptions = {
-  custom: false,
-  first: true,
-  last: true,
-  reference: false,
-  duration: 5,
-  aspect_ratio: "16:9",
-};
-type Scene = {
-  generation_options?: GenerationOptions;
-  videos?: Media[];
-  id: number;
-  title: string;
-  description: string;
-  sort_order: number;
-  first_media_id: number | null;
-  last_media_id: number | null;
-  reference_media_id: number | null;
-  video_media_id?: number | null;
-  first_media?: Media;
-  last_media?: Media;
-  reference_media?: Media;
-  video_media?: Media;
-};
-type Episode = {
-  id: number;
-  title: string;
-  description: string;
-  scenes: Scene[];
-  cover_media?: Media;
-};
-type Project = { id: string; name: string; path: string; updated_at: string };
-type ModelSettings = Record<
-  string,
-  {
-    provider?: "cast" | "openai";
-    url: string;
-    base_url?: string;
-    api_key: string;
-    model?: string;
-    description: string;
-  }
->;
-type Snapshot = {
-  project: Project;
-  roles: Role[];
-  prompts: { id: number; name: string; content: string; category: string }[];
-  episodes: Episode[];
-  media: Media[];
-  settings: ModelSettings;
-};
-const api = async <T,>(path: string, options: RequestInit = {}): Promise<T> =>
-  invoke<T>("api_request", {
-    method: options.method || "GET",
-    path,
-    payload: options.body ? JSON.parse(String(options.body)) : null,
-  });
-const post = <T,>(path: string, data?: unknown) =>
-  api<T>(path, { method: "POST", body: JSON.stringify(data || {}) });
-const imageUrl = (m?: Media) => (m ? convertFileSrc(m.path) : "");
+import { Media, Role, FrameKey, GenerationOptions, defaultOptions, Scene, Episode, Project, ModelSettings, Snapshot, api, post, imageUrl } from "./core";
+import { CreationDesk, AssetLibrary, SequencePreview, resolvePrompt } from "./creation";
 const tone = ["#C86B54", "#7768D7", "#4C9B93", "#D39C50"];
 
 function App() {
@@ -150,6 +69,7 @@ function App() {
   const [data, setData] = useState<Snapshot | null>(null);
   const activeRef = useRef<string | null>(null);
   const [page, setPage] = useState("studio");
+  const [studioTab, setStudioTab] = useState("images");
   const [sceneEditing, setSceneEditing] = useState<{
     scene: Scene;
     isNew: boolean;
@@ -279,6 +199,7 @@ function App() {
             <Clapperboard />
             剧集
           </Menu.Item>
+          <Menu.Item key="assets"><ImagePlus />资产库</Menu.Item>
           <Menu.Item key="roles">
             <Users />
             角色设定
@@ -321,6 +242,7 @@ function App() {
                     {
                       studio: "工作台",
                       episodes: "剧集管理",
+                      assets: "资产库",
                       roles: "角色设定",
                       prompts: "Prompt 库",
                       tasks: "后台任务",
@@ -358,7 +280,11 @@ function App() {
           ) : (
             <>
               {page === "studio" && (
-                <Studio
+                <CreationDesk
+                  key={data.project.id}
+                  activeTab={studioTab}
+                  onTabChange={setStudioTab}
+                  renderSequence={() => <Studio data={data} reload={refresh} changePage={navigate} editScene={scene => setSceneEditing({scene, isNew: false})} />}
                   data={data}
                   reload={refresh}
                   changePage={navigate}
@@ -376,6 +302,7 @@ function App() {
                   }
                 />
               )}{" "}
+              {page === "assets" && <AssetLibrary key={data.project.id} data={data} reload={refresh} />}
               {page === "tasks" && <Tasks />}
               {page === "roles" && <Roles data={data} reload={refresh} />}{" "}
               {page === "prompts" && (
@@ -505,7 +432,7 @@ function ProjectPage({
     </section>
   );
 }
-function videoRequest(scene: Scene, settings: ModelSettings) {
+function videoRequest(scene: Scene, settings: ModelSettings, roles: Role[]) {
   const options = scene.generation_options || defaultOptions;
   const selected = options.custom
     ? { first: options.first, last: options.last, reference: options.reference }
@@ -533,7 +460,7 @@ function videoRequest(scene: Scene, settings: ModelSettings) {
     throw new Error(`请先配置 ${operation} 视频接口`);
   return {
     scene_id: scene.id,
-    prompt: scene.description,
+    prompt: resolvePrompt(scene.description, roles),
     operation,
     duration: options.duration,
     aspect_ratio: options.aspect_ratio,
@@ -604,25 +531,17 @@ function Studio({
       setSaving(false);
     }
   };
-  const [mergeMode, setMergeMode] = useState("existing");
   const merge = async () => {
     setMerging(true);
     try {
-      if (mergeMode === "generate") {
-        const requests = scenes.map(scene => videoRequest(scene, data.settings));
-        for (const request of requests) {
-          const video = await post<Media>("/generations/video", {project_id: data.project.id, ...request});
-          await post("/scenes/select-video", {project_id: data.project.id, scene_id: request.scene_id, media_id: video.id});
-        }
-        await reload();
-      }
       setMerged(
         await post<Media>("/episodes/merge", {
           project_id: data.project.id,
           episode_id: episode?.id,
         }),
       );
-      Message.success("剧集已合并，可播放预览");
+      await reload();
+      Message.success("剧集已合并并保存到资产库");
     } catch (e) {
       Message.error(String(e));
     } finally {
@@ -633,7 +552,7 @@ function Studio({
     <section className="studio">
       <div className="page-heading">
         <div>
-          <h1>剪辑工作台</h1>
+          <h1>剧集编排</h1>
           <p>为每个场景选一个版本，串起你的故事。</p>
         </div>
         <Button
@@ -667,15 +586,11 @@ function Studio({
         <span>
           {ready} / {scenes.length} 个场景已选视频
         </span>
-        <Select aria-label="合并方式" value={mergeMode} onChange={setMergeMode} disabled={merging} style={{width: 210}}>
-          <Select.Option value="existing">使用已有视频 concat</Select.Option>
-          <Select.Option value="generate">实时生成后合并</Select.Option>
-        </Select>
         <Button
           type="primary"
           icon={<Play size={16} />}
           loading={merging}
-          disabled={!scenes.length || (mergeMode === "existing" && ready !== scenes.length) || saving}
+          disabled={!scenes.length || ready !== scenes.length || saving}
           onClick={merge}
         >
           合并并播放
@@ -691,15 +606,7 @@ function Studio({
             onError={() => Message.error("无法播放合并视频，请检查本地文件")}
           />
         ) : (
-          <div className="cut-placeholder">
-            <Clapperboard size={40} />
-            <h3>{episode?.title || "开始你的第一部作品"}</h3>
-            <p>
-              {scenes.length
-                ? "选择镜头版本，再合并预览完整剧集"
-                : "创建剧集并添加场景后，在这里编排镜头"}
-            </p>
-          </div>
+          <SequencePreview scenes={scenes} />
         )}
       </div>
       <div className="timeline-head">
@@ -731,6 +638,7 @@ function Studio({
           </Button>
         )}
       </div>
+      <div className="sequence-flow">{scenes.map((s,i) => <React.Fragment key={s.id}><span className={s.video_media_id ? "ready" : ""}>{`scene${String(i+1).padStart(3,"0")}`}<small>{s.title}</small></span><ChevronRight size={18}/></React.Fragment>)}<span className="sequence-result">result<small>编排结果</small></span></div>
       <div className="cut-list">
         {scenes.map((scene, index) => (
           <div className="cut-row" key={scene.id}>
@@ -773,10 +681,10 @@ function Studio({
                 aria-label={`${scene.title}的视频版本`}
                 disabled={saving || merging}
                 value={scene.video_media_id || undefined}
-                placeholder="等待生成视频"
+                placeholder="从资产库选择视频"
                 onChange={(id) => select(scene, id)}
               >
-                {sceneVideos(scene).map((video, i) => (
+                {data.media.filter(m => m.kind === "video").map((video, i) => (
                   <Select.Option key={video.id} value={video.id}>
                     视频 {i + 1} · {video.name}
                   </Select.Option>
@@ -883,15 +791,22 @@ function Episodes({
   } | null>(null);
   const [batch, setBatch] = useState<Episode | null>(null);
   const [count, setCount] = useState(1);
+  const [batchMode, setBatchMode] = useState("generate");
+  const [batchResult, setBatchResult] = useState<Media | null>(null);
   const [progress, setProgress] = useState("");
   const [running, setRunning] = useState(false);
   const [failures, setFailures] = useState<string[]>([]);
   const generateBatch = async () => {
     if (!batch) return;
+    if (batchMode === "existing") {
+      setRunning(true); setBatchResult(null);
+      try {setBatchResult(await post<Media>("/episodes/merge", {project_id: data.project.id, episode_id: batch.id})); await reload(); Message.success("合并完成，已保存到资产库");}
+      catch(e) {Message.error(String(e));} finally {setRunning(false);} return;
+    }
     let requests: ReturnType<typeof videoRequest>[];
     try {
       requests = batch.scenes.map((scene) =>
-        videoRequest(scene, data.settings),
+        videoRequest(scene, data.settings, data.roles),
       );
     } catch (e) {
       Message.error(String(e));
@@ -984,12 +899,12 @@ function Episodes({
                   disabled={!ep.scenes.length || running}
                   icon={<Sparkles size={14} />}
                   onClick={() => {
-                    setBatch(ep);
+                    setBatch(ep); setBatchMode("generate"); setBatchResult(null);
                     setProgress("");
                     setFailures([]);
                   }}
                 >
-                  生成视频
+                  生成 / 合并
                 </Button>
                 <Button type="text" onClick={() => setEpisode(ep)}>
                   编辑
@@ -1059,8 +974,8 @@ function Episodes({
             <Button onClick={() => setBatch(null)}>
               关闭
             </Button>
-            <Button type="primary" loading={running} onClick={generateBatch}>
-              生成 {count * (batch?.scenes.length || 0)} 个视频
+            <Button type="primary" loading={running} disabled={batchMode === "existing" && !batch?.scenes.every(s => s.video_media_id)} onClick={generateBatch}>
+              {batchMode === "existing" ? "合并已有视频" : `生成 ${count * (batch?.scenes.length || 0)} 个视频`}
             </Button>
           </Space>
         }
@@ -1068,7 +983,10 @@ function Episodes({
         <p>
           使用各场景已保存的描述、图片选择、时长和比例。新视频会添加为独立版本。
         </p>
-        <Form.Item label="每个场景生成数量">
+        <Select value={batchMode} onChange={setBatchMode} disabled={running} options={[{label:"生成新视频",value:"generate"},{label:"使用已有视频 concat",value:"existing"}]} />
+        {batchMode === "existing" && <div className="concat-pickers">{batch?.scenes.map(scene => <Form.Item key={scene.id} label={scene.title}><Select disabled={running} value={data.episodes.find(ep=>ep.id===batch.id)?.scenes.find(s=>s.id===scene.id)?.video_media_id || undefined} placeholder="从资产库选择视频" options={data.media.filter(m=>m.kind==="video").map(m=>({label:m.name,value:m.id}))} onChange={async id=>{try {await post("/scenes/select-video",{project_id:data.project.id,scene_id:scene.id,media_id:id});setBatch(current=>current ? {...current,scenes:current.scenes.map(s=>s.id===scene.id?{...s,video_media_id:id}:s)}:null);setBatchResult(null);await reload();}catch(e){Message.error(String(e));}}}/></Form.Item>)}</div>}
+        {batchResult && <video className="asset-preview" controls src={imageUrl(batchResult)}/>}
+        <Form.Item hidden={batchMode === "existing"} label="每个场景生成数量">
           <Select disabled={running} value={count} onChange={setCount}>
             {[1, 2, 3, 4, 5, 6, 8, 10].map((n) => (
               <Select.Option key={n} value={n}>
@@ -1493,9 +1411,9 @@ function SceneEditor({
   };
   const openImageGenerator = (key: FrameKey) => {
     setImageTarget(key);
-    setImagePrompt(description);
+    setImagePrompt(scene.script?.[key] || description);
     setImageMode("t2i");
-    setImageRefs([]);
+    setImageRefs(data.roles.filter(role => (scene.script?.[key] || description).includes(`@${role.name}`)).flatMap(role => {const media = data.media.find(m => m.id === role.design_media_id) || role.images[0];return media ? [media] : [];}));
   };
   const generateImage = async () => {
     if (!imageTarget || !imagePrompt.trim()) return;
@@ -1508,7 +1426,7 @@ function SceneEditor({
       const media = await post<Media>("/generations/image", {
         project_id: data.project.id,
         operation: imageMode,
-        prompt: imagePrompt,
+        prompt: resolvePrompt(imagePrompt, data.roles),
         aspect_ratio: ratio,
         image_media_ids: imageRefs.map((x) => x.id),
       });
@@ -1536,7 +1454,7 @@ function SceneEditor({
     post("/scenes/update", { project_id: data.project.id, ...draft() });
   const generateVideo = async () => {
     try {
-      const request = videoRequest(draft(), data.settings);
+      const request = videoRequest(draft(), data.settings, data.roles);
       setVideoGenerating(true);
       await persist();
       await post<Media>("/generations/video", {
