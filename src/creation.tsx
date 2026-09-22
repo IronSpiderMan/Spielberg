@@ -26,18 +26,28 @@ function PromptInput({value,onChange,roles,placeholder}: {value:string;onChange:
 export function CreationDesk({data,reload,renderSequence,changePage,activeTab,onTabChange}: {data:Snapshot;reload:()=>void;renderSequence:()=>React.ReactNode;changePage:(v:string)=>void;editScene:(s:Scene)=>void;activeTab:string;onTabChange:(tab:string)=>void}) {
   return <section className="creation-desk"><div className="section-title"><div><p className="eyebrow">CREATIVE WORKSPACE</p><h1>创作工作台</h1><p>从一张画面，到一个完整的故事。</p></div><Button onClick={()=>changePage("assets")}>打开资产库</Button></div><Tabs activeTab={activeTab} onChange={onTabChange} destroyOnHide={false}><Tabs.TabPane key="images" title="01 · 图片生成"><ImageStudio data={data} reload={reload}/></Tabs.TabPane><Tabs.TabPane key="sequence" title="02 · 剧集编排">{renderSequence()}</Tabs.TabPane><Tabs.TabPane key="script" title="03 · 脚本编排"><ScriptStudio data={data} reload={reload} onCreated={()=>changePage("episodes")}/></Tabs.TabPane></Tabs></section>;
 }
-function ImageStudio({data,reload}: {data:Snapshot;reload:()=>void}) {
-  const [mode,setMode]=useState("t2i"),[prompt,setPrompt]=useState(""),[ratio,setRatio]=useState("16:9"),[refs,setRefs]=useState<number[]>([]),[busy,setBusy]=useState(false),[result,setResult]=useState<Media|null>(null);
+export function ImageStudio({data,reload,source,initialPrompt="",initialRatio="16:9",onUse,onBusyChange}: {
+  data:Snapshot;
+  reload:()=>void;
+  source?:Media;
+  initialPrompt?:string;
+  initialRatio?:string;
+  onUse?:(media:Media)=>void;
+  onBusyChange?:(busy:boolean)=>void;
+}) {
+  const [mode,setMode]=useState(source?"i2i":"t2i"),[prompt,setPrompt]=useState(initialPrompt),[ratio,setRatio]=useState(initialRatio),[refs,setRefs]=useState<number[]>(source?[source.id]:[]),[busy,setBusy]=useState(false),[result,setResult]=useState<Media|null>(null);
   const roleRefs=mentioned(prompt,data.roles).map(r=>({role:r,media:data.media.find(m=>m.id===r.design_media_id)||r.images[0]}));
   const generate=async()=>{
+    if(busy) return;
     if(!prompt.trim()) return Message.warning("请填写画面描述");
     const ids=[...new Set([...refs,...roleRefs.flatMap(r=>r.media?[r.media.id]:[])])];
     if(mode==="i2i" && roleRefs.some(r=>!r.media)) return Message.warning("引用的角色尚无图片，请先在角色设定中添加");
     if(mode==="i2i" && !ids.length) return Message.warning("请选择参考图，或 @ 有图片的角色");
     setBusy(true);
-    try {const media=await post<Media>("/generations/image",{project_id:data.project.id,operation:mode,prompt:resolvePrompt(prompt,data.roles),aspect_ratio:ratio,image_media_ids:mode==="i2i"?ids:[]});setResult(media);await reload();Message.success("图片已保存到资产库");} catch(e){Message.error(String(e));}finally{setBusy(false);}
+    onBusyChange?.(true);
+    try {const media=await post<Media>("/generations/image",{project_id:data.project.id,operation:mode,prompt:resolvePrompt(prompt,data.roles),aspect_ratio:ratio,image_media_ids:mode==="i2i"?ids:[]});setResult(media);await reload();Message.success("图片已保存到资产库");} catch(e){Message.error(String(e));}finally{setBusy(false);onBusyChange?.(false);}
   };
-  return <div className="creation-split"><div className="creation-panel"><h2>描绘你的下一幕</h2><Form layout="vertical" disabled={busy}><Form.Item label="生成方式"><Select value={mode} onChange={setMode} options={[{label:"文生图",value:"t2i"},{label:"图生图",value:"i2i"}]}/></Form.Item><Form.Item label="画面描述" required><PromptInput value={prompt} onChange={setPrompt} roles={data.roles}/></Form.Item><p className="helper">文生图引用角色设定；图生图同时引用角色主图，可在下方添加更多参考图。</p>{mode==="i2i" && <Form.Item label="参考图片"><Select mode="multiple" value={refs} onChange={setRefs} showSearch placeholder="从资产库选择" options={data.media.filter(m=>m.kind==="image").map(m=>({value:m.id,label:m.name}))}/><div className="reference-strip">{roleRefs.map(r=>r.media?<img key={r.role.id} src={imageUrl(r.media)} title={`@${r.role.name}`} alt={r.role.name}/>:<Tag color="red" key={r.role.id}>{r.role.name} 缺少图片</Tag>)}{refs.map(id=>{const m=data.media.find(m=>m.id===id);return m?<img key={id} src={imageUrl(m)} alt={m.name}/>:null;})}</div></Form.Item>}<Form.Item label="画幅"><Select value={ratio} onChange={setRatio} options={["16:9","9:16","1:1"]}/></Form.Item><Button type="primary" long loading={busy} onClick={generate} icon={<ImagePlus size={16}/>}>生成图片</Button></Form></div><div className="creation-panel image-result">{result?<><img src={imageUrl(result)} alt={result.name}/><p>{result.name} · 已入库</p></>:<Empty description="生成结果将在这里展示，并自动进入资产库"/>}<p className="helper">生成任务可在「后台任务」中查看进度与错误信息。</p></div></div>;
+  return <div className="creation-split"><div className="creation-panel"><h2>描绘你的下一幕</h2><Form layout="vertical" disabled={busy}><Form.Item label="生成方式"><Select value={mode} disabled={!!source} onChange={setMode} options={[{label:"文生图",value:"t2i"},{label:"图生图",value:"i2i"}]}/></Form.Item><Form.Item label="画面描述" required><PromptInput value={prompt} onChange={setPrompt} roles={data.roles}/></Form.Item><p className="helper">文生图引用角色设定；图生图同时引用角色主图，可在下方添加更多参考图。</p>{mode==="i2i" && <Form.Item label="参考图片"><Select mode="multiple" value={refs} onChange={setRefs} showSearch placeholder="从资产库选择" options={data.media.filter(m=>m.kind==="image").map(m=>({value:m.id,label:m.name}))}/><div className="reference-strip">{roleRefs.map(r=>r.media?<img key={r.role.id} src={imageUrl(r.media)} title={`@${r.role.name}`} alt={r.role.name}/>:<Tag color="red" key={r.role.id}>{r.role.name} 缺少图片</Tag>)}{refs.map(id=>{const m=data.media.find(m=>m.id===id);return m?<img key={id} src={imageUrl(m)} alt={m.name}/>:null;})}</div></Form.Item>}<Form.Item label="画幅"><Select value={ratio} onChange={setRatio} options={["16:9","9:16","1:1"]}/></Form.Item><Button type="primary" long loading={busy} onClick={generate} icon={<ImagePlus size={16}/>}>生成图片</Button></Form></div><div className="creation-panel image-result">{result?<><img src={imageUrl(result)} alt={result.name}/><p>{result.name} · 已入库</p>{onUse&&<Button type="primary" disabled={busy} onClick={()=>onUse(result)}>替换原图</Button>}</>:<Empty description="生成结果将在这里展示，并自动进入资产库"/>}{source&&<><p className="helper">原图 · {source.name}</p><img src={imageUrl(source)} alt={`原图：${source.name}`} style={{maxHeight:180}}/><p className="helper">满意后点击「替换原图」，再保存场景。原图仍保留在资产库。</p></>}<p className="helper">生成任务可在「后台任务」中查看进度与错误信息。</p></div></div>;
 }
 export function SequencePreview({scenes}: {scenes:Scene[]}) {
   const [index,setIndex]=useState(0),[playing,setPlaying]=useState(false);

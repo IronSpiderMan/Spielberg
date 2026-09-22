@@ -60,7 +60,7 @@ import "./studio-modern.css";
 const logoSrc = "/ximeng-logo-s.png";
 
 import { Media, Role, FrameKey, GenerationOptions, defaultOptions, Scene, Episode, Project, ModelSettings, Snapshot, api, post, imageUrl } from "./core";
-import { CreationDesk, AssetLibrary, SequencePreview, resolvePrompt } from "./creation";
+import { CreationDesk, AssetLibrary, SequencePreview, resolvePrompt, ImageStudio } from "./creation";
 const tone = ["#C86B54", "#7768D7", "#4C9B93", "#D39C50"];
 
 function App() {
@@ -681,10 +681,10 @@ function Studio({
                 aria-label={`${scene.title}的视频版本`}
                 disabled={saving || merging}
                 value={scene.video_media_id || undefined}
-                placeholder="从资产库选择视频"
+                placeholder="选择当前场景的视频"
                 onChange={(id) => select(scene, id)}
               >
-                {data.media.filter(m => m.kind === "video").map((video, i) => (
+                {sceneVideos(scene).map((video, i) => (
                   <Select.Option key={video.id} value={video.id}>
                     视频 {i + 1} · {video.name}
                   </Select.Option>
@@ -759,15 +759,24 @@ function Tasks() {
       {job.result?.kind==="image" && <img className="task-image" src={imageUrl(job.result)} alt="生成结果"/>}
     </Card>)}</div>{!jobs.length&&!error&&<Empty description="暂无后台任务"/>}</section>;
 }
-function SceneThumb({ scene }: { scene: Scene }) {
+function SceneThumb({ scene, onPreview }: { scene: Scene; onPreview?: () => void }) {
+  const content = <>
+    {scene.first_media ? (
+      <img src={imageUrl(scene.first_media)} alt="" />
+    ) : (
+      <Film size={20} />
+    )}
+    <span>{scene.last_media && "⇢"}</span>
+    {onPreview && <span className="scene-thumb-play"><Play size={18} fill="currentColor" /></span>}
+  </>;
+  if (onPreview) return (
+    <button className="scene-thumb scene-thumb-button" type="button" onClick={onPreview} aria-label={`预览${scene.title}的视频`}>
+      {content}
+    </button>
+  );
   return (
     <div className="scene-thumb">
-      {scene.first_media ? (
-        <img src={imageUrl(scene.first_media)} />
-      ) : (
-        <Film size={20} />
-      )}
-      <span>{scene.last_media && "⇢"}</span>
+      {content}
     </div>
   );
 }
@@ -796,6 +805,17 @@ function Episodes({
   const [progress, setProgress] = useState("");
   const [running, setRunning] = useState(false);
   const [failures, setFailures] = useState<string[]>([]);
+  const [previewSceneId, setPreviewSceneId] = useState<number | null>(null);
+  const [previewVideoId, setPreviewVideoId] = useState<number | null>(null);
+  const previewScene = data.episodes.flatMap((item) => item.scenes).find((scene) => scene.id === previewSceneId);
+  const previewVideos = previewScene ? sceneVideos(previewScene) : [];
+  const previewVideo = previewVideos.find((video) => video.id === previewVideoId) || previewVideos[0];
+  const openScenePreview = (scene: Scene) => {
+    const videos = sceneVideos(scene);
+    if (!videos.length) return;
+    setPreviewSceneId(scene.id);
+    setPreviewVideoId(scene.video_media_id || videos[0].id);
+  };
   const generateBatch = async () => {
     if (!batch) return;
     if (batchMode === "existing") {
@@ -929,13 +949,14 @@ function Episodes({
                 {ep.scenes.map((s, i) => (
                   <div className="scene-row" key={s.id}>
                     <span>{String(i + 1).padStart(2, "0")}</span>
-                    <SceneThumb scene={s} />
+                    <SceneThumb scene={s} onPreview={sceneVideos(s).length ? () => openScenePreview(s) : undefined} />
                     <b>{s.title}</b>
                     <p>{s.description || "尚未填写镜头描述"}</p>
                     <Tag color={s.first_media_id ? "green" : "gray"}>
                       {s.first_media_id ? "已设帧" : "空"}
                     </Tag>
                     <SceneOrderControls episode={ep} index={i} project={data.project} reload={reload}/>
+                    <Button size="mini" disabled={!sceneVideos(s).length} icon={<Play size={13}/>} onClick={() => openScenePreview(s)}>预览</Button>
                     <Button size="mini" onClick={() => editScene(s, false)}>编辑</Button>
                     <Popconfirm title="确认删除这个场景？场景中的视频版本关联也会移除。" onOk={async()=>{
                       try {await post("/scenes/delete",{project_id:data.project.id,id:s.id});await reload();Message.success("场景已删除");} catch(e){Message.error(String(e));}
@@ -984,7 +1005,10 @@ function Episodes({
           使用各场景已保存的描述、图片选择、时长和比例。新视频会添加为独立版本。
         </p>
         <Select value={batchMode} onChange={setBatchMode} disabled={running} options={[{label:"生成新视频",value:"generate"},{label:"使用已有视频 concat",value:"existing"}]} />
-        {batchMode === "existing" && <div className="concat-pickers">{batch?.scenes.map(scene => <Form.Item key={scene.id} label={scene.title}><Select disabled={running} value={data.episodes.find(ep=>ep.id===batch.id)?.scenes.find(s=>s.id===scene.id)?.video_media_id || undefined} placeholder="从资产库选择视频" options={data.media.filter(m=>m.kind==="video").map(m=>({label:m.name,value:m.id}))} onChange={async id=>{try {await post("/scenes/select-video",{project_id:data.project.id,scene_id:scene.id,media_id:id});setBatch(current=>current ? {...current,scenes:current.scenes.map(s=>s.id===scene.id?{...s,video_media_id:id}:s)}:null);setBatchResult(null);await reload();}catch(e){Message.error(String(e));}}}/></Form.Item>)}</div>}
+        {batchMode === "existing" && <div className="concat-pickers">{batch?.scenes.map(scene => {
+          const currentScene = data.episodes.find(ep=>ep.id===batch.id)?.scenes.find(s=>s.id===scene.id) || scene;
+          return <Form.Item key={scene.id} label={scene.title}><Select disabled={running} value={currentScene.video_media_id || undefined} placeholder="选择当前场景的视频" options={sceneVideos(currentScene).map((video,index)=>({label:`视频 ${index+1} · ${video.name}`,value:video.id}))} onChange={async id=>{try {await post("/scenes/select-video",{project_id:data.project.id,scene_id:scene.id,media_id:id});setBatch(current=>current ? {...current,scenes:current.scenes.map(s=>s.id===scene.id?{...s,video_media_id:id}:s)}:null);setBatchResult(null);await reload();}catch(e){Message.error(String(e));}}}/></Form.Item>;
+        })}</div>}
         {batchResult && <video className="asset-preview" controls src={imageUrl(batchResult)}/>}
         <Form.Item hidden={batchMode === "existing"} label="每个场景生成数量">
           <Select disabled={running} value={count} onChange={setCount}>
@@ -1001,6 +1025,27 @@ function Episodes({
             {error}
           </p>
         ))}
+      </Modal>
+      <Modal
+        className="scene-video-preview-modal"
+        title={`视频预览 · ${previewScene?.title || ""}`}
+        visible={!!previewScene}
+        footer={null}
+        unmountOnExit
+        onCancel={() => {setPreviewSceneId(null); setPreviewVideoId(null);}}
+      >
+        {previewVideo && <>
+          <div className="scene-video-preview-toolbar">
+            <div>
+              <b>{previewVideo.name}</b>
+              <span>{previewVideo.id === previewScene?.video_media_id ? "当前采用" : "其他版本"}</span>
+            </div>
+            {previewVideos.length > 1 && <Select aria-label="选择视频版本" value={previewVideo.id} onChange={setPreviewVideoId}>
+              {previewVideos.map((video, index) => <Select.Option key={video.id} value={video.id}>版本 {index + 1}{video.id === previewScene?.video_media_id ? " · 当前采用" : ""}</Select.Option>)}
+            </Select>}
+          </div>
+          <video key={previewVideo.id} className="scene-video-preview" controls autoPlay preload="metadata" src={imageUrl(previewVideo)} onError={() => Message.error("视频无法播放，请检查文件或更换版本")} />
+        </>}
       </Modal>
       <EpisodeEditor
         episode={episode}
@@ -1161,6 +1206,8 @@ function SceneImageField({
   onChange,
   onUpload,
   onGenerate,
+  prompt,
+  ratio,
 }: {
   reload: () => void;
   label: string;
@@ -1169,10 +1216,22 @@ function SceneImageField({
   onChange: (id: number | null) => void;
   onUpload: () => void;
   onGenerate: () => void;
+  prompt: string;
+  ratio: string;
 }) {
   const [rolesOpen, setRolesOpen] = useState(false);
+  const [assetsOpen, setAssetsOpen] = useState(false);
+  const [assetQuery, setAssetQuery] = useState("");
+  const [assetPreview, setAssetPreview] = useState<Media | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [generatorSource, setGeneratorSource] = useState<Media | null>(null);
+  const [generatorBusy, setGeneratorBusy] = useState(false);
   const selected = data.media.find((m) => m.id === value);
+  const libraryImages = data.media.filter(
+    (media) =>
+      media.kind === "image" &&
+      media.name.toLocaleLowerCase().includes(assetQuery.trim().toLocaleLowerCase()),
+  );
   const download = async () => {
     if (!selected) return;
     const extension = selected.path.split(".").pop() || "png";
@@ -1224,6 +1283,9 @@ function SceneImageField({
           )}
         </button>
         <div className="scene-image-actions">
+          <Button icon={<ImagePlus size={15} />} onClick={() => setAssetsOpen(true)}>
+            从资产库选择
+          </Button>
           <Button icon={<Users size={15} />} onClick={() => setRolesOpen(true)}>
             从角色中选择
           </Button>
@@ -1248,6 +1310,11 @@ function SceneImageField({
         footer={
           <Space>
             <Button onClick={() => setPreviewOpen(false)}>关闭</Button>
+            <Button icon={<ImagePlus size={15} />} disabled={!selected} onClick={() => {
+              if (!selected) return;
+              setGeneratorSource(selected);
+              setPreviewOpen(false);
+            }}>图生图</Button>
             <Button
               type="primary"
               icon={<Download size={15} />}
@@ -1265,6 +1332,114 @@ function SceneImageField({
         <div className="image-preview-full">
           {selected && <img src={imageUrl(selected)} alt={selected.name} />}
         </div>
+      </Modal>
+      <Modal
+        className="asset-picker-modal"
+        title={`为${label}从资产库选择图片`}
+        visible={assetsOpen}
+        footer={null}
+        onCancel={() => {
+          setAssetsOpen(false);
+          setAssetQuery("");
+          setAssetPreview(null);
+        }}
+      >
+        <Input.Search
+          value={assetQuery}
+          onChange={setAssetQuery}
+          allowClear
+          placeholder="搜索资产名称"
+        />
+        {libraryImages.length ? (
+          <div className="media-picker asset-image-picker">
+            {libraryImages.map((media) => (
+              <div
+                key={media.id}
+                className={value === media.id ? "media-option selected" : "media-option"}
+              >
+                <button
+                  type="button"
+                  className="media-option-select"
+                  onClick={() => {
+                    onChange(media.id);
+                    setAssetsOpen(false);
+                    setAssetQuery("");
+                  }}
+                  aria-label={`选择资产 ${media.name}`}
+                >
+                  <img src={imageUrl(media)} alt="" />
+                  <span>{media.name}</span>
+                </button>
+                <button
+                  type="button"
+                  className="media-option-zoom"
+                  onClick={() => setAssetPreview(media)}
+                  aria-label={`放大预览 ${media.name}`}
+                  title="放大预览"
+                >
+                  <ZoomIn size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <Empty description={assetQuery ? "没有匹配的图片资产" : "资产库中暂无图片"} />
+        )}
+      </Modal>
+      <Modal
+        className="image-preview-modal asset-picker-preview-modal"
+        title={assetPreview?.name || "图片预览"}
+        visible={!!assetPreview}
+        onCancel={() => setAssetPreview(null)}
+        footer={
+          <Space>
+            <Button onClick={() => setAssetPreview(null)}>关闭</Button>
+            <Button
+              type="primary"
+              disabled={!assetPreview}
+              onClick={() => {
+                if (!assetPreview) return;
+                onChange(assetPreview.id);
+                setAssetPreview(null);
+                setAssetsOpen(false);
+                setAssetQuery("");
+              }}
+            >
+              选择此图片
+            </Button>
+          </Space>
+        }
+      >
+        <div className="image-preview-full">
+          {assetPreview && <img src={imageUrl(assetPreview)} alt={assetPreview.name} />}
+        </div>
+      </Modal>
+      <Modal
+        className="image-generator-modal"
+        title={`${label} · 图生图`}
+        visible={!!generatorSource}
+        style={{ width: "min(1100px, 94vw)" }}
+        footer={null}
+        unmountOnExit
+        closable={!generatorBusy}
+        maskClosable={!generatorBusy}
+        escToExit={!generatorBusy}
+        onCancel={() => { if (!generatorBusy) setGeneratorSource(null); }}
+      >
+        {generatorSource && <ImageStudio
+          key={generatorSource.id}
+          data={data}
+          reload={reload}
+          source={generatorSource}
+          initialPrompt={prompt}
+          initialRatio={ratio}
+          onBusyChange={setGeneratorBusy}
+          onUse={(media) => {
+            onChange(media.id);
+            setGeneratorSource(null);
+            Message.success(`${label}已替换，保存场景后生效`);
+          }}
+        />}
       </Modal>
       <Modal
         title={`为${label}选择角色图片`}
@@ -1535,6 +1710,8 @@ function SceneEditor({
                   uploadFrame(key).catch((e) => Message.error(String(e)))
                 }
                 onGenerate={() => openImageGenerator(key)}
+                prompt={scene.script?.[key] || description}
+                ratio={ratio}
               />
             ))}
           </div>
