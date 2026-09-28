@@ -13,7 +13,6 @@ pub fn get(s:&AppState,v:&Value)->Result<Value,String> {
     if cache.exists() && !cache.canonicalize().map_err(|e|e.to_string())?.starts_with(root.canonicalize().map_err(|e|e.to_string())?){return Err("缓存目录不能指向项目之外".into())}
     fs::create_dir_all(&dir).map_err(|e|e.to_string())?;
     if !dir.canonicalize().map_err(|e|e.to_string())?.starts_with(root.canonicalize().map_err(|e|e.to_string())?){return Err("缓存目录不能指向项目之外".into())}
-    s.allow_assets(&dir)?;
     Ok(json!({"path":cached(path,&dir)?}))
 }
 

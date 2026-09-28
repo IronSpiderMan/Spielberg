@@ -12,8 +12,7 @@ Spin,
 Tag
 } from "@arco-design/web-react";
 import "@arco-design/web-react/dist/css/arco.css";
-import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open } from "./platform";
 import {
 ChevronRight,
 Clapperboard,
@@ -40,7 +39,7 @@ import "./studio-modern.css";
 const logoSrc = "/spielberg-logo-s.png";
 
 import type { AssetUsage } from "./AssetLibrary";
-import { api,isServerMode,Media,post,Project,Scene,Snapshot } from "./core";
+import { api,Media,post,Project,Scene,Snapshot } from "./core";
 import { confirmDiscard,EditGuardContext } from "./edit-guard";
 import "./creation.css";
 import "./assets.css";
@@ -159,7 +158,7 @@ function App() {
     if (creatingProject) return;
     setCreatingProject(true);
     try {
-      const p = isServerMode ? await post<Project>("/projects",{name:newName.trim()}) : await invoke<Project>("create_project_command", { name: newName.trim() });
+      const p = await post<Project>("/projects",{name:newName.trim()});
       await load(p.id);
       setCreating(false);
       setNewName("");

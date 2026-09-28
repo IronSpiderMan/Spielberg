@@ -5,24 +5,13 @@ description = "AI comic drama production studio"
 edition = "2021"
 
 [features]
-server-mode = []
+custom-protocol = ["tauri/custom-protocol"]
 
 [build-dependencies]
 tauri-build = { version = "2.4.0", features = [] }
 
 [dependencies]
-tauri = { version = "2.8.0", features = ["protocol-asset"] }
+tauri = { version = "2.8.0", features = [] }
 tauri-plugin-dialog = "2.3.0"
-rusqlite = { version = "0.32", features = ["bundled"] }
-serde = { version = "1", features = ["derive"] }
+spielberg-backend = { path = "../backend" }
 serde_json = "1"
-uuid = { version = "1", features = ["v4"] }
-reqwest = { version = "0.12", features = ["blocking", "json", "multipart"] }
-base64 = "0.22"
-flate2 = "1.1"
-tar = "0.4"
-axum = "0.8"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
-tower-http = { version = "0.6", features = ["fs"] }
-dirs = "6"
-mime_guess = "2"

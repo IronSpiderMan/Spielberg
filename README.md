@@ -1,95 +1,102 @@
 # Spielberg · AI 漫剧工作室
 
-基于 Tauri 构建的 AI 漫剧创作桌面应用。
+React 前端 + 独立 Rust/Axum 后端 + Tauri 桌面壳。浏览器和桌面端的业务数据都通过 HTTP API 访问。
 
-## 技术栈
+## 运行方式
 
-| 层级 | 技术 |
-|------|------|
-| 前端 | React 18 + TypeScript + Arco Design |
-| 后端 | Rust + Tauri 2 |
-| 数据库 | SQLite (rusqlite) |
-| 构建 | Vite + tauri-cli |
-
-## 快速开始
-
-### 环境要求
-
-- Node.js >= 18
-- Rust >= 1.70
-- 系统依赖：参考 [Tauri 官方文档](https://v2.tauri.app/start/prerequisites/)
-
-### 安装依赖
+需要 Node.js 18+、Rust 工具链；图片缩略图和视频处理需要 FFmpeg。打包桌面版另外需要对应系统的 Tauri 开发依赖。
 
 ```bash
 npm install
-```
 
-### 开发
-
-```bash
-# 仅前端
+# 同时启动独立后端（8080）和 Vite 前端（1420）
 npm run dev
 
-# 桌面应用（含 Rust 后端）
+# Tauri 桌面开发：启动 Vite，桌面壳自动启动 127.0.0.1:8080 后端
 npm run desktop:dev
-```
 
-### 构建
-
-```bash
-# 前端构建
-npm run build
-
-# 桌面应用构建
-npm run desktop:build
-
-# macOS DMG
-npm run desktop:dmg
-
-# 局域网服务器模式（服务器上首次运行需要 Rust 工具链）
+# 构建前端并运行后端；直接打开 http://127.0.0.1:8080
 npm run server
 
-# 构建独立可执行文件（会把网页资源嵌入程序）
+# 构建含前端页面的独立后端程序
 npm run server:build
 
-# Apple Silicon/macOS 上交叉构建 Linux ARM64
-npm run server:build:linux-arm64
+# 打包桌面应用 / macOS DMG
+npm run desktop:build
+npm run desktop:dmg
 ```
 
-服务器默认监听 `0.0.0.0:8080`，在同一局域网的浏览器打开 `http://服务器IP:8080`。数据目录默认使用系统本地数据目录下的 `Spielberg` 文件夹；可用 `SPIELBERG_DATA_DIR` 指定持久化位置，用 `SPIELBERG_BIND` 修改监听地址和端口（例如 `0.0.0.0:9000`）。请将该目录放在持久化磁盘上。服务器进程退出后，数据仍保留在该目录。
+服务器只需运行一个 `spielberg-backend` 进程，它同时提供 `/api/v1` 接口、素材和前端页面。页面在构建时嵌入后端程序，无需额外启动 Vite、Node.js 或附带 `dist/`。构建产物为 `backend/target/release/spielberg-backend`（Windows 加 `.exe`）。服务器端不依赖 Tauri、GTK 或 WebKit；`npm run server:build:linux-arm64` 可使用 Podman/Docker 构建 Linux ARM64 程序。
 
-服务器模式需要 Node.js、Rust 工具链及 FFmpeg（缩略图和视频处理功能）。服务器会向局域网提供项目数据与素材访问；请只在可信网络中运行，并通过操作系统防火墙限制访问范围。`npm run server` 会先构建网页，再启动服务；更新代码后重新运行即可。
+桌面壳复用同一个后端库，绑定固定地址 `0.0.0.0:8080`，允许局域网设备连接；桌面界面本身仍通过 `127.0.0.1:8080` 调用 API。生产桌面端加载相同的前端构建，使用固定 Tauri 页面源保留主题等浏览器设置；开发时页面由 Vite 提供，API 地址由壳注入。窗口退出时本地服务随应用停止。后端没有用户认证，监听 `0.0.0.0` 会向本机网络开放 API 和素材，请只在可信网络中运行。
 
-`npm run server:build` 会生成独立服务器程序，网页资源已嵌入程序，无需附带 `dist` 文件夹。macOS / Linux 的程序位于 `src-tauri/target/release/spielberg-studio`，Windows 为 `src-tauri/target/release/spielberg-studio.exe`。直接运行即可；可通过环境变量 `SPIELBERG_BIND` 配置监听地址端口，通过 `SPIELBERG_DATA_DIR` 配置数据目录。每种操作系统需在对应系统上分别构建。
+### 独立开发和部署
 
-Linux ARM64 可用 `npm run server:build:linux-arm64` 构建，产物为 `target-linux-arm64/release/spielberg-studio`。该命令需要可用的 Podman 或 Docker 和容器镜像仓库网络；可通过 `CONTAINER_ENGINE=docker` 切换到 Docker。
+```bash
+npm run backend:dev    # 仅后端
+npm run frontend:dev   # 仅前端，/api 和 /media 默认代理到 8080
 
-## 项目结构
-
+# 也可以独立部署前端，在构建时指定 API 源地址
+VITE_API_BASE_URL=https://api.example.com npm run build
 ```
-Spielberg/
-├── src/                # 前端源码 (React + TypeScript)
-├── src-tauri/          # Tauri 后端 (Rust)
-│   ├── src/            # Rust 源码
-│   ├── Cargo.toml      # Rust 依赖配置
-│   └── tauri.conf.json # Tauri 应用配置
-├── public/             # 静态资源
-├── scripts/            # 构建脚本
-├── index.html          # 入口 HTML
-├── vite.config.ts      # Vite 配置
-└── package.json        # Node 依赖配置
+
+| 设置 | 含义 |
+|---|---|
+| `SPIELBERG_BIND` | 后端监听地址，默认 `127.0.0.1:8080`；局域网部署可设置 `0.0.0.0:8080` |
+| `SPIELBERG_DATA_DIR` | 数据目录；服务器默认系统本地数据目录下的 `Spielberg`，桌面默认原 Tauri 应用数据目录 |
+| `SPIELBERG_ALLOWED_ORIGINS` | 允许的跨域前端来源，逗号分隔；默认允许本地 Vite 的 1420 端口和 Tauri 页面源 |
+| `VITE_API_BASE_URL` | 独立前端的后端源地址；同源托管和本地代理无需设置 |
+
+后端设置通过进程环境变量传入；Vite 设置可写入 `.env.local`，示例见 `.env.example`。数据目录应放在持久化磁盘上。项目路径和旧数据库迁移逻辑继续保留；服务未提供多用户鉴权，局域网部署应使用可信网络，需要对外开放时在反向代理处提供认证和 HTTPS。
+
+## API 与分层
+
+六类资源的 REST CRUD 路径：
+
+| 资源 | 集合路径 |
+|---|---|
+| 项目 | `/api/v1/projects` |
+| 角色 | `/api/v1/projects/{project_id}/roles` |
+| 资产 | `/api/v1/projects/{project_id}/assets` |
+| 剧集 | `/api/v1/projects/{project_id}/episodes` |
+| 场景 | `/api/v1/projects/{project_id}/scenes` |
+| Prompt | `/api/v1/projects/{project_id}/prompts` |
+
+集合支持 `GET`、`POST`；追加 `/{id}` 后支持 `GET`、`PATCH`、`DELETE`。PATCH 只更新提交的字段。项目删除移除注册信息并保留目录；资产删除移入回收站，仍被引用时返回冲突。文件支持二进制上传、下载和 Range 请求；生成、脚本、任务、备份等操作也通过版本化 HTTP 接口执行。
+
+完整请求字段、示例、状态码和文件接口见 [API 文档](docs/api.md)。原 `/api` RPC 包装入口和业务 Tauri IPC 已移除。
+
+```text
+src/                 React 界面、API 客户端、文件对话框适配
+  transport.ts       HTTP 地址配置、请求与下载
+  api.ts             UI 业务调用到 REST/动作接口的映射
+backend/             独立 Rust 后端（可单独构建和运行）
+  src/lib.rs         现有业务服务
+  src/rest.rs        CRUD、校验、部分更新
+  src/http.rs        HTTP、上传下载、静态页面、服务生命周期
+  src/storage.rs     SQLite 和历史数据兼容
+src-tauri/           Tauri 桌面壳、窗口与打包配置
+scripts/             开发启动器、打包脚本、隔离回归检查
 ```
 
 ## UI 回归检查
 
-先启动 `npm run dev`，再运行：
+真实 HTTP 检查会使用临时目录和随机回环端口，不读取真实项目：
+
+```bash
+npm run build
+cargo build --manifest-path backend/Cargo.toml
+npm run test:api
+PLAYWRIGHT_PATH=/path/to/playwright node scripts/qa/http-ui.cjs
+```
+
+界面夹具检查先启动 `npm run frontend:dev`，再运行：
 
 ```bash
 STRICT_UI=1 node scripts/qa/ui-audit.cjs
 ```
 
-需要可用的 Playwright 和 Chromium；若使用外部工具环境，可通过 `PLAYWRIGHT_PATH` 指向其 `playwright` 包目录。脚本在隔离的模拟 Tauri IPC 中验证五种窗口尺寸、长内容、主要页面和弹窗，并检查脚本发布、未保存保护、角色生成、接口保存、Prompt 复用及项目切换。不会读写真实项目或调用生成服务。截图与测量结果写入 `/tmp/spielberg-ui/`。
+需要可用的 Playwright 和 Chromium；若使用外部工具环境，可通过 `PLAYWRIGHT_PATH` 指向其 `playwright` 包目录。脚本在隔离的 HTTP 数据夹具中验证五种窗口尺寸、长内容、主要页面和弹窗，并检查脚本发布、未保存保护、角色生成、接口保存、Prompt 复用及项目切换。不会读写真实项目或调用生成服务。截图与测量结果写入 `/tmp/spielberg-ui/`。
 
 真实模型服务、系统文件对话框和原生视频解码仍需在桌面应用中验证。
 
@@ -110,16 +117,16 @@ STRICT_UI=1 node scripts/qa/ui-audit.cjs
 
 备份和恢复仅操作选定的备份目录和新项目，不需要连接模型服务。缺少素材、备份路径不合法或数据库引用损坏时会报错，失败的临时目录会清理。
 
-新增回归检查（同样使用隔离数据）：
+新增回归检查（使用隔离数据）：
 
 ```bash
-cargo test --manifest-path src-tauri/Cargo.toml --lib
+cargo test --manifest-path backend/Cargo.toml --lib
 node scripts/qa/asset-management.cjs
 node scripts/qa/asset-assignment.cjs
 node scripts/qa/role-assets.cjs
 ```
 
-可通过 `QA_URL` 指向生产预览地址，`PLAYWRIGHT_PATH` 指定已有 Playwright 安装。原生系统文件选择器的测试使用模拟 IPC，备份文件内容、恢复、引用保护和清理逻辑由 Rust 测试验证。
+可通过 `QA_URL` 指向生产预览地址，`PLAYWRIGHT_PATH` 指定已有 Playwright 安装。原生系统文件选择器使用模拟系统对话框，备份文件内容、恢复、引用保护和清理逻辑由 Rust 测试验证。
 
 ## License
 

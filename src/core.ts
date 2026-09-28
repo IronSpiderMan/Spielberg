@@ -1,4 +1,3 @@
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 export type Media = {
   id: number;
   name: string;
@@ -84,14 +83,7 @@ export type Snapshot = {
   media: Media[];
   settings: ModelSettings;
 };
-export const isServerMode = typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window);
-export const api = async <T,>(path: string, options: RequestInit = {}): Promise<T> => isServerMode
-  ? fetch("/api", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({method:options.method||"GET",path,payload:options.body?JSON.parse(String(options.body)):null})}).then(async r=>{const result=await r.json();if(!r.ok||!result.ok)throw new Error(result.error||"服务器请求失败");return result.value as T;}) : invoke<T>("api_request", {
-    method: options.method || "GET",
-    path,
-    payload: options.body ? JSON.parse(String(options.body)) : null,
-  });
-export const post = <T,>(path: string, data?: unknown) =>
-  api<T>(path, { method: "POST", body: JSON.stringify(data || {}) });
-export const fileUrl = (path:string) => isServerMode ? `/media?path=${encodeURIComponent(path)}` : convertFileSrc(path);
+export { api, post } from "./api";
+import { backendUrl } from "./transport";
+export const fileUrl = (path: string) => backendUrl(`/media?path=${encodeURIComponent(path)}`);
 export const imageUrl = (m?: Media) => (m ? fileUrl(m.path) : "");

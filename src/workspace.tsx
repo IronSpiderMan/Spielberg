@@ -17,7 +17,7 @@ Space,
 Tag,
 Typography
 } from "@arco-design/web-react";
-import { open,save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { open,save as saveDialog } from "./platform";
 import {
 ArrowDown,
 ArrowUp,

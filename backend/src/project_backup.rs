@@ -177,7 +177,6 @@ pub fn command(s:&AppState,v:&Value,restore_backup:bool)->Result<Value,String> {
         let destination=s.root.join("projects").join(&id);
         let name=restore(Path::new(&strv(v,"path")?),&destination)?;
         let p=json!({"id":id,"name":format!("{name} · 恢复"),"path":destination,"updated_at":"刚刚"});
-        s.allow_assets(&destination.join("assets"))?;
         let mut all=registry(s)?;all.push(p.clone());save_registry(s,&all)?;
         Ok(p)
     } else {

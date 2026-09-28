@@ -1,5 +1,5 @@
 import { Button,Checkbox,Dropdown,Menu,Message,Modal } from "@arco-design/web-react";
-import { open,save } from "@tauri-apps/plugin-dialog";
+import { open,save,downloadName } from "./platform";
 import { Archive } from "lucide-react";
 import { useState } from "react";
 import { Project,post } from "./core";
@@ -11,7 +11,7 @@ export default function ProjectTools({project,onRestored}: {project?:Project;onR
     const path=await save({title:"保存项目备份压缩包",defaultPath:`${safeName}-${new Date().toISOString().slice(0,10)}.spielberg-backup`,filters:[{name:"Spielberg 备份",extensions:["spielberg-backup"]}]});
     if(!path)return;
     setBusy(true);
-    try{await post("/projects/backup",{project_id:project.id,path,include_api_keys:includeKeys});setConfirm(false);Message.success(`备份已保存：${path}`);}catch(e){Message.error(String(e));throw e;}finally{setBusy(false);}
+    try{await post("/projects/backup",{project_id:project.id,path,include_api_keys:includeKeys});setConfirm(false);Message.success(downloadName(path)!==null?"备份已开始下载":`备份已保存：${path}`);}catch(e){Message.error(String(e));throw e;}finally{setBusy(false);}
   };
   const restore=async(legacy=false)=>{
     try{

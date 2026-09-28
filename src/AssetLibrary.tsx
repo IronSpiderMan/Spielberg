@@ -1,5 +1,5 @@
 import { Button,Drawer,Dropdown,Empty,Form,Input,Menu,Message,Modal,Pagination,Select,Space,Spin,Tag } from "@arco-design/web-react";
-import { open,save } from "@tauri-apps/plugin-dialog";
+import { open,save } from "./platform";
 import { HardDrive,MoreHorizontal,Plus,RotateCcw,WandSparkles } from "lucide-react";
 import { useEffect,useRef,useState } from "react";
 import AssetThumbnail from "./AssetThumbnail";

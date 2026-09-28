@@ -1,3 +1,4 @@
+import { localId } from "./id";
 import { useEffect, useRef, useState } from 'react';
 import { Button, Message, Modal } from '@arco-design/web-react';
 import * as THREE from 'three';
@@ -14,7 +15,7 @@ const neutral = ():Record<Joint,Angles> => {
   pose['左肩']=[0,0,-8];pose['右肩']=[0,0,8];
   return pose;
 };
-const person = (n:number):Person => ({id:crypto.randomUUID(),name:`人物 ${n}`,x:0,y:0,z:0,turn:0,pose:neutral()});
+const person = (n:number):Person => ({id:localId(),name:`人物 ${n}`,x:0,y:0,z:0,turn:0,pose:neutral()});
 const colors = [0xced9e6,0xe4bb9c,0xa9c9bd,0xc5b5dc];
 function mannequin(p:Person,index:number) {
   const root=new THREE.Group(), pivots={} as Record<Joint,THREE.Group>;

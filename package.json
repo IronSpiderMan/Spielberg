@@ -4,16 +4,20 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.mjs",
     "build": "tsc -b && vite build",
     "check": "tsc -b --pretty false",
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
-    "server": "npm run build && cargo run --manifest-path src-tauri/Cargo.toml --features server-mode",
-    "server:build": "npm run build && cargo build --release --manifest-path src-tauri/Cargo.toml --features server-mode",
+    "server": "npm run build && npm run backend:dev",
+    "server:build": "npm run build && npm run backend:build",
     "server:build:linux-arm64": "./scripts/build-linux-arm64.sh",
     "desktop:build": "tauri build",
-    "desktop:dmg": "./scripts/build-dmg.sh"
+    "desktop:dmg": "./scripts/build-dmg.sh",
+    "frontend:dev": "vite",
+    "backend:dev": "cargo run --manifest-path backend/Cargo.toml",
+    "backend:build": "cargo build --release --manifest-path backend/Cargo.toml",
+    "test:api": "python3 scripts/qa/http-api.py"
   },
   "dependencies": {
     "@arco-design/web-react": "^2.66.16",
