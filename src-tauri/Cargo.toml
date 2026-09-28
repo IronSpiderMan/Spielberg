@@ -1,8 +1,11 @@
 [package]
-name = "manju-studio"
+name = "spielberg-studio"
 version = "0.1.0"
 description = "AI comic drama production studio"
 edition = "2021"
+
+[features]
+server-mode = []
 
 [build-dependencies]
 tauri-build = { version = "2.4.0", features = [] }
@@ -16,3 +19,10 @@ serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
 reqwest = { version = "0.12", features = ["blocking", "json", "multipart"] }
 base64 = "0.22"
+flate2 = "1.1"
+tar = "0.4"
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+tower-http = { version = "0.6", features = ["fs"] }
+dirs = "6"
+mime_guess = "2"

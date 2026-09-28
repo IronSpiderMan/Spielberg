@@ -1,0 +1,597 @@
+/* Spielberg UI foundations. Loaded after feature styles, including lazy pages.
+   4px spacing scale · 6/8/12px radii · 180ms feedback · one action accent. */
+:root, body {
+  --ui-primary: #315dcc;
+  --ui-primary-hover: #244ba9;
+  --ui-secondary: #475569;
+  --ui-bg: #f7f8fa;
+  --ui-surface: #fff;
+  --ui-subtle: #f0f2f5;
+  --ui-border: #e2e5ea;
+  --ui-text: #202733;
+  --ui-secondary-text: #596577;
+  --ui-muted: #687588;
+  --ui-success: #23734f;
+  --ui-warning: #946215;
+  --ui-error: #b33b42;
+  --ui-info: #315dcc;
+  --ui-accent-soft: #eaf0ff;
+  --ui-radius-control: 6px;
+  --ui-radius-panel: 8px;
+  --ui-radius-dialog: 12px;
+  --ui-space-1: 4px;
+  --ui-space-2: 8px;
+  --ui-space-3: 12px;
+  --ui-space-4: 16px;
+  --ui-space-6: 24px;
+  --ui-space-8: 32px;
+  --ui-shadow: 0 12px 40px #20273314;
+  --primary-6: 49, 93, 204;
+  --primary-5: 62, 107, 222;
+  --primary-7: 36, 75, 169;
+  --color-primary-light-1: var(--ui-accent-soft);
+  --color-text-1: var(--ui-text);
+  --color-text-2: var(--ui-secondary-text);
+  --color-text-3: var(--ui-muted);
+  --color-border-2: var(--ui-border);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--ui-text);
+  background: var(--ui-bg);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+.app { background: var(--ui-bg); }
+.app .side { width: 216px !important; min-width: 216px !important; flex-basis: 216px !important; padding: 24px 12px 16px; background: #f0f2f5 !important; border-right: 1px solid var(--ui-border); color: var(--ui-text); }
+.logo { padding: 0 12px 28px; gap: 10px; color: var(--ui-text); }
+.logo b { font-size: 19px; letter-spacing: -.6px; font-weight: 650; }
+.logo small { color: var(--ui-muted); font-size: 8px; letter-spacing: 1.3px; }
+.logo .logo-mark { width: 32px; height: 32px; border-radius: 7px; box-shadow: none; }
+.side .project-switch { width: 100%; margin: 0 0 24px; padding: 12px; background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: var(--ui-radius-control); color: var(--ui-muted); }
+.project-switch strong { color: var(--ui-text); font-size: 12px; font-weight: 600; }
+.project-switch small { color: var(--ui-muted); font-size: 11px; }
+.project-switch .project-dot { background: var(--ui-primary); width: 6px; height: 6px; }
+.project-switch:hover { border-color: #aab6ca; }
+.nav-label { padding: 0 12px 8px; font-size: 11px; color: var(--ui-muted); letter-spacing: .5px; }
+.nav .arco-menu-inner { padding: 0; }
+.nav .arco-menu-item { height: 40px; line-height: 40px; margin: 3px 0; padding: 0 12px !important; border-radius: 6px; font-size: 13px; color: var(--ui-secondary-text) !important; font-weight: 500; }
+.nav .arco-menu-item svg { width: 17px; height: 17px; stroke-width: 1.7; }
+.nav .arco-menu-item:hover { background: #e5e9ef !important; color: var(--ui-text) !important; }
+.nav .arco-menu-selected, .nav .arco-menu-selected:hover { color: var(--ui-primary) !important; background: #e1e8f7 !important; }
+.side-bottom { border-top: 1px solid var(--ui-border); padding-top: 16px; }
+.side-bottom .arco-btn-text { padding-left: 12px; height: 40px; color: var(--ui-secondary-text); font-size: 13px; }
+.side-bottom .arco-btn[data-active=true] { background: #e1e8f7; color: var(--ui-primary); }
+.app .topbar { height: 60px !important; padding: 0 28px !important; background: var(--ui-surface) !important; border-bottom: 1px solid var(--ui-border); }
+.topbar b { font-size: 12px; font-weight: 500; }
+.topbar .crumb { color: var(--ui-secondary-text); font-size: 12px; }
+.topbar .crumb-sep { color: #aab2bf; }
+.topbar .arco-btn { font-size: 12px; height: 30px; background: transparent; border-color: transparent; color: var(--ui-secondary-text); padding: 0 10px; }
+.topbar .arco-btn:hover { background: var(--ui-subtle); color: var(--ui-text); }
+.topbar .arco-tag { background: transparent; color: var(--ui-success); font-size: 11px; }
+.topbar > .arco-space { gap: 12px; }
+.topbar .theme-toggle { width: 36px; min-width: 36px; padding: 0; border: 1px solid var(--ui-border); border-radius: 6px; background: var(--ui-subtle); }
+.app .content { padding: 32px 36px 48px; }
+.content > section { max-width: 1360px; }
+.content h1 { color: var(--ui-text); font-size: 24px; font-weight: 650; line-height: 1.4; letter-spacing: -.6px; }
+.content h2 { color: var(--ui-text); font-size: 16px; line-height: 1.5; font-weight: 600; }
+.content h3 { color: var(--ui-text); font-size: 14px; font-weight: 600; }
+.section-title, .page-heading { margin-bottom: 24px; align-items: center; }
+.section-title p, .page-heading p { margin: 6px 0 0; font-size: 13px; color: var(--ui-secondary-text); line-height: 1.7; }
+.helper, .subtle { color: var(--ui-muted); font-size: 12px; line-height: 1.7; }
+.arco-btn { border-radius: var(--ui-radius-control); font-weight: 500; transition: background-color 180ms, border-color 180ms, color 180ms; }
+.arco-btn-secondary:not(.arco-btn-disabled) { background: var(--ui-surface); border: 1px solid var(--ui-border); color: var(--ui-secondary-text); }
+.arco-btn-secondary:not(.arco-btn-disabled):hover { background: var(--ui-subtle); border-color: #bfc7d3; }
+.arco-btn-primary:not(.arco-btn-disabled) { background: var(--ui-primary); border-color: var(--ui-primary); }
+.arco-btn-primary:not(.arco-btn-disabled):hover { background: var(--ui-primary-hover); }
+.arco-btn-text:not(.arco-btn-disabled) { color: var(--ui-primary); }
+.arco-btn-secondary.arco-btn-status-danger:not(.arco-btn-disabled), .arco-btn-text.arco-btn-status-danger:not(.arco-btn-disabled) { color: var(--ui-error); }
+.arco-input-wrapper, .arco-textarea-wrapper, .arco-select-view { background: var(--ui-surface); border: 1px solid #d6dce5; border-radius: var(--ui-radius-control) !important; transition: border-color 180ms, box-shadow 180ms; }
+.arco-input-wrapper:hover, .arco-textarea-wrapper:hover, .arco-select-view:hover { background: var(--ui-surface); border-color: #aab6ca; }
+.arco-input-wrapper:focus-within, .arco-textarea-wrapper:focus-within, .arco-select-view-focus { border-color: var(--ui-primary) !important; box-shadow: 0 0 0 3px #315dcc12; }
+.arco-input-wrapper .arco-input { background: transparent; }
+.arco-form-label-item > label { color: var(--ui-secondary-text); font-size: 12px; font-weight: 500; }
+.arco-form-item { margin-bottom: 20px; }
+.arco-form-label-item { padding-bottom: 6px; }
+.arco-tag { border-radius: 4px; font-size: 11px; }
+.arco-tabs-header-title-text { font-size: 13px; font-weight: 500; }
+.arco-tabs-header-title-active { color: var(--ui-primary); }
+.arco-tabs-header-ink { background: var(--ui-primary); height: 2px; }
+.arco-card, .scene-form-card, .scene-image-field, .scene-video-panel, .creation-panel, .script-scene { border: 1px solid var(--ui-border); border-radius: var(--ui-radius-panel) !important; box-shadow: none; }
+.arco-card-body { padding: 20px; }
+.arco-card-hoverable:hover { box-shadow: none; border-color: #abb8cc; }
+.arco-card-header { border-color: var(--ui-border); }
+.arco-card-header-title { font-size: 14px; font-weight: 600; }
+.arco-empty { padding: 48px 16px; color: var(--ui-muted); font-size: 13px; line-height: 1.8; }
+.arco-empty-image { opacity: .65; }
+/* One continuous project overview, rather than four floating KPI cards. */
+.project-summary { display: grid; grid-template-columns: repeat(3, 1fr) 1.4fr; gap: 24px; padding: 20px 0; margin: 0 0 16px; border-top: 1px solid var(--ui-border); border-bottom: 1px solid var(--ui-border); }
+.project-summary > div { border-right: 1px solid var(--ui-border); }
+.project-summary > div:last-child { border: 0; }
+.project-summary dt { font-size: 12px; color: var(--ui-secondary-text); }
+.project-summary dd { margin: 6px 0 0; font-size: 26px; line-height: 1.2; letter-spacing: -.6px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.project-summary dd span { font-size: 11px; font-weight: 400; color: var(--ui-muted); margin-left: 8px; letter-spacing: 0; }
+.summary-progress { position: relative; padding-right: 24px; }
+.summary-progress progress { position: absolute; right: 0; bottom: 4px; width: 30%; height: 4px; appearance: none; border: 0; border-radius: 2px; background: var(--ui-border); }
+.summary-progress progress::-webkit-progress-bar { background: var(--ui-border); border-radius: 2px; }
+.summary-progress progress::-webkit-progress-value { background: var(--ui-primary); border-radius: 2px; }
+.summary-progress progress::-moz-progress-bar { background: var(--ui-primary); }
+.creation-desk > .arco-tabs > .arco-tabs-content { padding-top: 24px; }
+.script-toolbar { margin-bottom: 24px; gap: 12px; }
+.script-toolbar h2 { margin-bottom: 4px; }
+.script-toolbar p { margin: 4px 0 0; }
+.script-toolbar .arco-tag { color: var(--ui-muted); background: transparent; padding: 0; }
+.script-studio > fieldset > .arco-form > .arco-form-item:first-child { max-width: 560px; }
+.script-scene { padding: 24px; margin-bottom: 16px; }
+.script-scene-head { margin: -24px -24px 20px; padding: 12px 24px; background: #fafbfd; border-bottom: 1px solid var(--ui-border); border-radius: 8px 8px 0 0; align-items: center; }
+.script-scene-head b { font-size: 11px; letter-spacing: 1px; color: var(--ui-secondary-text); font-variant-numeric: tabular-nums; }
+.script-frames { border-top: 1px solid var(--ui-border); padding-top: 20px; gap: 16px; }
+.script-frames .arco-form-item { margin: 0; }
+.prompt-editor { background: var(--ui-surface); border-color: #d6dce5; border-radius: var(--ui-radius-control); }
+.prompt-editor:focus-within { border-color: var(--ui-primary); box-shadow: 0 0 0 3px #315dcc12; }
+.prompt-editor textarea, .prompt-backdrop { font-family: inherit; font-size: 13px; line-height: 1.8; }
+.prompt-editor textarea::placeholder { color: var(--ui-muted); -webkit-text-fill-color: var(--ui-muted); }
+.prompt-mention { color: var(--ui-primary); background: var(--ui-accent-soft); }
+.prompt-suggestions button.active, .prompt-suggestions button:hover { background: var(--ui-accent-soft); }
+.prompt-suggestions b { color: var(--ui-primary); }
+.creation-split { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 24px; align-items: start; }
+.creation-panel { padding: 24px; }
+.image-result { min-height: 520px; background: #edf0f4; border-color: var(--ui-border); position: sticky; top: 0; }
+.image-result .helper { text-align: center; max-width: 360px; }
+/* Production lists use separators and compact actions rather than nested cards. */
+.episode-list { gap: 16px; }
+.episode-top { gap: 16px; }
+.episode-number { background: var(--ui-subtle); color: var(--ui-secondary-text); width: 32px; height: 32px; font-variant-numeric: tabular-nums; border-radius: 4px; }
+.episode-info h3 { font-size: 15px; }
+.episode-info p, .scene-row p, .role-card p, .prompt-card p { color: var(--ui-secondary-text); }
+.scene-list { padding-top: 0; border-color: var(--ui-border); }
+.scene-row { padding: 16px 4px; border-radius: 0; }
+.scene-row:hover { background: #f8fafc; }
+.scene-row:last-child { border-bottom: 0; }
+.scene-copy b { font-size: 13px; font-weight: 500; }
+.scene-actions .arco-btn { height: 28px; font-size: 12px; }
+.scene-thumb, .episode-cover { background: var(--ui-subtle); color: var(--ui-muted); border-radius: 5px; }
+.empty-scene { border-color: #cbd3e0; background: transparent; }
+.cut-preview { background: #1d2532; border-radius: 8px; }
+.cut-list { gap: 0; border: 1px solid var(--ui-border); border-radius: 8px; overflow: hidden; }
+.cut-row { border: 0; border-bottom: 1px solid var(--ui-border); border-radius: 0; }
+.cut-row:last-child { border-bottom: 0; }
+.cut-copy > b { font-size: 14px; }
+.sequence-flow > span { border-radius: 6px; padding: 12px 16px; font-size: 12px; }
+.sequence-flow .sequence-result { background: var(--ui-accent-soft); border-color: #c6d3f3; }
+.asset-toolbar { gap: 12px; padding: 16px 0; margin: 0 0 20px; border-top: 1px solid var(--ui-border); border-bottom: 1px solid var(--ui-border); }
+.library-grid { gap: 20px; grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr)); }
+.library-card { border: 1px solid var(--ui-border); border-radius: 8px; padding: 10px; gap: 10px; transition: border-color 180ms; }
+.library-card:hover { border-color: #abb8cc; }
+.library-card > b { font-size: 13px; font-weight: 500; }
+.library-card small { color: var(--ui-muted); font-size: 11px; }
+.library-thumbnail { border-radius: 4px; background: var(--ui-subtle); }
+.asset-usage-link { color: var(--ui-secondary-text); font-size: 12px; }
+.asset-usage-link:hover { color: var(--ui-primary); text-decoration: underline; }
+.asset-card-actions { padding-top: 8px; border-top: 1px solid var(--ui-border); }
+.asset-pagination { justify-content: flex-end; padding-top: 16px; border-top: 1px solid var(--ui-border); }
+.role-grid { grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); gap: 20px; }
+.role-pic { background: #e6ebf2; color: var(--ui-secondary-text); border-radius: 4px; height: 200px; font-family: inherit; }
+.role-card .role-foot, .prompt-meta { color: var(--ui-muted); font-size: 11px; border-color: var(--ui-border); }
+.prompt-card p { font-size: 13px; line-height: 1.8; }
+.prompt-meta { padding-top: 12px; border-top: 1px solid var(--ui-border); }
+.project-card.selected { outline: 2px solid var(--ui-primary); outline-offset: 2px; }
+.project-art { background: #e4eaf3; color: #637797; height: 100px; }
+.project-art span { font-family: inherit; font-size: 36px; }
+.project-card p, .project-card small { color: var(--ui-muted); }
+.setting-block { display: grid; grid-template-columns: minmax(150px, 180px) minmax(0, 1fr); align-items: start; column-gap: 24px; padding: 28px 20px; margin: 0; border: 0; border-top: 1px solid var(--ui-border); border-radius: 0; background: transparent; }
+.setting-heading, .setting-block > .arco-form { min-width: 0; }
+.setting-heading h3 { overflow-wrap: normal; }
+.setting-block .settings-fields { min-width: 0; }
+.setting-block h3 { margin: 8px 0 4px; }
+.setting-block p { color: var(--ui-muted); line-height: 1.6; }
+.setting-code { color: var(--ui-muted); font-size: 10px; letter-spacing: 1px; font-weight: 600; }
+.setting-block > .arco-form { padding: 0; }
+.connection-help { background: #eef1f5; margin-top: 16px; }
+.connection-help .arco-card-header { border: 0; }
+.scene-image-preview { background: var(--ui-subtle); border-color: #c4cddb; color: var(--ui-muted); border-radius: 6px; }
+.scene-image-actions .arco-btn { height: 32px; }
+.scene-image-label { font-size: 13px; }
+.scene-video-panel { padding: 24px; }
+.media-option.selected { outline-color: var(--ui-primary); }
+.image-generation-modes button.active { border-color: var(--ui-primary); background: var(--ui-accent-soft); }
+.arco-modal { border-radius: var(--ui-radius-dialog); box-shadow: var(--ui-shadow); border: 1px solid var(--ui-border); }
+.arco-modal-title, .arco-drawer-title { font-size: 16px; font-weight: 600; }
+.arco-modal-header { border-bottom: 1px solid var(--ui-border); }
+.arco-modal-footer, .arco-drawer-footer { background: #fafbfd; border-top: 1px solid var(--ui-border); padding: 16px 24px; }
+.arco-drawer-header { border-color: var(--ui-border); }
+.arco-drawer-body { padding: 24px; }
+.arco-modal-content { padding: 24px; }
+.welcome, .splash { background: var(--ui-bg); }
+.welcome-card { margin: 0; padding: 48px; text-align: left; max-width: 660px; }
+.welcome-card .hero-logo { width: 56px; height: 56px; margin: 0 0 32px; box-shadow: none; border-radius: 12px; }
+.welcome-card h1 { font-size: 30px; letter-spacing: -1px; }
+.welcome-actions { justify-content: flex-start; margin-bottom: 16px; }
+.welcome-notes { justify-content: flex-start; padding-top: 24px; border-top: 1px solid var(--ui-border); }
+.page-loading { max-width: 1100px; margin: auto; color: var(--ui-muted); font-size: 13px; }
+.page-loading div { background: #e9edf2; border-radius: 6px; height: 140px; margin-top: 24px; }
+.page-loading div:first-of-type { width: 40%; height: 24px; }
+button:focus-visible, [role=button]:focus-visible, video:focus-visible, .arco-menu-item:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: 3px; }
+@container (min-width: 1080px) {
+  .scene-row { grid-template-columns: 24px 112px minmax(0, 1fr) auto; }
+  .scene-actions { grid-column: 4; }
+}
+@container (max-width: 960px) {
+  .creation-split { grid-template-columns: 1fr; }
+  .image-result { position: static; min-height: 320px; }
+  .setting-block { grid-template-columns: 160px minmax(0, 1fr); gap: 24px; }
+}
+@container (max-width: 700px) {
+  .setting-block { grid-template-columns: 1fr; gap: 8px; }
+  .project-summary { gap: 16px; grid-template-columns: repeat(4, 1fr); }
+  .project-summary dd { font-size: 22px; }
+  .project-summary dd span { display: block; margin: 6px 0 0; }
+  .summary-progress { padding: 0; }
+  .summary-progress progress { display: none; }
+}
+@media (max-width: 1100px) {
+  .app .side { width: 184px !important; min-width: 184px !important; flex-basis: 184px !important; }
+  .app .content { padding: 24px; }
+  .app .topbar { padding: 12px 24px !important; height: auto !important; min-height: 60px; flex-wrap: wrap; }
+  .topbar > div:first-child { flex: 1 1 160px; }
+  .topbar > .arco-space { flex-shrink: 1; }
+}
+@media (max-width: 850px) {
+  .app .side { width: 64px !important; min-width: 64px !important; flex-basis: 64px !important; padding: 20px 8px; }
+  .side .logo { padding: 0 0 24px; justify-content: center; }
+  .logo > div, .nav-label, .project-switch > div, .project-switch > .project-dot, .side-bottom .arco-btn > span:not(.arco-btn-icon) { display: none; }
+  .side .project-switch { display: flex; justify-content: center; padding: 12px; }
+  .side .nav .arco-menu-item { font-size: 0; justify-content: center; }
+  .nav svg { margin: 0; }
+  .side .side-bottom { display: block; }
+  .side-bottom .arco-btn-text { justify-content: center; padding: 0; }
+  .app .content { padding: 24px 20px; }
+}
+@media (max-width: 600px) {
+  .app .content { padding: 20px 12px; }
+  .app .topbar { padding: 12px !important; }
+  .topbar > div:first-child { flex-basis: 100%; }
+  .content h1 { font-size: 22px; }
+  .project-summary { grid-template-columns: repeat(2, 1fr); }
+  .project-summary > div:nth-child(2) { border: 0; }
+  .project-summary dd span { display: inline; margin-left: 6px; }
+  .script-scene { padding: 16px; }
+  .script-scene-head { margin: -16px -16px 16px; padding: 12px 16px; }
+  .creation-panel { padding: 16px; }
+  .welcome-card { padding: 12px; }
+  .welcome-card h1 { font-size: 26px; }
+  .arco-modal-content { padding: 16px; }
+  .arco-modal-footer { padding: 12px 16px; }
+}
+/* Review polish: Arco renders standalone inputs and nested select views differently. */
+input.arco-input, textarea.arco-textarea,
+.arco-input-inner-wrapper, .arco-select .arco-select-view {
+  background: var(--ui-surface);
+  border: 1px solid #d6dce5;
+  border-radius: var(--ui-radius-control);
+  font-size: 13px;
+  transition: border-color 180ms, box-shadow 180ms;
+}
+input.arco-input, .arco-input-inner-wrapper, .arco-select .arco-select-view { min-height: 36px; }
+.arco-input-inner-wrapper input.arco-input, .arco-input-wrapper input.arco-input { border: 0; min-height: 0; background: transparent; box-shadow: none; }
+input.arco-input:hover, textarea.arco-textarea:hover, .arco-input-inner-wrapper:hover, .arco-select .arco-select-view:hover { border-color: #aab6ca; }
+input.arco-input:focus, textarea.arco-textarea:focus, .arco-input-inner-wrapper:focus-within, .arco-select .arco-select-view-focus { border-color: var(--ui-primary); box-shadow: 0 0 0 3px #315dcc12; }
+input.arco-input:disabled, textarea.arco-textarea:disabled, .arco-input-inner-wrapper-disabled, .arco-select-disabled .arco-select-view { background: var(--ui-subtle); color: #8c96a5; cursor: not-allowed; }
+.side-bottom .arco-btn-text:not(.arco-btn-disabled) { color: var(--ui-secondary-text); }
+.side-bottom .arco-btn-text[data-active=true] { color: var(--ui-primary); }
+.topbar .arco-btn-secondary:not(.arco-btn-disabled) { border-color: transparent; background: transparent; }
+.topbar .arco-btn-secondary:not(.arco-btn-disabled):hover { background: var(--ui-subtle); }
+.episode-number { width: 40px; height: 36px; white-space: nowrap; font-size: 10px; }
+.scene-actions .arco-btn-status-danger:not(.arco-btn-disabled) { background: transparent; border-color: transparent; }
+.scene-actions .arco-btn-status-danger:not(.arco-btn-disabled):hover { background: #fff0f0; }
+@media (max-width: 600px) {
+  .project-summary { padding: 16px 0; margin-bottom: 8px; }
+  .script-toolbar { margin-bottom: 20px; }
+}
+.arco-empty-description { color: var(--ui-muted); }
+.cut-preview .arco-empty-description { color: #bdc9dc; }
+.role-create { border-style: dashed; background: transparent; cursor: pointer; }
+.role-create .role-pic { height: 100%; min-height: 316px; background: transparent; color: var(--ui-muted); font-size: 13px; }
+.role-create .arco-card-body { height: 100%; }
+.role-create:hover { background: var(--ui-surface); }
+.task-list { gap: 0; border-radius: 8px; overflow: hidden; }
+.task-list .arco-card { border-radius: 0 !important; }
+.task-list .arco-card + .arco-card { border-top: 0; }
+.task-list p { font-size: 13px; line-height: 1.8; color: var(--ui-secondary-text); }
+.task-list small { font-size: 11px; color: var(--ui-muted); font-variant-numeric: tabular-nums; }
+.task-list .generation-error { color: var(--ui-error); }
+.welcome-card { align-items: flex-start; }
+.welcome-card > p { color: var(--ui-secondary-text); }
+.welcome-actions .arco-btn { height: 40px; padding: 0 16px; font-size: 14px; }
+.project-card { overflow: hidden; }
+.project-card .arco-card-body { padding: 20px; }
+.creation-desk .studio .page-heading h2 { margin: 0 0 6px; font-size: 18px; }
+
+/* Keep the create action's icon and label on the same vertical center. */
+.prompt-create-button.arco-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.prompt-create-button.arco-btn > .arco-btn-icon { display: inline-flex; align-items: center; margin-right: 0; }
+.prompt-create-button.arco-btn > span { line-height: 1; }
+.prompt-create-button svg { display: block; flex-shrink: 0; }
+.prompt-library-heading { margin: 24px 0 14px; }
+.prompt-library-heading h2 { margin: 0; }
+.prompt-library-heading p { margin: 6px 0 0; color: var(--ui-secondary-text); font-size: 13px; }
+.prompt-presets .arco-card-header { gap: 8px; }
+.prompt-presets .arco-card-header-title { font-size: 14px; }
+.prompt-presets .arco-card-header-extra { margin-left: 0; }
+
+/* Dark appearance follows the same design tokens. */
+html[data-theme="dark"], html[data-theme="dark"] body {
+  color-scheme: dark;
+  --ui-primary: #87a7ff; --ui-primary-hover: #a2baff; --ui-secondary: #aab6c8;
+  --ui-bg: #171a20; --ui-surface: #20242c; --ui-subtle: #292e38; --ui-border: #343b48;
+  --ui-text: #e4e8f0; --ui-secondary-text: #bac2d0; --ui-muted: #909aaa;
+  --ui-success: #70c49a; --ui-warning: #e5b967; --ui-error: #ff8b91; --ui-info: #87a7ff;
+  --ui-accent-soft: #293653; --color-primary-light-1: var(--ui-accent-soft);
+  --color-text-1: var(--ui-text); --color-text-2: var(--ui-secondary-text); --color-text-3: var(--ui-muted);
+  --color-border-2: var(--ui-border); background: var(--ui-bg); color: var(--ui-text);
+}
+html[data-theme="dark"] body, html[data-theme="dark"] .app, html[data-theme="dark"] .app-main,
+html[data-theme="dark"] .content { background: var(--ui-bg) !important; color: var(--ui-text); }
+html[data-theme="dark"] .app .side { background: #1d2129 !important; border-color: var(--ui-border); color: var(--ui-text); }
+html[data-theme="dark"] .logo { color: var(--ui-text); }
+html[data-theme="dark"] .logo small, html[data-theme="dark"] .nav-label,
+html[data-theme="dark"] .crumb, html[data-theme="dark"] .subtle { color: var(--ui-muted); }
+html[data-theme="dark"] .side .project-switch, html[data-theme="dark"] .app .topbar,
+html[data-theme="dark"] .arco-card, html[data-theme="dark"] .scene-form-card,
+html[data-theme="dark"] .scene-image-field, html[data-theme="dark"] .scene-video-panel,
+html[data-theme="dark"] .creation-panel, html[data-theme="dark"] .script-scene,
+html[data-theme="dark"] .timeline, html[data-theme="dark"] .preview,
+html[data-theme="dark"] .setting-block { background: var(--ui-surface) !important; border-color: var(--ui-border) !important; color: var(--ui-text); }
+html[data-theme="dark"] .arco-modal, html[data-theme="dark"] .arco-drawer-content,
+html[data-theme="dark"] .arco-select-popup, html[data-theme="dark"] .arco-trigger-popup { background: var(--ui-surface); color: var(--ui-text); }
+html[data-theme="dark"] .arco-modal-footer, html[data-theme="dark"] .arco-drawer-footer,
+html[data-theme="dark"] .script-scene-head, html[data-theme="dark"] .connection-help { background: var(--ui-subtle) !important; border-color: var(--ui-border); }
+html[data-theme="dark"] .arco-input-wrapper, html[data-theme="dark"] .arco-textarea-wrapper,
+html[data-theme="dark"] .arco-select-view, html[data-theme="dark"] .prompt-editor { background: #191d24; border-color: #414958; color: var(--ui-text); }
+html[data-theme="dark"] input, html[data-theme="dark"] textarea, html[data-theme="dark"] .arco-input,
+html[data-theme="dark"] .arco-textarea { color: var(--ui-text); }
+html[data-theme="dark"] .arco-select-option:hover, html[data-theme="dark"] .scene-row:hover { background: #2a303a !important; }
+html[data-theme="dark"] .scene-list, html[data-theme="dark"] .role-foot,
+html[data-theme="dark"] .prompt-meta, html[data-theme="dark"] .project-summary,
+html[data-theme="dark"] .asset-toolbar { border-color: var(--ui-border); }
+html[data-theme="dark"] .episode-number, html[data-theme="dark"] .role-pic,
+html[data-theme="dark"] .scene-thumb, html[data-theme="dark"] .episode-cover,
+html[data-theme="dark"] .library-thumbnail, html[data-theme="dark"] .scene-image-preview,
+html[data-theme="dark"] .image-result, html[data-theme="dark"] .project-art { background: var(--ui-subtle); color: var(--ui-secondary-text); }
+html[data-theme="dark"] .arco-btn-secondary:not(.arco-btn-disabled) { background: var(--ui-surface); border-color: var(--ui-border); color: var(--ui-secondary-text); }
+html[data-theme="dark"] .arco-btn-text:not(.arco-btn-disabled) { color: var(--ui-primary); }
+html[data-theme="dark"] .nav .arco-menu-selected, html[data-theme="dark"] .nav .arco-menu-selected:hover,
+html[data-theme="dark"] .side-bottom .arco-btn[data-active=true] { background: #293653 !important; color: #a8beff !important; }
+html[data-theme="dark"] .welcome, html[data-theme="dark"] .splash { background: radial-gradient(circle at 35% 15%, #28252a, #171a20 55%, #111318); color: var(--ui-text); }
+html[data-theme="dark"] .welcome h1, html[data-theme="dark"] .page-heading h1,
+html[data-theme="dark"] h1, html[data-theme="dark"] h2, html[data-theme="dark"] h3 { color: var(--ui-text); }
+/* Arco's inner wrappers and standalone inputs are styled after the general
+   dark rules; keep both the control surface and the actual glyph color dark-safe. */
+html[data-theme="dark"] .arco-input-inner-wrapper,
+html[data-theme="dark"] input.arco-input,
+html[data-theme="dark"] textarea.arco-textarea,
+html[data-theme="dark"] .arco-select .arco-select-view {
+  background: #191d24;
+  border-color: #414958;
+  color: var(--ui-text);
+}
+html[data-theme="dark"] input.arco-input,
+html[data-theme="dark"] textarea.arco-textarea,
+html[data-theme="dark"] .arco-input-inner-wrapper input.arco-input {
+  -webkit-text-fill-color: var(--ui-text);
+}
+html[data-theme="dark"] input.arco-input::placeholder,
+html[data-theme="dark"] textarea.arco-textarea::placeholder {
+  color: var(--ui-muted);
+  -webkit-text-fill-color: var(--ui-muted);
+}
+
+/* Feature styles include a number of intentionally light surfaces. Re-map
+   those surfaces here so every workspace page follows the active theme. */
+html[data-theme="dark"] .creation-panel,
+html[data-theme="dark"] .script-scene,
+html[data-theme="dark"] .library-card,
+html[data-theme="dark"] .sequence-flow > span,
+html[data-theme="dark"] .scene-form-card,
+html[data-theme="dark"] .scene-image-field,
+html[data-theme="dark"] .scene-video-panel,
+html[data-theme="dark"] .preview,
+html[data-theme="dark"] .timeline,
+html[data-theme="dark"] .setting-block,
+html[data-theme="dark"] .project-modal,
+html[data-theme="dark"] .prompt-suggestions {
+  background: var(--ui-surface) !important;
+  border-color: var(--ui-border) !important;
+  color: var(--ui-text);
+}
+html[data-theme="dark"] .project-modal > p:not(.eyebrow),
+html[data-theme="dark"] .welcome-card > p,
+html[data-theme="dark"] .helper,
+html[data-theme="dark"] .timeline-copy span,
+html[data-theme="dark"] .scene-row p,
+html[data-theme="dark"] .scene-row > span,
+html[data-theme="dark"] .episode-info p,
+html[data-theme="dark"] .role-card p,
+html[data-theme="dark"] .prompt-card p,
+html[data-theme="dark"] .library-card small,
+html[data-theme="dark"] .sequence-flow small,
+html[data-theme="dark"] .image-result-card p,
+html[data-theme="dark"] .prompt-suggestions small,
+html[data-theme="dark"] .scene-video-preview-toolbar span {
+  color: var(--ui-secondary-text) !important;
+}
+html[data-theme="dark"] .scene-list,
+html[data-theme="dark"] .role-foot,
+html[data-theme="dark"] .usage-record,
+html[data-theme="dark"] .scene-video-preview-toolbar,
+html[data-theme="dark"] .arco-modal-footer,
+html[data-theme="dark"] .arco-drawer-footer {
+  border-color: var(--ui-border) !important;
+}
+html[data-theme="dark"] .scene-row:hover,
+html[data-theme="dark"] .timeline-item:hover,
+html[data-theme="dark"] .prompt-suggestions button:hover,
+html[data-theme="dark"] .prompt-suggestions button.active {
+  background: #2a303a !important;
+}
+html[data-theme="dark"] .scene-image-preview,
+html[data-theme="dark"] .image-reference-list > div,
+html[data-theme="dark"] .library-thumbnail,
+html[data-theme="dark"] .sequence-flow .ready,
+html[data-theme="dark"] .sequence-flow .sequence-result,
+html[data-theme="dark"] .episode-number,
+html[data-theme="dark"] .connection-help,
+html[data-theme="dark"] .script-scene-head,
+html[data-theme="dark"] .arco-modal-footer,
+html[data-theme="dark"] .arco-drawer-footer {
+  background: var(--ui-subtle) !important;
+  border-color: var(--ui-border) !important;
+  color: var(--ui-secondary-text);
+}
+html[data-theme="dark"] .project-modal-backdrop { background: rgba(0, 0, 0, .68); }
+html[data-theme="dark"] .prompt-editor,
+html[data-theme="dark"] .prompt-suggestions { border-color: var(--ui-border); }
+html[data-theme="dark"] .prompt-editor:focus-within { background: #191d24; }
+html[data-theme="dark"] .prompt-editor textarea { caret-color: var(--ui-text); }
+html[data-theme="dark"] .prompt-backdrop { color: var(--ui-text); }
+html[data-theme="dark"] .prompt-mention { color: #c1b5ff; background: #39314f; }
+html[data-theme="dark"] .prompt-mention.scene { color: #9bd3ff; background: #20394c; }
+html[data-theme="dark"] .prompt-mention.missing { color: #ffd18a; background: #49391f; }
+html[data-theme="dark"] .prompt-suggestions b { color: #b6c8ff; }
+html[data-theme="dark"] .empty-scene { border-color: var(--ui-border); color: var(--ui-muted); }
+html[data-theme="dark"] .scene-editor-heading .arco-btn-text { color: var(--ui-secondary-text); }
+html[data-theme="dark"] .arco-input-inner-wrapper input::placeholder,
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder { color: var(--ui-muted); opacity: 1; }
+html[data-theme="dark"] .arco-checkbox-label,
+html[data-theme="dark"] .arco-radio-label,
+html[data-theme="dark"] .arco-select-view-value,
+html[data-theme="dark"] .arco-select-option,
+html[data-theme="dark"] .arco-dropdown-menu-item { color: var(--ui-text); }
+html[data-theme="dark"] .arco-select-popup,
+html[data-theme="dark"] .arco-trigger-popup,
+html[data-theme="dark"] .arco-dropdown-menu,
+html[data-theme="dark"] .arco-picker-container,
+html[data-theme="dark"] .arco-popover-content { background: var(--ui-surface); color: var(--ui-text); border-color: var(--ui-border); }
+html[data-theme="dark"] .arco-select-option:hover,
+html[data-theme="dark"] .arco-dropdown-menu-item:hover { background: #2a303a; }
+html[data-theme="dark"] .arco-btn-secondary:not(.arco-btn-disabled):hover { background: #2a303a; border-color: #596477; }
+html[data-theme="dark"] .scene-actions .arco-btn-status-danger:not(.arco-btn-disabled):hover { background: #482b31; }
+html[data-theme="dark"] .page-loading div { background: var(--ui-subtle); }
+html[data-theme="dark"] .image-generation-modes button {
+  background: var(--ui-subtle) !important;
+  border-color: var(--ui-border) !important;
+  color: var(--ui-text) !important;
+}
+html[data-theme="dark"] .image-generation-modes button.active {
+  background: var(--ui-accent-soft) !important;
+  border-color: var(--ui-primary) !important;
+}
+html[data-theme="dark"] .prompt-editor textarea {
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+}
+html[data-theme="dark"] .setting-row label,
+html[data-theme="dark"] .cut-toolbar > span,
+html[data-theme="dark"] .project-card p,
+html[data-theme="dark"] .project-card small { color: var(--ui-secondary-text); }
+html[data-theme="dark"] .project-card.selected { outline-color: var(--ui-primary); }
+html[data-theme="dark"] .welcome-notes { color: var(--ui-secondary-text); }
+html[data-theme="dark"] .welcome-notes i { border-color: var(--ui-border); }
+html[data-theme="dark"] .arco-picker-cell-in-view .arco-picker-date,
+html[data-theme="dark"] .arco-picker-header-value { color: var(--ui-text); }
+/* Fix the concrete theme gaps called out in the page review. */
+html[data-theme="dark"] .nav .arco-menu-item:hover:not(.arco-menu-selected),
+html[data-theme="dark"] .nav .arco-menu-item:focus,
+html[data-theme="dark"] .nav .arco-menu-item:focus-visible {
+  background: #2a303a !important;
+  color: var(--ui-text) !important;
+}
+html[data-theme="dark"] .nav .arco-menu-selected,
+html[data-theme="dark"] .nav .arco-menu-selected:hover,
+html[data-theme="dark"] .nav .arco-menu-selected:focus {
+  background: #293653 !important;
+  color: #b6c8ff !important;
+}
+html[data-theme="dark"] .scene-row { border-color: var(--ui-border) !important; }
+html[data-theme="dark"] .arco-tag {
+  background: #303744 !important;
+  border-color: #485263 !important;
+  color: #d4dbe6 !important;
+}
+html[data-theme="dark"] .arco-tag-green {
+  background: #203b31 !important;
+  border-color: #315b49 !important;
+  color: #91ddb5 !important;
+}
+html[data-theme="dark"] .arco-tag-blue {
+  background: #253653 !important;
+  border-color: #3b5681 !important;
+  color: #a9c4ff !important;
+}
+html[data-theme="dark"] .arco-tag-red {
+  background: #482b31 !important;
+  border-color: #704047 !important;
+  color: #ffadb1 !important;
+}
+html[data-theme="dark"] .arco-tag-gray {
+  background: #303744 !important;
+  border-color: #485263 !important;
+  color: #c4ccd8 !important;
+}
+html[data-theme="dark"] .connection-help .arco-typography,
+html[data-theme="dark"] .connection-help p {
+  color: var(--ui-secondary-text) !important;
+}
+html[data-theme="dark"] .connection-help code {
+  background: #171a20 !important;
+  color: #c6d4ff !important;
+  border: 1px solid var(--ui-border);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+html[data-theme="dark"] .library-thumbnail .arco-tag {
+  background: rgba(23, 26, 32, .92) !important;
+  border-color: #596477 !important;
+  color: #f0f3f8 !important;
+}
+/* Disabled reorder controls (including their arrow icons) must not retain
+   Arco's white disabled surface in the dark theme. */
+html[data-theme="dark"] .arco-btn.arco-btn-disabled {
+  background: #292e38 !important;
+  border-color: #414958 !important;
+  color: #aab6c8 !important;
+  opacity: 1 !important;
+}
+html[data-theme="dark"] .arco-btn-primary.arco-btn-disabled {
+  background: #343d51 !important;
+  border-color: #414958 !important;
+  color: #aab6c8 !important;
+}
+/* Arco's card body can keep its own light fill even when the card root is dark. */
+html[data-theme="dark"] .content .arco-card {
+  background: var(--ui-surface) !important;
+  border-color: var(--ui-border) !important;
+  color: var(--ui-text);
+}
+html[data-theme="dark"] .content .arco-card-body,
+html[data-theme="dark"] .content .arco-card-header {
+  background: transparent !important;
+  color: var(--ui-text);
+  border-color: var(--ui-border) !important;
+}
+html[data-theme="dark"] .content .episode-card .arco-card-body {
+  background: var(--ui-surface) !important;
+}
+/* The workbench's cut editor uses its own .cut-row surface, not an Arco card. */
+html[data-theme="dark"] .cut-row {
+  background: var(--ui-surface) !important;
+  border-color: var(--ui-border) !important;
+  color: var(--ui-text);
+}
+html[data-theme="dark"] .cut-order,
+html[data-theme="dark"] .cut-order b,
+html[data-theme="dark"] .cut-copy > b {
+  color: var(--ui-text) !important;
+}
+html[data-theme="dark"] .cut-copy p {
+  color: var(--ui-secondary-text) !important;
+}

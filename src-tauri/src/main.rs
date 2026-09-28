@@ -1,1 +1,1 @@
-fn main() { manju_studio::run(); }
+fn main() { spielberg_studio::run(); }
