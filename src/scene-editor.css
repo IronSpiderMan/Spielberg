@@ -52,6 +52,34 @@
 .scene-results-empty b { font-size: 14px; font-weight: 500; color: var(--ui-secondary-text); }
 .scene-results-empty p { max-width: 230px; margin: 8px 0 0; font-size: 12px; line-height: 1.8; color: var(--ui-muted); }
 .scene-editor-page .video-version { flex: 0 0 auto; background: var(--ui-surface); border-color: var(--ui-border); }
+/* Keep long scene forms reachable on narrow screens. The desktop editor uses
+   an internal results scroller, while phones need the document to scroll. */
+@media (max-width: 850px) {
+  .app .content:has(.scene-editor-page) { overflow-x: hidden; overflow-y: auto; }
+  .content > .scene-editor-page { flex: 0 0 auto; min-height: 100%; }
+  .scene-editor-page .scene-editor-content { flex: 0 0 auto; }
+  .scene-editor-page .scene-composer { min-height: 0; overflow: visible; }
+  .scene-editor-page .scene-results { min-height: 0; overflow: visible; padding-right: 0; }
+  .scene-editor-page .generation-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .scene-editor-page .scene-video-action { flex-wrap: wrap; gap: 10px; }
+  .scene-editor-page .scene-video-action > .arco-btn { min-width: 0; max-width: 100%; }
+}
+@media (max-width: 600px) {
+  .content > .scene-editor-page { min-height: 0; }
+  .scene-editor-page .scene-editor-heading { align-items: stretch; margin-bottom: 16px; }
+  .scene-editor-heading-title { flex-wrap: wrap; gap: 8px; }
+  .scene-editor-page .scene-editor-heading > .arco-space { width: 100%; }
+  .scene-editor-page .scene-editor-heading > .arco-space .arco-btn { width: 100%; }
+  .scene-composer { padding: 14px; }
+  .scene-editor-page .scene-image-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 10px; }
+  .scene-editor-page .scene-image-field:last-child { grid-column: 1 / -1; }
+  .scene-editor-page .scene-image-actions { flex-wrap: wrap; }
+  .scene-editor-page .scene-image-actions .arco-btn { padding-inline: 5px; }
+  .scene-editor-page .generation-options { grid-template-columns: minmax(0, 1fr); }
+  .scene-editor-page .scene-results { grid-template-columns: minmax(0, 1fr); }
+  .scene-editor-page .scene-video-action { align-items: stretch; }
+  .scene-editor-page .scene-video-action > .arco-btn { width: 100%; }
+}
 @container (max-width: 900px) {
   .scene-editor-page .scene-editor-content { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .scene-editor-page .scene-results { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
