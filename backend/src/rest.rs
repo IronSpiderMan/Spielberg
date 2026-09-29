@@ -124,7 +124,12 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
             _=>Err(ApiError(StatusCode::METHOD_NOT_ALLOWED,"不支持的方法".into())),
         }
     } else {
-        let (pid,resource,id)=if parts.first()==Some(&"projects") && (3..=4).contains(&parts.len()) {
+        let (pid,resource,id)=if parts.first()==Some(&"projects") && parts.len()==5 && parts[2]=="episodes" && parts[4]=="scenes" {
+            let episode_id=parts[3].parse::<i64>().ok().filter(|n|*n>0).ok_or_else(||bad("剧集 ID 无效"))?;
+            if value.get("episode_id").is_some_and(|v|v.as_i64()!=Some(episode_id)) {return Err(bad("episode_id 与路径不一致"))}
+            value["episode_id"]=json!(episode_id);
+            (parts[1].to_string(),"scenes",None)
+        } else if parts.first()==Some(&"projects") && (3..=4).contains(&parts.len()) {
             (parts[1].to_string(),parts[2],parts.get(3).copied())
         } else if parts.len()<=2 {
             (strv(&value,"project_id")?,parts[0],parts.get(1).copied())

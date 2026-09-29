@@ -97,7 +97,8 @@ function App() {
     const ps = await api<Project[]>("/projects");
     if (version !== loadVersion.current) return;
     setProjects(ps);
-    const target = id || active?.id || ps[0]?.id;
+    const lastOpenedId = localStorage.getItem("spielberg-last-project");
+    const target = id || active?.id || (lastOpenedId && ps.some(project => project.id === lastOpenedId) ? lastOpenedId : undefined) || ps[0]?.id;
     if (target) {
       const s = await post<Snapshot>("/project", { id: target });
       if (version !== loadVersion.current) return;
@@ -110,11 +111,13 @@ function App() {
       setData(s);
       activeRef.current = s.project.id;
       setActive(s.project);
+      localStorage.setItem("spielberg-last-project", s.project.id);
     } else {
       snapshotRef.current=null;refreshSequence.current++;
       setData(null);
       activeRef.current = null;
       setActive(null);
+      localStorage.removeItem("spielberg-last-project");
     }
   };
   const refresh = useCallback(async () => {
