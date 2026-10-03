@@ -71,3 +71,9 @@
 .creation-asset-picker{grid-auto-rows:84px}
 .creation-reference-picker .creation-asset-option{display:block;width:100%;height:84px;min-height:84px;aspect-ratio:auto;align-self:start}
 .creation-reference-picker .creation-asset-option img{position:absolute;inset:0}
+.creation-asset-item{position:relative;min-width:0;height:84px}
+.creation-asset-zoom{position:absolute;z-index:1;right:5px;top:5px;display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:6px;background:#111827bf;color:#fff;cursor:zoom-in;opacity:0;transition:opacity .15s}
+.creation-asset-item:hover .creation-asset-zoom,.creation-asset-zoom:focus-visible{opacity:1}
+.creation-asset-zoom:focus-visible{outline:2px solid #fff;outline-offset:2px}
+@media(hover:none){.creation-asset-zoom{opacity:1}}
+.image-mode-tabs{margin-bottom:20px}.creation-desk .image-mode-tabs>.arco-tabs-content,.image-mode-tabs>.arco-tabs-content{display:none}

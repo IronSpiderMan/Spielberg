@@ -73,12 +73,13 @@ function App() {
   const [locate,setLocate]=useState<AssetUsage|null>(null);
   const activeRef = useRef<string | null>(null);
   const [page, setPage] = useState("studio");
-  const [studioTab, setStudioTab] = useState("script");
+  const [studioTab, setStudioTab] = useState("images");
   const [imageSource, setImageSource] = useState<Media | undefined>();
   const [sceneEditing, setSceneEditing] = useState<{
     scene: Scene;
     isNew: boolean;
   } | null>(null);
+  const [sceneImageFlow, setSceneImageFlow] = useState<{ key: "first" | "last"; media?: Media } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   useEffect(() => { contentRef.current?.scrollTo({top: 0}); }, [page, sceneEditing, active?.id]);
   const [creating, setCreating] = useState(false);
@@ -104,7 +105,7 @@ function App() {
       if (version !== loadVersion.current) return;
       if (activeRef.current !== s.project.id) {
         setSceneEditing(null);
-        setStudioTab("script");
+        setStudioTab("images");
         setPage("studio");
       }
       snapshotRef.current=s;refreshSequence.current++;setLocate(null);
@@ -233,7 +234,7 @@ function App() {
   });
   const navigate = (next: string) => {
     if (next === page && !sceneEditing) return;
-    leaveEditor(() => { setLocate(null);setImageSource(undefined);setSceneEditing(null); setPage(next); });
+    leaveEditor(() => { setLocate(null);setImageSource(undefined);setSceneEditing(null);setSceneImageFlow(null); setPage(next); });
   };
   return (
     <EditGuardContext.Provider value={registerDirty}>
@@ -296,7 +297,9 @@ function App() {
             <span className="crumb">{active?.name}</span>
             <span className="crumb-sep">/</span>
             <b>
-              {sceneEditing
+              {sceneImageFlow
+                ? "工作台 · 图片生成"
+                : sceneEditing
                 ? sceneEditing.isNew
                   ? "创建场景"
                   : "编辑场景"
@@ -338,17 +341,31 @@ function App() {
         <Layout.Content
           ref={contentRef}
           key={data.project.id}
-          className={sceneEditing ? "content scene-page-content" : "content"}
+          className={sceneEditing ? `content scene-page-content${sceneImageFlow ? " scene-image-workbench-content" : ""}` : "content"}
         >
           <Suspense fallback={<PageLoading/>}>
           {sceneEditing ? (
+            <>
+            <div className="scene-editor-host" hidden={!!sceneImageFlow}>
             <SceneEditor
               scene={sceneEditing.scene}
               isNew={sceneEditing.isNew}
               data={data}
               onClose={() => setSceneEditing(null)}
               reload={refresh}
+              onGenerateFrame={key => { if (key === "reference") return; setSceneImageFlow({ key }); setStudioTab("images"); }}
+              generatedFrame={sceneImageFlow?.media ? { key: sceneImageFlow.key, media: sceneImageFlow.media } : null}
+              onGeneratedApplied={() => setSceneImageFlow(null)}
             />
+            </div>
+            {sceneImageFlow && <div className="scene-image-workbench">
+              <div className="scene-editor-heading"><div className="scene-editor-heading-title"><Button type="text" onClick={() => setSceneImageFlow(null)}>← 返回场景编辑</Button><h1>工作台 · 图片生成</h1></div></div>
+              <CreationDesk data={data} reload={refresh} activeTab="images" onTabChange={setStudioTab} changePage={navigate} editScene={() => {}} renderSequence={() => null}
+                initialPrompt={sceneEditing.scene.script?.[sceneImageFlow.key] || sceneEditing.scene.description}
+                initialRatio={sceneEditing.scene.generation_options?.aspect_ratio || "16:9"}
+                onImageUse={media => { void refresh().then(() => setSceneImageFlow(current => current ? { ...current, media } : current)).catch(e => Message.error(String(e))); }} />
+            </div>}
+            </>
           ) : (
             <>
               {page === "studio" && (

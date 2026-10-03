@@ -14,6 +14,7 @@ export type Role = {
 };
 export type FrameKey = "first" | "last" | "reference";
 export type GenerationOptions = {
+  video_mode?: "fl2v" | "i2v";
   custom?: boolean;
   first: boolean;
   last: boolean;
@@ -21,6 +22,7 @@ export type GenerationOptions = {
   duration: number;
   aspect_ratio: string;
   size?: string;
+  reference_media_ids?: number[];
 };
 export const defaultOptions: GenerationOptions = {
   custom: false,
@@ -32,7 +34,7 @@ export const defaultOptions: GenerationOptions = {
   size: "1280x736",
 };
 export const GENERATION_SIZES = [
-  { ratio: "16:9", label: "16:9 横屏", sizes: ["832x480", "1024x576", "1280x736", "1920x1088"] },
+  { ratio: "16:9", label: "16:9 横屏", sizes: ["608x352", "736x416", "864x480", "960x544", "1056x608", "1152x640", "1216x672", "1280x736", "1344x768"] },
   { ratio: "9:16", label: "9:16 竖屏", sizes: ["480x832", "576x1024", "736x1280", "1088x1920"] },
   { ratio: "3:2", label: "3:2 横向照片", sizes: ["640x416", "960x640", "1536x1024", "1920x1280"] },
   { ratio: "2:3", label: "2:3 纵向照片", sizes: ["416x640", "640x960", "1024x1536", "1280x1920"] },

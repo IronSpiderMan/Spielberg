@@ -206,7 +206,7 @@ pub(crate) fn import_uploaded(state:&AppState,pid:&str,path:&Path,name:&str,role
 }
 
 pub(crate) fn action(state:&AppState,path:&str,value:Value)->ApiResult<Value>{
-    const ALLOWED:&[&str]=&["/project","/project/changes","/projects/open","/projects/backup","/projects/restore","/media/import","/media/export","/media/pose-reference","/media/thumbnail","/media/usage","/media/restore","/media/purge","/media/video-frame","/storage/scan","/storage/cleanup","/roles/media/add","/roles/media/delete","/scripts/load","/scripts/save","/scripts/publish","/tasks","/generations/image","/generations/video","/prompts/optimize","/scenes/reorder","/scenes/select-video","/scenes/delete-video","/episodes/merge","/settings"];
+    const ALLOWED:&[&str]=&["/project","/project/changes","/projects/open","/projects/backup","/projects/restore","/media/import","/media/export","/media/pose-reference","/media/thumbnail","/media/usage","/media/restore","/media/purge","/media/video-frame","/storage/scan","/storage/cleanup","/roles/media/add","/roles/media/delete","/scripts/load","/scripts/save","/scripts/publish","/tasks","/generations/image","/generations/video","/prompts/optimize","/scenes/reorder","/scenes/select-video","/scenes/delete-video","/episodes/reorder","/episodes/merge","/settings"];
     if !ALLOWED.contains(&path){return Err(missing())}
     Ok(dispatch(state,"POST".into(),path.into(),Some(value))?)
 }

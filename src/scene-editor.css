@@ -1,12 +1,16 @@
 /* Scene workspace: one continuous composer and a separate results column. */
-.app .content:has(.scene-editor-page) { display: flex; flex-direction: column; overflow: hidden; }
-.content > .scene-editor-page { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.app .content:has(.scene-editor-page):not(.scene-image-workbench-content) { display: flex; flex-direction: column; overflow: hidden; }
+.app .content.scene-image-workbench-content { display: block; overflow-x: hidden; overflow-y: auto; }
+.scene-editor-host { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.scene-editor-host[hidden] { display: none; }
+.scene-image-workbench { height: 100%; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.scene-editor-host > .scene-editor-page { display: flex; flex: 1; flex-direction: column; width: 100%; min-height: 0; }
 .scene-editor-page .scene-editor-heading { align-items: center; margin-bottom: 20px; }
 .scene-editor-heading-title { display: flex; align-items: center; gap: 18px; }
 .scene-editor-page .scene-editor-heading h1 { margin: 0; font-size: 22px; }
 .scene-editor-page .scene-editor-heading .arco-btn-text { padding: 0; color: var(--ui-muted); }
-.scene-editor-page .scene-editor-content { display: grid; flex: 1; min-height: 0; grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr); gap: 24px; align-items: stretch; }
-.scene-composer { min-width: 0; min-height: 0; overflow: visible; padding: 24px; background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: 12px; }
+.scene-editor-page .scene-editor-content { display: grid; flex: 1 1 auto; height: 0; min-height: 0; grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr); grid-template-rows: minmax(0, 1fr); gap: 24px; align-items: stretch; }
+.scene-composer { min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 24px; background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: 12px; }
 .scene-editor-page .scene-form-card { padding: 0; margin: 0; border: 0; background: transparent; }
 .scene-editor-page .scene-form-card .arco-form { display: block; }
 .scene-editor-page .scene-form-card .arco-form-item { margin-bottom: 20px; }
@@ -15,6 +19,8 @@
 .scene-editor-page .scene-description-label { display: flex; align-items: center; justify-content: space-between; min-height: 24px; }
 .scene-editor-page .scene-description-label .arco-btn { color: var(--ui-muted); padding: 0 2px; }
 .scene-editor-page .scene-form-card textarea { max-height: 120px; overflow-y: auto !important; background: var(--ui-surface); line-height: 1.7; padding: 10px 12px; }
+.scene-editor-page .scene-form-card .prompt-editor textarea { background: transparent; line-height: 1.8; color: transparent !important; -webkit-text-fill-color: transparent !important; }
+.scene-editor-page .scene-form-card .prompt-backdrop { color: var(--ui-text); }
 .scene-editor-page .scene-form-card .arco-textarea-wrapper { max-height: 120px; overflow-y: auto; border-color: var(--ui-border); }
 .scene-visuals { margin-top: 16px; }
 .scene-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
@@ -40,6 +46,16 @@
 .scene-editor-page .scene-video-panel { padding: 0; margin: 14px 0 0; border: 0; border-top: 1px solid var(--ui-border); border-radius: 0 !important; background: transparent; }
 .scene-editor-page .generation-inputs { padding: 14px 0; margin: 0; gap: 8px 16px; border: 0; min-height: 48px; }
 .scene-editor-page .generation-inputs .arco-checkbox { font-size: 12px; color: var(--ui-secondary-text); }
+.scene-multi-reference { padding: 14px 0 4px; margin-top: 14px; border-top: 1px solid var(--ui-border); }
+.scene-multi-reference .scene-section-heading { margin-bottom: 8px; }
+.scene-reference-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: min(100%, 456px); margin-top: 12px; }
+.scene-reference-grid[data-count="1"] { grid-template-columns: minmax(0, 144px); }
+.scene-reference-grid[data-count="2"], .scene-reference-grid[data-count="3"], .scene-reference-grid[data-count="4"] { grid-template-columns: repeat(2, minmax(0, 144px)); }
+.scene-reference-thumb { position: relative; min-width: 0; margin: 0; overflow: hidden; border: 1px solid var(--ui-border); border-radius: 7px; background: var(--ui-subtle); }
+.scene-reference-preview { display: block; width: 100%; aspect-ratio: 1; padding: 0; overflow: hidden; border: 0; background: transparent; cursor: zoom-in; }
+.scene-reference-preview img { width: 100%; height: 100%; object-fit: cover; }
+.scene-reference-remove { position: absolute; top: 5px; right: 5px; display: grid; place-items: center; width: 23px; height: 23px; padding: 0; border: 0; border-radius: 50%; background: rgb(20 25 33 / 72%); color: #fff; cursor: pointer; font-size: 17px; line-height: 1; }
+.scene-reference-thumb figcaption { overflow: hidden; padding: 4px 6px; color: var(--ui-secondary-text); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .scene-editor-page .generation-options { display: grid; grid-template-columns: .65fr 1fr 1fr; gap: 12px; }
 .scene-editor-page .generation-options .arco-form-item { margin-bottom: 0; }
 .scene-editor-page .scene-video-action { display: flex; flex-direction: row; justify-content: space-between; align-items: center; margin-top: 12px; }
@@ -55,9 +71,10 @@
 /* Keep long scene forms reachable on narrow screens. The desktop editor uses
    an internal results scroller, while phones need the document to scroll. */
 @media (max-width: 850px) {
-  .app .content:has(.scene-editor-page) { overflow-x: hidden; overflow-y: auto; }
-  .content > .scene-editor-page { flex: 0 0 auto; min-height: 100%; }
-  .scene-editor-page .scene-editor-content { flex: 0 0 auto; }
+  .scene-editor-host { flex: 0 0 auto; }
+  .app .content:has(.scene-editor-page):not(.scene-image-workbench-content) { overflow-x: hidden; overflow-y: auto; }
+  .scene-editor-host > .scene-editor-page { flex: 0 0 auto; height: auto; min-height: 100%; }
+  .scene-editor-page .scene-editor-content { flex: 0 0 auto; height: auto; grid-template-rows: auto; }
   .scene-editor-page .scene-composer { min-height: 0; overflow: visible; }
   .scene-editor-page .scene-results { min-height: 0; overflow: visible; padding-right: 0; }
   .scene-editor-page .generation-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -65,7 +82,7 @@
   .scene-editor-page .scene-video-action > .arco-btn { min-width: 0; max-width: 100%; }
 }
 @media (max-width: 600px) {
-  .content > .scene-editor-page { min-height: 0; }
+  .scene-editor-host > .scene-editor-page { min-height: 0; }
   .scene-editor-page .scene-editor-heading { align-items: stretch; margin-bottom: 16px; }
   .scene-editor-heading-title { flex-wrap: wrap; gap: 8px; }
   .scene-editor-page .scene-editor-heading > .arco-space { width: 100%; }

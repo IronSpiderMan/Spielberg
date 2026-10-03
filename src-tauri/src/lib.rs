@@ -10,7 +10,7 @@ pub fn run() {
             let bootstrap=format!("window.__SPIELBERG_API_URL__={};",serde_json::to_string(&api_url)?);
             app.manage(backend);
             tauri::WebviewWindowBuilder::new(app,"main",tauri::WebviewUrl::App("index.html".into()))
-                .title("Spielberg · AI 漫剧工作室")
+                .title("Spielberg")
                 .inner_size(1420.0,920.0).min_inner_size(1100.0,720.0)
                 .initialization_script(&bootstrap)
                 .build()?;

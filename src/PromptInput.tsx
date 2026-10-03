@@ -1,20 +1,20 @@
 import {useId,useRef,useState} from "react";
 import type {ReactNode} from "react";
-import {findMentions,mentionPattern,promptMentions,savedPromptMentions} from "./prompt-mentions";
+import {findMentions,mentionPattern,promptMentions,savedPromptMentions,templateMentions} from "./prompt-mentions";
 import type {SavedPrompt} from "./prompt-mentions";
 import type {Role,Snapshot} from "./core";
 
-export function PromptInput({value,onChange,roles,data,prompts=[],placeholder,disabled=false,onOptimize,optimizing=false}:{value:string;onChange:(value:string)=>void;roles:Role[];data?:Snapshot;prompts?:SavedPrompt[];placeholder?:string;disabled?:boolean;onOptimize?:()=>void;optimizing?:boolean}) {
+export function PromptInput({value,onChange,roles,data,prompts=[],templates=[],placeholder,disabled=false,onOptimize,optimizing=false}:{value:string;onChange:(value:string)=>void;roles:Role[];data?:Snapshot;prompts?:SavedPrompt[];templates?:{id:string|number;name:string;content:string}[];placeholder?:string;disabled?:boolean;onOptimize?:()=>void;optimizing?:boolean}) {
   const input=useRef<HTMLTextAreaElement>(null), backdrop=useRef<HTMLDivElement>(null);
   const [caret,setCaret]=useState(value.length),[focused,setFocused]=useState(false),[active,setActive]=useState(0),[dismissed,setDismissed]=useState(false);
   const listId=useId();
-  const items=[...promptMentions(roles,data),...savedPromptMentions(prompts)];
+  const items=[...promptMentions(roles,data),...savedPromptMentions(prompts),...templateMentions(templates)];
   const query=value.slice(0,caret).match(/@([^@\n]*)$/);
   const options=query ? items.filter(item=>item.name.toLowerCase().includes(query[1].toLowerCase())) : [];
   const show=focused&&!dismissed&&!!query&&options.length>0&&!disabled;
   const selected=Math.min(active,options.length-1);
   const parts:ReactNode[]=[];
-  const pattern=mentionPattern(items);
+  const pattern=mentionPattern(items.filter(item=>item.kind!=="template"));
   let offset=0;
   for(const match of pattern?value.matchAll(pattern):[]) {
     const start=match.index!;
@@ -26,6 +26,7 @@ export function PromptInput({value,onChange,roles,data,prompts=[],placeholder,di
   parts.push(value.slice(offset),"\n");
   const choose=(index:number)=>{
     if(!query||!options[index])return;
+    if(options[index].kind==="template") { const content=options[index].content||""; onChange(content); setCaret(content.length); setDismissed(true); requestAnimationFrame(()=>{input.current?.focus();input.current?.setSelectionRange(content.length,content.length);}); return; }
     const start=caret-query[0].length, token=`@${options[index].name} `;
     onChange(value.slice(0,start)+token+value.slice(caret));
     setDismissed(true);

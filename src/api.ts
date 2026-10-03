@@ -60,7 +60,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   const resource = parts[0] === "media" ? "assets" : parts[0];
   const operation = parts[1];
   if (resourceFields[resource] && (parts.length === 1 && method === "POST" || parts.length === 2 && ["update", "rename", "delete"].includes(operation))) {
-    if (resource === "scenes" && method === "POST") {
+    if (resource === "scenes" && !operation && method === "POST") {
       const { episode_id, ...scene } = fields(resource, data);
       if (!episode_id) throw new Error("创建场景需要 episode_id");
       return jsonRequest<T>(`${projectPath(data.project_id, `episodes/${encodeURIComponent(episode_id)}/scenes`)}`, "POST", scene);

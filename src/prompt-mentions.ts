@@ -1,7 +1,10 @@
 import type {Media, Role, Snapshot} from "./core";
 
 export type SavedPrompt = {id:number|string; name:string; content:string; category:string};
-export type PromptMention = {id:string; name:string; description:string; media?:Media; content?:string; kind:"role"|"scene"|"prompt"};
+export type PromptMention = {id:string; name:string; description:string; media?:Media; content?:string; kind:"role"|"scene"|"prompt"|"template"};
+export function templateMentions(templates:{id:string|number;name:string;content:string}[]):PromptMention[] {
+  return templates.map(template=>({id:`template-${template.id}`,name:`template.${template.name}`,description:`模板 · ${template.name}`,content:template.content,kind:"template"}));
+}
 export function savedPromptMentions(prompts:SavedPrompt[]):PromptMention[] {
   return prompts.map(prompt=>({
     id:`prompt-${prompt.id}`,
@@ -16,6 +19,10 @@ export function resolvePromptReferences(value:string,prompts:SavedPrompt[]) {
 }
 export function promptMentions(roles:Role[], data?:Snapshot):PromptMention[] {
   const result:PromptMention[]=roles.map(role=>({id:`role-${role.id}`,name:role.name,description:role.description || "保持角色设定",kind:"role",media:data?.media.find(m=>m.id===role.design_media_id)||role.images[0]}));
+  for(const role of roles) for(const media of role.images||[]) {
+    const stem=media.name.replace(/\.[^.]+$/,""), alias=stem.replace(/\s+/g,"_");
+    if(alias && alias!==role.name) result.push({id:`role-${role.id}-media-${media.id}`,name:`${role.name}.${alias}`,description:`${role.name} · ${media.name}`,kind:"role",media});
+  }
   for(const episode of data?.episodes || []) {
     const title=data!.episodes.filter(e=>e.title===episode.title).length>1 ? `${episode.title}#${episode.id}` : episode.title;
     [...episode.scenes].sort((a,b)=>a.sort_order-b.sort_order || a.id-b.id).forEach((scene,index)=>{

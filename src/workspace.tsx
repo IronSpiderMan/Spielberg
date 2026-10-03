@@ -12,17 +12,21 @@ Input,
 Message,
 Modal,
 Popconfirm,
+Pagination,
 Select,
 Space,
 Tag,
+Tabs,
 Typography
 } from "@arco-design/web-react";
 import { open,save as saveDialog } from "./platform";
 import {
 ArrowDown,
+ArrowLeft,
 ArrowUp,
 ChevronDown,
 ChevronRight,
+Pencil,
 Download,
 Film,
 ImagePlus,
@@ -41,44 +45,40 @@ ZoomIn
 import { api,defaultOptions,Episode,FrameKey,GenerationOptions,GENERATION_SIZES,imageUrl,Media,ModelSettings,post,Project,Role,Scene,Snapshot } from "./core";
 import { confirmDiscard,useEditGuard } from "./edit-guard";
 import { resolvePrompt } from "./resolve-prompt";
+import { PromptInput } from "./PromptInput";
 import { findMentions, promptMentions } from "./prompt-mentions";
 import { STYLE_PRESETS } from "./prompt-presets";
+import { PROMPT_TEMPLATES } from "./prompt-templates";
 const SequencePreview=lazy(()=>import("./creation").then(m=>({default:m.SequencePreview})));
 const ImageStudio=lazy(()=>import("./creation").then(m=>({default:m.ImageStudio})));
 
-function videoRequest(scene: Scene, settings: ModelSettings, roles: Role[]) {
+function videoRequest(scene: Scene, settings: ModelSettings, roles: Role[], prompts: Snapshot["prompts"] = []) {
   const options = scene.generation_options || defaultOptions;
-  const selected = options.custom
-    ? { first: options.first, last: options.last, reference: options.reference }
-    : {
-        first: Boolean(scene.first_media_id),
-        last: Boolean(scene.last_media_id),
-        reference: Boolean(scene.reference_media_id),
-      };
+  const mode = options.video_mode || ((options.reference_media_ids?.length || scene.reference_media_id) ? "i2v" : "fl2v");
   if (!scene.description.trim()) throw new Error(`${scene.title}：请填写描述`);
-  for (const key of ["first", "last", "reference"] as const) {
-    if (selected[key] && !scene[`${key}_media_id`])
-      throw new Error(
-        `${scene.title}：请选择${{ first: "首帧", last: "尾帧", reference: "参考图" }[key]}或取消勾选`,
-      );
-  }
-  const first = selected.first ? scene.first_media_id : null,
-    last = selected.last ? scene.last_media_id : null,
-    reference = selected.reference ? scene.reference_media_id : null;
-  const operation =
-    first && last ? "flf2v" : first || last || reference ? "i2v" : "t2v";
-  if (!(settings.video?.base_url || settings.video?.url || settings[operation]?.url || (operation === "flf2v" && settings.fl2v?.url)))
+  const first = mode === "fl2v" ? scene.first_media_id : null;
+  const last = mode === "fl2v" ? scene.last_media_id : null;
+  const imageIds = mode === "i2v"
+    ? [...new Set(options.reference_media_ids ?? (scene.reference_media_id ? [scene.reference_media_id] : []))]
+    : [];
+  if (mode === "fl2v" && !first) throw new Error(`${scene.title}：请选择首帧`);
+  if (mode === "i2v" && !imageIds.length) throw new Error(`${scene.title}：请至少选择一张参考图`);
+  if (imageIds.length > 9) throw new Error(`${scene.title}：全能参考最多支持 9 张图片`);
+  const operation = mode;
+  if (!(settings.video?.base_url || settings.video?.url || settings[operation]?.url))
     throw new Error("请先配置视频生成 Base URL");
   return {
     scene_id: scene.id,
-    prompt: resolvePrompt(scene.description, roles),
+    prompt: resolvePrompt(scene.description, roles, prompts),
     operation,
+    video_mode: mode,
     duration: options.duration,
     aspect_ratio: options.aspect_ratio,
     size: options.size,
     first_media_id: first,
     last_media_id: last,
-    image_media_id: reference || (first && last ? null : first || last),
+    image_media_ids: imageIds,
+    image_media_id: null,
   };
 }
 const sceneVideos = (scene: Scene) =>
@@ -160,20 +160,9 @@ export function Studio({
       setMerging(false);
     }
   };
+  if (editing) return <EpisodeEditor episode={editing} project={data.project} data={data} onClose={() => setEditing(null)} reload={reload}/>;
   return (
     <section className="studio">
-      <div className="page-heading">
-        <div>
-          <h2>剧集编排</h2>
-          <p>为每个场景选一个版本，串起你的故事。</p>
-        </div>
-        <Button
-          icon={<Plus size={16} />}
-          onClick={() => changePage("episodes")}
-        >
-          管理场景
-        </Button>
-      </div>
       <div className="cut-toolbar">
         <Select
           disabled={merging}
@@ -208,6 +197,7 @@ export function Studio({
           合并并播放
         </Button>
       </div>
+      <div className="cut-workspace">
       <div className="cut-preview">
         {merged ? (
           <video
@@ -221,6 +211,7 @@ export function Studio({
           <SequencePreview scenes={scenes} />
         )}
       </div>
+      <div className="cut-arrangement">
       <div className="timeline-head">
         <div>
           <h2>场景编排</h2>
@@ -250,7 +241,6 @@ export function Studio({
           </Button>
         )}
       </div>
-      <div className="sequence-flow" hidden={!scenes.length}>{scenes.map((s,i) => <React.Fragment key={s.id}><span className={s.video_media_id ? "ready" : ""}>{`场景 ${String(i+1).padStart(2,"0")}`}<small>{s.title}</small></span><ChevronRight size={18}/></React.Fragment>)}<span className="sequence-result">成片<small>编排结果</small></span></div>
       <div className="cut-list">
         {scenes.map((scene, index) => (
           <div className="cut-row" key={scene.id}>
@@ -309,6 +299,8 @@ export function Studio({
           </div>
         ))}
         {!scenes.length && <Empty description="请在剧集页面添加场景" />}
+      </div>
+      </div>
       </div>
       <EpisodeEditor
         episode={editing}
@@ -414,9 +406,10 @@ export function Tasks() {
     {!jobs.length&&!loading&&!error&&<Empty description={filter==="all"?"暂无后台任务":"暂无符合此状态的任务"}/>}</section>;
 }
 function SceneThumb({ scene, onPreview }: { scene: Scene; onPreview?: () => void }) {
+  const thumbnail = scene.first_media || scene.last_media || scene.reference_media;
   const content = <>
-    {scene.first_media ? (
-      <img src={imageUrl(scene.first_media)} alt="" />
+    {thumbnail ? (
+      <img src={imageUrl(thumbnail)} alt="" />
     ) : (
       <Film size={20} />
     )}
@@ -461,12 +454,16 @@ export function Episodes({
   const [batchResult, setBatchResult] = useState<Media | null>(null);
   const [progress, setProgress] = useState("");
   const [running, setRunning] = useState(false);
+  const [reorderingEpisodes,setReorderingEpisodes]=useState(false);
+  const moveEpisode=async(index:number,offset:number)=>{const ids=data.episodes.map(item=>item.id);[ids[index],ids[index+offset]]=[ids[index+offset],ids[index]];setReorderingEpisodes(true);try{await post("/episodes/reorder",{project_id:data.project.id,episode_ids:ids});reload();}catch(e){Message.error(String(e));}finally{setReorderingEpisodes(false);}};
   const [failures, setFailures] = useState<string[]>([]);
   const [previewSceneId, setPreviewSceneId] = useState<number | null>(null);
   const [previewVideoId, setPreviewVideoId] = useState<number | null>(null);
+  const [continuousPreview, setContinuousPreview] = useState(false);
   const previewScene = data.episodes.flatMap((item) => item.scenes).find((scene) => scene.id === previewSceneId);
   const previewVideos = previewScene ? sceneVideos(previewScene) : [];
   const previewVideo = previewVideos.find((video) => video.id === previewVideoId) || previewVideos[0];
+  const previewPlaylist = previewScene ? [...(data.episodes.find(item => item.scenes.some(scene => scene.id === previewScene.id))?.scenes || [])].sort((a,b)=>a.sort_order-b.sort_order || a.id-b.id).filter(scene=>sceneVideos(scene).length) : [];
   const openScenePreview = (scene: Scene) => {
     const videos = sceneVideos(scene);
     if (!videos.length) return;
@@ -483,7 +480,7 @@ export function Episodes({
     let requests: ReturnType<typeof videoRequest>[];
     try {
       requests = batch.scenes.map((scene) =>
-        videoRequest(scene, data.settings, data.roles),
+        videoRequest(scene, data.settings, data.roles, data.prompts),
       );
     } catch (e) {
       Message.error(String(e));
@@ -542,6 +539,7 @@ export function Episodes({
     editScene(x, true);
     } finally { setInserting(null); }
   };
+  if (episode) return <EpisodeEditor episode={episode} project={data.project} data={data} onClose={() => setEpisode(null)} reload={reload}/>;
   return (
     <section>
       <div className="section-title">
@@ -570,6 +568,7 @@ export function Episodes({
                   <h3>{ep.title}</h3>
                   <p>{ep.description || "点击编辑剧集简介"}</p>
                 </div>
+                <Space size={2}><Button size="mini" aria-label="上移剧集" title="上移剧集" disabled={reorderingEpisodes||n===0} icon={<ArrowUp size={14}/>} onClick={()=>void moveEpisode(n,-1)}/><Button size="mini" aria-label="下移剧集" title="下移剧集" disabled={reorderingEpisodes||n===data.episodes.length-1} icon={<ArrowDown size={14}/>} onClick={()=>void moveEpisode(n,1)}/></Space>
                 <Button type="text" aria-expanded={!collapsed.has(ep.id)} icon={collapsed.has(ep.id) ? <ChevronRight size={16}/> : <ChevronDown size={16}/>} onClick={() => setCollapsed(current => {const next = new Set(current); next.has(ep.id) ? next.delete(ep.id) : next.add(ep.id); return next;})}>{ep.scenes.length} 个场景</Button>
                 <Button
                   type="primary"
@@ -706,8 +705,14 @@ export function Episodes({
             {previewVideos.length > 1 && <Select aria-label="选择视频版本" value={previewVideo.id} onChange={setPreviewVideoId}>
               {previewVideos.map((video, index) => <Select.Option key={video.id} value={video.id}>版本 {index + 1}{video.id === previewScene?.video_media_id ? " · 当前采用" : ""}</Select.Option>)}
             </Select>}
+            <Button size="small" type={continuousPreview ? "primary" : "secondary"} onClick={()=>setContinuousPreview(value=>!value)} disabled={previewPlaylist.length<2}>{continuousPreview ? "连续播放中" : "连续播放"}</Button>
           </div>
-          <video key={previewVideo.id} className="scene-video-preview" controls autoPlay preload="metadata" src={imageUrl(previewVideo)} onError={() => Message.error("视频无法播放，请检查文件或更换版本")} />
+          <video key={`${previewScene?.id}-${previewVideo.id}`} className="scene-video-preview" controls autoPlay preload="metadata" src={imageUrl(previewVideo)} onEnded={()=>{
+            if(!continuousPreview || !previewScene)return;
+            const index=previewPlaylist.findIndex(scene=>scene.id===previewScene.id), next=previewPlaylist[index+1];
+            if(next){setPreviewSceneId(next.id);const videos=sceneVideos(next);setPreviewVideoId(next.video_media_id || videos[0].id);}
+            else setContinuousPreview(false);
+          }} onError={() => Message.error("视频无法播放，请检查文件或更换版本")} />
         </>}
       </Modal>
       <EpisodeEditor
@@ -788,80 +793,89 @@ function EpisodeEditor({
   reload: () => void;
 }) {
   const [cover, setCover] = useState<Media | undefined>(episode?.cover_media);
-  const [coverPrompt, setCoverPrompt] = useState("");
-  const [generating, setGenerating] = useState(false);
   const uploadCover = async () => {
     const path = await open({multiple:false, filters:[{name:"图片",extensions:["png","jpg","jpeg","webp"]}]});
     if (typeof path === "string") setCover(await post<Media>("/media/import",{project_id:project.id,source_path:path}));
-  };
-  const generateCover = async () => {
-    if (!coverPrompt.trim()) { Message.warning("请输入封面画面描述"); return; }
-    setGenerating(true);
-    try {setCover(await post<Media>("/generations/image",{project_id:project.id,operation:"t2i",prompt:coverPrompt,aspect_ratio:"16:9"}));}
-    catch(e) {Message.error(String(e));} finally {setGenerating(false);}
   };
   const [title, setTitle] = useState(episode?.title || "");
   const [description, setDescription] = useState(episode?.description || "");
   useEffect(() => {
     setCover(episode?.cover_media);
-    setCoverPrompt(episode?.description || "");
     setTitle(episode?.title || "");
     setDescription(episode?.description || "");
   }, [episode]);
+  const [saving, setSaving] = useState(false);
+  const dirty = title !== (episode?.title || "") || description !== (episode?.description || "") || cover?.id !== episode?.cover_media?.id;
+  useEditGuard(dirty || saving);
+  const close = () => {
+    if (saving) return;
+    if (dirty) confirmDiscard(onClose);
+    else onClose();
+  };
+  const save = async () => {
+    if (saving || !episode) return;
+    if (!title.trim()) { Message.warning("请输入剧集标题"); return; }
+    setSaving(true);
+    try {
+      await post("/episodes/update", {project_id: project.id, id: episode.id, cover_media_id: cover?.id || null, title: title.trim(), description});
+      await reload();
+      Message.success("剧集已保存");
+      onClose();
+    } catch (error) { Message.error(String(error)); }
+    finally { setSaving(false); }
+  };
+  const currentEpisode = data.episodes.find(ep => ep.id === episode?.id);
   return (
-    <Modal
-      title="编辑剧集"
-      className="episode-editor-modal"
-      style={{ width: 640, maxWidth: "calc(100vw - 32px)" }}
-      visible={!!episode}
-      onCancel={onClose}
-      okText="保存"
-      okButtonProps={{disabled: generating}}
-      onOk={() =>
-        post("/episodes/update", {
-          project_id: project.id,
-          id: episode?.id,
-          cover_media_id: cover?.id || null,
-          title,
-          description,
-        })
-          .then(reload)
-          .then(onClose)
-          .catch(e => Message.error(String(e)))
-      }
-    >
+    <section className="episode-editor-page">
+      <div className="section-title">
+        <div><Button icon={<ArrowLeft size={16}/>} disabled={saving} onClick={close}>返回</Button><h1>编辑剧集</h1><p>{episode?.title} · 管理剧集信息、封面与场景顺序。</p></div>
+        <Space><Button disabled={saving} onClick={close}>取消</Button><Button type="primary" icon={<Save size={16}/>} loading={saving} onClick={save}>保存剧集</Button></Space>
+      </div>
+      <div className="episode-editor-columns">
+      <Card className="episode-editor-card episode-details-pane">
+      <fieldset disabled={saving} className="episode-editor-fields">
       <Form layout="vertical">
         <Form.Item label="剧集封面" extra="默认使用第一个场景的第一个视频画面">
           <div className="episode-cover-controls">
             {episode && <EpisodeCover episode={{...episode, scenes: data.episodes.find(ep => ep.id === episode.id)?.scenes, cover_media:cover}} />}
             <div className="episode-cover-actions">
-              <Button disabled={generating} onClick={() => uploadCover().catch(e => Message.error(String(e)))}>上传封面</Button>
-              <SceneFramePicker data={data} reload={reload} onSelect={setCover} disabled={generating}/>
-              <Button disabled={generating} onClick={() => setCover(undefined)}>恢复默认</Button>
+              <Button onClick={() => uploadCover().catch(e => Message.error(String(e)))}>上传封面</Button>
+              <SceneFramePicker data={data} reload={reload} onSelect={setCover}/>
+              <Button onClick={() => setCover(undefined)}>恢复默认</Button>
             </div>
-          </div>
-        </Form.Item>
-        <Form.Item label="封面画面描述">
-          <div className="episode-cover-generator">
-            <Input.TextArea value={coverPrompt} onChange={setCoverPrompt} autoSize={{ minRows: 2, maxRows: 4 }} placeholder="描述想生成的封面画面" />
-            <Button loading={generating} disabled={!coverPrompt.trim()} onClick={generateCover} icon={<Sparkles size={14}/>}>文生图生成封面</Button>
           </div>
         </Form.Item>
         <Form.Item label="剧集标题">
           <Input value={title} onChange={setTitle} />
         </Form.Item>
         <Form.Item label="剧集简介">
-          <Input.TextArea value={description} onChange={setDescription} />
-        </Form.Item>
-        <Form.Item label="场景顺序" extra="调整后立即保存，并同步到工作台">
-          {(data.episodes.find(ep => ep.id === episode?.id)?.scenes || []).map((scene, index) => <div className="episode-order-row" key={scene.id}><span>{index + 1}. {scene.title}</span><SceneOrderControls episode={data.episodes.find(ep => ep.id === episode?.id)!} index={index} project={project} reload={reload}/></div>)}
-          {!data.episodes.find(ep => ep.id === episode?.id)?.scenes.length && <span className="subtle">暂无场景</span>}
+          <Input.TextArea value={description} onChange={setDescription} rows={10} placeholder="填写剧集简介" />
         </Form.Item>
       </Form>
-    </Modal>
+      </fieldset>
+      </Card>
+      <Card className="episode-editor-card episode-scenes-pane">
+        <h2>场景顺序 <span className="subtle">{currentEpisode?.scenes.length || 0} 个场景</span></h2>
+        <p className="subtle">调整后立即保存，并同步到工作台</p>
+        <fieldset disabled={saving} className="episode-editor-fields">
+          {currentEpisode?.scenes.map((scene, index) => {
+            const video = scene.video_media || sceneVideos(scene).find(media => media.id === scene.video_media_id) || sceneVideos(scene)[0];
+            return <div className="episode-scene-order-item" key={scene.id}>
+              <div className="episode-scene-order-heading"><b>{String(index + 1).padStart(2, "0")} · {scene.title}</b><SceneOrderControls episode={currentEpisode} index={index} project={project} reload={reload}/></div>
+              <div className="episode-scene-order-preview">
+                {video ? <video src={imageUrl(video)} controls preload="metadata" aria-label={`${scene.title}视频预览`}/> : <SceneThumb scene={scene}/>}
+              </div>
+              {scene.description && <p className="episode-scene-order-description">{scene.description}</p>}
+            </div>;
+          })}
+          {!currentEpisode?.scenes.length && <Empty description="暂无场景"/>}
+        </fieldset>
+      </Card>
+      </div>
+    </section>
   );
 }
-function AssetImagePicker({ visible, label, value, data, onSelect, onClose, busy = false }: {
+function AssetImagePicker({ visible, label, value, data, onSelect, onClose, busy = false, multiple = false, selectedIds = [], onToggle }: {
   visible: boolean;
   label: string;
   value: number | null;
@@ -869,6 +883,9 @@ function AssetImagePicker({ visible, label, value, data, onSelect, onClose, busy
   onSelect: (id: number) => void;
   onClose: () => void;
   busy?: boolean;
+  multiple?: boolean;
+  selectedIds?: number[];
+  onToggle?: (id: number) => void;
 }) {
   const [assetQuery, setAssetQuery] = useState("");
   const [assetPreview, setAssetPreview] = useState<Media | null>(null);
@@ -887,7 +904,7 @@ function AssetImagePicker({ visible, label, value, data, onSelect, onClose, busy
         className="asset-picker-modal"
         title={`为${label}从资产库选择图片`}
         visible={visible}
-        footer={null}
+        footer={multiple ? <Button type="primary" onClick={onClose}>完成选择</Button> : null}
         onCancel={onClose}
         closable={!busy}
         maskClosable={!busy}
@@ -904,14 +921,15 @@ function AssetImagePicker({ visible, label, value, data, onSelect, onClose, busy
             {libraryImages.map((media) => (
               <div
                 key={media.id}
-                className={value === media.id ? "media-option selected" : "media-option"}
+                className={(multiple ? selectedIds.includes(media.id) : value === media.id) ? "media-option selected" : "media-option"}
               >
                 <button
                   type="button"
                   className="media-option-select"
                   disabled={busy}
                   onClick={() => {
-                    onSelect(media.id);
+                    if (multiple) onToggle?.(media.id);
+                    else onSelect(media.id);
                   }}
                   aria-label={`选择资产 ${media.name}`}
                 >
@@ -1165,12 +1183,18 @@ export function SceneEditor({
   data,
   onClose,
   reload,
+  onGenerateFrame,
+  generatedFrame,
+  onGeneratedApplied,
 }: {
   scene: Scene;
   isNew: boolean;
   data: Snapshot;
   onClose: () => void;
   reload: () => void;
+  onGenerateFrame?: (key: FrameKey) => void;
+  generatedFrame?: { key: FrameKey; media: Media } | null;
+  onGeneratedApplied?: () => void;
 }) {
   const [title, setTitle] = useState(scene.title || "");
   const [description, setDescription] = useState(scene.description || "");
@@ -1180,7 +1204,10 @@ export function SceneEditor({
     reference: scene.reference_media_id || null,
   });
   const [options, setOptions] = useState<GenerationOptions>(
-    { ...defaultOptions, ...scene.generation_options },
+    { ...defaultOptions, ...scene.generation_options,
+      video_mode: scene.generation_options?.video_mode || ((scene.generation_options?.reference_media_ids?.length || scene.reference_media_id) ? "i2v" : "fl2v"),
+      reference_media_ids: scene.generation_options?.reference_media_ids ?? (scene.reference_media_id ? [scene.reference_media_id] : []),
+    },
   );
   const [ratio, setRatio] = useState(
     (scene.generation_options || defaultOptions).aspect_ratio,
@@ -1193,7 +1220,19 @@ export function SceneEditor({
   const [savingScene, setSavingScene] = useState(false);
   const [videoGenerating, setVideoGenerating] = useState(false);
   const [optimizingPrompt,setOptimizingPrompt]=useState(false);
+  const [optimizationInstruction,setOptimizationInstruction]=useState("");
+  const [optimizationInstructionOpen,setOptimizationInstructionOpen]=useState(false);
   const [persistedVideoGenerating, setPersistedVideoGenerating] = useState(false);
+  const [videoAssets, setVideoAssets] = useState<Media[]>([]);
+  const [videoAssetPage, setVideoAssetPage] = useState(1);
+  const [videoAssetTotal, setVideoAssetTotal] = useState(0);
+  const [videoAssetPickerOpen, setVideoAssetPickerOpen] = useState(false);
+  const [selectedVideoAsset, setSelectedVideoAsset] = useState<number | undefined>();
+  const [multiReferencePickerOpen, setMultiReferencePickerOpen] = useState(false);
+  const [referenceRolePickerOpen, setReferenceRolePickerOpen] = useState(false);
+  const [referenceSourcesOpen, setReferenceSourcesOpen] = useState(false);
+  const [referencePreview, setReferencePreview] = useState<Media | null>(null);
+  const [attachingVideo, setAttachingVideo] = useState(false);
   const hadPersistedVideoJob = useRef(false);
   useEffect(() => {
     let disposed = false;
@@ -1243,6 +1282,14 @@ export function SceneEditor({
     choose(key, media.id);
     await reload();
   };
+  const addReferenceImages = async () => {
+    const selected = await open({ multiple: true, filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp"] }] });
+    if (!selected) return;
+    const paths = typeof selected === "string" ? [selected] : selected;
+    const imported = await Promise.all(paths.slice(0, Math.max(0, 9 - (options.reference_media_ids || []).length)).map(source => post<Media>("/media/import", { project_id: data.project.id, source_path: source })));
+    setOptions(o => ({ ...o, reference_media_ids: [...new Set([...(o.reference_media_ids || []), ...imported.map(m => m.id)])].slice(0, 9) }));
+    await reload();
+  };
   const toggleRef = (media: Media) =>
     setImageRefs((current) =>
       current.some((x) => x.id === media.id)
@@ -1271,12 +1318,19 @@ export function SceneEditor({
     await reload();
   };
   const openImageGenerator = (key: FrameKey) => {
+    if (onGenerateFrame) { onGenerateFrame(key); return; }
     setImageTarget(key);
     const prompt = scene.script?.[key] || description;
     setImagePrompt(prompt);
     setImageMode("t2i");
     setImageRefs(findMentions(prompt, promptMentions(data.roles, data)).flatMap(mention => mention.media ? [mention.media] : []));
   };
+  useEffect(() => {
+    if (!generatedFrame) return;
+    choose(generatedFrame.key, generatedFrame.media.id);
+    Message.success(`${generatedFrame.key === "first" ? "首帧" : "尾帧"}图片已设置，保存场景后生效`);
+    onGeneratedApplied?.();
+  }, [generatedFrame]);
   const generateImage = async () => {
     if (!imageTarget || !imagePrompt.trim()) return;
     if (imageMode === "i2i" && !imageRefs.length) {
@@ -1320,7 +1374,7 @@ export function SceneEditor({
   };
   const generateVideo = async () => {
     try {
-      const request = videoRequest(draft(), data.settings, data.roles);
+      const request = videoRequest(draft(), data.settings, data.roles, data.prompts);
       setVideoGenerating(true);
       await persist();
       await post<Media>("/generations/video", {
@@ -1335,7 +1389,49 @@ export function SceneEditor({
       setVideoGenerating(false);
     }
   };
-  const optimizeVideoPrompt=async()=>{if(optimizingPrompt||!description.trim())return;setOptimizingPrompt(true);try{const frameIds=[currentScene.first_media_id,currentScene.last_media_id,currentScene.reference_media_id].filter((id):id is number=>Boolean(id));const result=await post<{prompt:string}>("/prompts/optimize",{project_id:data.project.id,prompt:description,kind:"video",image_media_ids:frameIds});setDescription(result.prompt);Message.success("Prompt 已优化");}catch(e){Message.error(String(e));}finally{setOptimizingPrompt(false);}};
+  const openVideoAssetPicker = async () => {
+    try {
+      const result = await post<{items: Media[];total:number}>('/media/list', {project_id:data.project.id,kind:'video',page:1,limit:60});
+      setVideoAssets(result.items);
+      setVideoAssetPage(1);
+      setVideoAssetTotal(result.total);
+      setSelectedVideoAsset(undefined);
+      setVideoAssetPickerOpen(true);
+    } catch (e) { Message.error(String(e)); }
+  };
+  const loadVideoAssetPage = async (page:number) => {
+    try {
+      const result = await post<{items: Media[];total:number}>('/media/list', {project_id:data.project.id,kind:'video',page,limit:60});
+      setVideoAssets(result.items);
+      setVideoAssetPage(page);
+      setVideoAssetTotal(result.total);
+      setSelectedVideoAsset(undefined);
+    } catch (e) { Message.error(String(e)); }
+  };
+  const attachVideo = async (media: Media) => {
+    if (attachingVideo) return;
+    setAttachingVideo(true);
+    try {
+      await post('/scenes/select-video', {project_id:data.project.id,scene_id:scene.id,media_id:media.id});
+      await reload();
+      setVideoAssetPickerOpen(false);
+      Message.success('视频已关联到场景');
+    } catch (e) { Message.error(String(e)); }
+    finally { setAttachingVideo(false); }
+  };
+  const uploadSceneVideo = async () => {
+    const source = await open({multiple:false,filters:[{name:'视频',extensions:['mp4','mov','webm','mkv']}]});
+    if (typeof source !== 'string') return;
+    setAttachingVideo(true);
+    try {
+      const media = await post<Media>('/media/import',{project_id:data.project.id,source_path:source});
+      await post('/scenes/select-video',{project_id:data.project.id,scene_id:scene.id,media_id:media.id});
+      await reload();
+      Message.success('视频已上传并关联到场景');
+    } catch (e) { Message.error(String(e)); }
+    finally { setAttachingVideo(false); }
+  };
+  const optimizeVideoPrompt=async()=>{if(optimizingPrompt||!description.trim())return;setOptimizingPrompt(true);try{const frameIds=options.video_mode==="i2v"?(options.reference_media_ids||[]):[frames.first,frames.last].filter((id):id is number=>Boolean(id));const result=await post<{prompt:string}>("/prompts/optimize",{project_id:data.project.id,prompt:description,kind:"video",instruction:optimizationInstruction,image_media_ids:frameIds});setDescription(result.prompt);Message.success("Prompt 已优化");}catch(e){Message.error(String(e));}finally{setOptimizingPrompt(false);}};
   const optimizeImagePrompt=async()=>{if(optimizingPrompt||!imagePrompt.trim())return;setOptimizingPrompt(true);try{const result=await post<{prompt:string}>("/prompts/optimize",{project_id:data.project.id,prompt:imagePrompt,kind:"image",image_media_ids:imageMode==="i2i"?imageRefs.map(media=>media.id):[]});setImagePrompt(result.prompt);Message.success("Prompt 已优化");}catch(e){Message.error(String(e));}finally{setOptimizingPrompt(false);}};
   const save = async () => {
     if (savingScene) return;
@@ -1372,25 +1468,23 @@ export function SceneEditor({
               <Form.Item label="场景标题">
                 <Input value={title} onChange={setTitle} />
               </Form.Item>
-              <Form.Item label={<span className="scene-description-label"><span>场景描述</span><Button type="text" size="mini" icon={<WandSparkles size={14}/>} disabled={videoGenerating||optimizingPrompt||!description.trim()} onClick={optimizeVideoPrompt}>{optimizingPrompt?"正在优化…":"优化描述"}</Button></span>}>
-                <Input.TextArea
-                  value={description}
-                  onChange={setDescription}
-                  disabled={optimizingPrompt}
-                  autoSize={{ minRows: 3, maxRows: 4 }}
-                  placeholder="描述镜头、人物动作、台词与画面情绪…"
-                />
+              <Form.Item label={<span className="scene-description-label"><span>场景描述</span><Space size={2}><Button type="text" size="mini" onClick={()=>setOptimizationInstructionOpen(true)}>优化指令</Button><Button type="text" size="mini" icon={<WandSparkles size={14}/>} disabled={videoGenerating||optimizingPrompt||!description.trim()} onClick={optimizeVideoPrompt}>{optimizingPrompt?"正在优化…":"优化描述"}</Button></Space></span>}>
+                <PromptInput value={description} onChange={setDescription} roles={data.roles} data={data} prompts={data.prompts} templates={[...PROMPT_TEMPLATES,...data.prompts]} disabled={optimizingPrompt} placeholder="描述镜头、人物动作、台词与画面情绪… 输入 @template 选择模板，或引用角色、场景素材与 Prompt" />
               </Form.Item>
+              <Modal title="自定义提示词优化指令" visible={optimizationInstructionOpen} onCancel={()=>setOptimizationInstructionOpen(false)} onOk={()=>setOptimizationInstructionOpen(false)} okText="完成">
+                <Input.TextArea value={optimizationInstruction} onChange={setOptimizationInstruction} autoSize={{minRows:3,maxRows:7}} placeholder="留空使用默认优化规则；填写后作为额外优化要求。" />
+              </Modal>
             </Form>
           </div>
           <div className="scene-visuals">
-          <div className="scene-section-heading"><h2>画面素材</h2><span>可选 · 不添加图片时使用文字生成</span></div>
+          <div className="scene-section-heading"><h2>画面素材</h2><span>{options.video_mode === "i2v" ? "最多 9 张参考图" : "上传首帧，可选尾帧"}</span></div>
+          <Tabs activeTab={options.video_mode} onChange={key => { setOptions(o => ({...o, video_mode: key as "fl2v" | "i2v"})); setReferenceSourcesOpen(false); }}>
+          <Tabs.TabPane key="fl2v" title="首尾帧">
           <div className="scene-image-grid">
             {(
               [
                 ["first", "首帧"],
                 ["last", "尾帧"],
-                ["reference", "参考图"],
               ] as const
             ).map(([key, label]) => (
               <SceneImageField
@@ -1409,35 +1503,33 @@ export function SceneEditor({
               />
             ))}
           </div>
+          </Tabs.TabPane>
+          <Tabs.TabPane key="i2v" title="全能参考">
+          <div className="scene-multi-reference">
+            <div className="scene-section-heading"><h2>多张参考图</h2><span>最多 9 张 · 可从资产库选择或上传</span></div>
+            <Space wrap>
+              <Dropdown trigger="click" popupVisible={referenceSourcesOpen} onVisibleChange={setReferenceSourcesOpen} unmountOnExit={false}
+                droplist={<div className="scene-source-menu" onClick={() => setReferenceSourcesOpen(false)}>
+                  <Button type="text" icon={<ImagePlus size={15}/>} onClick={() => setMultiReferencePickerOpen(true)}>从资产库选择</Button>
+                  <Button type="text" icon={<Users size={15}/>} onClick={() => setReferenceRolePickerOpen(true)}>从角色中选择</Button>
+                  <SceneFramePicker data={data} reload={reload} onSelect={media => setOptions(o => ({...o, reference_media_ids: [...new Set([...(o.reference_media_ids || []), media.id])].slice(0, 9)}))}/>
+                  <Button type="text" icon={<Upload size={15}/>} onClick={() => void addReferenceImages().catch(e => Message.error(String(e)))}>上传图片</Button>
+                </div>}>
+                <Button size="small">添加参考图<ChevronDown size={13}/></Button>
+              </Dropdown>
+              {(options.reference_media_ids || []).length > 0 && <div className="scene-reference-grid" data-count={(options.reference_media_ids || []).length}>
+                {(options.reference_media_ids || []).map(id => { const media=data.media.find(m=>m.id===id); return media ? <figure className="scene-reference-thumb" key={id}>
+                  <button type="button" className="scene-reference-preview" onClick={() => setReferencePreview(media)} aria-label={`预览参考图 ${media.name}`}><img src={imageUrl(media)} alt={media.name}/></button>
+                  <button type="button" className="scene-reference-remove" onClick={() => setOptions(o=>({...o,reference_media_ids:(o.reference_media_ids||[]).filter(x=>x!==id)}))} aria-label={`移除参考图 ${media.name}`} title="移除">×</button>
+                  <figcaption title={media.name}>{media.name}</figcaption>
+                </figure> : null; })}
+              </div>}
+            </Space>
+          </div>
+          </Tabs.TabPane>
+          </Tabs>
           </div>
             <div className="video-generator scene-video-panel">
-              <div className="generation-inputs">
-                <Checkbox
-                  checked={Boolean(options.custom)}
-                  onChange={(checked) =>
-                    setOptions((o) => ({ ...o, custom: checked }))
-                  }
-                >
-                  自定义使用的图片
-                </Checkbox>
-                {options.custom && (
-                  [
-                    ["first", "首帧"],
-                    ["last", "尾帧"],
-                    ["reference", "参考图"],
-                  ] as const
-                ).map(([key, label]) => (
-                  <Checkbox
-                    key={key}
-                    checked={options[key]}
-                    onChange={(checked) =>
-                      setOptions((o) => ({ ...o, [key]: checked }))
-                    }
-                  >
-                    {label}
-                  </Checkbox>
-                ))}
-              </div>
               <Form layout="vertical">
                 <div className="generation-options">
                   <Form.Item label="时长">
@@ -1447,7 +1539,7 @@ export function SceneEditor({
                         setOptions((o) => ({ ...o, duration }))
                       }
                     >
-                      {[3, 5, 8, 10, 15].map((x) => (
+                      {Array.from({length: 13}, (_, i) => i + 3).map((x) => (
                         <Select.Option key={x} value={x}>
                           {x} 秒
                         </Select.Option>
@@ -1464,15 +1556,11 @@ export function SceneEditor({
               </Form>
               <div className="scene-video-action">
                 <span className="subtle">
-                {(options.custom ? options.first : Boolean(frames.first)) &&
-                (options.custom ? options.last : Boolean(frames.last))
-                  ? "首尾帧生成"
-                  : (options.custom ? options.first : Boolean(frames.first)) ||
-                      (options.custom ? options.last : Boolean(frames.last)) ||
-                      (options.custom ? options.reference : Boolean(frames.reference))
-                    ? "图片生成"
-                    : "文字生成"}
+                {options.video_mode === "i2v" ? "全能参考生成" : "首尾帧生成"}
                 </span>
+              <Space wrap>
+              <Button icon={<Film size={15}/>} disabled={attachingVideo||videoGenerating||persistedVideoGenerating} onClick={()=>void openVideoAssetPicker()}>从资产库选择</Button>
+              <Button icon={<Upload size={15}/>} loading={attachingVideo} disabled={videoGenerating||persistedVideoGenerating} onClick={()=>void uploadSceneVideo()}>上传视频</Button>
               <Button
                 type="primary"
                 icon={<Sparkles size={17} />}
@@ -1482,6 +1570,7 @@ export function SceneEditor({
               >
                 {persistedVideoGenerating ? "后台生成中" : "生成新视频"}
               </Button>
+              </Space>
               </div>
             </div>
         </div>
@@ -1514,6 +1603,51 @@ export function SceneEditor({
               )}
             </aside>
       </div>
+      <AssetImagePicker
+        visible={multiReferencePickerOpen}
+        label="多张参考图"
+        value={null}
+        data={data}
+        multiple
+        selectedIds={options.reference_media_ids || []}
+        onSelect={() => {}}
+        onToggle={id => setOptions(o => {
+          const ids = o.reference_media_ids || [];
+          if (ids.includes(id)) return { ...o, reference_media_ids: ids.filter(x => x !== id) };
+          if (ids.length >= 9) { Message.warning("最多选择 9 张参考图"); return o; }
+          return { ...o, reference_media_ids: [...ids, id] };
+        })}
+        onClose={() => setMultiReferencePickerOpen(false)}
+      />
+      <Modal title="从角色中选择参考图" visible={referenceRolePickerOpen} footer={<Button type="primary" onClick={() => setReferenceRolePickerOpen(false)}>完成</Button>} onCancel={() => setReferenceRolePickerOpen(false)}>
+        <div className="role-image-groups">
+          {data.roles.map(role => <div key={role.id}><b>{role.name}</b><div className="media-picker">
+            {role.images.map(media => <button type="button" key={media.id} className={`media-option${(options.reference_media_ids || []).includes(media.id) ? " selected" : ""}`} onClick={() => setOptions(o => {
+              const ids = o.reference_media_ids || [];
+              if (ids.includes(media.id)) return {...o, reference_media_ids: ids.filter(id => id !== media.id)};
+              if (ids.length >= 9) { Message.warning("最多选择 9 张参考图"); return o; }
+              return {...o, reference_media_ids: [...ids, media.id]};
+            })}><img src={imageUrl(media)} alt=""/><span>{media.name}</span></button>)}
+          </div></div>)}
+          {!data.roles.some(role => role.images.length) && <Empty description="角色中还没有图片"/>}
+        </div>
+      </Modal>
+      <Modal className="image-preview-modal" title={referencePreview?.name || "参考图预览"} visible={!!referencePreview} footer={null} onCancel={() => setReferencePreview(null)}>
+        <div className="image-preview-full">{referencePreview && <img src={imageUrl(referencePreview)} alt={referencePreview.name}/>}</div>
+      </Modal>
+      <Modal
+        title="选择视频资产"
+        visible={videoAssetPickerOpen}
+        onCancel={()=>setVideoAssetPickerOpen(false)}
+        onOk={()=>{const media=videoAssets.find(item=>item.id===selectedVideoAsset);if(media)void attachVideo(media);}}
+        confirmLoading={attachingVideo}
+        okButtonProps={{disabled:selectedVideoAsset===undefined}}
+        okText="关联到场景"
+      >
+        {videoAssets.length ? <><Select showSearch placeholder="搜索并选择视频" value={selectedVideoAsset} onChange={setSelectedVideoAsset} style={{width:'100%'}}>
+          {videoAssets.map(media=><Select.Option key={media.id} value={media.id}>{media.name}</Select.Option>)}
+        </Select>{videoAssetTotal>60&&<Pagination sizeCanChange={false} size="small" current={videoAssetPage} total={videoAssetTotal} pageSize={60} onChange={page=>void loadVideoAssetPage(page)} style={{marginTop:16,textAlign:'right'}}/>}</> : <Empty description="资产库中还没有视频"/>}
+      </Modal>
       <Modal
         title={`生成${imageTarget === "first" ? "首帧" : imageTarget === "last" ? "尾帧" : "参考图"}`}
         visible={!!imageTarget}
@@ -1762,12 +1896,15 @@ function RoleEditor({
   const [savingRole, setSavingRole] = useState(false);
   const [assetsOpen, setAssetsOpen] = useState(false);
   const [importingAsset, setImportingAsset] = useState(false);
+  const [renamingImage, setRenamingImage] = useState<{id:number;name:string}|null>(null);
+  const [imagePreview, setImagePreview] = useState<Media | null>(null);
   const currentRole = data.roles.find((x) => x.id === role?.id) || role;
   useEffect(() => {
     setName(role?.name || "");
     setDescription(role?.description || "");
     setDesign(role?.design_media_id || null);
     setAssetsOpen(false);
+    setImagePreview(null);
   }, [role]);
   const upload = async () => {
     const source = await open({
@@ -1806,9 +1943,19 @@ function RoleEditor({
       role_id: role.id,
       media_id: id,
     });
-    if (design === id) setDesign(null);
+    if (design === id) setDesign(currentRole?.images.find((image) => image.id !== id)?.id ?? null);
+    if (imagePreview?.id === id) setImagePreview(null);
     await reload();
     Message.success("角色图片已删除");
+  };
+  const renameImage = async () => {
+    if (!renamingImage || !renamingImage.name.trim()) return Message.warning("请输入图片名称");
+    try {
+      await post("/media/rename", { project_id:data.project.id, id:renamingImage.id, name:renamingImage.name.trim() });
+      await reload();
+      setRenamingImage(null);
+      Message.success("角色图片名称已更新，可用 @角色.图片名 引用");
+    } catch(error) { Message.error(String(error)); }
   };
   const generateRoleImage = async (operation: "t2i" | "i2i") => {
     if (!role || generating) return;
@@ -1866,7 +2013,7 @@ function RoleEditor({
         </Form.Item>
         <Form.Item
           label="角色设计图"
-          extra="一个角色可以关联多张图片。点击图片或“设为主图”选择主图，再点底部“保存角色”生效。"
+          extra="一个角色可以关联多张图片。点击图片放大预览，点击“设为主图”选择主图，再点底部“保存角色”生效。"
         >
           <Space direction="vertical" style={{ width: "100%" }}>
             <Space wrap>
@@ -1894,30 +2041,37 @@ function RoleEditor({
                   <div
                     key={m.id}
                     className={design === m.id ? "media-option selected" : "media-option"}
-                    onClick={() => setDesign(m.id)}
-                    aria-label={`${m.name}${design === m.id ? "，当前主图" : ""}`}
+                    onClick={() => setImagePreview(m)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setImagePreview(m); } }}
+                    aria-label={`放大预览 ${m.name}${design === m.id ? "，当前主图" : ""}`}
                   >
                     <img src={imageUrl(m)} alt={m.name} />
                     <span>{design === m.id ? "主图 · " : ""}{m.name}</span>
+                    <button type="button" className="role-image-rename" aria-label={`编辑图片名称 ${m.name}`} title="编辑图片名称" onClick={(e) => { e.stopPropagation(); setRenamingImage({id:m.id,name:m.name}); }}><Pencil size={12}/></button>
                     {design !== m.id && <button type="button" className="role-image-primary" onClick={(e) => { e.stopPropagation(); setDesign(m.id); }}>设为主图</button>}
+                    <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                     <Popconfirm
                       title="从该角色中删除这张图片？"
                       onOk={() => removeImage(m.id).catch((e) => Message.error(String(e)))}
                     >
                       <button
                         type="button"
-                        className="media-delete"
+                        className="role-image-delete"
                         aria-label={`删除 ${m.name}`}
+                        title="从角色中删除图片"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <Trash2 size={13} />
+                        <Trash2 size={13} /> 删除
                       </button>
                     </Popconfirm>
+                    </div>
                   </div>
                 ))}
               </div> : <p className="subtle role-image-empty">还没有关联图片。可从资产库添加多张，或导入本地图片。</p>}
             </div>
-          </Space>
+      </Space>
         </Form.Item>
         <Form.Item label="生成方式">
           <Space>
@@ -1940,6 +2094,14 @@ function RoleEditor({
         onSelect={importAsset}
         onClose={() => { if (!importingAsset) setAssetsOpen(false); }}
       />
+      <Modal visible={!!renamingImage} title="编辑角色图片名称" okText="保存名称" onCancel={() => setRenamingImage(null)} onOk={renameImage}>
+        <Form layout="vertical"><Form.Item label="图片名称" extra="图生图时可用 @角色.图片名称 引用这张图片。">
+          <Input autoFocus value={renamingImage?.name || ""} onChange={name => setRenamingImage(current => current ? {...current,name} : null)} onPressEnter={renameImage}/>
+        </Form.Item></Form>
+      </Modal>
+      <Modal className="image-preview-modal" title={imagePreview?.name || "角色图预览"} visible={!!imagePreview} footer={null} onCancel={() => setImagePreview(null)}>
+        {imagePreview && <div className="image-preview-full"><img src={imageUrl(imagePreview)} alt={imagePreview.name} /></div>}
+      </Modal>
     </Drawer>
   );
 }
@@ -2067,7 +2229,6 @@ export function SettingsPage({
 }) {
   const [settings, setSettings] = useState<ModelSettings>({
     ...data.settings,
-    flf2v: data.settings.flf2v || data.settings.fl2v,
   });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -2077,7 +2238,6 @@ export function SettingsPage({
       if (dirty) return;
       setSettings({
         ...data.settings,
-        flf2v: data.settings.flf2v || data.settings.fl2v,
       });
     },
     [data.settings, dirty],
@@ -2169,7 +2329,7 @@ export function SettingsPage({
           （i2i），并将画面比例映射为官方支持的尺寸。视频 Base URL 会按生成方式补全接口路径。Prompt 优化使用 OpenAI 格式的{" "}
           <code>/chat/completions</code>。CAST 图片接口也会按生成方式补全路径。{" "}
           <code>
-            POST /v1/generations/{"{"}t2i | i2i | t2v | i2v | flf2v{"}"}
+            POST /v1/generations/{"{"}t2i | i2i | t2v | i2v | fl2v{"}"}
           </code>{" "}
           格式。
         </Typography.Paragraph>

@@ -50,6 +50,58 @@
   height: 116px;
 }
 
+.role-image-library .role-image-rename {
+  position: absolute;
+  top: 5px;
+  right: 69px;
+  z-index: 2;
+  display: grid;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  place-items: center;
+  color: #fff;
+  background: rgba(35, 29, 26, 0.78);
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.role-image-library .media-option:hover .role-image-rename,
+.role-image-library .role-image-rename:focus-visible {
+  opacity: 1;
+}
+
+.role-image-library .role-image-rename:hover {
+  background: #9b563f;
+}
+
+.role-image-library .role-image-delete {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 25px;
+  padding: 0 6px;
+  color: #fff;
+  background: rgba(156, 42, 35, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.role-image-library .role-image-delete:hover,
+.role-image-library .role-image-delete:focus-visible {
+  background: #c94f45;
+}
+
 .role-image-library .media-picker {
   max-height: 360px;
   overflow-y: auto;
