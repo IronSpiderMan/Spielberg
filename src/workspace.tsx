@@ -859,13 +859,29 @@ function EpisodeEditor({
         <p className="subtle">调整后立即保存，并同步到工作台</p>
         <fieldset disabled={saving} className="episode-editor-fields">
           {currentEpisode?.scenes.map((scene, index) => {
-            const video = scene.video_media || sceneVideos(scene).find(media => media.id === scene.video_media_id) || sceneVideos(scene)[0];
+            const options = scene.generation_options;
+            const mode = options?.video_mode || ((options?.reference_media_ids?.length || scene.reference_media_id) ? "i2v" : "fl2v");
+            const images = mode === "i2v"
+              ? [...new Set(options?.reference_media_ids ?? (scene.reference_media_id ? [scene.reference_media_id] : []))].map((id, i) => ({
+                label: `参考图 ${i + 1}`,
+                media: data.media.find(media => media.id === id) || (scene.reference_media?.id === id ? scene.reference_media : undefined),
+              }))
+              : [
+                {label: "首帧", media: scene.first_media || data.media.find(media => media.id === scene.first_media_id)},
+                {label: "尾帧", media: scene.last_media || data.media.find(media => media.id === scene.last_media_id)},
+              ];
             return <div className="episode-scene-order-item" key={scene.id}>
               <div className="episode-scene-order-heading"><b>{String(index + 1).padStart(2, "0")} · {scene.title}</b><SceneOrderControls episode={currentEpisode} index={index} project={project} reload={reload}/></div>
-              <div className="episode-scene-order-preview">
-                {video ? <video src={imageUrl(video)} controls preload="metadata" aria-label={`${scene.title}视频预览`}/> : <SceneThumb scene={scene}/>}
+              <div className="episode-scene-order-images">
+                {images.map(({label, media}) => <figure key={label}>
+                  <div className="episode-scene-order-preview">
+                    {media ? <img src={imageUrl(media)} alt={`${scene.title} · ${label}`} loading="lazy"/> : <span className="subtle">未设置{label}</span>}
+                  </div>
+                  <figcaption>{label}</figcaption>
+                </figure>)}
+                {!images.length && <p className="subtle">未设置参考图</p>}
               </div>
-              {scene.description && <p className="episode-scene-order-description">{scene.description}</p>}
+              <div className="episode-scene-order-prompt"><b>Prompt</b><p className="episode-scene-order-description">{scene.description || "未填写 Prompt"}</p></div>
             </div>;
           })}
           {!currentEpisode?.scenes.length && <Empty description="暂无场景"/>}

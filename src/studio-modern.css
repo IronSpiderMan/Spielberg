@@ -792,11 +792,15 @@ html, body, #root { width:100%; height:100%; min-height:0; overflow:hidden; over
 .episode-scene-order-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .episode-scene-order-heading b { min-width: 0; overflow-wrap: anywhere; }
 .episode-scene-order-heading > .arco-space { flex-shrink: 0; }
-.episode-scene-order-preview { aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; background: var(--ui-subtle); }
-.episode-scene-order-preview video, .episode-scene-order-preview .scene-thumb { display: block; width: 100%; height: 100%; object-fit: contain; }
-.episode-scene-order-preview .scene-thumb { display: grid; place-items: center; }
-.episode-scene-order-preview .scene-thumb img { width: 100%; height: 100%; object-fit: contain; }
-.episode-scene-order-description { color: var(--ui-muted); margin: 12px 0 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; overflow-wrap: anywhere; }
+.episode-scene-order-images { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.episode-scene-order-images figure { min-width: 0; margin: 0; }
+.episode-scene-order-images figure:only-child { grid-column: 1 / -1; }
+.episode-scene-order-images figcaption { margin-top: 6px; color: var(--ui-muted); font-size: 12px; }
+.episode-scene-order-preview { display: grid; place-items: center; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; background: var(--ui-subtle); }
+.episode-scene-order-preview img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.episode-scene-order-prompt { margin-top: 12px; }
+.episode-scene-order-prompt > b { font-size: 12px; }
+.episode-scene-order-description { color: var(--ui-muted); margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 900px) {
   .episode-editor-columns { grid-template-columns: minmax(0, 1fr) minmax(240px, .85fr); gap: 12px; }
   .episode-editor-columns > .episode-editor-card > .arco-card-body { padding: 16px; }
