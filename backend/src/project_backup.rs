@@ -174,7 +174,7 @@ pub fn restore(source:&Path,destination:&Path)->Result<String,String>{
 pub fn command(s:&AppState,v:&Value,restore_backup:bool)->Result<Value,String> {
     if restore_backup {
         let id=Uuid::new_v4().to_string();
-        let destination=s.root.join("projects").join(&id);
+        let destination=app_settings::projects_directory(s)?.join(&id);
         let name=restore(Path::new(&strv(v,"path")?),&destination)?;
         let p=json!({"id":id,"name":format!("{name} · 恢复"),"path":destination,"updated_at":"刚刚"});
         let mut all=registry(s)?;all.push(p.clone());save_registry(s,&all)?;
@@ -230,4 +230,52 @@ mod tests {
         let target=base.join("restore");assert!(restore(&extracted,&target).is_err());assert!(!target.exists());
         drop(c);fs::remove_dir_all(base).unwrap();
     }
+}
+
+// Publish the new registry path only after a complete, validated copy exists.
+pub(crate) fn relocate(s:&AppState,v:&Value)->Result<Value,String> {
+    let id=strv(v,"id")?;
+    let mut items=registry(s)?;
+    let index=items.iter().position(|p|p["id"]==id).ok_or("项目不存在")?;
+    let source=PathBuf::from(strv(&items[index],"path")?).canonicalize().map_err(|e|e.to_string())?;
+    let parent=PathBuf::from(strv(v,"path")?).canonicalize().map_err(|e|e.to_string())?;
+    if !parent.is_dir() || parent.starts_with(&source) {return Err("请选择项目目录之外的目标文件夹".into())}
+    let destination=parent.join(&id);
+    if destination.exists(){return Err("目标文件夹中已存在同名项目目录".into())}
+    let staging=parent.join(format!(".spielberg-transfer-{}",Uuid::new_v4()));
+    let result=(||{
+        let c=db(s,&id)?;
+        export(&c,&source,&staging,items[index]["name"].as_str().unwrap_or("项目"),true)?;
+        restore(&staging,&destination)?;
+        items[index]["path"]=json!(destination);
+        items[index]["updated_at"]=json!("刚刚");
+        if let Err(e)=save_registry(s,&items){let _=fs::remove_dir_all(&destination);return Err(e)}
+        Ok(items[index].clone())
+    })();
+    let _=fs::remove_file(staging);
+    result
+}
+
+#[cfg(test)]
+mod relocation_tests {
+ use super::*;
+ #[test]
+ fn relocation_preserves_identity_and_source_and_rejects_overwrite() {
+  let base=std::env::temp_dir().join(Uuid::new_v4().to_string());
+  let state=AppState{root:base.join("registry"),guard:std::sync::Arc::new(Mutex::new(()))};
+  fs::create_dir_all(&state.root).unwrap();
+  let p=create_project(&state,&json!({"name":"Story"})).unwrap();
+  let source=PathBuf::from(p["path"].as_str().unwrap());
+  let file=source.join("assets/test.png");fs::write(&file,b"asset").unwrap();
+  let c=db(&state,p["id"].as_str().unwrap()).unwrap();
+  c.execute("INSERT INTO media(name,path,kind,created_at) VALUES('image',?,'image','1')",[file.to_string_lossy().as_ref()]).unwrap();drop(c);
+  let target=base.join("target");fs::create_dir(&target).unwrap();
+  let request=json!({"id":p["id"],"path":target});
+  let moved=relocate(&state,&request).unwrap();assert_eq!(moved["id"],p["id"]);assert_eq!(moved["name"],p["name"]);
+  assert!(file.exists());
+  let c=db(&state,p["id"].as_str().unwrap()).unwrap();
+  let path:String=c.query_row("SELECT path FROM media",[],|r|r.get(0)).unwrap();
+  assert!(Path::new(&path).starts_with(target.canonicalize().unwrap()));assert_eq!(fs::read(path).unwrap(),b"asset");
+  assert!(relocate(&state,&request).is_err());drop(c);fs::remove_dir_all(base).unwrap();
+ }
 }

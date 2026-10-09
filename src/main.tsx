@@ -21,6 +21,8 @@ FolderOpen,
 ImagePlus,
 LayoutDashboard,
 Moon,
+PanelLeftClose,
+PanelLeftOpen,
 Plus,
 Settings,
 Sun,
@@ -60,6 +62,10 @@ const Prompts=lazy(()=>import("./workspace").then(m=>({default:m.Prompts})));
 const SettingsPage=lazy(()=>import("./workspace").then(m=>({default:m.SettingsPage})));
 
 function App() {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("spielberg-sidebar-collapsed") === "true");
+  useEffect(() => {
+    localStorage.setItem("spielberg-sidebar-collapsed", String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("spielberg-theme") === "dark");
   useEffect(() => {
     document.documentElement.dataset.theme = darkMode ? "dark" : "light";
@@ -99,7 +105,7 @@ function App() {
     if (version !== loadVersion.current) return;
     setProjects(ps);
     const lastOpenedId = localStorage.getItem("spielberg-last-project");
-    const target = id || active?.id || (lastOpenedId && ps.some(project => project.id === lastOpenedId) ? lastOpenedId : undefined) || ps[0]?.id;
+    const target = id || (ps.some(p=>p.id===active?.id) ? active?.id : undefined) || (lastOpenedId && ps.some(project => project.id === lastOpenedId) ? lastOpenedId : undefined) || ps[0]?.id;
     if (target) {
       const s = await post<Snapshot>("/project", { id: target });
       if (version !== loadVersion.current) return;
@@ -239,7 +245,7 @@ function App() {
   return (
     <EditGuardContext.Provider value={registerDirty}>
     <Layout className={`app${darkMode ? " dark-theme" : ""}`}>
-      <Layout.Sider className="side" width={238}>
+      <Layout.Sider className={`side${sidebarCollapsed ? " side-collapsed" : ""}`} width={216}>
         <div className="logo">
           <img className="logo-mark" src={logoSrc} alt="Spielberg" />
           <div>
@@ -247,7 +253,7 @@ function App() {
             <small>AI COMIC STUDIO</small>
           </div>
         </div>
-        <button type="button" title="切换项目" className="project-switch" onClick={() => navigate("projects")}>
+        <button type="button" title={`切换项目：${active?.name}`} aria-label={`切换项目：${active?.name}`} className="project-switch" onClick={() => navigate("projects")}>
           <span className="project-dot" />
           <div>
             <small>当前项目</small>
@@ -282,18 +288,27 @@ function App() {
             type="text"
             long
             data-active={page === "settings"}
-            title="模型与接口"
-            aria-label="模型与接口"
+            title="设置"
+            aria-label="设置"
             icon={<Settings size={18} />}
             onClick={() => navigate("settings")}
           >
-            <span>模型与接口</span>
+            <span>设置</span>
           </Button>
         </div>
       </Layout.Sider>
       <Layout className="app-main">
         <Layout.Header className="topbar">
           <div>
+            <Button
+              type="text"
+              className="sidebar-toggle"
+              title={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
+              aria-label={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
+              aria-expanded={!sidebarCollapsed}
+              icon={sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+              onClick={() => setSidebarCollapsed(value => !value)}
+            />
             <span className="crumb">{active?.name}</span>
             <span className="crumb-sep">/</span>
             <b>
@@ -311,7 +326,7 @@ function App() {
                       roles: "角色设定",
                       prompts: "Prompt 库",
                       tasks: "后台任务",
-                      settings: "模型与接口",
+                      settings: "设置",
                       projects: "项目",
                     } as Record<string, string>
                   )[page]}
@@ -359,7 +374,7 @@ function App() {
             />
             </div>
             {sceneImageFlow && <div className="scene-image-workbench">
-              <div className="scene-editor-heading"><div className="scene-editor-heading-title"><Button type="text" onClick={() => setSceneImageFlow(null)}>← 返回场景编辑</Button><h1>工作台 · 图片生成</h1></div></div>
+              <div className="scene-editor-heading"><div className="scene-editor-heading-title"><Button type="text" onClick={() => setSceneImageFlow(null)}>← 返回场景编辑</Button></div></div>
               <CreationDesk data={data} reload={refresh} activeTab="images" onTabChange={setStudioTab} changePage={navigate} editScene={() => {}} renderSequence={() => null}
                 initialPrompt={sceneEditing.scene.script?.[sceneImageFlow.key] || sceneEditing.scene.description}
                 initialRatio={sceneEditing.scene.generation_options?.aspect_ratio || "16:9"}
@@ -394,7 +409,7 @@ function App() {
                 />
               )}{" "}
               {page === "assets" && <AssetLibrary key={data.project.id} data={data} reload={refresh} onLocate={locateAsset} onImageToImage={media=>leaveEditor(()=>{setLocate(null);setImageSource(media);setStudioTab("images");setSceneEditing(null);setPage("studio");})} />}
-              {page === "tasks" && <Tasks />}
+              {page === "tasks" && <Tasks key={data.project.id} projectId={data.project.id} />}
               {page === "roles" && <Roles data={data} reload={refresh} initialRoleId={locate?.kind==="role"?locate.target_id:undefined} />}{" "}
               {page === "prompts" && (
                 <Prompts data={data} reload={refresh} />
@@ -406,6 +421,7 @@ function App() {
                 <ProjectPage
                   projects={projects}
                   active={active}
+                  changed={async () => { await load(); setPage("projects"); }}
                   select={(id) => { void load(id).catch(e => Message.error(String(e))); }}
                 />
               )}
@@ -468,13 +484,36 @@ function ProjectPage({
   projects,
   active,
   select,
+  changed,
 }: {
+  changed: () => Promise<void>;
   projects: Project[];
   active: Project | null;
   select: (id: string) => void;
 }) {
+  const [editing,setEditing]=useState<Project|null>(null);
+  const [name,setName]=useState("");
+  const [pending,setPending]=useState(false);
+  const run=async(action:()=>Promise<unknown>)=>{
+    setPending(true);
+    try {await action(); await changed(); Message.success("项目已更新");}
+    catch(e){Message.error(String(e)); throw e;}
+    finally{setPending(false);}
+  };
+  const relocate=async(p:Project)=>{
+    try {
+      const path=await open({directory:true,title:"选择迁移目标文件夹"});
+      if(typeof path!=="string")return;
+      Modal.confirm({title:`迁移「${p.name}」`,content:`将数据库和素材复制到 ${path}，完成后使用新位置。原目录保留，可在确认后自行清理。`,okText:"迁移",onOk:()=>run(()=>post("/projects/migrate",{id:p.id,path}))});
+    }catch(e){Message.error(String(e));}
+  };
   return (
     <section>
+      <Modal title="重命名项目" visible={!!editing} confirmLoading={pending} maskClosable={!pending}
+        onCancel={()=>!pending&&setEditing(null)} okText="保存"
+        onOk={async()=>{if(!name.trim()){Message.warning("请输入项目名称");return;}await run(()=>post("/projects/update",{id:editing!.id,name:name.trim()}));setEditing(null);}}>
+        <Input autoFocus value={name} onChange={setName} maxLength={100} placeholder="项目名称" disabled={pending}/>
+      </Modal>
       <PageHeading title="最近项目" description="每个故事拥有独立的剧集、角色与素材空间。" />
       <div className="project-grid">
         {projects.map((p) => (
@@ -498,6 +537,16 @@ function ProjectPage({
             <h3>{p.name}</h3>
             <p>{p.path}</p>
             <small>最近更新 {p.updated_at}</small>
+            <div style={{marginTop:16}} onClick={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}>
+              <Space size="mini">
+                <Button size="small" disabled={pending} onClick={()=>{setEditing(p);setName(p.name);}}>重命名</Button>
+                <Button size="small" disabled={pending} onClick={()=>void relocate(p)}>迁移</Button>
+                <Button size="small" status="danger" disabled={pending} onClick={()=>Modal.confirm({
+                  title:`删除「${p.name}」？`,content:"将从最近项目列表移除，本地项目文件保留，之后可通过「打开项目」重新添加。",okText:"删除",okButtonProps:{status:"danger"},
+                  onOk:()=>run(()=>post("/projects/delete",{id:p.id})),
+                })}>删除</Button>
+              </Space>
+            </div>
           </Card>
         ))}
       </div>

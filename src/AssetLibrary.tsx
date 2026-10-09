@@ -1,4 +1,5 @@
-import { Button,Drawer,Dropdown,Empty,Form,Input,Menu,Message,Modal,Pagination,Select,Space,Spin,Tag } from "@arco-design/web-react";
+import { AssetAssignmentModal } from "./components/AssetAssignmentModal";
+import { Button,Drawer,Dropdown,Empty,Input,Menu,Message,Modal,Pagination,Select,Space,Spin,Tag } from "@arco-design/web-react";
 import { open,save } from "./platform";
 import { HardDrive,MoreHorizontal,Plus,RotateCcw,WandSparkles } from "lucide-react";
 import { useEffect,useRef,useState } from "react";
@@ -55,33 +56,7 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
     return()=>{disposed=true;};
   },[tracking,pid,data.revisions?.roles,data.revisions?.episodes]);
   const [assignment,setAssignment]=useState<Media|null>(null);
-  const [usage,setUsage]=useState("role");
-  const [target,setTarget]=useState<number|undefined>();
-  const [assigning,setAssigning]=useState(false);
-  const usages=[{value:"role",label:"角色图"},{value:"first",label:"场景首帧"},{value:"last",label:"场景尾帧"},{value:"reference",label:"场景参考图"}];
-  const scenes=data.episodes.flatMap(episode=>episode.scenes.map(scene=>({scene,label:`${episode.title} / ${scene.title}`})));
-  const beginAssignment=(media:Media)=>{setPreview(null);setAssignment(media);setUsage(media.kind==="video"?"video":"role");setTarget(undefined);};
-  const assign=async()=>{
-    if(!assignment || target===undefined || assigning)return;
-    setAssigning(true);
-    try {
-      const project_id=data.project.id;
-      if(usage==="role") {
-        const role=data.roles.find(r=>r.id===target);
-        if(!role)throw new Error("请选择有效的角色");
-        await post("/roles/media/add",{project_id,role_id:role.id,media_id:assignment.id});
-        await post("/roles/update",{project_id,id:role.id,name:role.name,description:role.description,design_media_id:assignment.id});
-      } else {
-        const scene=scenes.find(item=>item.scene.id===target)?.scene;
-        if(!scene)throw new Error("请选择有效的场景");
-        if(usage==="video")await post("/scenes/select-video",{project_id,scene_id:scene.id,media_id:assignment.id});
-        else await post("/scenes/update",{project_id,id:scene.id,title:scene.title,description:scene.description,first_media_id:scene.first_media_id,last_media_id:scene.last_media_id,reference_media_id:scene.reference_media_id,[`${usage}_media_id`]:assignment.id});
-      }
-      await reload();
-      setAssignment(null);
-      Message.success(`已设置为${usage==="video"?"场景视频":usages.find(item=>item.value===usage)?.label}`);
-    } catch(e){Message.error(String(e));}finally{setAssigning(false);}
-  };
+  const beginAssignment=(media:Media)=>{setPreview(null);setAssignment(media);};
   const importFiles=async()=>{try {
     const files=await open({multiple:true,filters:[{name:"图片和视频",extensions:["png","jpg","jpeg","webp","gif","mp4","mov","webm","mkv"]}]});
     if(!files)return;setBusy(true);
@@ -98,7 +73,7 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
   const exportAsset=async(m:Media)=>{try{const path=await save({defaultPath:m.name});if(path)await post("/media/export",{project_id:pid,media_id:m.id,destination_path:path});}catch(e){Message.error(String(e));}};
   const inspectDisk=async()=>{setScanning(true);try{setScan(await post<DiskScan>("/storage/scan",{project_id:pid}));}catch(e){Message.error(String(e));}finally{setScanning(false);}};
   return <section>
-    <div className="section-title"><div><h1>资产库</h1><p>查看素材用途，管理图片、视频和回收站。</p></div><Space wrap>
+    <div className="section-title page-actions"><Space wrap>
       <Button loading={scanning} icon={<HardDrive size={16}/>} onClick={inspectDisk}>磁盘清理</Button>
       <Button type="primary" loading={busy} icon={<Plus size={16}/>} onClick={importFiles}>导入资产</Button>
     </Space></div>
@@ -138,13 +113,5 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
       <p>未登记文件将进入回收站，可检查后恢复或永久删除。正在使用的资产不会被清理。</p>
       <div className="cleanup-files">{scan?.files.map(file=><p key={file.path}>{file.path.split(/[\\/]/).pop()} · {bytes(file.size)}</p>)}</div>
     </Modal>
-<Modal className="asset-assignment-modal" visible={!!assignment} title="设置资产用途" okText="确定设置" confirmLoading={assigning} okButtonProps={{disabled:target===undefined}} cancelButtonProps={{disabled:assigning}} maskClosable={!assigning} closable={!assigning} onCancel={()=>{if(!assigning)setAssignment(null);}} onOk={assign}>
-    <p>{assignment?.name}</p>
-    <Form layout="vertical" disabled={assigning}>
-      <Form.Item label="设置为"><Select aria-label="资产用途" value={usage} onChange={value=>{setUsage(value);setTarget(undefined);}} options={assignment?.kind==="video"?[{value:"video",label:"场景视频"}]:usages}/></Form.Item>
-      <Form.Item label={usage==="role"?"选择角色":"选择场景"} required><Select aria-label={usage==="role"?"选择角色":"选择场景"} showSearch allowClear value={target} onChange={setTarget} placeholder={usage==="role"?"请选择角色":"请选择剧集 / 场景"} options={usage==="role"?data.roles.map(role=>({value:role.id,label:role.name})):scenes.map(({scene,label})=>({value:scene.id,label}))}/></Form.Item>
-      {(usage==="role"?!data.roles.length:!scenes.length)&&<p className="helper">{usage==="role"?"请先在角色管理中创建角色":"请先创建剧集和场景"}</p>}
-      <p className="helper">{usage==="role"?"图片将加入角色图片并设为主图。":usage==="video"?"视频将加入该场景并设为当前使用的视频。":"图片将替换所选场景对应的图片。"}</p>
-    </Form>
-  </Modal>  </section>;
+{assignment&&<AssetAssignmentModal key={assignment.id} media={assignment} data={data} reload={refresh} onClose={()=>setAssignment(null)}/>}  </section>;
 }

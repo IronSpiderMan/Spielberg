@@ -9,8 +9,38 @@ use tower_http::{cors::CorsLayer, services::ServeFile};
 type Shared = Arc<AppState>;
 pub fn default_data_dir() -> PathBuf {
     std::env::var_os("SPIELBERG_DATA_DIR").map(PathBuf::from)
-        .or_else(||dirs::data_local_dir().map(|p|p.join("Spielberg")))
+        .or_else(||dirs::data_local_dir().map(|p|installed_data_dir(&p)))
         .unwrap_or_else(||PathBuf::from("./spielberg-data"))
+}
+fn installed_data_dir(base: &Path) -> PathBuf {
+    let desktop = base.join("com.spielberg.studio");
+    let standalone = base.join("Spielberg");
+    // The desktop and development server must resolve the same project registry.
+    // Keep an existing standalone installation when no desktop registry exists.
+    if !desktop.join("projects.json").is_file() && standalone.join("projects.json").is_file() {
+        standalone
+    } else {
+        desktop
+    }
+}
+
+#[cfg(test)]
+mod data_dir_tests {
+    use super::*;
+    #[test]
+    fn desktop_and_server_share_registry_with_standalone_fallback() {
+        let base = std::env::temp_dir().join(format!("spielberg-root-{}", Uuid::new_v4()));
+        let desktop = base.join("com.spielberg.studio");
+        let standalone = base.join("Spielberg");
+        assert_eq!(installed_data_dir(&base), desktop);
+        fs::create_dir_all(&standalone).unwrap();
+        fs::write(standalone.join("projects.json"), "[]").unwrap();
+        assert_eq!(installed_data_dir(&base), standalone);
+        fs::create_dir_all(&desktop).unwrap();
+        fs::write(desktop.join("projects.json"), "[]").unwrap();
+        assert_eq!(installed_data_dir(&base), desktop);
+        fs::remove_dir_all(base).unwrap();
+    }
 }
 /// Owns the exact same HTTP service in desktop and standalone deployments.
 /// Dropping it stops accepting requests and shuts down its runtime.

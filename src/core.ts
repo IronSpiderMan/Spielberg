@@ -31,7 +31,7 @@ export const defaultOptions: GenerationOptions = {
   reference: false,
   duration: 5,
   aspect_ratio: "16:9",
-  size: "1280x736",
+  size: "1344x768",
 };
 export const GENERATION_SIZES = [
   { ratio: "16:9", label: "16:9 横屏", sizes: ["608x352", "736x416", "864x480", "960x544", "1056x608", "1152x640", "1216x672", "1280x736", "1344x768"] },
@@ -40,8 +40,12 @@ export const GENERATION_SIZES = [
   { ratio: "2:3", label: "2:3 纵向照片", sizes: ["416x640", "640x960", "1024x1536", "1280x1920"] },
   { ratio: "1:1", label: "1:1 方形", sizes: ["512x512", "768x768", "1024x1024", "1536x1536", "2048x2048"] },
 ];
+export function defaultGenerationSize(ratio: string): string {
+  const group = GENERATION_SIZES.find(group => group.ratio === ratio);
+  return ratio === "16:9" || !group ? "1344x768" : group.sizes[0];
+}
 export type Scene = {
-  script?: Record<FrameKey, string>;
+  script?: Record<FrameKey, string> & { references?: string[] };
   generation_options?: GenerationOptions;
   videos?: Media[];
   id: number;
@@ -58,6 +62,7 @@ export type Scene = {
   video_media?: Media;
 };
 export type Episode = {
+  storyboard?: import("./StoryboardEditor").Storyboard;
   id: number;
   title: string;
   description: string;

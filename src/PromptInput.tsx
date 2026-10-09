@@ -4,7 +4,7 @@ import {findMentions,mentionPattern,promptMentions,savedPromptMentions,templateM
 import type {SavedPrompt} from "./prompt-mentions";
 import type {Role,Snapshot} from "./core";
 
-export function PromptInput({value,onChange,roles,data,prompts=[],templates=[],placeholder,disabled=false,onOptimize,optimizing=false}:{value:string;onChange:(value:string)=>void;roles:Role[];data?:Snapshot;prompts?:SavedPrompt[];templates?:{id:string|number;name:string;content:string}[];placeholder?:string;disabled?:boolean;onOptimize?:()=>void;optimizing?:boolean}) {
+export function PromptInput({value,onChange,roles,data,prompts=[],templates=[],placeholder,disabled=false,onOptimize,optimizing=false,onPasteImages}:{value:string;onChange:(value:string)=>void;roles:Role[];data?:Snapshot;prompts?:SavedPrompt[];templates?:{id:string|number;name:string;content:string}[];placeholder?:string;disabled?:boolean;onOptimize?:()=>void;optimizing?:boolean;onPasteImages?:(files:File[])=>void}) {
   const input=useRef<HTMLTextAreaElement>(null), backdrop=useRef<HTMLDivElement>(null);
   const [caret,setCaret]=useState(value.length),[focused,setFocused]=useState(false),[active,setActive]=useState(0),[dismissed,setDismissed]=useState(false);
   const listId=useId();
@@ -38,6 +38,7 @@ export function PromptInput({value,onChange,roles,data,prompts=[],templates=[],p
       <div ref={backdrop} className="prompt-backdrop" aria-hidden="true">{parts}</div>
       <textarea ref={input} value={value} disabled={disabled} rows={4} aria-label="画面描述" aria-autocomplete="list" aria-controls={show?listId:undefined} aria-activedescendant={show?`${listId}-${selected}`:undefined}
         placeholder={placeholder||(data?"描述画面，@ 引用角色或剧集.scene001.first / last / ref":"描述画面，输入 @ 引用角色")}
+        onPaste={event=>{if(disabled||!onPasteImages)return;const files=Array.from(event.clipboardData.items).filter(item=>item.kind==="file"&&item.type.startsWith("image/")).map(item=>item.getAsFile()).filter((file):file is File=>file!==null);if(!files.length)return;event.preventDefault();onPasteImages(files);}}
         onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}
         onSelect={event=>setCaret(event.currentTarget.selectionStart)}
         onChange={event=>{onChange(event.target.value);setCaret(event.target.selectionStart);setActive(0);setDismissed(false);}}

@@ -58,6 +58,7 @@ fn enrich(c: &Connection, resource: &str, mut value: Value) -> ApiResult<Value> 
         value["generation_options"]=scene_options(c,id)?;
         value["script"]=scene_script(c,id)?;
     } else if resource=="episodes" {
+        value["storyboard"]=storyboard::load(c,id)?;
         value["cover_media"]=json!(media(c,opti(&value,"cover_media_id")));
         value["scenes"]=json!(rows(c,"scenes",None)?.into_iter().filter(|s|s["episode_id"]==id).map(|s|enrich(c,"scenes",s)).collect::<ApiResult<Vec<_>>>()?);
         if let Some(scenes)=value["scenes"].as_array_mut() {scenes.sort_by_key(|s|s["sort_order"].as_i64().unwrap_or(0));}
@@ -70,7 +71,7 @@ fn get(c: &Connection, resource: &str, id: i64) -> ApiResult<Value> {
 fn validate(c: &Connection, resource: &str, value: &Value, create: bool) -> ApiResult<()> {
     let fields: &[&str]=match resource {
         "roles"=>&["name","description","design_media_id"],
-        "episodes"=>&["title","description","cover_media_id"],
+        "episodes"=>&["title","description","cover_media_id","storyboard"],
         "scenes"=>&["title","description","episode_id","first_media_id","last_media_id","reference_media_id","generation_options"],
         "prompts"=>&["name","content","category"],
         "assets"=>&["name","extension","data_base64","role_id"],_=>return Err(missing()),
@@ -206,7 +207,7 @@ pub(crate) fn import_uploaded(state:&AppState,pid:&str,path:&Path,name:&str,role
 }
 
 pub(crate) fn action(state:&AppState,path:&str,value:Value)->ApiResult<Value>{
-    const ALLOWED:&[&str]=&["/project","/project/changes","/projects/open","/projects/backup","/projects/restore","/media/import","/media/export","/media/pose-reference","/media/thumbnail","/media/usage","/media/restore","/media/purge","/media/video-frame","/storage/scan","/storage/cleanup","/roles/media/add","/roles/media/delete","/scripts/load","/scripts/save","/scripts/publish","/tasks","/generations/image","/generations/video","/prompts/optimize","/scenes/reorder","/scenes/select-video","/scenes/delete-video","/episodes/reorder","/episodes/merge","/settings"];
+    const ALLOWED:&[&str]=&["/app/settings/load","/app/settings/save","/project","/project/changes","/projects/open","/projects/migrate","/projects/backup","/projects/restore","/media/import","/media/export","/media/pose-reference","/media/thumbnail","/media/usage","/media/restore","/media/purge","/media/video-frame","/storage/scan","/storage/cleanup","/roles/media/add","/roles/media/delete","/scripts/load","/scripts/save","/scripts/publish","/tasks","/generations/image","/generations/video","/prompts/optimize","/storyboard/generate","/storyboard/plan","/storyboard/validate","/scenes/reorder","/scenes/select-video","/scenes/delete-video","/episodes/reorder","/episodes/merge","/settings"];
     if !ALLOWED.contains(&path){return Err(missing())}
     Ok(dispatch(state,"POST".into(),path.into(),Some(value))?)
 }

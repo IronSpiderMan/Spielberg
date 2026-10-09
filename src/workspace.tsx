@@ -1,3 +1,10 @@
+import { buildVideoRequest } from "./generation-request";
+import { RoleImagePicker } from "./components/RoleImagePicker";
+import { ImagePreviewModal } from "./components/ImagePreviewModal";
+import { usePromptOptimization } from "./hooks/usePromptOptimization";
+import { supportedPastedImages, useImageUpload } from "./hooks/useImageUpload";
+import { AssetImagePicker } from "./components/AssetImagePicker";
+import { MediaSizeFields, VideoDurationField } from "./components/generation/GenerationFields";
 import React,{ lazy,useEffect,useRef,useState } from "react";
 
 import {
@@ -20,6 +27,7 @@ Tabs,
 Typography
 } from "@arco-design/web-react";
 import { open,save as saveDialog } from "./platform";
+import { isLocalDesktop } from "./transport";
 import {
 ArrowDown,
 ArrowLeft,
@@ -42,9 +50,10 @@ ZoomIn
 } from "lucide-react";
 
 
-import { api,defaultOptions,Episode,FrameKey,GenerationOptions,GENERATION_SIZES,imageUrl,Media,ModelSettings,post,Project,Role,Scene,Snapshot } from "./core";
+import { api,defaultOptions,Episode,FrameKey,GenerationOptions,imageUrl,Media,ModelSettings,post,Project,Role,Scene,Snapshot } from "./core";
 import { confirmDiscard,useEditGuard } from "./edit-guard";
 import { resolvePrompt } from "./resolve-prompt";
+import { StoryboardEditor, type Storyboard } from "./StoryboardEditor";
 import { PromptInput } from "./PromptInput";
 import { findMentions, promptMentions } from "./prompt-mentions";
 import { STYLE_PRESETS } from "./prompt-presets";
@@ -55,31 +64,11 @@ const ImageStudio=lazy(()=>import("./creation").then(m=>({default:m.ImageStudio}
 function videoRequest(scene: Scene, settings: ModelSettings, roles: Role[], prompts: Snapshot["prompts"] = []) {
   const options = scene.generation_options || defaultOptions;
   const mode = options.video_mode || ((options.reference_media_ids?.length || scene.reference_media_id) ? "i2v" : "fl2v");
-  if (!scene.description.trim()) throw new Error(`${scene.title}：请填写描述`);
-  const first = mode === "fl2v" ? scene.first_media_id : null;
-  const last = mode === "fl2v" ? scene.last_media_id : null;
-  const imageIds = mode === "i2v"
-    ? [...new Set(options.reference_media_ids ?? (scene.reference_media_id ? [scene.reference_media_id] : []))]
-    : [];
-  if (mode === "fl2v" && !first) throw new Error(`${scene.title}：请选择首帧`);
-  if (mode === "i2v" && !imageIds.length) throw new Error(`${scene.title}：请至少选择一张参考图`);
-  if (imageIds.length > 9) throw new Error(`${scene.title}：全能参考最多支持 9 张图片`);
-  const operation = mode;
-  if (!(settings.video?.base_url || settings.video?.url || settings[operation]?.url))
-    throw new Error("请先配置视频生成 Base URL");
-  return {
-    scene_id: scene.id,
-    prompt: resolvePrompt(scene.description, roles, prompts),
-    operation,
-    video_mode: mode,
-    duration: options.duration,
-    aspect_ratio: options.aspect_ratio,
-    size: options.size,
-    first_media_id: first,
-    last_media_id: last,
-    image_media_ids: imageIds,
-    image_media_id: null,
-  };
+  const request=buildVideoRequest({mode,prompt:resolvePrompt(scene.description,roles,prompts),label:scene.title,sceneId:scene.id,
+    duration:options.duration,ratio:options.aspect_ratio,size:options.size,firstId:scene.first_media_id,lastId:scene.last_media_id,
+    referenceIds:options.reference_media_ids??(scene.reference_media_id?[scene.reference_media_id]:[])});
+  if (!(settings.video?.base_url || settings.video?.url || settings[mode]?.url)) throw new Error("请先配置视频生成 Base URL");
+  return request;
 }
 const sceneVideos = (scene: Scene) =>
   scene.videos || (scene.video_media ? [scene.video_media] : []);
@@ -265,7 +254,7 @@ export function Studio({
                 </Button>
               </Space>
             </div>
-            <SceneThumb scene={scene} />
+            <SceneThumb scene={scene} media={data.media} />
             <div className="cut-copy">
               <b>{scene.title}</b>
               <p>{scene.description || "尚未填写描述"}</p>
@@ -349,7 +338,7 @@ function VideoAsset({video, scene, projectId, reload}: {video:Media;scene?:Scene
 type BackgroundJob = {id:number;project_id:string;project_name:string;scene_id?:number;operation:string;status:string;prompt:string;created_at:string;updated_at:string;error?:string;result?:Media};
 type JobCursor = Pick<BackgroundJob,"created_at"|"project_id"|"id">;
 type JobPage = {items:BackgroundJob[];next_cursor:JobCursor|null;has_more:boolean};
-export function Tasks() {
+export function Tasks({projectId}:{projectId:string}) {
   const [jobs,setJobs] = useState<BackgroundJob[]>([]);
   const [filter,setFilter] = useState("all");
   const [error,setError] = useState("");
@@ -369,7 +358,7 @@ export function Tasks() {
       if(more||!initialized)setLoading(true);
       const paginated=more||!cursor;
       try {
-        const page=await post<JobPage>("/tasks",{status:filter,limit:20,...(cursor ? more?{before:cursor}:{through:cursor}: {})});
+        const page=await post<JobPage>("/tasks",{project_id:projectId,status:filter,limit:20,...(cursor ? more?{before:cursor}:{through:cursor}: {})});
         if(disposed)return;
         setJobs(previous=>more?[...previous,...page.items]:page.items);
         // Refresh preserves the historical boundary, even if filtering removes its job.
@@ -387,9 +376,9 @@ export function Tasks() {
     loadMore.current=()=>void fetchPage(true);
     void fetchPage();
     return ()=>{disposed=true;clearTimeout(timer);};
-  },[filter]);
+  },[filter,projectId]);
   const labels:Record<string,string>={running:"执行中",completed:"已完成",failed:"失败",interrupted:"已中断"};
-  return <section><div className="section-title"><div><h1>后台任务</h1><p>所有项目的图片、视频生成与合并任务，页面可见时自动更新，可切换页面继续编辑。</p></div>
+  return <section><div className="section-title page-actions">
     <Select aria-label="任务状态" value={filter} onChange={setFilter} style={{width:160}}><Select.Option value="all">全部状态</Select.Option>{Object.entries(labels).map(([k,v])=><Select.Option key={k} value={k}>{v}</Select.Option>)}</Select></div>
     {error && <p role="alert">{error}</p>}
     <div className="task-list">{jobs.map(job=><Card key={`${job.project_id}-${job.id}`}>
@@ -405,8 +394,11 @@ export function Tasks() {
     </div>
     {!jobs.length&&!loading&&!error&&<Empty description={filter==="all"?"暂无后台任务":"暂无符合此状态的任务"}/>}</section>;
 }
-function SceneThumb({ scene, onPreview }: { scene: Scene; onPreview?: () => void }) {
-  const thumbnail = scene.first_media || scene.last_media || scene.reference_media;
+function SceneThumb({ scene, media, onPreview }: { scene: Scene; media: Media[]; onPreview?: () => void }) {
+  const thumbnail = scene.first_media || media.find(m=>m.id===scene.first_media_id&&m.kind==='image')
+    || scene.last_media || media.find(m=>m.id===scene.last_media_id&&m.kind==='image')
+    || (scene.generation_options?.reference_media_ids || []).map(id=>media.find(m=>m.id===id&&m.kind==='image')).find(Boolean)
+    || scene.reference_media || media.find(m=>m.id===scene.reference_media_id&&m.kind==='image');
   const content = <>
     {thumbnail ? (
       <img src={imageUrl(thumbnail)} alt="" />
@@ -542,11 +534,7 @@ export function Episodes({
   if (episode) return <EpisodeEditor episode={episode} project={data.project} data={data} onClose={() => setEpisode(null)} reload={reload}/>;
   return (
     <section>
-      <div className="section-title">
-        <div>
-          <p className="eyebrow">EPISODES & SHOTS</p>
-          <h1>剧集管理</h1><p>管理故事结构、镜头素材与生成版本。</p>
-        </div>
+      <div className="section-title page-actions">
         <Button
           type="primary"
           icon={<Plus size={16} />}
@@ -605,11 +593,11 @@ export function Episodes({
                 {ep.scenes.map((s, i) => (
                   <div className="scene-row" key={s.id}>
                     <span>{String(i + 1).padStart(2, "0")}</span>
-                    <SceneThumb scene={s} onPreview={sceneVideos(s).length ? () => openScenePreview(s) : undefined} />
+                    <SceneThumb scene={s} media={data.media} onPreview={sceneVideos(s).length ? () => openScenePreview(s) : undefined} />
                     <div className="scene-copy"><b>{s.title}</b><p>{s.description || "尚未填写镜头描述"}</p></div>
                     <div className="scene-actions">
                     <Tag color={s.video_media_id ? "green" : "gray"}>
-                      {s.video_media_id ? "视频已就绪" : (s.first_media_id || s.last_media_id || s.reference_media_id) ? "已设画面" : "待制作"}
+                      {s.video_media_id ? "视频已就绪" : (s.first_media_id || s.last_media_id || s.reference_media_id || s.generation_options?.reference_media_ids?.length) ? "已设画面" : "待制作"}
                     </Tag>
                     <SceneOrderControls episode={ep} index={i} project={data.project} reload={reload}/>
                     <Button size="mini" disabled={!sceneVideos(s).length} icon={<Play size={13}/>} onClick={() => openScenePreview(s)}>预览</Button>
@@ -787,7 +775,7 @@ function EpisodeEditor({
   reload,
 }: {
   data: Snapshot;
-  episode: { id: number; title: string; description: string; cover_media?: Media; scenes?: Scene[] } | null;
+  episode: { id: number; title: string; description: string; cover_media?: Media; scenes?: Scene[]; storyboard?: Storyboard } | null;
   project: Project;
   onClose: () => void;
   reload: () => void;
@@ -799,16 +787,22 @@ function EpisodeEditor({
   };
   const [title, setTitle] = useState(episode?.title || "");
   const [description, setDescription] = useState(episode?.description || "");
+  const [board,setBoard] = useState<Storyboard | undefined>(episode?.storyboard || undefined);
+  const [generatingBoard,setGeneratingBoard] = useState(false);
+  const boardEpisode=useRef(episode?.id);
   useEffect(() => {
+    if(boardEpisode.current===episode?.id) return;
+    boardEpisode.current=episode?.id;
+    setBoard(episode?.storyboard || undefined);
     setCover(episode?.cover_media);
     setTitle(episode?.title || "");
     setDescription(episode?.description || "");
   }, [episode]);
   const [saving, setSaving] = useState(false);
-  const dirty = title !== (episode?.title || "") || description !== (episode?.description || "") || cover?.id !== episode?.cover_media?.id;
-  useEditGuard(dirty || saving);
+  const dirty = JSON.stringify(board || null) !== JSON.stringify(episode?.storyboard || null) || title !== (episode?.title || "") || description !== (episode?.description || "") || cover?.id !== episode?.cover_media?.id;
+  useEditGuard(dirty || saving || generatingBoard);
   const close = () => {
-    if (saving) return;
+    if (saving || generatingBoard) return;
     if (dirty) confirmDiscard(onClose);
     else onClose();
   };
@@ -817,7 +811,7 @@ function EpisodeEditor({
     if (!title.trim()) { Message.warning("请输入剧集标题"); return; }
     setSaving(true);
     try {
-      await post("/episodes/update", {project_id: project.id, id: episode.id, cover_media_id: cover?.id || null, title: title.trim(), description});
+      await post("/episodes/update", {project_id: project.id, id: episode.id, cover_media_id: cover?.id || null, title: title.trim(), description, storyboard: board || null});
       await reload();
       Message.success("剧集已保存");
       onClose();
@@ -825,11 +819,12 @@ function EpisodeEditor({
     finally { setSaving(false); }
   };
   const currentEpisode = data.episodes.find(ep => ep.id === episode?.id);
+  if (!episode) return null;
   return (
     <section className="episode-editor-page">
       <div className="section-title">
-        <div><Button icon={<ArrowLeft size={16}/>} disabled={saving} onClick={close}>返回</Button><h1>编辑剧集</h1><p>{episode?.title} · 管理剧集信息、封面与场景顺序。</p></div>
-        <Space><Button disabled={saving} onClick={close}>取消</Button><Button type="primary" icon={<Save size={16}/>} loading={saving} onClick={save}>保存剧集</Button></Space>
+        <div><Button icon={<ArrowLeft size={16}/>} disabled={saving || generatingBoard} onClick={close}>返回</Button></div>
+        <Space><Button disabled={saving || generatingBoard} onClick={close}>取消</Button><Button type="primary" icon={<Save size={16}/>} disabled={generatingBoard} loading={saving} onClick={save}>保存剧集</Button></Space>
       </div>
       <div className="episode-editor-columns">
       <Card className="episode-editor-card episode-details-pane">
@@ -848,9 +843,7 @@ function EpisodeEditor({
         <Form.Item label="剧集标题">
           <Input value={title} onChange={setTitle} />
         </Form.Item>
-        <Form.Item label="剧集简介">
-          <Input.TextArea value={description} onChange={setDescription} rows={10} placeholder="填写剧集简介" />
-        </Form.Item>
+        {episode && <StoryboardEditor data={data} episodeId={episode.id} script={description} onScript={setDescription} board={board} onChange={setBoard} onBusy={setGeneratingBoard} reload={reload} disabled={saving}/>}
       </Form>
       </fieldset>
       </Card>
@@ -881,7 +874,7 @@ function EpisodeEditor({
                 </figure>)}
                 {!images.length && <p className="subtle">未设置参考图</p>}
               </div>
-              <div className="episode-scene-order-prompt"><b>Prompt</b><p className="episode-scene-order-description">{scene.description || "未填写 Prompt"}</p></div>
+              <details className="episode-scene-order-prompt"><summary><b>Prompt</b><span className="episode-prompt-expand">展开</span><span className="episode-prompt-collapse">收起</span></summary><p className="episode-scene-order-description">{scene.description || "未填写 Prompt"}</p></details>
             </div>;
           })}
           {!currentEpisode?.scenes.length && <Empty description="暂无场景"/>}
@@ -890,111 +883,6 @@ function EpisodeEditor({
       </div>
     </section>
   );
-}
-function AssetImagePicker({ visible, label, value, data, onSelect, onClose, busy = false, multiple = false, selectedIds = [], onToggle }: {
-  visible: boolean;
-  label: string;
-  value: number | null;
-  data: Snapshot;
-  onSelect: (id: number) => void;
-  onClose: () => void;
-  busy?: boolean;
-  multiple?: boolean;
-  selectedIds?: number[];
-  onToggle?: (id: number) => void;
-}) {
-  const [assetQuery, setAssetQuery] = useState("");
-  const [assetPreview, setAssetPreview] = useState<Media | null>(null);
-  useEffect(() => {
-    if (!visible) {
-      setAssetQuery("");
-      setAssetPreview(null);
-    }
-  }, [visible]);
-  const libraryImages = data.media.filter(
-    media => media.kind === "image" &&
-      media.name.toLocaleLowerCase().includes(assetQuery.trim().toLocaleLowerCase()),
-  );
-  return <>
-      <Modal
-        className="asset-picker-modal"
-        title={`为${label}从资产库选择图片`}
-        visible={visible}
-        footer={multiple ? <Button type="primary" onClick={onClose}>完成选择</Button> : null}
-        onCancel={onClose}
-        closable={!busy}
-        maskClosable={!busy}
-        escToExit={!busy}
-      >
-        <Input.Search
-          value={assetQuery}
-          onChange={setAssetQuery}
-          allowClear
-          placeholder="搜索资产名称"
-        />
-        {libraryImages.length ? (
-          <div className="media-picker asset-image-picker">
-            {libraryImages.map((media) => (
-              <div
-                key={media.id}
-                className={(multiple ? selectedIds.includes(media.id) : value === media.id) ? "media-option selected" : "media-option"}
-              >
-                <button
-                  type="button"
-                  className="media-option-select"
-                  disabled={busy}
-                  onClick={() => {
-                    if (multiple) onToggle?.(media.id);
-                    else onSelect(media.id);
-                  }}
-                  aria-label={`选择资产 ${media.name}`}
-                >
-                  <img src={imageUrl(media)} alt="" />
-                  <span>{media.name}</span>
-                </button>
-                <button
-                  type="button"
-                  className="media-option-zoom"
-                  onClick={() => setAssetPreview(media)}
-                  aria-label={`放大预览 ${media.name}`}
-                  title="放大预览"
-                >
-                  <ZoomIn size={16} />
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <Empty description={assetQuery ? "没有匹配的图片资产" : "资产库中暂无图片"} />
-        )}
-      </Modal>
-      <Modal
-        className="image-preview-modal asset-picker-preview-modal"
-        title={assetPreview?.name || "图片预览"}
-        visible={!!assetPreview}
-        onCancel={() => setAssetPreview(null)}
-        footer={
-          <Space>
-            <Button onClick={() => setAssetPreview(null)}>关闭</Button>
-            <Button
-              type="primary"
-              disabled={busy || !assetPreview}
-              loading={busy}
-              onClick={() => {
-                if (!assetPreview) return;
-                onSelect(assetPreview.id);
-              }}
-            >
-              选择此图片
-            </Button>
-          </Space>
-        }
-      >
-        <div className="image-preview-full">
-          {assetPreview && <img src={imageUrl(assetPreview)} alt={assetPreview.name} />}
-        </div>
-      </Modal>
-  </>;
 }
 function SceneImageField({
   reload,
@@ -1088,11 +976,7 @@ function SceneImageField({
           <Button type="text" size="small" icon={<Sparkles size={14}/>} onClick={onGenerate}>生成图片</Button>
         </div>
       </div>
-      <Modal
-        className="image-preview-modal"
-        title={selected?.name || label}
-        visible={previewOpen}
-        onCancel={() => setPreviewOpen(false)}
+      <ImagePreviewModal media={selected||null} title={label} visible={previewOpen} onClose={()=>setPreviewOpen(false)}
         footer={
           <Space>
             <Button onClick={() => setPreviewOpen(false)}>关闭</Button>
@@ -1113,12 +997,7 @@ function SceneImageField({
               下载图片
             </Button>
           </Space>
-        }
-      >
-        <div className="image-preview-full">
-          {selected && <img src={imageUrl(selected)} alt={selected.name} />}
-        </div>
-      </Modal>
+        } />
       <AssetImagePicker
         visible={assetsOpen}
         label={label}
@@ -1154,42 +1033,8 @@ function SceneImageField({
           }}
         />}
       </Modal>
-      <Modal
-        title={`为${label}选择角色图片`}
-        visible={rolesOpen}
-        footer={null}
-        onCancel={() => setRolesOpen(false)}
-      >
-        <div className="role-image-groups">
-          {data.roles.map((role) => (
-            <div key={role.id}>
-              <b>{role.name}</b>
-              <div className="media-picker">
-                {role.images.map((media) => (
-                  <div
-                    key={media.id}
-                    className={
-                      value === media.id
-                        ? "media-option selected"
-                        : "media-option"
-                    }
-                    onClick={() => {
-                      onChange(media.id);
-                      setRolesOpen(false);
-                    }}
-                  >
-                    <img src={imageUrl(media)} />
-                    <span>{media.id === role.design_media_id ? `主图 · ${media.name}` : media.name}</span>
-                  </div>
-                ))}
-              </div>
-              {!role.images.length && (
-                <p className="subtle">该角色还没有图片</p>
-              )}
-            </div>
-          ))}
-        </div>
-      </Modal>
+      <RoleImagePicker title={`为${label}选择角色图片`} visible={rolesOpen} roles={data.roles} selectedIds={value===null?[]:[value]}
+        onSelect={media=>{onChange(media.id);setRolesOpen(false);}} onClose={()=>setRolesOpen(false)} />
     </div>
   );
 }
@@ -1214,6 +1059,10 @@ export function SceneEditor({
 }) {
   const [title, setTitle] = useState(scene.title || "");
   const [description, setDescription] = useState(scene.description || "");
+  const { uploading:pastingImages, inProgress:pasteInProgress, uploadImages } = useImageUpload({projectId:data.project.id,reload,refreshError:"图片已上传，但刷新资产失败"});
+  const [pastedMedia, setPastedMedia] = useState<Media[]>([]);
+  const draggedReference = useRef<number | null>(null);
+  const [referenceDropTarget, setReferenceDropTarget] = useState<number | null>(null);
   const [frames, setFrames] = useState<Record<FrameKey, number | null>>({
     first: scene.first_media_id || null,
     last: scene.last_media_id || null,
@@ -1228,14 +1077,31 @@ export function SceneEditor({
   const [ratio, setRatio] = useState(
     (scene.generation_options || defaultOptions).aspect_ratio,
   );
+  const mentionedReferenceIds = JSON.stringify([...new Set(
+    findMentions(description, promptMentions(data.roles, data))
+      .flatMap(mention => mention.media?.kind === "image" ? [mention.media.id] : []),
+  )]);
+  useEffect(() => {
+    if (options.video_mode !== "i2v" || pastingImages) return;
+    const mentionedIds: number[] = JSON.parse(mentionedReferenceIds);
+    setOptions(current => {
+      const existing = current.reference_media_ids || [];
+      const merged = [...new Set([...existing, ...mentionedIds])].slice(0, 9);
+      if (merged.length === existing.length) return current;
+      return { ...current, reference_media_ids: merged };
+    });
+  }, [mentionedReferenceIds, options.video_mode, pastingImages]);
   const signature = JSON.stringify({title, description, frames, options, ratio});
   const [savedSignature, setSavedSignature] = useState(signature);
   const dirty = signature !== savedSignature;
   useEditGuard(dirty);
-  const closeEditor = () => dirty ? confirmDiscard(onClose) : onClose();
+  const closeEditor = () => {
+    if (pasteInProgress.current) return;
+    dirty ? confirmDiscard(onClose) : onClose();
+  };
   const [savingScene, setSavingScene] = useState(false);
   const [videoGenerating, setVideoGenerating] = useState(false);
-  const [optimizingPrompt,setOptimizingPrompt]=useState(false);
+  const { optimizing:optimizingPrompt, optimize:optimizePrompt } = usePromptOptimization();
   const [optimizationInstruction,setOptimizationInstruction]=useState("");
   const [optimizationInstructionOpen,setOptimizationInstructionOpen]=useState(false);
   const [persistedVideoGenerating, setPersistedVideoGenerating] = useState(false);
@@ -1285,6 +1151,18 @@ export function SceneEditor({
   const [imageGenerating, setImageGenerating] = useState(false);
   const choose = (key: FrameKey, id: number | null) =>
     setFrames((current) => ({ ...current, [key]: id }));
+  const pasteReferenceImages = async (files: File[]) => {
+    if (pasteInProgress.current || savingScene || videoGenerating || persistedVideoGenerating) return;
+    const remaining = Math.max(0, 9 - (options.reference_media_ids || []).length);
+    if (!remaining) { Message.warning("最多添加 9 张参考图，请先移除部分图片"); return; }
+    const supported = supportedPastedImages(files);
+    if (!supported.length) return;
+    if (supported.length > remaining) Message.warning(`最多添加 9 张参考图，本次只上传前 ${remaining} 张`);
+    await uploadImages(supported.slice(0,remaining), {pasted:true,onUploaded:media=>{
+      setPastedMedia(items=>[...items,media]);
+      setOptions(current=>({...current,video_mode:"i2v",reference_media_ids:[...new Set([...(current.reference_media_ids||[]),media.id])].slice(0,9)}));
+    },onComplete:count=>Message.success(`${count} 张图片已添加为全能参考图，保存场景后生效`)});
+  };
   const uploadFrame = async (key: FrameKey) => {
     const source = await open({
       multiple: false,
@@ -1389,6 +1267,7 @@ export function SceneEditor({
     setSavedSignature(signature);
   };
   const generateVideo = async () => {
+    if (pasteInProgress.current) return;
     try {
       const request = videoRequest(draft(), data.settings, data.roles, data.prompts);
       setVideoGenerating(true);
@@ -1447,10 +1326,11 @@ export function SceneEditor({
     } catch (e) { Message.error(String(e)); }
     finally { setAttachingVideo(false); }
   };
-  const optimizeVideoPrompt=async()=>{if(optimizingPrompt||!description.trim())return;setOptimizingPrompt(true);try{const frameIds=options.video_mode==="i2v"?(options.reference_media_ids||[]):[frames.first,frames.last].filter((id):id is number=>Boolean(id));const result=await post<{prompt:string}>("/prompts/optimize",{project_id:data.project.id,prompt:description,kind:"video",instruction:optimizationInstruction,image_media_ids:frameIds});setDescription(result.prompt);Message.success("Prompt 已优化");}catch(e){Message.error(String(e));}finally{setOptimizingPrompt(false);}};
-  const optimizeImagePrompt=async()=>{if(optimizingPrompt||!imagePrompt.trim())return;setOptimizingPrompt(true);try{const result=await post<{prompt:string}>("/prompts/optimize",{project_id:data.project.id,prompt:imagePrompt,kind:"image",image_media_ids:imageMode==="i2i"?imageRefs.map(media=>media.id):[]});setImagePrompt(result.prompt);Message.success("Prompt 已优化");}catch(e){Message.error(String(e));}finally{setOptimizingPrompt(false);}};
+  const optimizeVideoPrompt=()=>optimizePrompt({projectId:data.project.id,prompt:description,kind:"video",instruction:optimizationInstruction,
+    imageIds:options.video_mode==="i2v"?(options.reference_media_ids||[]):[frames.first,frames.last].filter((id):id is number=>Boolean(id)),onOptimized:setDescription});
+  const optimizeImagePrompt=()=>optimizePrompt({projectId:data.project.id,prompt:imagePrompt,kind:"image",imageIds:imageMode==="i2i"?imageRefs.map(media=>media.id):[],onOptimized:setImagePrompt});
   const save = async () => {
-    if (savingScene) return;
+    if (savingScene || pasteInProgress.current) return;
     setSavingScene(true);
     try { await persist(); await reload(); Message.success("场景已保存"); onClose(); }
     catch(e) { Message.error(String(e)); }
@@ -1460,16 +1340,15 @@ export function SceneEditor({
     <section className="scene-editor-page">
       <div className="scene-editor-heading">
         <div className="scene-editor-heading-title">
-          <Button type="text" onClick={closeEditor}>
+          <Button type="text" disabled={pastingImages} onClick={closeEditor}>
             ← 返回
           </Button>
-          <h1>{isNew ? "创建场景" : "编辑场景"}</h1>
         </div>
         <Space>
           <Button
             type="primary"
             loading={savingScene}
-            disabled={videoGenerating || persistedVideoGenerating || imageGenerating}
+            disabled={videoGenerating || persistedVideoGenerating || imageGenerating || pastingImages}
             icon={<Save size={15} />}
             onClick={save}
           >
@@ -1485,7 +1364,8 @@ export function SceneEditor({
                 <Input value={title} onChange={setTitle} />
               </Form.Item>
               <Form.Item label={<span className="scene-description-label"><span>场景描述</span><Space size={2}><Button type="text" size="mini" onClick={()=>setOptimizationInstructionOpen(true)}>优化指令</Button><Button type="text" size="mini" icon={<WandSparkles size={14}/>} disabled={videoGenerating||optimizingPrompt||!description.trim()} onClick={optimizeVideoPrompt}>{optimizingPrompt?"正在优化…":"优化描述"}</Button></Space></span>}>
-                <PromptInput value={description} onChange={setDescription} roles={data.roles} data={data} prompts={data.prompts} templates={[...PROMPT_TEMPLATES,...data.prompts]} disabled={optimizingPrompt} placeholder="描述镜头、人物动作、台词与画面情绪… 输入 @template 选择模板，或引用角色、场景素材与 Prompt" />
+                <PromptInput value={description} onChange={setDescription} roles={data.roles} data={data} prompts={data.prompts} templates={[...PROMPT_TEMPLATES,...data.prompts]} disabled={optimizingPrompt || pastingImages || savingScene || videoGenerating || persistedVideoGenerating} onPasteImages={files => void pasteReferenceImages(files)} placeholder="描述镜头、人物动作、台词与画面情绪… 输入 @template 选择模板，或引用角色、场景素材与 Prompt" />
+                <p className="helper" role="status">{pastingImages ? "正在上传粘贴的图片…" : "可在此粘贴图片，自动添加到全能参考（最多 9 张）"}</p>
               </Form.Item>
               <Modal title="自定义提示词优化指令" visible={optimizationInstructionOpen} onCancel={()=>setOptimizationInstructionOpen(false)} onOk={()=>setOptimizationInstructionOpen(false)} okText="完成">
                 <Input.TextArea value={optimizationInstruction} onChange={setOptimizationInstruction} autoSize={{minRows:3,maxRows:7}} placeholder="留空使用默认优化规则；填写后作为额外优化要求。" />
@@ -1494,7 +1374,7 @@ export function SceneEditor({
           </div>
           <div className="scene-visuals">
           <div className="scene-section-heading"><h2>画面素材</h2><span>{options.video_mode === "i2v" ? "最多 9 张参考图" : "上传首帧，可选尾帧"}</span></div>
-          <Tabs activeTab={options.video_mode} onChange={key => { setOptions(o => ({...o, video_mode: key as "fl2v" | "i2v"})); setReferenceSourcesOpen(false); }}>
+          <Tabs activeTab={options.video_mode} onChange={key => { if (pasteInProgress.current) return; setOptions(o => ({...o, video_mode: key as "fl2v" | "i2v"})); setReferenceSourcesOpen(false); }}>
           <Tabs.TabPane key="fl2v" title="首尾帧">
           <div className="scene-image-grid">
             {(
@@ -1522,7 +1402,7 @@ export function SceneEditor({
           </Tabs.TabPane>
           <Tabs.TabPane key="i2v" title="全能参考">
           <div className="scene-multi-reference">
-            <div className="scene-section-heading"><h2>多张参考图</h2><span>最多 9 张 · 可从资产库选择或上传</span></div>
+            <div className="scene-section-heading"><h2>多张参考图</h2><span>最多 9 张 · 拖拽调整顺序 · 可从资产库选择或上传</span></div>
             <Space wrap>
               <Dropdown trigger="click" popupVisible={referenceSourcesOpen} onVisibleChange={setReferenceSourcesOpen} unmountOnExit={false}
                 droplist={<div className="scene-source-menu" onClick={() => setReferenceSourcesOpen(false)}>
@@ -1531,13 +1411,19 @@ export function SceneEditor({
                   <SceneFramePicker data={data} reload={reload} onSelect={media => setOptions(o => ({...o, reference_media_ids: [...new Set([...(o.reference_media_ids || []), media.id])].slice(0, 9)}))}/>
                   <Button type="text" icon={<Upload size={15}/>} onClick={() => void addReferenceImages().catch(e => Message.error(String(e)))}>上传图片</Button>
                 </div>}>
-                <Button size="small">添加参考图<ChevronDown size={13}/></Button>
+                <Button size="small" disabled={pastingImages}>添加参考图<ChevronDown size={13}/></Button>
               </Dropdown>
               {(options.reference_media_ids || []).length > 0 && <div className="scene-reference-grid" data-count={(options.reference_media_ids || []).length}>
-                {(options.reference_media_ids || []).map(id => { const media=data.media.find(m=>m.id===id); return media ? <figure className="scene-reference-thumb" key={id}>
-                  <button type="button" className="scene-reference-preview" onClick={() => setReferencePreview(media)} aria-label={`预览参考图 ${media.name}`}><img src={imageUrl(media)} alt={media.name}/></button>
+                {(options.reference_media_ids || []).map((id,index) => { const media=data.media.find(m=>m.id===id) || pastedMedia.find(m=>m.id===id); return media ? <figure className={`scene-reference-thumb${referenceDropTarget===id?' drop-target':''}`} key={id} data-reference-id={id}>
+                  <button type="button" className="scene-reference-preview" onClick={() => setReferencePreview(media)} aria-label={`预览参考图 ${media.name}`}><img src={imageUrl(media)} alt={media.name} draggable={false}/></button>
                   <button type="button" className="scene-reference-remove" onClick={() => setOptions(o=>({...o,reference_media_ids:(o.reference_media_ids||[]).filter(x=>x!==id)}))} aria-label={`移除参考图 ${media.name}`} title="移除">×</button>
-                  <figcaption title={media.name}>{media.name}</figcaption>
+                  <figcaption title={`拖动调整顺序：${media.name}`}
+                    onPointerDown={event=>{if(event.button!==0)return;event.preventDefault();draggedReference.current=id;event.currentTarget.setPointerCapture(event.pointerId);}}
+                    onPointerMove={event=>{if(draggedReference.current===null)return;const target=document.elementFromPoint(event.clientX,event.clientY)?.closest<HTMLElement>('[data-reference-id]');const targetId=target?Number(target.dataset.referenceId):null;setReferenceDropTarget(targetId===id?null:targetId);}}
+                    onPointerUp={event=>{const source=draggedReference.current;const target=document.elementFromPoint(event.clientX,event.clientY)?.closest<HTMLElement>('[data-reference-id]');const targetId=target?Number(target.dataset.referenceId):null;draggedReference.current=null;setReferenceDropTarget(null);if(source===null||targetId===null||source===targetId)return;setOptions(o=>{const ids=[...(o.reference_media_ids||[])];const from=ids.indexOf(source),to=ids.indexOf(targetId);if(from<0||to<0)return o;ids.splice(from,1);ids.splice(to,0,source);return {...o,reference_media_ids:ids};});}}
+                    onPointerCancel={()=>{draggedReference.current=null;setReferenceDropTarget(null);}}
+                    onLostPointerCapture={()=>{draggedReference.current=null;setReferenceDropTarget(null);}}
+                  >⠿ 参考图 {index+1} · {media.name}</figcaption>
                 </figure> : null; })}
               </div>}
             </Space>
@@ -1548,26 +1434,9 @@ export function SceneEditor({
             <div className="video-generator scene-video-panel">
               <Form layout="vertical">
                 <div className="generation-options">
-                  <Form.Item label="时长">
-                    <Select
-                      value={options.duration}
-                      onChange={(duration) =>
-                        setOptions((o) => ({ ...o, duration }))
-                      }
-                    >
-                      {Array.from({length: 13}, (_, i) => i + 3).map((x) => (
-                        <Select.Option key={x} value={x}>
-                          {x} 秒
-                        </Select.Option>
-                      ))}
-                    </Select>
-                  </Form.Item>
-                  <Form.Item label="画面比例">
-                    <Select value={ratio} onChange={value=>{setRatio(value);setOptions(o=>({...o,aspect_ratio:value,size:GENERATION_SIZES.find(g=>g.ratio===value)?.sizes[0]}));}}>{GENERATION_SIZES.map(group=><Select.Option key={group.ratio} value={group.ratio}>{group.label}</Select.Option>)}</Select>
-                  </Form.Item>
-                  <Form.Item label="输出尺寸">
-                    <Select aria-label="视频输出尺寸" value={options.size||GENERATION_SIZES.find(g=>g.ratio===ratio)?.sizes[0]} onChange={size=>setOptions(o=>({...o,size}))}>{GENERATION_SIZES.find(g=>g.ratio===ratio)?.sizes.map(size=><Select.Option key={size} value={size}>{size}</Select.Option>)}</Select>
-                  </Form.Item>
+                  <VideoDurationField value={options.duration} onChange={duration => setOptions(o => ({ ...o, duration }))} />
+                  <MediaSizeFields ratio={ratio} size={options.size} ratioLabel="画面比例" ariaPrefix="视频"
+                    onChange={value => { setRatio(value.ratio); setOptions(o => ({ ...o, aspect_ratio: value.ratio, size: value.size })); }} />
                 </div>
               </Form>
               <div className="scene-video-action">
@@ -1581,7 +1450,7 @@ export function SceneEditor({
                 type="primary"
                 icon={<Sparkles size={17} />}
                 loading={videoGenerating || persistedVideoGenerating}
-                disabled={!description.trim()}
+                disabled={!description.trim() || pastingImages}
                 onClick={generateVideo}
               >
                 {persistedVideoGenerating ? "后台生成中" : "生成新视频"}
@@ -1635,22 +1504,14 @@ export function SceneEditor({
         })}
         onClose={() => setMultiReferencePickerOpen(false)}
       />
-      <Modal title="从角色中选择参考图" visible={referenceRolePickerOpen} footer={<Button type="primary" onClick={() => setReferenceRolePickerOpen(false)}>完成</Button>} onCancel={() => setReferenceRolePickerOpen(false)}>
-        <div className="role-image-groups">
-          {data.roles.map(role => <div key={role.id}><b>{role.name}</b><div className="media-picker">
-            {role.images.map(media => <button type="button" key={media.id} className={`media-option${(options.reference_media_ids || []).includes(media.id) ? " selected" : ""}`} onClick={() => setOptions(o => {
-              const ids = o.reference_media_ids || [];
-              if (ids.includes(media.id)) return {...o, reference_media_ids: ids.filter(id => id !== media.id)};
-              if (ids.length >= 9) { Message.warning("最多选择 9 张参考图"); return o; }
-              return {...o, reference_media_ids: [...ids, media.id]};
-            })}><img src={imageUrl(media)} alt=""/><span>{media.name}</span></button>)}
-          </div></div>)}
-          {!data.roles.some(role => role.images.length) && <Empty description="角色中还没有图片"/>}
-        </div>
-      </Modal>
-      <Modal className="image-preview-modal" title={referencePreview?.name || "参考图预览"} visible={!!referencePreview} footer={null} onCancel={() => setReferencePreview(null)}>
-        <div className="image-preview-full">{referencePreview && <img src={imageUrl(referencePreview)} alt={referencePreview.name}/>}</div>
-      </Modal>
+      <RoleImagePicker title="从角色中选择参考图" visible={referenceRolePickerOpen} roles={data.roles} multiple showPrimary={false}
+        selectedIds={options.reference_media_ids||[]} onClose={()=>setReferenceRolePickerOpen(false)} onSelect={media=>setOptions(o=>{
+          const ids=o.reference_media_ids||[];
+          if(ids.includes(media.id))return {...o,reference_media_ids:ids.filter(id=>id!==media.id)};
+          if(ids.length>=9){Message.warning("最多选择 9 张参考图");return o;}
+          return {...o,reference_media_ids:[...ids,media.id]};
+        })} />
+      <ImagePreviewModal media={referencePreview} title="参考图预览" onClose={()=>setReferencePreview(null)} />
       <Modal
         title="选择视频资产"
         visible={videoAssetPickerOpen}
@@ -1732,7 +1593,7 @@ export function SceneEditor({
           )}
           <Form.Item
             label="画面描述"
-            extra={`将使用「模型与接口」中配置的 ${imageMode} 服务`}
+            extra={`将使用「设置」中配置的 ${imageMode} 服务`}
           >
             <div className="prompt-tools"><button type="button" disabled={optimizingPrompt||!imagePrompt.trim()} onClick={optimizeImagePrompt}>{optimizingPrompt?"正在优化…":"✨ 优化 Prompt"}</button></div>
             <Input.TextArea
@@ -1752,43 +1613,8 @@ export function SceneEditor({
           </Form.Item>
         </Form>
       </Modal>
-      <Modal
-        title="从角色中选择参考图"
-        visible={rolePickerOpen}
-        footer={
-          <Button type="primary" onClick={() => setRolePickerOpen(false)}>
-            完成
-          </Button>
-        }
-        onCancel={() => setRolePickerOpen(false)}
-      >
-        <div className="role-image-groups">
-          {data.roles.map((role) => (
-            <div key={role.id}>
-              <b>{role.name}</b>
-              <div className="media-picker">
-                {role.images.map((media) => (
-                  <div
-                    key={media.id}
-                    className={
-                      imageRefs.some((x) => x.id === media.id)
-                        ? "media-option selected"
-                        : "media-option"
-                    }
-                    onClick={() => toggleRef(media)}
-                  >
-                    <img src={imageUrl(media)} />
-                    <span>{media.id === role.design_media_id ? `主图 · ${media.name}` : media.name}</span>
-                  </div>
-                ))}
-              </div>
-              {!role.images.length && (
-                <p className="subtle">该角色还没有图片</p>
-              )}
-            </div>
-          ))}
-        </div>
-      </Modal>
+      <RoleImagePicker title="从角色中选择参考图" visible={rolePickerOpen} roles={data.roles} multiple
+        selectedIds={imageRefs.map(media=>media.id)} onSelect={toggleRef} onClose={()=>setRolePickerOpen(false)} />
     </section>
   );
 }
@@ -1806,14 +1632,11 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
   };
   return (
     <section>
-      <div className="section-title">
-        <div>
-          <p className="eyebrow">CHARACTER BIBLE</p>
-          <h1>角色设定</h1><p>建立角色档案，保持每个镜头中的视觉一致性。</p>
-        </div>
+      <div className="section-title page-actions">
         <Button
+          className="role-create-button"
           type="primary"
-          icon={<Plus />}
+          icon={<Plus size={18} />}
           onClick={() => make().catch((e) => Message.error(String(e)))}
         >
           创建角色
@@ -1882,9 +1705,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
           </div>
         </Card>
       </div>
-      <Modal className="image-preview-modal" title={roleImagePreview?.name || "角色图预览"} visible={!!roleImagePreview} footer={null} onCancel={() => setRoleImagePreview(null)}>
-        {roleImagePreview && <div className="image-preview-full"><img src={imageUrl(roleImagePreview)} alt={roleImagePreview.name} /></div>}
-      </Modal>
+      <ImagePreviewModal media={roleImagePreview} title="角色图预览" onClose={()=>setRoleImagePreview(null)} />
       <RoleEditor
         role={editing}
         data={data}
@@ -1912,6 +1733,7 @@ function RoleEditor({
   const [savingRole, setSavingRole] = useState(false);
   const [assetsOpen, setAssetsOpen] = useState(false);
   const [importingAsset, setImportingAsset] = useState(false);
+  const [pendingImage, setPendingImage] = useState<{id:number;name:string}|null>(null);
   const [renamingImage, setRenamingImage] = useState<{id:number;name:string}|null>(null);
   const [imagePreview, setImagePreview] = useState<Media | null>(null);
   const currentRole = data.roles.find((x) => x.id === role?.id) || role;
@@ -1921,6 +1743,7 @@ function RoleEditor({
     setDesign(role?.design_media_id || null);
     setAssetsOpen(false);
     setImagePreview(null);
+    setPendingImage(null);
   }, [role]);
   const upload = async () => {
     const source = await open({
@@ -1928,27 +1751,31 @@ function RoleEditor({
       filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp"] }],
     });
     if (typeof source !== "string" || !role) return;
-    await post("/media/import", {
+    const imported = await post<Media>("/media/import", {
       project_id: data.project.id,
-      role_id: role.id,
       source_path: source,
     });
     await reload();
-    Message.success("角色图片已导入");
+    setPendingImage({id:imported.id,name:""});
   };
   const importAsset = async (mediaId: number) => {
     if (!role || importingAsset) return;
+    setAssetsOpen(false);
+    setPendingImage({id:mediaId,name:""});
+  };
+  const confirmRoleImage = async () => {
+    if (!role || !pendingImage || importingAsset) return;
+    if (!pendingImage.name.trim()) return Message.warning("请输入角色图片名称");
     setImportingAsset(true);
     try {
       await post("/roles/media/add", {
-        project_id: data.project.id,
-        role_id: role.id,
-        media_id: mediaId,
+        project_id: data.project.id, role_id: role.id,
+        media_id: pendingImage.id, name: pendingImage.name.trim(),
       });
-      setDesign(mediaId);
+      setDesign(pendingImage.id);
+      setPendingImage(null);
       await reload();
-      setAssetsOpen(false);
-      Message.success("角色图片已导入，保存角色后设为主图");
+      Message.success("角色图片已添加，保存角色后设为主图");
     } catch (e) { Message.error(String(e)); }
     finally { setImportingAsset(false); }
   };
@@ -1981,10 +1808,8 @@ function RoleEditor({
     try {
       const result = await post<Media>("/generations/image", {project_id:data.project.id, operation,
         prompt:resolvePrompt(description, data.roles), aspect_ratio:"1:1", image_media_ids:operation === "i2i" ? [design] : []});
-      const imported = await post<Media>("/media/import", {project_id:data.project.id, role_id:role.id, source_path:result.path});
-      setDesign(imported.id);
       await reload();
-      Message.success("角色图片已生成，保存角色后设为主图");
+      setPendingImage({id:result.id,name:""});
     } catch(e) { Message.error(String(e)); }
     finally { setGenerating(false); }
   };
@@ -2097,7 +1922,7 @@ function RoleEditor({
             <Button icon={<ImagePlus size={15} />} disabled={generating || !design} onClick={() => generateRoleImage("i2i")}>图生图</Button>
           </Space>
           <p className="subtle">
-            创建生成任务会使用「模型与接口」中配置的 t2i / i2i 服务。
+            创建生成任务会使用「设置」中配置的 t2i / i2i 服务。
           </p>
         </Form.Item>
       </Form>
@@ -2110,14 +1935,21 @@ function RoleEditor({
         onSelect={importAsset}
         onClose={() => { if (!importingAsset) setAssetsOpen(false); }}
       />
+      <Modal visible={!!pendingImage} title="设置角色图片名称" okText="确认添加" confirmLoading={importingAsset}
+        okButtonProps={{disabled:!pendingImage?.name.trim()}} cancelButtonProps={{disabled:importingAsset}}
+        maskClosable={!importingAsset} closable={!importingAsset}
+        onCancel={() => { if (!importingAsset) setPendingImage(null); }} onOk={confirmRoleImage}>
+        <Form layout="vertical" disabled={importingAsset}><Form.Item label="角色图片名称" required extra="填写名称后才会关联到角色，可用 @角色.图片名称 引用。">
+          <Input autoFocus aria-label="角色图片名称" value={pendingImage?.name || ""} placeholder="请输入名称，例如：正面、侧面、校服"
+            onChange={name => setPendingImage(current => current ? {...current,name} : null)} onPressEnter={confirmRoleImage}/>
+        </Form.Item></Form>
+      </Modal>
       <Modal visible={!!renamingImage} title="编辑角色图片名称" okText="保存名称" onCancel={() => setRenamingImage(null)} onOk={renameImage}>
         <Form layout="vertical"><Form.Item label="图片名称" extra="图生图时可用 @角色.图片名称 引用这张图片。">
           <Input autoFocus value={renamingImage?.name || ""} onChange={name => setRenamingImage(current => current ? {...current,name} : null)} onPressEnter={renameImage}/>
         </Form.Item></Form>
       </Modal>
-      <Modal className="image-preview-modal" title={imagePreview?.name || "角色图预览"} visible={!!imagePreview} footer={null} onCancel={() => setImagePreview(null)}>
-        {imagePreview && <div className="image-preview-full"><img src={imageUrl(imagePreview)} alt={imagePreview.name} /></div>}
-      </Modal>
+      <ImagePreviewModal media={imagePreview} title="角色图预览" onClose={()=>setImagePreview(null)} />
     </Drawer>
   );
 }
@@ -2140,11 +1972,7 @@ export function Prompts({ data, reload }: { data: Snapshot; reload: () => void }
   };
   return (
     <section>
-      <div className="section-title">
-        <div>
-          <p className="eyebrow">PROMPT LIBRARY</p>
-          <h1>Prompt 库</h1><p>保存可复用的角色、场景与风格描述。</p>
-        </div>
+      <div className="section-title page-actions">
         <Button
           type="primary"
           className="prompt-create-button"
@@ -2248,7 +2076,40 @@ export function SettingsPage({
   });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  useEditGuard(dirty);
+  const [projectsDirectory, setProjectsDirectory] = useState("");
+  const [savedDirectory, setSavedDirectory] = useState<string | null>(null);
+  const [loadingDirectory, setLoadingDirectory] = useState(true);
+  const [savingDirectory, setSavingDirectory] = useState(false);
+  const directoryDirty = savedDirectory !== null && projectsDirectory !== savedDirectory;
+  useEditGuard(dirty || directoryDirty);
+  const loadDirectory = async () => {
+    setLoadingDirectory(true);
+    try {
+      const config = await post<{ projects_directory: string }>("/app/settings/load");
+      setProjectsDirectory(config.projects_directory);
+      setSavedDirectory(config.projects_directory);
+    } catch (e) { Message.error(String(e)); }
+    finally { setLoadingDirectory(false); }
+  };
+  useEffect(() => { void loadDirectory(); }, []);
+  const chooseDirectory = async () => {
+    try {
+      const selected = await open({ directory: true, multiple: false, title: "选择项目存储目录", defaultPath: projectsDirectory || undefined });
+      if (typeof selected === "string") setProjectsDirectory(selected);
+    } catch (e) { Message.error(String(e)); }
+  };
+  const saveDirectory = async () => {
+    if (savingDirectory || !directoryDirty) return;
+    if (!projectsDirectory.trim()) { Message.warning("请输入项目存储路径"); return; }
+    setSavingDirectory(true);
+    try {
+      const config = await post<{ projects_directory: string }>("/app/settings/save", { projects_directory: projectsDirectory.trim() });
+      setProjectsDirectory(config.projects_directory);
+      setSavedDirectory(config.projects_directory);
+      Message.success("项目存储路径已保存");
+    } catch (e) { Message.error(String(e)); }
+    finally { setSavingDirectory(false); }
+  };
   useEffect(
     () => {
       if (dirty) return;
@@ -2261,7 +2122,7 @@ export function SettingsPage({
   const methods = [
     ["image", "图片生成", "Text / Image to Image"],
     ["video", "视频生成", "Text / Image to Video"],
-    ["llm", "Prompt 优化模型", "OpenAI Chat Completions"],
+    ["llm", "LLM（分镜与 Prompt）", "OpenAI Chat Completions"],
   ];
   const set = (key: string, field: string, value: string) => {
     setDirty(true);
@@ -2283,14 +2144,7 @@ export function SettingsPage({
   };
   return (
     <section>
-      <div className="section-title">
-        <div>
-          <p className="eyebrow">MODEL CONNECTIONS</p>
-          <h1>模型与接口</h1>
-          <p>
-            图片生成支持 CAST 与 OpenAI 官方兼容接口；视频生成继续使用 CAST。
-          </p>
-        </div>
+      <div className="section-title page-actions">
         <Button
           type="primary"
           icon={<Save size={16} />}
@@ -2300,6 +2154,24 @@ export function SettingsPage({
         >
           保存配置
         </Button>
+      </div>
+      <div className="setting-block">
+        <div className="setting-heading">
+          <span className="setting-code">PROJECT</span><h3>项目存储</h3>
+          <p>项目地址路径</p>
+        </div>
+        <Form layout="vertical" disabled={loadingDirectory || savingDirectory || savedDirectory === null}>
+          <Form.Item label="项目存储路径" extra={`新建项目和从备份恢复的项目会保存在此目录，每个项目使用独立子文件夹。修改后已有项目仍保留在原位置。${isLocalDesktop ? "" : "请填写后端服务器上的绝对路径。"}`}>
+            <div className="project-directory-input">
+              <Input value={projectsDirectory} onChange={setProjectsDirectory} placeholder="输入项目存储目录的完整路径" aria-label="项目存储路径" />
+              {isLocalDesktop && <Button onClick={() => void chooseDirectory()}>选择文件夹</Button>}
+            </div>
+          </Form.Item>
+          <Space>
+            <Button type="primary" loading={savingDirectory} disabled={!directoryDirty || loadingDirectory} onClick={() => void saveDirectory()}>保存项目路径</Button>
+            {savedDirectory === null && !loadingDirectory && <Button onClick={() => void loadDirectory()} disabled={false}>重新加载</Button>}
+          </Space>
+        </Form>
       </div>
       {methods.map(([key, label, sub]) => {
         const image = key === "image";

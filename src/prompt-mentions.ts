@@ -32,7 +32,13 @@ export function promptMentions(roles:Role[], data?:Snapshot):PromptMention[] {
       }
     });
   }
-  return result;
+  for(const media of data?.media || []) {
+    if(media.kind!=="image") continue;
+    const name=media.name.replace(/\.[^.]+$/, "");
+    if(name&&!result.some(item=>item.name===name)) result.push({id:`asset-${media.id}`,name,description:`图片资源 · ${media.name}`,media,kind:"scene"});
+  }
+  const seen=new Set<string>();
+  return result.filter(item=>{if(seen.has(item.name))return false;seen.add(item.name);return true;});
 }
 export function mentionPattern(items:{name:string}[]) {
   const names=[...new Set(items.map(item=>item.name).filter(Boolean))].sort((a,b)=>b.length-a.length).map(name=>name.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"));

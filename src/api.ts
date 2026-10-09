@@ -2,7 +2,7 @@ import { jsonRequest, request, download } from "./transport";
 import { downloadName, releaseFile, selectedFile } from "./platform";
 const resourceFields: Record<string, string[]> = {
   roles: ["name", "description", "design_media_id"],
-  episodes: ["title", "description", "cover_media_id"],
+  episodes: ["title", "description", "cover_media_id", "storyboard"],
   scenes: ["title", "description", "episode_id", "first_media_id", "last_media_id", "reference_media_id", "generation_options"],
   prompts: ["name", "content", "category"],
   projects: ["name"], assets: ["name"],
@@ -76,3 +76,8 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   return jsonRequest<T>(`/api/v1/actions${path}`, "POST", data);
 }
 export const post = <T,>(path: string, data?: unknown) => api<T>(path, { method: "POST", body: JSON.stringify(data || {}) });
+
+/** Upload browser or clipboard files through the same asset endpoint. */
+export function uploadAsset<T>(projectId: string, file: File): Promise<T> {
+  return request<T>(`${projectPath(projectId, "assets/upload")}?${query({ name: file.name })}`, { method: "POST", body: file });
+}

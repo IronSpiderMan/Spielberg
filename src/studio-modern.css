@@ -778,7 +778,7 @@ html, body, #root { width:100%; height:100%; min-height:0; overflow:hidden; over
 .episode-editor-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
 
 /* Keep the heading fixed while each editor column scrolls independently. */
-.app .content:has(.episode-editor-page) { overflow: hidden; display: flex; flex-direction: column; }
+.app .content:has(> .episode-editor-page) { overflow: hidden; display: flex; flex-direction: column; }
 .content > .episode-editor-page { width: 100%; flex: 1; min-height: 0; }
 .episode-editor-page { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .episode-editor-page > .section-title { flex-shrink: 0; }
@@ -799,7 +799,11 @@ html, body, #root { width:100%; height:100%; min-height:0; overflow:hidden; over
 .episode-scene-order-preview { display: grid; place-items: center; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; background: var(--ui-subtle); }
 .episode-scene-order-preview img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .episode-scene-order-prompt { margin-top: 12px; }
-.episode-scene-order-prompt > b { font-size: 12px; }
+.episode-scene-order-prompt > summary { cursor: pointer; font-size: 12px; color: var(--ui-muted); }
+.episode-scene-order-prompt > summary > span { float: right; }
+.episode-scene-order-prompt .episode-prompt-collapse { display: none; }
+.episode-scene-order-prompt[open] .episode-prompt-expand { display: none; }
+.episode-scene-order-prompt[open] .episode-prompt-collapse { display: inline; }
 .episode-scene-order-description { color: var(--ui-muted); margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 900px) {
   .episode-editor-columns { grid-template-columns: minmax(0, 1fr) minmax(240px, .85fr); gap: 12px; }

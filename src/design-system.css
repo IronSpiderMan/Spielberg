@@ -42,6 +42,7 @@
 }
 .app { background: var(--ui-bg); }
 .app .side { width: 216px !important; min-width: 216px !important; flex-basis: 216px !important; padding: 24px 12px 16px; background: #f0f2f5 !important; border-right: 1px solid var(--ui-border); color: var(--ui-text); }
+.topbar .sidebar-toggle { flex-shrink: 0; width: 32px; padding: 0; margin-right: 12px; }
 .logo { padding: 0 12px 28px; gap: 10px; color: var(--ui-text); }
 .logo b { font-size: 19px; letter-spacing: -.6px; font-weight: 650; }
 .logo small { color: var(--ui-muted); font-size: 8px; letter-spacing: 1.3px; }
@@ -319,10 +320,10 @@ input.arco-input:disabled, textarea.arco-textarea:disabled, .arco-input-inner-wr
 .creation-desk .studio .page-heading h2 { margin: 0 0 6px; font-size: 18px; }
 
 /* Keep the create action's icon and label on the same vertical center. */
-.prompt-create-button.arco-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
-.prompt-create-button.arco-btn > .arco-btn-icon { display: inline-flex; align-items: center; margin-right: 0; }
-.prompt-create-button.arco-btn > span { line-height: 1; }
-.prompt-create-button svg { display: block; flex-shrink: 0; }
+.prompt-create-button.arco-btn, .role-create-button.arco-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.prompt-create-button.arco-btn > .arco-btn-icon, .role-create-button.arco-btn > .arco-btn-icon { display: inline-flex; align-items: center; margin-right: 0; }
+.prompt-create-button.arco-btn > span, .role-create-button.arco-btn > span { line-height: 1; }
+.prompt-create-button svg, .role-create-button svg { display: block; flex-shrink: 0; }
 .prompt-library-heading { margin: 24px 0 14px; }
 .prompt-library-heading h2 { margin: 0; }
 .prompt-library-heading p { margin: 6px 0 0; color: var(--ui-secondary-text); font-size: 13px; }
@@ -668,4 +669,45 @@ html[data-theme="dark"] .cut-copy > b {
 }
 html[data-theme="dark"] .cut-copy p {
   color: var(--ui-secondary-text) !important;
+}
+
+/* Desktop navigation can shrink to an icon rail without losing its actions. */
+@media (min-width: 601px) {
+  .app .side.side-collapsed {
+    width: 64px !important;
+    min-width: 64px !important;
+    flex-basis: 64px !important;
+    padding: 24px 8px 16px;
+  }
+  .side-collapsed .logo { padding: 0 0 28px; justify-content: center; }
+  .side-collapsed .logo > div,
+  .side-collapsed .nav-label,
+  .side-collapsed .project-switch > div,
+  .side-collapsed .project-dot,
+  .side-collapsed .side-bottom .arco-btn > span:not(.arco-btn-icon) { display: none; }
+  .side-collapsed .project-switch { justify-content: center; padding: 12px; }
+  .side-collapsed .nav .arco-menu-item { font-size: 0; justify-content: center; }
+  .side-collapsed .nav svg { margin: 0; }
+  .side-collapsed .side-bottom .arco-btn { justify-content: center; padding: 0; }
+}
+@media (min-width: 601px) and (max-width: 850px) {
+  .app .side:not(.side-collapsed) {
+    width: 184px !important;
+    min-width: 184px !important;
+    flex-basis: 184px !important;
+    padding: 20px 12px;
+  }
+  .side:not(.side-collapsed) .logo { padding: 0 0 28px; justify-content: flex-start; }
+  .side:not(.side-collapsed) .logo > div,
+  .side:not(.side-collapsed) .nav-label,
+  .side:not(.side-collapsed) .project-switch > div,
+  .side:not(.side-collapsed) .project-dot,
+  .side:not(.side-collapsed) .side-bottom .arco-btn > span:not(.arco-btn-icon) { display: block; }
+  .side:not(.side-collapsed) .project-switch { justify-content: flex-start; }
+  .side:not(.side-collapsed) .nav .arco-menu-item { font-size: 13px; justify-content: flex-start; }
+  .side:not(.side-collapsed) .nav svg { margin-right: 11px; }
+  .side:not(.side-collapsed) .side-bottom .arco-btn { justify-content: flex-start; padding-left: 12px; }
+}
+@media (max-width: 600px) {
+  .topbar .sidebar-toggle { display: none; }
 }
