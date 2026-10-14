@@ -72,7 +72,7 @@ fn validate(c: &Connection, resource: &str, value: &Value, create: bool) -> ApiR
     let fields: &[&str]=match resource {
         "roles"=>&["name","description","design_media_id"],
         "episodes"=>&["title","description","cover_media_id","storyboard"],
-        "scenes"=>&["title","description","prompt","episode_id","first_media_id","last_media_id","reference_media_id","generation_options"],
+        "scenes"=>&["creation_mode","title","description","prompt","episode_id","first_media_id","last_media_id","reference_media_id","generation_options"],
         "prompts"=>&["name","content","category"],
         "screenplays"=>&["title","content","format"],
         "assets"=>&["name","extension","data_base64","role_id"],_=>return Err(missing()),
@@ -89,6 +89,8 @@ fn validate(c: &Connection, resource: &str, value: &Value, create: bool) -> ApiR
             if m["kind"]!="image" {return Err(bad("该字段必须引用图片资产"))}
         }
         if ["role_id","episode_id"].contains(&key.as_str()) && !item.as_i64().is_some_and(|n|n>0) {return Err(bad(&format!("{key} 必须是正整数")))}
+        if key=="creation_mode" && !["default","canvas"].contains(&item.as_str().unwrap_or("")){return Err(bad("创建方式必须为 default 或 canvas"))}
+        if key=="creation_mode" && !create && get(c,"scenes",value["id"].as_i64().unwrap_or(0))?["creation_mode"]!=*item{return Err(bad("场景创建方式不可更改"))}
         if key=="format" && !["markdown","csv"].contains(&item.as_str().unwrap_or("")) {return Err(bad("剧本格式必须为 markdown 或 csv"))}
         if key=="generation_options" && !item.is_object(){return Err(bad("generation_options 必须是对象"))}
     }
@@ -209,7 +211,7 @@ pub(crate) fn import_uploaded(state:&AppState,pid:&str,path:&Path,name:&str,role
 }
 
 pub(crate) fn action(state:&AppState,path:&str,value:Value)->ApiResult<Value>{
-    const ALLOWED:&[&str]=&["/editor/projects","/editor/save","/editor/probe","/editor/export","/app/settings/load","/app/settings/save","/project","/project/changes","/projects/open","/projects/migrate","/projects/backup","/projects/restore","/media/import","/media/export","/media/pose-reference","/media/thumbnail","/media/usage","/media/restore","/media/purge","/media/video-frame","/storage/scan","/storage/cleanup","/roles/media/add","/roles/media/delete","/scripts/load","/scripts/save","/scripts/publish","/tasks","/generations/image","/generations/video","/prompts/optimize","/storyboard/generate","/storyboard/plan","/storyboard/validate","/scenes/reorder","/scenes/duplicate","/scenes/select-video","/scenes/delete-video","/episodes/reorder","/episodes/merge","/settings"];
+    const ALLOWED:&[&str]=&["/canvas/load","/canvas/save","/editor/projects","/editor/save","/editor/probe","/editor/export","/app/settings/load","/app/settings/save","/project","/project/changes","/projects/open","/projects/migrate","/projects/backup","/projects/restore","/media/import","/media/export","/media/pose-reference","/media/thumbnail","/media/usage","/media/restore","/media/purge","/media/video-frame","/storage/scan","/storage/cleanup","/roles/media/add","/roles/media/delete","/scripts/load","/scripts/save","/scripts/publish","/tasks","/generations/image","/generations/video","/prompts/optimize","/storyboard/generate","/storyboard/plan","/storyboard/validate","/scenes/reorder","/scenes/duplicate","/scenes/select-video","/scenes/delete-video","/episodes/reorder","/episodes/merge","/settings"];
     if !ALLOWED.contains(&path){return Err(missing())}
     Ok(dispatch(state,"POST".into(),path.into(),Some(value))?)
 }

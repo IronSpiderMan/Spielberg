@@ -7,7 +7,7 @@ import AssetThumbnail from "./AssetThumbnail";
 import { Media,Snapshot,imageUrl,post } from "./core";
 import "./creation.css";
 
-export type AssetUsage = {kind:"role"|"episode"|"scene";target_id:number;title:string;episode_id?:number;episode_title?:string;purpose:string};
+export type AssetUsage = {kind:"role"|"episode"|"scene"|"canvas";target_id:number;title:string;episode_id?:number;episode_title?:string;purpose:string};
 type Asset = Media & {usage_count:number;deleted_at?:string};
 type DiskScan = {files:{path:string;size:number}[];cache_bytes:number};
 const bytes = (value:number) => value < 1048576 ? `${(value/1024).toFixed(1)} KB` : `${(value/1048576).toFixed(1)} MB`;
@@ -101,7 +101,7 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
     <Pagination className="asset-pagination" current={page} pageSize={24} total={total} onChange={setPage} showTotal/>
     <Drawer width={460} visible={!!tracking} title="资产用途" footer={null} onCancel={()=>setTracking(null)}>
       <h3>{tracking?.name}</h3><Spin loading={usageLoading} style={{display:"block"}}>
-        {usageError?<p role="alert">{usageError}</p>:uses.length?uses.map((use,index)=><div className="usage-record" key={index}><Tag>{use.purpose}</Tag><b>{use.episode_title&&use.kind==="scene"?`${use.episode_title} / `:""}{use.title}</b><Button size="small" onClick={()=>{setTracking(null);onLocate(use);}}>前往{use.kind==="role"?"角色":use.kind==="episode"?"剧集":"场景"}</Button></div>):!usageLoading&&<Empty description="尚未被角色、剧集或场景使用"/>}
+        {usageError?<p role="alert">{usageError}</p>:uses.length?uses.map((use,index)=><div className="usage-record" key={index}><Tag>{use.purpose}</Tag><b>{use.episode_title&&use.kind==="scene"?`${use.episode_title} / `:""}{use.title}</b><Button size="small" onClick={()=>{setTracking(null);onLocate(use);}}>前往{use.kind==="role"?"角色":use.kind==="episode"?"剧集":use.kind==="canvas"?"画布":"场景"}</Button></div>):!usageLoading&&<Empty description="尚未被角色、剧集或场景使用"/>}
       </Spin>
     </Drawer>
     <Modal visible={!!preview} title={preview?.name} footer={filter==="trash"||preview?.kind==="file"||preview?.kind==="audio"?null:<Button type="primary" onClick={()=>preview&&beginAssignment(preview)}>设置用途</Button>} unmountOnExit onCancel={()=>setPreview(null)}>{preview?.kind==="video"?<video className="asset-preview" controls src={imageUrl(preview)}/>:preview?.kind==="audio"?<audio controls src={imageUrl(preview)} style={{width:"100%"}}/>:preview?.kind==="file"?<Empty description="此文件不支持预览，可通过更多操作导出查看"/>:<img className="asset-preview" src={imageUrl(preview||undefined)} alt={preview?.name}/>}</Modal>

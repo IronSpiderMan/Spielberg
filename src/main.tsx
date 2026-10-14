@@ -52,6 +52,7 @@ import "./scene-editor.css";
 import { PageHeading, PageLoading } from "./ui";
 import { FloatingImageGenerator } from "./components/FloatingImageGenerator";
 const CreationDesk=lazy(()=>import("./creation").then(m=>({default:m.CreationDesk})));
+const InfiniteCanvas=lazy(()=>import("./InfiniteCanvas"));
 const MediaEditor=lazy(()=>import("./MediaEditor"));
 const AssetLibrary=lazy(()=>import("./AssetLibrary"));
 const ScreenplayManager=lazy(()=>import("./ScreenplayManager"));
@@ -245,6 +246,10 @@ function App() {
     );
   const locateAsset=(usage:AssetUsage)=>leaveEditor(()=>{
     setLocate(usage);
+    if(usage.kind==="canvas"){
+      const scene=data.episodes.flatMap(e=>e.scenes).find(item=>item.id===usage.target_id);
+      if(scene){setSceneEditing({scene,isNew:false});setPage("episodes");}return;
+    }
     if(usage.kind==="scene"){
       const scene=data.episodes.flatMap(e=>e.scenes).find(item=>item.id===usage.target_id);
       if(scene){setSceneEditing({scene,isNew:false});return;}
@@ -257,7 +262,7 @@ function App() {
   };
   return (
     <EditGuardContext.Provider value={registerDirty}>
-    <Layout className={`app${darkMode ? " dark-theme" : ""}`}>
+    <Layout className={`app${darkMode ? " dark-theme" : ""}${sceneEditing?.scene.creation_mode === "canvas" ? " canvas-mode" : ""}`}>
       <Layout.Sider className={`side${sidebarCollapsed ? " side-collapsed" : ""}`} width={216}>
         <div className="logo">
           <img className="logo-mark" src={logoSrc} alt="Spielberg" />
@@ -342,8 +347,8 @@ function App() {
                 ? "工作台 · 图片生成"
                 : sceneEditing
                 ? sceneEditing.isNew
-                  ? "创建场景"
-                  : "编辑场景"
+                  ? (sceneEditing.scene.creation_mode === "canvas" ? "创建画布场景" : "创建场景")
+                  : (sceneEditing.scene.creation_mode === "canvas" ? "画布场景" : "编辑场景")
                 : (
                     {
                       studio: "工作台",
@@ -388,7 +393,7 @@ function App() {
         >
           <Suspense fallback={<PageLoading/>}>
           {sceneEditing ? (
-            <>
+            sceneEditing.scene.creation_mode === "canvas" ? <InfiniteCanvas key={`${data.project.id}:${sceneEditing.scene.id}`} data={data} scene={data.episodes.flatMap(e=>e.scenes).find(s=>s.id===sceneEditing.scene.id)||sceneEditing.scene} reload={refresh} onClose={()=>leaveEditor(()=>setSceneEditing(null))} /> : <>
             <div className="scene-editor-host" hidden={!!sceneImageFlow}>
             <SceneEditor
               key={`${data.project.id}:${sceneEditing.scene.id}`}
@@ -460,7 +465,7 @@ function App() {
           )}
           </Suspense>
         </Layout.Content>
-        {(sceneEditing || page === "screenplays" || page === "roles") && (
+        {((sceneEditing && sceneEditing.scene.creation_mode !== "canvas") || page === "screenplays" || page === "roles") && (
           <FloatingImageGenerator key={data.project.id} data={data} reload={refresh} />
         )}
       </Layout>

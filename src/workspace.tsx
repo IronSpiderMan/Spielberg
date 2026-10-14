@@ -64,6 +64,7 @@ const SequencePreview=lazy(()=>import("./creation").then(m=>({default:m.Sequence
 const ImageStudio=lazy(()=>import("./creation").then(m=>({default:m.ImageStudio})));
 
 function videoRequest(scene: Scene, settings: ModelSettings, roles: Role[], prompts: Snapshot["prompts"] = []) {
+  if(scene.creation_mode === "canvas") throw new Error(`${scene.title}：请进入画布，使用视频节点生成；已有场景视频可直接合并`);
   const options = scene.generation_options || defaultOptions;
   const mode = options.video_mode || ((options.reference_media_ids?.length || scene.reference_media_id) ? "i2v" : "fl2v");
   const request=buildVideoRequest({mode,prompt:resolvePrompt(sceneVideoPrompt(scene),roles,prompts),label:scene.title,sceneId:scene.id,
@@ -544,16 +545,21 @@ export function Episodes({
     } catch (e) { Message.error(String(e)); }
     finally { setCopyingScene(null); }
   };
+  const [sceneCreation,setSceneCreation]=useState<number|null>(null);
+  const [creationMode,setCreationMode]=useState<"default"|"canvas">("default");
+  const [newSceneTitle,setNewSceneTitle]=useState("");
   const makeScene = async (id: number) => {
     setInserting(id);
     try {
     const x = await post<Scene>("/scenes", {
       project_id: data.project.id,
       episode_id: id,
-      title: `场景 ${(data.episodes.find(ep => ep.id === id)?.scenes.length ?? 0) + 1}`,
+      title: newSceneTitle.trim() || `场景 ${(data.episodes.find(ep => ep.id === id)?.scenes.length ?? 0) + 1}`,
+      creation_mode: creationMode,
       description: "",
     });
     await reload();
+    setSceneCreation(null);
     editScene(x, true);
     } finally { setInserting(null); }
   };
@@ -620,7 +626,7 @@ export function Episodes({
                   <div className="scene-row" key={s.id}>
                     <span>{String(i + 1).padStart(2, "0")}</span>
                     <SceneThumb scene={s} media={data.media} onPreview={sceneVideos(s).length ? () => openScenePreview(s) : undefined} />
-                    <div className="scene-copy"><b>{s.title}</b><p>{s.description || "尚未填写镜头描述"}</p></div>
+                    <div className="scene-copy"><b>{s.title} {s.creation_mode === "canvas" && <Tag color="arcoblue">画布</Tag>}</b><p>{s.description || "尚未填写镜头描述"}</p></div>
                     <div className="scene-actions">
                     <Tag color={s.video_media_id ? "green" : "gray"}>
                       {s.video_media_id ? "视频已就绪" : (s.first_media_id || s.last_media_id || s.reference_media_id || s.generation_options?.reference_media_ids?.length) ? "已设画面" : "待制作"}
@@ -638,14 +644,14 @@ export function Episodes({
                 <Button
                   loading={inserting === ep.id}
                   disabled={inserting !== null}
-                  className="empty-scene"
+                  className={`empty-scene${ep.scenes.length ? " scene-create-button" : ""}`}
                   type="text"
                   icon={<Plus size={14} />}
                   onClick={() =>
-                    makeScene(ep.id).catch((e) => Message.error(String(e)))
+                    { setSceneCreation(ep.id); setCreationMode("default"); setNewSceneTitle(`场景 ${ep.scenes.length+1}`); }
                   }
                 >
-                  插入空场景
+                  新建场景
                 </Button>
               </div>
             </Card>
@@ -654,6 +660,13 @@ export function Episodes({
           <Empty description="创建第一个剧集，开始排布场景" />
         )}
       </div>
+      <Modal title="新建场景" visible={sceneCreation!==null} confirmLoading={inserting!==null} onCancel={()=>{if(inserting===null)setSceneCreation(null);}} onOk={()=>sceneCreation!==null?makeScene(sceneCreation).catch(e=>{Message.error(String(e));throw e;}):undefined}>
+        <Form layout="vertical"><Form.Item label="场景名称"><Input aria-label="新场景名称" value={newSceneTitle} onChange={setNewSceneTitle}/></Form.Item>
+        <Form.Item label="创建方式"><div className="scene-creation-options">
+          <button type="button" className={creationMode==="default"?"selected":""} aria-pressed={creationMode==="default"} onClick={()=>setCreationMode("default")}><b>默认方式</b><span>使用场景表单设置画面、描述和生成参数</span></button>
+          <button type="button" className={creationMode==="canvas"?"selected":""} aria-pressed={creationMode==="canvas"} onClick={()=>setCreationMode("canvas")}><b>画布方式</b><span>在画布中连接图片、音频与视频节点创作</span></button>
+        </div></Form.Item></Form>
+      </Modal>
       <Modal
         className="batch-generation-modal"
         title={`生成剧集 · ${batch?.title || ""}`}

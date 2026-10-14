@@ -50,6 +50,7 @@ export function sceneVideoPrompt(scene: {prompt?: string; description: string}):
   return scene.prompt?.trim() ? scene.prompt : scene.description;
 }
 export type Scene = {
+  creation_mode?: "default" | "canvas";
   prompt?: string;
   script?: Record<FrameKey, string> & { references?: string[] };
   generation_options?: GenerationOptions;

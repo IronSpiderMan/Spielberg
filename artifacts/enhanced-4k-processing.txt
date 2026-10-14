@@ -1,0 +1,8 @@
+处理方式：内置 image_gen 图像增强（并非专用超分模型）。
+AI 输出：1672 × 941。
+最终尺寸：3840 × 2160，使用 FFmpeg Lanczos 补采样。
+SVG：按最终 PNG 的 RGB 色块合并为纯矢量路径；无内嵌图片。已对路径覆盖范围与颜色进行逐像素验证。
+局限：AI 图像增强重建了部分面部、发丝和服装细节；不能保证与原图完全一致。4K 为补采样后的尺寸，不是模型原生输出尺寸。
+
+实际提交给内置 image_gen 的提示词：
+Use case: identity-preserve. Input image is the edit target, not a loose reference. Perform a conservative 2x super-resolution enhancement of this exact photograph, desired output 3840x2160 pixels, same 16:9 full frame. Preserve the exact person's identity, face proportions, gaze direction, puffed cheeks and pouting lips, two brown hair buns, bangs, white bunny hairclips, navy blazer, white shirt, gray plaid bow, gray sofa, blurred indoor background, crop and every object's position. Preserve original lighting, colors, depth of field and photographic style. Enhance only resolution, natural fine hair strands and existing fabric/eye detail; reduce JPEG artifacts gently. Do not redesign, beautify, restyle, change facial features, add objects, change background or invent visible accessories. No text or watermark.

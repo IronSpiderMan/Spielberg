@@ -203,6 +203,10 @@ mod tests {
         c.execute("INSERT INTO background_jobs(operation,status,prompt,created_at,updated_at,result_json) VALUES('image','completed','','1','1',?)",[json!({"id":1,"path":file,"kind":"image"}).to_string()]).unwrap();
         let shot_csv=format!("编号,景别,运镜,画面,描述\r\n001,中景,固定,{},\"逗号,与\"\"引号\"\"\n换行\"",file.to_string_lossy());
         c.execute("INSERT INTO screenplays(title,content,format,created_at,updated_at) VALUES('分镜',?,'csv','1','1')",[&shot_csv]).unwrap();
+        let board=json!({"version":1,"nodes":[{"id":"image","kind":"media","ref_id":1,"x":30,"y":40}],"edges":[],"viewport":{"x":80,"y":80,"zoom":1}});
+        c.execute_batch("INSERT INTO episodes(id,title,sort_order,created_at) VALUES(1,'画布剧集',0,'1'); INSERT INTO scenes(id,episode_id,title,sort_order,created_at,creation_mode) VALUES(1,1,'画布场景',0,'1','canvas');").unwrap();
+        c.execute("INSERT INTO scene_canvases VALUES(1,?,3)",[board.to_string()]).unwrap();
+        c.execute("INSERT INTO scene_canvas_sources VALUES(1,1)",[]).unwrap();
         let backup=base.join("portable.spielberg-backup");export(&c,&root,&backup,"Test",false).unwrap();
         let extracted=base.join("extracted");unpack_archive(&backup,&extracted).unwrap();
         let copy=Connection::open(extracted.join("spielberg.sqlite")).unwrap();
@@ -211,7 +215,10 @@ mod tests {
         assert!(!fs::read(extracted.join("spielberg.sqlite")).unwrap().windows(12).any(|bytes|bytes==b"secret-value"));
         let restored=base.join("restored");assert_eq!(restore(&backup,&restored).unwrap(),"Test");
         let restored_db=Connection::open(restored.join("spielberg.sqlite")).unwrap();
-        assert_eq!(catalog::usages(&restored_db,1).unwrap().len(),1);
+        assert_eq!(catalog::usages(&restored_db,1).unwrap().len(),2);
+        assert!(catalog::usages(&restored_db,1).unwrap().iter().any(|u|u["kind"]=="canvas"));
+        assert_eq!(restored_db.query_row("SELECT draft FROM scene_canvases",[],|r|r.get::<_,String>(0)).unwrap(),board.to_string());
+        assert_eq!(restored_db.query_row("SELECT revision FROM scene_canvases",[],|r|r.get::<_,i64>(0)).unwrap(),3);
         assert_eq!(catalog::list(&restored_db,&json!({"usage":"trash"})).unwrap()["total"],1);
         let path:String=restored_db.query_row("SELECT path FROM media WHERE id=1",[],|r|r.get(0)).unwrap();assert!(Path::new(&path).starts_with(&restored));assert_eq!(fs::read(path).unwrap(),b"image content");
         let restored_csv:String=restored_db.query_row("SELECT content FROM screenplays WHERE format='csv'",[],|r|r.get(0)).unwrap();
