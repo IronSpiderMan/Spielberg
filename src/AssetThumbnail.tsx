@@ -1,5 +1,5 @@
 import { fileUrl } from "./core";
-import { File,Film,Image as ImageIcon } from "lucide-react";
+import { File,Film,Music,Image as ImageIcon } from "lucide-react";
 import { useEffect,useRef,useState } from "react";
 import { imageUrl,Media,post } from "./core";
 
@@ -19,7 +19,7 @@ export default function AssetThumbnail({media, projectId}: {media: Media; projec
   useEffect(() => {
     let disposed = false;
     setSource(""); setFailed(false);
-    if(media.kind==="file"){setFailed(true);return;}
+    if(media.kind==="file"||media.kind==="audio"){setFailed(true);return;}
     const observer = new IntersectionObserver(entries => {
       if (!entries.some(entry => entry.isIntersecting)) return;
       observer.disconnect();
@@ -37,6 +37,6 @@ export default function AssetThumbnail({media, projectId}: {media: Media; projec
     return () => {disposed = true; observer.disconnect();};
   }, [projectId, media.id, media.path]);
   return <span className="cached-thumbnail" ref={holder}>
-    {source && !failed ? <img loading="lazy" decoding="async" src={source} alt={media.name} onError={() => setFailed(true)}/> : <span className="thumbnail-placeholder">{media.kind === "video" ? <Film size={32}/> : media.kind==="file" ? <File size={32}/> : <ImageIcon size={32}/>}<small>{media.kind==="file" ? "文件" : failed ? "点击预览原文件" : "加载预览"}</small></span>}
+    {source && !failed ? <img loading="lazy" decoding="async" src={source} alt={media.name} onError={() => setFailed(true)}/> : <span className="thumbnail-placeholder">{media.kind === "video" ? <Film size={32}/> : media.kind === "audio" ? <Music size={32}/> : media.kind==="file" ? <File size={32}/> : <ImageIcon size={32}/>}<small>{media.kind==="file" ? "文件" : media.kind==="audio" ? "音频 · 点击试听" : failed ? "点击预览原文件" : "加载预览"}</small></span>}
   </span>;
 }

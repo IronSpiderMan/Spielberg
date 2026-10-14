@@ -23,6 +23,8 @@ export type GenerationOptions = {
   aspect_ratio: string;
   size?: string;
   reference_media_ids?: number[];
+  reference_video_media_ids?: number[];
+  reference_audio_media_ids?: number[];
 };
 export const defaultOptions: GenerationOptions = {
   custom: false,
@@ -44,7 +46,11 @@ export function defaultGenerationSize(ratio: string): string {
   const group = GENERATION_SIZES.find(group => group.ratio === ratio);
   return ratio === "16:9" || !group ? "1344x768" : group.sizes[0];
 }
+export function sceneVideoPrompt(scene: {prompt?: string; description: string}): string {
+  return scene.prompt?.trim() ? scene.prompt : scene.description;
+}
 export type Scene = {
+  prompt?: string;
   script?: Record<FrameKey, string> & { references?: string[] };
   generation_options?: GenerationOptions;
   videos?: Media[];
@@ -81,7 +87,9 @@ export type ModelSettings = Record<
     description: string;
   }
 >;
+export type Screenplay = { format: "markdown" | "csv"; id: number; title: string; content: string; created_at: string; updated_at: string };
 export type Snapshot = {
+  screenplays?: Screenplay[];
   revisions?: Record<string,number>;
   project: Project;
   roles: Role[];

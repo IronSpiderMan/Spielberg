@@ -3,6 +3,12 @@ use super::*;
 pub fn install(c: &Connection) -> Result<(), String> {
     let _ = c.execute("ALTER TABLE media ADD COLUMN deleted_at TEXT", []);
     let _ = c.execute("ALTER TABLE media ADD COLUMN purged_at TEXT", []);
+    c.execute_batch("CREATE TABLE IF NOT EXISTS edit_projects(id TEXT PRIMARY KEY,name TEXT NOT NULL,draft TEXT NOT NULL DEFAULT '{}',status TEXT NOT NULL DEFAULT 'draft',created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS edit_sources(edit_id TEXT NOT NULL REFERENCES edit_projects(id) ON DELETE CASCADE,media_id INTEGER NOT NULL REFERENCES media(id),PRIMARY KEY(edit_id,media_id));
+    CREATE TABLE IF NOT EXISTS edit_outputs(edit_id TEXT NOT NULL REFERENCES edit_projects(id) ON DELETE CASCADE,media_id INTEGER NOT NULL REFERENCES media(id),created_at TEXT NOT NULL,PRIMARY KEY(edit_id,media_id));").map_err(|e|e.to_string())?;
+    let _=c.execute("ALTER TABLE edit_outputs ADD COLUMN request TEXT",[]);
+    let view_sql:Option<String>=c.query_row("SELECT sql FROM sqlite_master WHERE type='view' AND name='asset_usage'",[],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
+    if view_sql.is_some_and(|sql|!sql.contains("edit_sources")){c.execute_batch("DROP VIEW asset_usage;").map_err(|e|e.to_string())?;}
     c.execute_batch("CREATE INDEX IF NOT EXISTS media_active ON media(deleted_at,id);
     CREATE TABLE IF NOT EXISTS revisions(section TEXT PRIMARY KEY, version INTEGER NOT NULL DEFAULT 0);
     CREATE VIEW IF NOT EXISTS asset_usage AS
@@ -12,7 +18,12 @@ pub fn install(c: &Connection) -> Result<(), String> {
     UNION ALL SELECT s.first_media_id,'scene',s.id,s.title,e.id,e.title,'场景首帧' FROM scenes s JOIN episodes e ON e.id=s.episode_id WHERE s.first_media_id IS NOT NULL
     UNION ALL SELECT s.last_media_id,'scene',s.id,s.title,e.id,e.title,'场景尾帧' FROM scenes s JOIN episodes e ON e.id=s.episode_id WHERE s.last_media_id IS NOT NULL
     UNION ALL SELECT s.reference_media_id,'scene',s.id,s.title,e.id,e.title,'场景参考图' FROM scenes s JOIN episodes e ON e.id=s.episode_id WHERE s.reference_media_id IS NOT NULL
-    UNION ALL SELECT sv.media_id,'scene',s.id,s.title,e.id,e.title,CASE WHEN s.video_media_id=sv.media_id THEN '当前视频' ELSE '候选视频' END FROM scene_videos sv JOIN scenes s ON s.id=sv.scene_id JOIN episodes e ON e.id=s.episode_id;").map_err(|e| e.to_string())?;
+    UNION ALL SELECT DISTINCT CAST(j.value AS INTEGER),'scene',s.id,s.title,e.id,e.title,'场景参考图' FROM scene_options o JOIN scenes s ON s.id=o.scene_id JOIN episodes e ON e.id=s.episode_id JOIN json_each(CASE WHEN json_valid(o.value) THEN o.value ELSE '{}' END,'$.reference_media_ids') j WHERE CAST(j.value AS INTEGER) IS NOT s.reference_media_id
+    UNION ALL SELECT DISTINCT CAST(j.value AS INTEGER),'scene',s.id,s.title,e.id,e.title,'场景参考视频' FROM scene_options o JOIN scenes s ON s.id=o.scene_id JOIN episodes e ON e.id=s.episode_id JOIN json_each(CASE WHEN json_valid(o.value) THEN o.value ELSE '{}' END,'$.reference_video_media_ids') j
+    UNION ALL SELECT DISTINCT CAST(j.value AS INTEGER),'scene',s.id,s.title,e.id,e.title,'场景参考音频' FROM scene_options o JOIN scenes s ON s.id=o.scene_id JOIN episodes e ON e.id=s.episode_id JOIN json_each(CASE WHEN json_valid(o.value) THEN o.value ELSE '{}' END,'$.reference_audio_media_ids') j
+    UNION ALL SELECT sv.media_id,'scene',s.id,s.title,e.id,e.title,CASE WHEN s.video_media_id=sv.media_id THEN '当前视频' ELSE '候选视频' END FROM scene_videos sv JOIN scenes s ON s.id=sv.scene_id JOIN episodes e ON e.id=s.episode_id
+    UNION ALL SELECT es.media_id,'edit',0,p.name,NULL,NULL,'剪辑素材' FROM edit_sources es JOIN edit_projects p ON p.id=es.edit_id
+    UNION ALL SELECT eo.media_id,'edit',0,p.name,NULL,NULL,'剪辑产出' FROM edit_outputs eo JOIN edit_projects p ON p.id=eo.edit_id;").map_err(|e| e.to_string())?;
     for (table, sections) in [
         ("media", vec!["media", "roles", "episodes"]), ("roles",vec!["roles"]),
         ("role_media",vec!["roles"]), ("episodes",vec!["episodes"]), ("scenes",vec!["episodes"]),
@@ -145,7 +156,7 @@ pub fn cleanup(c:&Connection,root:&Path,v:&Value)->Result<Value,String> {
         if !allowed.iter().any(|item|item["path"]==path){continue}
         let source=owned_file(root,Path::new(path))?;
         let name=source.file_name().unwrap_or_default().to_string_lossy();
-        let kind=match source.extension().and_then(|e|e.to_str()).unwrap_or("").to_ascii_lowercase().as_str(){"mp4"|"mov"|"webm"|"mkv"=>"video","png"|"jpg"|"jpeg"|"webp"|"gif"=>"image",_=>"file"};
+        let kind=match source.extension().and_then(|e|e.to_str()).unwrap_or("").to_ascii_lowercase().as_str(){"mp4"|"mov"|"webm"|"mkv"=>"video","png"|"jpg"|"jpeg"|"webp"|"gif"=>"image","mp3"|"wav"|"m4a"|"aac"|"ogg"|"flac"=>"audio",_=>"file"};
         c.execute("INSERT INTO media(name,path,kind,created_at,deleted_at) VALUES(?,?,?,?,?)",params![name,path,kind,now(),now()]).map_err(|e|e.to_string())?;
         count+=1;
     }
@@ -184,6 +195,19 @@ mod tests {
         assert!(c.execute("UPDATE scenes SET video_media_id=2 WHERE id=1",[]).is_err());
         c.execute("UPDATE media SET deleted_at=NULL WHERE id=2",[]).unwrap();
         select_asset_video(&c,1,2).unwrap();
+    }
+    #[test]
+    fn optional_reference_usage_survives_existing_view_upgrade() {
+        let c=fixture();
+        c.execute_batch("DROP VIEW asset_usage; CREATE VIEW asset_usage AS SELECT 999 AS media_id;").unwrap();
+        install(&c).unwrap();
+        c.execute_batch("INSERT INTO media(id,name,path,kind,created_at) VALUES(3,'voice','/voice.wav','audio','1');
+        INSERT INTO scene_options VALUES(1,'{\"reference_media_ids\":[1],\"reference_video_media_ids\":[2],\"reference_audio_media_ids\":[3]}');").unwrap();
+        assert_eq!(usages(&c,1).unwrap().len(),5);
+        assert!(usages(&c,2).unwrap().iter().any(|u|u["purpose"]=="场景参考视频"));
+        assert_eq!(usages(&c,3).unwrap()[0]["purpose"],"场景参考音频");
+        assert!(trash(&c,3).is_err());
+        c.execute("DELETE FROM scene_options",[]).unwrap();trash(&c,3).unwrap();
     }
     #[test]
     fn filters_apply_before_pagination_and_revisions_track_only_changes() {

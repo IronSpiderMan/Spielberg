@@ -67,6 +67,25 @@ def main():
             scene = api("POST", scope + "/scenes", {"episode_id": episode["id"], "title": "场景一", "description": "雨夜"}, 201)
             prompt = api("POST", scope + "/prompts", {"name": "风格", "content": "水墨", "category": "风格"}, 201)
             assert api("PATCH", scope + f'/prompts/{prompt["id"]}', {"name": "重命名"})["content"] == "水墨"
+            # Screenplays persist Markdown, preserve content on rename, and refresh independently.
+            markdown = "# 雨夜\n\n**林舟**\n> 你终于来了。"
+            screenplay = api("POST", scope + "/screenplays", {"title": "雨夜", "content": markdown}, 201)
+            screenplay_path = scope + f'/screenplays/{screenplay["id"]}'
+            assert api("PATCH", screenplay_path, {"title": "第一稿"})["content"] == markdown
+            snapshot = api("POST", "/actions/project", {"id": pid})
+            assert snapshot["screenplays"][0]["title"] == "第一稿"
+            assert "screenplays" not in api("POST", "/actions/project/changes", {"id": pid, "revisions": snapshot["revisions"]})
+            api("PATCH", screenplay_path, {"content": markdown + "\n\n---"})
+            changed = api("POST", "/actions/project/changes", {"id": pid, "revisions": snapshot["revisions"]})
+            assert changed["screenplays"][0]["content"].endswith("---") and "episodes" not in changed
+            another = api("POST", "/projects", {"name": "剧本隔离"}, 201)
+            assert api("GET", "/projects/" + another["id"] + "/screenplays") == []
+            api("DELETE", "/projects/" + another["id"])
+            api("POST", scope + "/screenplays", {"title": "  "}, 400)
+            api("PATCH", screenplay_path, {"content": []}, 400)
+            api("DELETE", screenplay_path)
+            api("GET", screenplay_path, expected=404)
+            assert api("GET", scope + "/screenplays") == []
             # Binary upload, role assignment, Unicode query, real file download, and byte ranges.
             contents, _ = raw("POST", "/api/v1" + scope + "/assets/upload?" + urllib.parse.urlencode({"name": "参考图.png", "role_id": role["id"]}), PNG, expected=201)
             asset = json.loads(contents)["data"]; mid = asset["id"]
@@ -116,7 +135,7 @@ def main():
             assert api("DELETE", scope)["data_retained"] is True
             assert Path(project["path"]).is_dir()
             api("GET", scope, expected=404)
-            print("PASS: six-resource CRUD, PATCH preservation, concurrent projects, binary uploads, references, ranges, backup restore, validation, CORS, SPA hosting")
+            print("PASS: seven-resource CRUD, PATCH preservation, concurrent projects, binary uploads, references, ranges, backup restore, validation, CORS, SPA hosting")
         finally:
             process.terminate()
             try: process.wait(timeout=10)

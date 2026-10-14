@@ -708,6 +708,116 @@ html[data-theme="dark"] .cut-copy p {
   .side:not(.side-collapsed) .nav svg { margin-right: 11px; }
   .side:not(.side-collapsed) .side-bottom .arco-btn { justify-content: flex-start; padding-left: 12px; }
 }
+.topbar .mobile-projects-button { display: none; }
 @media (max-width: 600px) {
   .topbar .sidebar-toggle { display: none; }
+  .topbar .mobile-projects-button {
+    display: inline-flex;
+    flex-shrink: 0;
+    margin-right: 8px;
+    min-height: 36px;
+    color: var(--ui-primary);
+  }
+}
+
+/* Keep native Arco surfaces (including body portals) on the studio palette. */
+html[data-theme="dark"] body {
+  --color-bg-1: var(--ui-bg);
+  --color-bg-2: var(--ui-surface);
+  --color-bg-3: var(--ui-subtle);
+  --color-bg-4: #303744;
+  --color-bg-5: #363e4c;
+  --color-bg-popup: var(--ui-surface);
+  --color-border: var(--ui-border);
+  --color-border-1: var(--ui-border);
+  --color-border-3: #485263;
+  --color-border-4: #596477;
+  --color-text-4: #798596;
+}
+html[data-theme="dark"] .arco-drawer-header,
+html[data-theme="dark"] .arco-modal-header {
+  background: var(--ui-surface);
+  border-color: var(--ui-border);
+}
+html[data-theme="dark"] .arco-card-header,
+html[data-theme="dark"] .arco-card-body {
+  background: transparent;
+  border-color: var(--ui-border);
+}
+/* Custom media controls are outside Arco's theme system. Do not apply filters
+   or opacity to images: source artwork must retain its original colors. */
+html[data-theme="dark"] .media-option,
+html[data-theme="dark"] .selected-inputs > div,
+html[data-theme="dark"] .creation-asset-option {
+  background: var(--ui-subtle);
+  border-color: var(--ui-border);
+  color: var(--ui-secondary-text);
+}
+html[data-theme="dark"] .video-version,
+html[data-theme="dark"] .creation-reference-picker,
+html[data-theme="dark"] .creation-reference-chip,
+html[data-theme="dark"] .creation-search-hint,
+html[data-theme="dark"] .mask-painter {
+  background: var(--ui-surface);
+  border-color: var(--ui-border);
+  color: var(--ui-text);
+}
+html[data-theme="dark"] .creation-reference-chip span,
+html[data-theme="dark"] .creation-reference-chip button {
+  color: var(--ui-secondary-text);
+}
+html[data-theme="dark"] .creation-reference-chip button:hover {
+  background: var(--ui-subtle);
+  color: var(--ui-text);
+}
+html[data-theme="dark"] .creation-asset-option.selected,
+html[data-theme="dark"] .creation-asset-option:focus-visible {
+  border-color: var(--ui-primary);
+  outline-color: var(--ui-primary);
+}
+html[data-theme="dark"] .creation-asset-option.selected::after {
+  background: #315dcc;
+}
+html[data-theme="dark"] .generation-error {
+  background: #482b31;
+  color: #ffadb1;
+}
+html[data-theme="dark"] .image-generation-errors {
+  color: var(--ui-error);
+}
+html[data-theme="dark"] .prompt-tools button {
+  background: #39314f;
+  border-color: #655685;
+  color: #d1c4ff;
+}
+html[data-theme="dark"] .batch-generation-help,
+html[data-theme="dark"] .preview-info p,
+html[data-theme="dark"] .timeline-head span,
+html[data-theme="dark"] .role-foot,
+html[data-theme="dark"] .setting-row label small,
+html[data-theme="dark"] .thumbnail-placeholder,
+html[data-theme="dark"] .video-resolution,
+html[data-theme="dark"] .video-library h2 span,
+html[data-theme="dark"] .selected-inputs span,
+html[data-theme="dark"] .creation-load-more,
+html[data-theme="dark"] .creation-search-hint {
+  color: var(--ui-muted);
+}
+html[data-theme="dark"] .asset-usage-link {
+  color: var(--ui-primary);
+}
+html[data-theme="dark"] .me-clip {
+  background: #39314f;
+  color: #dfd3ff;
+}
+html[data-theme="dark"] .me-clip.audio {
+  background: #203b31;
+  color: #a3e3c5;
+}
+html[data-theme="dark"] .arco-empty-description,
+html[data-theme="dark"] .arco-empty .arco-empty-image {
+  color: var(--ui-muted);
+}
+html[data-theme="dark"] .arco-btn-primary:not(.arco-btn-disabled) {
+  color: #171a20;
 }

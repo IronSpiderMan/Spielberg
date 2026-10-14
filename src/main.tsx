@@ -18,6 +18,7 @@ ChevronRight,
 Clapperboard,
 Film,
 FolderOpen,
+FileText,
 ImagePlus,
 LayoutDashboard,
 Moon,
@@ -49,8 +50,11 @@ import "./layout.css";
 import "./design-system.css";
 import "./scene-editor.css";
 import { PageHeading, PageLoading } from "./ui";
+import { FloatingImageGenerator } from "./components/FloatingImageGenerator";
 const CreationDesk=lazy(()=>import("./creation").then(m=>({default:m.CreationDesk})));
+const MediaEditor=lazy(()=>import("./MediaEditor"));
 const AssetLibrary=lazy(()=>import("./AssetLibrary"));
+const ScreenplayManager=lazy(()=>import("./ScreenplayManager"));
 const ProjectTools=lazy(()=>import("./ProjectTools"));
 
 const Studio=lazy(()=>import("./workspace").then(m=>({default:m.Studio})));
@@ -69,6 +73,9 @@ function App() {
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("spielberg-theme") === "dark");
   useEffect(() => {
     document.documentElement.dataset.theme = darkMode ? "dark" : "light";
+    // Arco popups render under body and need the library theme as well.
+    if (darkMode) document.body.setAttribute("arco-theme", "dark");
+    else document.body.removeAttribute("arco-theme");
     localStorage.setItem("spielberg-theme", darkMode ? "dark" : "light");
   }, [darkMode]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -76,6 +83,7 @@ function App() {
   const [data, setData] = useState<Snapshot | null>(null);
   const snapshotRef = useRef<Snapshot|null>(null);
   const refreshSequence=useRef(0);
+  const refreshQueue=useRef<Promise<void>>(Promise.resolve());
   const [locate,setLocate]=useState<AssetUsage|null>(null);
   const activeRef = useRef<string | null>(null);
   const [page, setPage] = useState("studio");
@@ -127,17 +135,22 @@ function App() {
       localStorage.removeItem("spielberg-last-project");
     }
   };
-  const refresh = useCallback(async () => {
-    const current=snapshotRef.current;
-    const id=activeRef.current;
-    if(!id||!current)return;
-    const sequence=++refreshSequence.current;
-    const changes=await post<Partial<Snapshot>>("/project/changes",{id,revisions:current.revisions||{}});
-    if(activeRef.current!==id||sequence!==refreshSequence.current)return;
-    const merged={...snapshotRef.current,...changes} as Snapshot;
-    snapshotRef.current=merged;
-    // No changed domain means no React render or media-grid requery.
-    if(Object.keys(changes).some(key=>key!=="project"&&key!=="revisions") || JSON.stringify(current.revisions)!==JSON.stringify(changes.revisions))setData(merged);
+  const refresh = useCallback(() => {
+    const run = async () => {
+      const current=snapshotRef.current;
+      const id=activeRef.current;
+      if(!id||!current)return;
+      const sequence=++refreshSequence.current;
+      const changes=await post<Partial<Snapshot>>("/project/changes",{id,revisions:current.revisions||{}});
+      if(activeRef.current!==id||sequence!==refreshSequence.current)return;
+      const merged={...snapshotRef.current,...changes} as Snapshot;
+      snapshotRef.current=merged;
+      // No changed domain means no React render or media-grid requery.
+      if(Object.keys(changes).some(key=>key!=="project"&&key!=="revisions") || JSON.stringify(current.revisions)!==JSON.stringify(changes.revisions))setData(merged);
+    };
+    const next=refreshQueue.current.catch(()=>{}).then(run);
+    refreshQueue.current=next;
+    return next;
   }, []);
   useEffect(() => {
     load().catch(e=>Message.error(String(e))).finally(()=>setBusy(false));
@@ -267,10 +280,12 @@ function App() {
             <LayoutDashboard />
             工作台
           </Menu.Item>
+          <Menu.Item key="screenplays" title="剧本管理" aria-label="剧本管理"><FileText />剧本管理</Menu.Item>
           <Menu.Item key="episodes" title="剧集" aria-label="剧集">
             <Clapperboard />
             剧集
           </Menu.Item>
+          <Menu.Item key="editor" title="音视频剪辑" aria-label="音视频剪辑"><Film />音视频剪辑</Menu.Item>
           <Menu.Item key="assets" title="资产库" aria-label="资产库"><ImagePlus />资产库</Menu.Item>
           <Menu.Item key="roles" title="角色设定" aria-label="角色设定">
             <Users />
@@ -302,6 +317,17 @@ function App() {
           <div>
             <Button
               type="text"
+              className="mobile-projects-button"
+              title={`最近项目 · 当前：${active?.name}`}
+              aria-label="最近项目"
+              aria-pressed={page === "projects" && !sceneEditing}
+              icon={<FolderOpen size={18} />}
+              onClick={() => navigate("projects")}
+            >
+              最近项目
+            </Button>
+            <Button
+              type="text"
               className="sidebar-toggle"
               title={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
               aria-label={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
@@ -322,7 +348,9 @@ function App() {
                     {
                       studio: "工作台",
                       episodes: "剧集管理",
+                      screenplays: "剧本管理",
                       assets: "资产库",
+                      editor: "音视频剪辑",
                       roles: "角色设定",
                       prompts: "Prompt 库",
                       tasks: "后台任务",
@@ -363,6 +391,7 @@ function App() {
             <>
             <div className="scene-editor-host" hidden={!!sceneImageFlow}>
             <SceneEditor
+              key={`${data.project.id}:${sceneEditing.scene.id}`}
               scene={sceneEditing.scene}
               isNew={sceneEditing.isNew}
               data={data}
@@ -398,6 +427,7 @@ function App() {
                   }
                 />
               )}{" "}
+              {page === "screenplays" && <ScreenplayManager key={data.project.id} data={data} reload={refresh} />}
               {page === "episodes" && (
                 <Episodes
                   initialEpisodeId={locate?.kind==="episode"?locate.target_id:undefined}
@@ -408,6 +438,7 @@ function App() {
                   }
                 />
               )}{" "}
+              {page === "editor" && <MediaEditor key={data.project.id} data={data} reload={refresh} />}
               {page === "assets" && <AssetLibrary key={data.project.id} data={data} reload={refresh} onLocate={locateAsset} onImageToImage={media=>leaveEditor(()=>{setLocate(null);setImageSource(media);setStudioTab("images");setSceneEditing(null);setPage("studio");})} />}
               {page === "tasks" && <Tasks key={data.project.id} projectId={data.project.id} />}
               {page === "roles" && <Roles data={data} reload={refresh} initialRoleId={locate?.kind==="role"?locate.target_id:undefined} />}{" "}
@@ -429,6 +460,9 @@ function App() {
           )}
           </Suspense>
         </Layout.Content>
+        {(sceneEditing || page === "screenplays" || page === "roles") && (
+          <FloatingImageGenerator key={data.project.id} data={data} reload={refresh} />
+        )}
       </Layout>
       <Modal title="创建项目" visible={creating} onCancel={() => !creatingProject && setCreating(false)}
         onOk={create} okText="创建项目" confirmLoading={creatingProject} maskClosable={!creatingProject}>

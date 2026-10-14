@@ -41,7 +41,7 @@ const fs = require('node:fs');
 
  await require('./http-fixture.cjs')(page);
  await page.goto(process.env.QA_URL || 'http://127.0.0.1:1420');
- await page.getByText('02 · 图片生成',{exact:true}).click();
+ await page.getByRole('tab',{name:'01 · 图片生成',exact:true}).click();
  await page.locator('.creation-split textarea').fill('雨夜中的城市');
  await page.locator('.creation-split .arco-select').last().click();
  await page.getByRole('option',{name:'4 张',exact:true}).click();

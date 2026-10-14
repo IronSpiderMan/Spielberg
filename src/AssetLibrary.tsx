@@ -58,7 +58,7 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
   const [assignment,setAssignment]=useState<Media|null>(null);
   const beginAssignment=(media:Media)=>{setPreview(null);setAssignment(media);};
   const importFiles=async()=>{try {
-    const files=await open({multiple:true,filters:[{name:"图片和视频",extensions:["png","jpg","jpeg","webp","gif","mp4","mov","webm","mkv"]}]});
+    const files=await open({multiple:true,filters:[{name:"图片、视频和音频",extensions:["png","jpg","jpeg","webp","gif","mp4","mov","webm","mkv","mp3","wav","m4a","aac","ogg","flac"]}]});
     if(!files)return;setBusy(true);
     for(const source of typeof files==="string"?[files]:files)await post("/media/import",{project_id:pid,source_path:source});
     await refresh();
@@ -78,7 +78,7 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
       <Button type="primary" loading={busy} icon={<Plus size={16}/>} onClick={importFiles}>导入资产</Button>
     </Space></div>
     <div className="asset-toolbar">
-      <Select aria-label="资产类型" value={kind} onChange={value=>{setKind(value);setPage(1);}} options={[{label:"全部类型",value:"all"},{label:"图片",value:"image"},{label:"视频",value:"video"}]}/>
+      <Select aria-label="资产类型" value={kind} onChange={value=>{setKind(value);setPage(1);}} options={[{label:"全部类型",value:"all"},{label:"图片",value:"image"},{label:"视频",value:"video"},{label:"音频",value:"audio"}]}/>
       <Select aria-label="使用状态" value={filter} onChange={value=>{setFilter(value);setPage(1);}} options={[{label:"全部资产",value:"all"},{label:"使用中",value:"used"},{label:"未使用",value:"unused"},{label:"回收站",value:"trash"}]}/>
       <Input.Search value={query} onChange={setQuery} placeholder="搜索资产名称" allowClear/>
       <span className="helper">共 {total} 项</span>
@@ -86,8 +86,8 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
     {filter==="trash"&&<p className="helper">回收站保留原文件；永久删除才会释放磁盘空间。</p>}
     {error?<div role="alert"><p>{error}</p><Button onClick={()=>setVersion(v=>v+1)}>重试</Button></div>:<Spin loading={loading} style={{display:"block"}}>
       <div className="library-grid">{items.map(m=><article className="library-card" key={m.id}>
-        <button className="library-thumbnail" onClick={()=>setPreview(m)} aria-label={`预览 ${m.name}`}><AssetThumbnail media={m} projectId={pid}/><Tag>{m.kind==="video"?"视频":m.kind==="image"?"图片":"文件"}</Tag></button>
-        <b title={m.name}>{m.name}</b>{m.kind!=="file"&&<MediaDimensions media={m}/>}<small>{new Date(Number(m.created_at)*1000).toLocaleString()}</small>
+        <button className="library-thumbnail" onClick={()=>setPreview(m)} aria-label={`预览 ${m.name}`}><AssetThumbnail media={m} projectId={pid}/><Tag>{m.kind==="video"?"视频":m.kind==="image"?"图片":m.kind==="audio"?"音频":"文件"}</Tag></button>
+        <b title={m.name}>{m.name}</b>{(m.kind==="image"||m.kind==="video")&&<MediaDimensions media={m}/>}<small>{new Date(Number(m.created_at)*1000).toLocaleString()}</small>
         {filter!=="trash"&&m.kind!=="file"&&<button className="asset-usage-link" onClick={()=>setTracking(m)}>{m.usage_count?`使用中 · ${m.usage_count} 处用途`:"未使用 · 查看用途"}</button>}
         <div className="asset-card-actions">
           {filter==="trash"?<Button size="small" disabled={busy} icon={<RotateCcw size={14}/>} onClick={()=>action("/media/restore",m)}>恢复资产</Button>:m.kind==="image"?<><Button size="small" icon={<WandSparkles size={14}/>} onClick={()=>onImageToImage(m)}>图生图</Button><Button size="small" onClick={()=>beginAssignment(m)}>设置用途</Button></>:m.kind==="video"?<Button size="small" onClick={()=>beginAssignment(m)}>设置用途</Button>:<Button size="small" onClick={()=>exportAsset(m)}>导出文件</Button>}
@@ -104,7 +104,7 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
         {usageError?<p role="alert">{usageError}</p>:uses.length?uses.map((use,index)=><div className="usage-record" key={index}><Tag>{use.purpose}</Tag><b>{use.episode_title&&use.kind==="scene"?`${use.episode_title} / `:""}{use.title}</b><Button size="small" onClick={()=>{setTracking(null);onLocate(use);}}>前往{use.kind==="role"?"角色":use.kind==="episode"?"剧集":"场景"}</Button></div>):!usageLoading&&<Empty description="尚未被角色、剧集或场景使用"/>}
       </Spin>
     </Drawer>
-    <Modal visible={!!preview} title={preview?.name} footer={filter==="trash"||preview?.kind==="file"?null:<Button type="primary" onClick={()=>preview&&beginAssignment(preview)}>设置用途</Button>} unmountOnExit onCancel={()=>setPreview(null)}>{preview?.kind==="video"?<video className="asset-preview" controls src={imageUrl(preview)}/>:preview?.kind==="file"?<Empty description="此文件不支持预览，可通过更多操作导出查看"/>:<img className="asset-preview" src={imageUrl(preview||undefined)} alt={preview?.name}/>}</Modal>
+    <Modal visible={!!preview} title={preview?.name} footer={filter==="trash"||preview?.kind==="file"||preview?.kind==="audio"?null:<Button type="primary" onClick={()=>preview&&beginAssignment(preview)}>设置用途</Button>} unmountOnExit onCancel={()=>setPreview(null)}>{preview?.kind==="video"?<video className="asset-preview" controls src={imageUrl(preview)}/>:preview?.kind==="audio"?<audio controls src={imageUrl(preview)} style={{width:"100%"}}/>:preview?.kind==="file"?<Empty description="此文件不支持预览，可通过更多操作导出查看"/>:<img className="asset-preview" src={imageUrl(preview||undefined)} alt={preview?.name}/>}</Modal>
     <Modal visible={!!rename} title="重命名资产" onCancel={()=>setRename(null)} onOk={async()=>{if(!rename?.name.trim())throw Error("请输入资产名称");await post("/media/rename",{project_id:pid,id:rename.id,name:rename.name.trim()});setRename(null);await refresh();}}><Input aria-label="资产名称" value={rename?.name||""} onChange={name=>setRename(m=>m?{...m,name}:null)}/></Modal>
     <Modal visible={!!scan} title="磁盘清理" okText="执行清理" confirmLoading={busy} onCancel={()=>{if(!busy)setScan(null);}} onOk={async()=>{
       if(!scan)return;setBusy(true);try{await post("/storage/cleanup",{project_id:pid,files:scan.files.map(f=>f.path),clear_cache:true});setScan(null);await refresh();Message.success("缓存已清理，未登记文件已移入回收站");}catch(e){Message.error(String(e));throw e;}finally{setBusy(false);}

@@ -23,10 +23,11 @@ export function StoryboardEditor({data,episodeId,script,onScript,board,onChange,
   const ids=[...plan.reference_media_ids,...plan.image_tasks.map(t=>t.media_id!)];if(!ids.length)throw new Error('场景至少需要一张参考图');
   const selected=target[index] ?? scene.scene_id;const existing=data.episodes.find(e=>e.id===episodeId)?.scenes.find(s=>s.id===selected);
   if(selected&&!existing)throw new Error('目标场景已不存在，请重新选择');
-  const created=existing||await post<Scene>('/scenes',{project_id:data.project.id,episode_id:episodeId,title:scene.title,description:plan.prompt});
+  const description=existing?.description ?? scene.shots.map(shot=>shot.description).join("\n");
+  const created=existing||await post<Scene>('/scenes',{project_id:data.project.id,episode_id:episodeId,title:scene.title,description,prompt:plan.prompt});
   // Remember the new scene before updating it so retrying cannot create a duplicate.
   const saved={...scene,scene_id:created.id};update(index,saved);setTarget(current=>({...current,[index]:created.id}));
-  await post('/scenes/update',{project_id:data.project.id,id:created.id,title:scene.title,description:plan.prompt,reference_media_id:ids[0],generation_options:{...defaultOptions,custom:true,video_mode:'i2v',first:false,last:false,reference:true,duration:scene.duration,reference_media_ids:ids}});
+  await post('/scenes/update',{project_id:data.project.id,id:created.id,title:scene.title,description,prompt:plan.prompt,reference_media_id:ids[0],generation_options:{...defaultOptions,custom:true,video_mode:'i2v',first:false,last:false,reference:true,duration:scene.duration,reference_media_ids:ids}});
   await reload();Message.success('参考图与 H3 Prompt 已写入右侧场景');
  };
  const generateImage=(task:ImageTask)=>post<Media>('/generations/image',{project_id:data.project.id,operation:task.operation,prompt:task.prompt,image_media_ids:task.source_media_ids,aspect_ratio:'16:9'});

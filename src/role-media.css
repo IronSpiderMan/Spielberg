@@ -31,7 +31,7 @@
   padding: 12px;
   border: 1px solid var(--ui-border, #e5ded7);
   border-radius: 8px;
-  background: var(--ui-surface-subtle, #faf8f5);
+  background: var(--ui-subtle, #faf8f5);
 }
 
 .role-image-library-heading {

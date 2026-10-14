@@ -49,6 +49,7 @@ fn rewrite(value:&mut Value, paths:&HashMap<String,String>, strip_secrets:bool) 
     }
 }
 fn rewrite_database(c:&Connection,paths:&HashMap<String,String>,strip_secrets:bool)->Result<(),String> {
+    screenplays::rewrite_pictures(c,paths)?;
     for (old,new) in paths { c.execute("UPDATE media SET path=? WHERE path=?",params![new,old]).map_err(|e|e.to_string())?; }
     for (table,key,columns) in [
         ("settings","key",vec!["value"]),("scene_scripts","scene_id",vec!["value"]),
@@ -200,6 +201,8 @@ mod tests {
         c.execute_batch("UPDATE media SET deleted_at='1' WHERE id=2;INSERT INTO roles(id,name,design_media_id,created_at) VALUES(1,'Hero',1,'1');").unwrap();
         c.execute("INSERT INTO settings VALUES('models',?)",[json!({"t2i":{"api_key":"secret-value","url":"http://model.local"}}).to_string()]).unwrap();
         c.execute("INSERT INTO background_jobs(operation,status,prompt,created_at,updated_at,result_json) VALUES('image','completed','','1','1',?)",[json!({"id":1,"path":file,"kind":"image"}).to_string()]).unwrap();
+        let shot_csv=format!("编号,景别,运镜,画面,描述\r\n001,中景,固定,{},\"逗号,与\"\"引号\"\"\n换行\"",file.to_string_lossy());
+        c.execute("INSERT INTO screenplays(title,content,format,created_at,updated_at) VALUES('分镜',?,'csv','1','1')",[&shot_csv]).unwrap();
         let backup=base.join("portable.spielberg-backup");export(&c,&root,&backup,"Test",false).unwrap();
         let extracted=base.join("extracted");unpack_archive(&backup,&extracted).unwrap();
         let copy=Connection::open(extracted.join("spielberg.sqlite")).unwrap();
@@ -211,6 +214,11 @@ mod tests {
         assert_eq!(catalog::usages(&restored_db,1).unwrap().len(),1);
         assert_eq!(catalog::list(&restored_db,&json!({"usage":"trash"})).unwrap()["total"],1);
         let path:String=restored_db.query_row("SELECT path FROM media WHERE id=1",[],|r|r.get(0)).unwrap();assert!(Path::new(&path).starts_with(&restored));assert_eq!(fs::read(path).unwrap(),b"image content");
+        let restored_csv:String=restored_db.query_row("SELECT content FROM screenplays WHERE format='csv'",[],|r|r.get(0)).unwrap();
+        assert!(!restored_csv.contains(root.to_string_lossy().as_ref()));
+        assert!(restored_csv.contains(restored.to_string_lossy().as_ref()));
+        assert!(restored_csv.contains("逗号,与\"\"引号\"\"\n换行"));
+        assert_eq!(c.query_row("SELECT content FROM screenplays WHERE format='csv'",[],|r|r.get::<_,String>(0)).unwrap(),shot_csv);
         let history:String=restored_db.query_row("SELECT result_json FROM background_jobs",[],|r|r.get(0)).unwrap();assert!(!history.contains(root.to_string_lossy().as_ref()));assert!(history.contains(restored.to_string_lossy().as_ref()));
         assert!(restored.join("assets/unregistered.txt").is_file());
         let full=base.join("private.spielberg-backup");export(&c,&root,&full,"Test",true).unwrap();

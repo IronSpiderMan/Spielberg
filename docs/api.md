@@ -12,7 +12,7 @@
 | 角色 | `/projects/{pid}/roles` | `name`, `description?`, `design_media_id?` | 同创建字段 |
 | 资产 | `/projects/{pid}/assets` | `name`, `extension`, `data_base64`, `role_id?`；推荐二进制上传 | `name` |
 | 剧集 | `/projects/{pid}/episodes` | `title`, `description?`, `cover_media_id?` | 同创建字段 |
-| 场景 | `/projects/{pid}/episodes/{episode_id}/scenes` | `title`, `description?`, `first_media_id?`, `last_media_id?`, `reference_media_id?`, `generation_options?` | `/projects/{pid}/scenes/{scene_id}`，不能改变所属剧集 |
+| 场景 | `/projects/{pid}/episodes/{episode_id}/scenes` | `title`, `description?`, `prompt?`, `first_media_id?`, `last_media_id?`, `reference_media_id?`, `generation_options?` | `/projects/{pid}/scenes/{scene_id}`，不能改变所属剧集 |
 | Prompt | `/projects/{pid}/prompts` | `name`, `content?`, `category?` | 同创建字段 |
 
 - `GET {集合}`：列表。项目、角色、剧集、场景、Prompt 返回数组；资产返回 `{items,total}`。
@@ -27,7 +27,7 @@
 
 项目 DELETE 仅移除项目注册信息，返回额外的 `data_retained:true`，磁盘目录保留，可重新打开。资产 DELETE 使用回收站；使用中的资产拒绝删除。删除剧集会级联删除场景及其关联；删除角色不会删除资产文件。
 
-资产列表支持 `page`（默认 1）、`limit`（默认 24，上限 60）、`kind`（`all/image/video`）、`query`、`usage`（`all/used/unused/trash`）。兼容首版平级资源路径，例如 `/roles?project_id={pid}` 和 `/scenes?project_id={pid}&episode_id={episode_id}`；前端使用上表的嵌套路径。
+资产列表支持 `page`（默认 1）、`limit`（默认 24，上限 60）、`kind`（`all/image/video/audio`）、`query`、`usage`（`all/used/unused/trash`）。兼容首版平级资源路径，例如 `/roles?project_id={pid}` 和 `/scenes?project_id={pid}&episode_id={episode_id}`；前端使用上表的嵌套路径。
 
 ```bash
 # 创建项目
@@ -89,7 +89,7 @@ curl 'http://127.0.0.1:8080/api/v1/projects/PID/assets/1/content?download=1' -o 
 | `scenes/select-video`, `scenes/delete-video` | `project_id, scene_id, media_id` |
 | `generations/image`, `generations/video` | 原有生成参数，包括 `project_id, operation, prompt` 等 |
 | `episodes/merge` | `project_id, episode_id` |
-| `prompts/optimize` | `project_id, prompt, kind, image_media_ids` |
+| `prompts/optimize` | `project_id, prompt, kind, image_media_ids, instruction?`；H3 转换另传 `prompt_format: "minimax-h3", h3_mode, duration, reference_video_media_ids?, reference_audio_media_ids?` |
 | `settings` | `project_id, settings` |
 | `tasks` | `status?, limit?, before?, through?`，返回 `{items,next_cursor,has_more}` |
 | `storage/scan` | `project_id` |
@@ -100,3 +100,26 @@ curl 'http://127.0.0.1:8080/api/v1/projects/PID/assets/1/content?download=1' -o 
 ## 部署边界
 
 静态页面与 API 默认同源，不需要 CORS 配置。默认允许 Tauri 页面源和 Vite 的 1420 端口，其他来源通过 `SPIELBERG_ALLOWED_ORIGINS` 精确配置；未授权跨源写入会被拒绝。服务器默认绑定回环地址，局域网访问须显式设置 `SPIELBERG_BIND=0.0.0.0:8080`。接口用于单用户/可信网络的工作室，不包含账号或多租户隔离；公网部署通过反向代理提供认证与 HTTPS。
+
+### 全能参考视频
+
+“全能参考”继续兼容已有场景的 `video_mode: "i2v"`，实际调用视频服务 `POST /v1/generations/ref2v`。可使用 `operation: "ref2v"` 或 `video_mode: "ref2v"` 直接调用。
+
+本地请求支持 `image_media_ids`（最多 9 张）、`reference_video_media_ids`（最多 3 个）和 `reference_audio_media_ids`（最多 3 个）。至少选择一种参考素材；音视频均可省略。后端读取素材并按顺序编码为 Base64，发送 `reference_images`、`reference_videos`、`reference_audios`，未提供的类型不发送空数组。服务配置继续使用视频 Base URL，并兼容原有 `i2v` 地址配置。
+
+音频支持上传 MP3、WAV、M4A、AAC、OGG、FLAC，保存为 `kind: "audio"` 的项目资产；场景的音视频参考 ID 保存在 `generation_options` 对应字段中。
+
+## 简易剪辑
+
+- `POST /actions/editor/probe`：`{project_id, media_id}`，返回 `{duration, video, audio}`（秒及轨道存在标记）。
+- `POST /actions/editor/export`：同步渲染，返回素材资源 `{id,name,path,kind,created_at}`，自动写入项目素材库。
+
+```json
+{"project_id":"项目 UUID","name":"剪辑作品","format":"mp4","ratio":"16:9","clips":[{"media_id":1,"start":0,"end":5,"speed":1,"volume":1}]}
+```
+
+`format` 支持 `mp4/mp3`；`ratio` 支持 `16:9/9:16/1:1`（默认横屏）。片段按数组顺序拼接，入点/出点为原素材秒数，速度范围 0.5–2，音量范围 0–1，单片段至少 0.05 秒；最多 100 段、输出两小时。仅接受本项目未删除的音视频素材 ID，不接受客户端文件路径。需安装 FFmpeg/FFprobe。处理失败清理本次临时文件；不修改原素材。
+
+导出可额外传入 `audio_clips` 数组，每项为 `{media_id,start,end,speed,volume,at}`，其中 `at` 为输出时间线上的起始秒数（非负）。独立音轨按时间位置混入主轨声音，成片时长取主轨和所有音轨的最大结束时间；主轨视频不足部分补黑。分离音轨时客户端将对应主轨片段的 `volume` 设为 `0`，避免重复播放。允许 `clips: []` 且 `audio_clips` 非空；两者合计最多 100 个片段，成片最长两小时。省略 `audio_clips` 保持原有单轨导出行为。
+
+场景 `description` 保存手工描述，`prompt` 保存视频生成提示词。视频生成时优先使用非空 `prompt`，为空或只有空白时回退到 `description`；优化描述只更新 `prompt`。

@@ -1,3 +1,4 @@
+import { ReferenceMediaPicker } from "./components/generation/ReferenceMediaPicker";
 import { buildVideoRequest, type VideoMode } from "./generation-request";
 import { GenerationModeTabs, MediaSizeFields, VideoDurationField } from "./components/generation/GenerationFields";
 import { ImageAssetSelect, ReferenceImagePicker } from "./components/generation/ReferenceImagePicker";
@@ -22,6 +23,9 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
   const [duration, setDuration] = useState(5);
   const [first, setFirst] = useState<number>();
   const [last, setLast] = useState<number>();
+  const [referenceVideos, setReferenceVideos] = useState<number[]>([]);
+  const [referenceAudios, setReferenceAudios] = useState<number[]>([]);
+  const [uploadingReferences, setUploadingReferences] = useState(false);
   const [refs, setRefs] = useState<number[]>([]);
   const [uploaded, setUploaded] = useState<Media[]>([]);
   const [busy, setBusy] = useState(false);
@@ -36,7 +40,7 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
   const expanded = resolvePromptReferences(prompt, prompts);
   const mentions = mode === "i2v" ? findMentions(expanded, promptMentions(data.roles, data)) : [];
   const referenceIds = [...new Set([...refs, ...mentions.flatMap(item => item.media ? [item.media.id] : [])])];
-  const disabled = busy || uploading || optimizing;
+  const disabled = busy || uploading || optimizing || uploadingReferences;
 
   const importImages = async (files: File[]) => {
     if (generating.current || importing.current || !files.length) return;
@@ -60,12 +64,12 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
   };
 
   const generate = async () => {
-    if (generating.current || importing.current || optimizing) return;
+    if (generating.current || importing.current || optimizing || uploadingReferences) return;
     if (mode === "i2v" && mentions.some(item => !item.media)) return void Message.warning("引用的角色或场景尚无图片");
     let request: ReturnType<typeof buildVideoRequest>;
     try {
       request=buildVideoRequest({mode,prompt:mode==="i2v"?resolveReferencePrompt(expanded,data):resolvePrompt(expanded,data.roles),
-        duration,ratio,size,firstId:first,lastId:last,referenceIds});
+        duration,ratio,size,firstId:first,lastId:last,referenceIds,referenceVideoIds:referenceVideos,referenceAudioIds:referenceAudios});
     } catch(e) { Message.warning(e instanceof Error?e.message:String(e)); return; }
     generating.current = true; setBusy(true); setError("");
     try {
@@ -90,15 +94,16 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
           <Form.Item label="首帧" required><ImageAssetSelect media={images} value={first} onChange={setFirst} label="首帧" disabled={disabled} /></Form.Item>
           <Form.Item label="尾帧（可选）"><ImageAssetSelect media={images} value={last} onChange={setLast} label="尾帧（可选）" disabled={disabled} /></Form.Item>
         </>}
-        {mode === "i2v" && <Form.Item label={`参考图片 · ${referenceIds.length} / 9`} required>
+        {mode === "i2v" && <Form.Item label={`参考图片 · ${referenceIds.length} / 9`}>
           <ReferenceImagePicker media={images} value={refs} mentionedIds={mentions.flatMap(item => item.media ? [item.media.id] : [])} presentation="select" disabled={disabled} ariaLabel="视频参考图片"
             onChange={ids => { if (new Set([...ids, ...mentions.flatMap(item => item.media ? [item.media.id] : [])]).size > 9) Message.warning("最多选择 9 张参考图"); else setRefs(ids); }} />
           {mentions.filter(item => !item.media).map(item => <Tag color="red" key={item.id}>{item.name} 缺少图片</Tag>)}
         </Form.Item>}
         {mode !== "t2v" && <Form.Item><Button icon={<Upload size={15} />} disabled={disabled} onClick={() => fileInput.current?.click()}>上传参考图片</Button><input ref={fileInput} hidden type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple={mode === "i2v"} onChange={event => { const files = Array.from(event.target.files || []); event.target.value = ""; void importImages(files); }} /></Form.Item>}
+        {mode === "i2v" && <ReferenceMediaPicker projectId={data.project.id} media={data.media} videoIds={referenceVideos} audioIds={referenceAudios} reload={reload} disabled={busy || uploading || optimizing} onUploading={setUploadingReferences} onChange={(kind, ids) => kind === "video" ? setReferenceVideos(ids) : setReferenceAudios(ids)} />}
         <VideoDurationField value={duration} onChange={setDuration} />
         <MediaSizeFields ratio={ratio} size={size} ariaPrefix="视频" onChange={value => { setRatio(value.ratio); setSize(value.size); }} />
-        <Button type="primary" long icon={<Film size={16} />} loading={busy} disabled={uploading || optimizing} onClick={() => void generate()}>{busy ? "视频生成中…" : "生成视频"}</Button>
+        <Button type="primary" long icon={<Film size={16} />} loading={busy} disabled={uploading || optimizing || uploadingReferences} onClick={() => void generate()}>{busy ? "视频生成中…" : "生成视频"}</Button>
       </Form>
     </div>
     <div className="creation-panel image-result video-result" aria-busy={busy}>

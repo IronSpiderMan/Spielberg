@@ -1,3 +1,5 @@
+import { sceneVideoPrompt } from "./core";
+import { ReferenceMediaPicker } from "./components/generation/ReferenceMediaPicker";
 import { buildVideoRequest } from "./generation-request";
 import { RoleImagePicker } from "./components/RoleImagePicker";
 import { ImagePreviewModal } from "./components/ImagePreviewModal";
@@ -52,7 +54,7 @@ ZoomIn
 
 import { api,defaultOptions,Episode,FrameKey,GenerationOptions,imageUrl,Media,ModelSettings,post,Project,Role,Scene,Snapshot } from "./core";
 import { confirmDiscard,useEditGuard } from "./edit-guard";
-import { resolvePrompt } from "./resolve-prompt";
+import { resolvePrompt, resolveH3Prompt } from "./resolve-prompt";
 import { StoryboardEditor, type Storyboard } from "./StoryboardEditor";
 import { PromptInput } from "./PromptInput";
 import { findMentions, promptMentions } from "./prompt-mentions";
@@ -64,9 +66,10 @@ const ImageStudio=lazy(()=>import("./creation").then(m=>({default:m.ImageStudio}
 function videoRequest(scene: Scene, settings: ModelSettings, roles: Role[], prompts: Snapshot["prompts"] = []) {
   const options = scene.generation_options || defaultOptions;
   const mode = options.video_mode || ((options.reference_media_ids?.length || scene.reference_media_id) ? "i2v" : "fl2v");
-  const request=buildVideoRequest({mode,prompt:resolvePrompt(scene.description,roles,prompts),label:scene.title,sceneId:scene.id,
+  const request=buildVideoRequest({mode,prompt:resolvePrompt(sceneVideoPrompt(scene),roles,prompts),label:scene.title,sceneId:scene.id,
     duration:options.duration,ratio:options.aspect_ratio,size:options.size,firstId:scene.first_media_id,lastId:scene.last_media_id,
-    referenceIds:options.reference_media_ids??(scene.reference_media_id?[scene.reference_media_id]:[])});
+    referenceIds:options.reference_media_ids??(scene.reference_media_id?[scene.reference_media_id]:[]),
+    referenceVideoIds:options.reference_video_media_ids,referenceAudioIds:options.reference_audio_media_ids});
   if (!(settings.video?.base_url || settings.video?.url || settings[mode]?.url)) throw new Error("请先配置视频生成 Base URL");
   return request;
 }
@@ -302,12 +305,14 @@ export function Studio({
   );
 }
 function EpisodeCover({episode}: {episode: {cover_media?: Media; scenes?: Scene[]}}) {
-  const video = episode.scenes?.[0] && sceneVideos(episode.scenes[0])[0];
+  const scene = episode.scenes?.[0];
+  const video = scene && (sceneVideos(scene).find(video => video.id === scene.video_media_id) || sceneVideos(scene)[0]);
   return <div className="episode-cover">{episode.cover_media ? <img src={imageUrl(episode.cover_media)} alt="剧集封面"/> : video ? <video src={`${imageUrl(video)}#t=0.001`} muted preload="auto" aria-label="默认剧集封面"/> : <Film size={28}/>}</div>;
 }
 function VideoAsset({video, scene, projectId, reload}: {video:Media;scene?:Scene;projectId:string;reload?:()=>void}) {
   const [preview,setPreview] = useState(false);
   const [deleting,setDeleting] = useState(false);
+  const [selecting,setSelecting] = useState(false);
   const [resolution,setResolution] = useState("");
   const onMetadata = (event: React.SyntheticEvent<HTMLVideoElement>) => {
     const el = event.currentTarget;
@@ -324,10 +329,21 @@ function VideoAsset({video, scene, projectId, reload}: {video:Media;scene?:Scene
     <Space wrap>
       <Button size="mini" icon={<ZoomIn size={14}/>} onClick={()=>setPreview(true)}>放大预览</Button>
       <Button size="mini" icon={<Download size={14}/>} onClick={download}>下载</Button>
+      {scene && reload && <Button size="mini" type={scene.video_media_id === video.id ? "secondary" : "primary"}
+        disabled={deleting || selecting || scene.video_media_id === video.id} loading={selecting}
+        onClick={async()=>{
+          if (selecting || deleting || scene.video_media_id === video.id) return;
+          setSelecting(true);
+          try {
+            await post("/scenes/select-video",{project_id:projectId,scene_id:scene.id,media_id:video.id});
+            await reload();
+            Message.success("已设为主视频");
+          } catch(e){Message.error(String(e));} finally {setSelecting(false);}
+        }}>{scene.video_media_id === video.id ? "主视频" : "设为主视频"}</Button>}
       {scene && <Popconfirm title="删除这个场景视频版本？" onOk={async()=>{
         setDeleting(true);
         try {await post("/scenes/delete-video",{project_id:projectId,scene_id:scene.id,media_id:video.id});await reload?.();Message.success("视频版本已删除");} catch(e){Message.error(String(e));} finally {setDeleting(false);}
-      }}><Button size="mini" status="danger" loading={deleting} icon={<Trash2 size={14}/>}>删除</Button></Popconfirm>}
+      }}><Button size="mini" status="danger" disabled={selecting || deleting} loading={deleting} icon={<Trash2 size={14}/>}>删除</Button></Popconfirm>}
     </Space>
     <Modal title={video.name} visible={preview} onCancel={()=>setPreview(false)} footer={null} style={{width:"min(1100px, 90vw)"}} unmountOnExit>
       <div className="video-resolution">{resolution ? `分辨率 ${resolution}` : "正在读取分辨率…"}</div>
@@ -518,13 +534,23 @@ export function Episodes({
     setEpisode(x as typeof episode);
   };
   const [inserting, setInserting] = useState<number | null>(null);
+  const [copyingScene, setCopyingScene] = useState<number | null>(null);
+  const copyScene = async (scene: Scene) => {
+    setCopyingScene(scene.id);
+    try {
+      await post("/scenes/duplicate", { project_id: data.project.id, id: scene.id });
+      await reload();
+      Message.success("场景已复制");
+    } catch (e) { Message.error(String(e)); }
+    finally { setCopyingScene(null); }
+  };
   const makeScene = async (id: number) => {
     setInserting(id);
     try {
     const x = await post<Scene>("/scenes", {
       project_id: data.project.id,
       episode_id: id,
-      title: "空场景",
+      title: `场景 ${(data.episodes.find(ep => ep.id === id)?.scenes.length ?? 0) + 1}`,
       description: "",
     });
     await reload();
@@ -602,6 +628,7 @@ export function Episodes({
                     <SceneOrderControls episode={ep} index={i} project={data.project} reload={reload}/>
                     <Button size="mini" disabled={!sceneVideos(s).length} icon={<Play size={13}/>} onClick={() => openScenePreview(s)}>预览</Button>
                     <Button size="mini" onClick={() => editScene(s, false)}>编辑</Button>
+                    <Button size="mini" loading={copyingScene === s.id} disabled={copyingScene !== null || inserting !== null} onClick={() => void copyScene(s)}>复制</Button>
                     <Popconfirm title="确认删除这个场景？场景中的视频版本关联也会移除。" onOk={async()=>{
                       try {await post("/scenes/delete",{project_id:data.project.id,id:s.id});await reload();Message.success("场景已删除");} catch(e){Message.error(String(e));}
                     }}><Button size="mini" status="danger" icon={<Trash2 size={14}/>}>删除</Button></Popconfirm>
@@ -688,10 +715,10 @@ export function Episodes({
           <div className="scene-video-preview-toolbar">
             <div>
               <b>{previewVideo.name}</b>
-              <span>{previewVideo.id === previewScene?.video_media_id ? "当前采用" : "其他版本"}</span>
+              <span>{previewVideo.id === previewScene?.video_media_id ? "主视频" : "其他版本"}</span>
             </div>
             {previewVideos.length > 1 && <Select aria-label="选择视频版本" value={previewVideo.id} onChange={setPreviewVideoId}>
-              {previewVideos.map((video, index) => <Select.Option key={video.id} value={video.id}>版本 {index + 1}{video.id === previewScene?.video_media_id ? " · 当前采用" : ""}</Select.Option>)}
+              {previewVideos.map((video, index) => <Select.Option key={video.id} value={video.id}>版本 {index + 1}{video.id === previewScene?.video_media_id ? " · 主视频" : ""}</Select.Option>)}
             </Select>}
             <Button size="small" type={continuousPreview ? "primary" : "secondary"} onClick={()=>setContinuousPreview(value=>!value)} disabled={previewPlaylist.length<2}>{continuousPreview ? "连续播放中" : "连续播放"}</Button>
           </div>
@@ -874,7 +901,7 @@ function EpisodeEditor({
                 </figure>)}
                 {!images.length && <p className="subtle">未设置参考图</p>}
               </div>
-              <details className="episode-scene-order-prompt"><summary><b>Prompt</b><span className="episode-prompt-expand">展开</span><span className="episode-prompt-collapse">收起</span></summary><p className="episode-scene-order-description">{scene.description || "未填写 Prompt"}</p></details>
+              <details className="episode-scene-order-prompt"><summary><b>Prompt</b><span className="episode-prompt-expand">展开</span><span className="episode-prompt-collapse">收起</span></summary><p className="episode-scene-order-description">{sceneVideoPrompt(scene) || "未填写 Prompt"}</p></details>
             </div>;
           })}
           {!currentEpisode?.scenes.length && <Empty description="暂无场景"/>}
@@ -1059,7 +1086,10 @@ export function SceneEditor({
 }) {
   const [title, setTitle] = useState(scene.title || "");
   const [description, setDescription] = useState(scene.description || "");
+  const [prompt, setPrompt] = useState(scene.prompt || "");
+  const effectivePrompt = prompt.trim() ? prompt : description;
   const { uploading:pastingImages, inProgress:pasteInProgress, uploadImages } = useImageUpload({projectId:data.project.id,reload,refreshError:"图片已上传，但刷新资产失败"});
+  const [uploadingReferences, setUploadingReferences] = useState(false);
   const [pastedMedia, setPastedMedia] = useState<Media[]>([]);
   const draggedReference = useRef<number | null>(null);
   const [referenceDropTarget, setReferenceDropTarget] = useState<number | null>(null);
@@ -1078,7 +1108,7 @@ export function SceneEditor({
     (scene.generation_options || defaultOptions).aspect_ratio,
   );
   const mentionedReferenceIds = JSON.stringify([...new Set(
-    findMentions(description, promptMentions(data.roles, data))
+    findMentions(effectivePrompt, promptMentions(data.roles, data))
       .flatMap(mention => mention.media?.kind === "image" ? [mention.media.id] : []),
   )]);
   useEffect(() => {
@@ -1091,13 +1121,15 @@ export function SceneEditor({
       return { ...current, reference_media_ids: merged };
     });
   }, [mentionedReferenceIds, options.video_mode, pastingImages]);
-  const signature = JSON.stringify({title, description, frames, options, ratio});
+  const signature = JSON.stringify({title, description, prompt, frames, options, ratio});
   const [savedSignature, setSavedSignature] = useState(signature);
   const dirty = signature !== savedSignature;
   useEditGuard(dirty);
   const closeEditor = () => {
     if (pasteInProgress.current) return;
-    dirty ? confirmDiscard(onClose) : onClose();
+    if (optimizingPrompt) return;
+    if (!dirty) { onClose(); return; }
+    void save();
   };
   const [savingScene, setSavingScene] = useState(false);
   const [videoGenerating, setVideoGenerating] = useState(false);
@@ -1256,18 +1288,40 @@ export function SceneEditor({
     ...scene,
     title,
     description,
+    prompt,
     first_media_id: frames.first,
     last_media_id: frames.last,
     reference_media_id: frames.reference,
     generation_options: { ...options, aspect_ratio: ratio },
   });
-  const persist = async () => {
-    if (!title.trim()) throw new Error("请输入场景标题");
-    await post("/scenes/update", { project_id: data.project.id, ...draft(), title: title.trim() });
-    setSavedSignature(signature);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
+  const [autoSaveStatus, setAutoSaveStatus] = useState("");
+  const persist = () => {
+    const payload = { project_id: data.project.id, ...draft(), title: title.trim() };
+    const saved = signature;
+    const run = async () => {
+      if (!payload.title) throw new Error("请输入场景标题");
+      setAutoSaveStatus("正在保存…");
+      await post("/scenes/update", payload);
+      setSavedSignature(saved);
+      setAutoSaveStatus("已自动保存");
+    };
+    const next = saveQueue.current.catch(() => {}).then(run);
+    saveQueue.current = next;
+    return next;
   };
+  useEffect(() => {
+    if (!dirty || savingScene || optimizingPrompt || pastingImages || uploadingReferences || videoGenerating) return;
+    const timer = window.setTimeout(() => {
+      void persist().then(() => reload()).catch(error => {
+        setAutoSaveStatus("自动保存失败，请点击保存场景重试");
+        Message.error(String(error));
+      });
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [signature, savedSignature, savingScene, optimizingPrompt, pastingImages, uploadingReferences, videoGenerating]);
   const generateVideo = async () => {
-    if (pasteInProgress.current) return;
+    if (pasteInProgress.current || uploadingReferences) return;
     try {
       const request = videoRequest(draft(), data.settings, data.roles, data.prompts);
       setVideoGenerating(true);
@@ -1326,11 +1380,17 @@ export function SceneEditor({
     } catch (e) { Message.error(String(e)); }
     finally { setAttachingVideo(false); }
   };
-  const optimizeVideoPrompt=()=>optimizePrompt({projectId:data.project.id,prompt:description,kind:"video",instruction:optimizationInstruction,
-    imageIds:options.video_mode==="i2v"?(options.reference_media_ids||[]):[frames.first,frames.last].filter((id):id is number=>Boolean(id)),onOptimized:setDescription});
+  const optimizeVideoPrompt=()=>{
+    const imageIds=options.video_mode==="i2v"?(options.reference_media_ids||[]):[frames.first,frames.last].filter((id):id is number=>Boolean(id));
+    return optimizePrompt({projectId:data.project.id,
+    prompt:resolveH3Prompt(description,data,imageIds),kind:"video",instruction:optimizationInstruction,imageIds,
+    h3:{mode:options.video_mode==="i2v"?"ref2va":frames.first?(frames.last?"fl2va":"i2va"):frames.last?"l2va":"t2va",duration:options.duration,
+      videoIds:options.video_mode==="i2v"?options.reference_video_media_ids:[],audioIds:options.video_mode==="i2v"?options.reference_audio_media_ids:[]},
+    onOptimized:setPrompt,successMessage:"已转换为 MiniMax-H3 Prompt"});
+  };
   const optimizeImagePrompt=()=>optimizePrompt({projectId:data.project.id,prompt:imagePrompt,kind:"image",imageIds:imageMode==="i2i"?imageRefs.map(media=>media.id):[],onOptimized:setImagePrompt});
   const save = async () => {
-    if (savingScene || pasteInProgress.current) return;
+    if (savingScene || optimizingPrompt || pasteInProgress.current || uploadingReferences) return;
     setSavingScene(true);
     try { await persist(); await reload(); Message.success("场景已保存"); onClose(); }
     catch(e) { Message.error(String(e)); }
@@ -1345,10 +1405,11 @@ export function SceneEditor({
           </Button>
         </div>
         <Space>
+          <span className="subtle" role="status">{dirty ? (autoSaveStatus.includes("失败") ? autoSaveStatus : "待自动保存…") : autoSaveStatus}</span>
           <Button
             type="primary"
             loading={savingScene}
-            disabled={videoGenerating || persistedVideoGenerating || imageGenerating || pastingImages}
+            disabled={optimizingPrompt || videoGenerating || persistedVideoGenerating || imageGenerating || pastingImages || uploadingReferences}
             icon={<Save size={15} />}
             onClick={save}
           >
@@ -1367,8 +1428,13 @@ export function SceneEditor({
                 <PromptInput value={description} onChange={setDescription} roles={data.roles} data={data} prompts={data.prompts} templates={[...PROMPT_TEMPLATES,...data.prompts]} disabled={optimizingPrompt || pastingImages || savingScene || videoGenerating || persistedVideoGenerating} onPasteImages={files => void pasteReferenceImages(files)} placeholder="描述镜头、人物动作、台词与画面情绪… 输入 @template 选择模板，或引用角色、场景素材与 Prompt" />
                 <p className="helper" role="status">{pastingImages ? "正在上传粘贴的图片…" : "可在此粘贴图片，自动添加到全能参考（最多 9 张）"}</p>
               </Form.Item>
+              <Form.Item label="视频 Prompt">
+                <PromptInput value={prompt} onChange={setPrompt} roles={data.roles} data={data} prompts={data.prompts} templates={[...PROMPT_TEMPLATES,...data.prompts]} disabled={optimizingPrompt || pastingImages || savingScene || videoGenerating || persistedVideoGenerating} onPasteImages={files => void pasteReferenceImages(files)} placeholder="实际用于生成视频的提示词；留空时使用场景描述" />
+                <p className="helper">优化描述的结果会填入此栏，保留手工描述。留空时使用场景描述生成视频。</p>
+              </Form.Item>
               <Modal title="自定义提示词优化指令" visible={optimizationInstructionOpen} onCancel={()=>setOptimizationInstructionOpen(false)} onOk={()=>setOptimizationInstructionOpen(false)} okText="完成">
-                <Input.TextArea value={optimizationInstruction} onChange={setOptimizationInstruction} autoSize={{minRows:3,maxRows:7}} placeholder="留空使用默认优化规则；填写后作为额外优化要求。" />
+                <p className="helper">按当前素材转换为 MiniMax-H3 官方格式，英文描述、原语言对白。可补充镜头、节奏或风格要求。</p>
+                <Input.TextArea value={optimizationInstruction} onChange={setOptimizationInstruction} autoSize={{minRows:3,maxRows:7}} placeholder="例如：保留六个分镜，强调角色表情，不添加背景音乐。" />
               </Modal>
             </Form>
           </div>
@@ -1428,6 +1494,9 @@ export function SceneEditor({
               </div>}
             </Space>
           </div>
+          <Form layout="vertical"><ReferenceMediaPicker projectId={data.project.id} media={data.media} videoIds={options.reference_video_media_ids} audioIds={options.reference_audio_media_ids}
+            reload={reload} disabled={savingScene || videoGenerating || persistedVideoGenerating || pastingImages} onUploading={setUploadingReferences}
+            onChange={(kind, ids) => setOptions(current => ({...current, [kind === "video" ? "reference_video_media_ids" : "reference_audio_media_ids"]: ids}))} /></Form>
           </Tabs.TabPane>
           </Tabs>
           </div>
@@ -1450,7 +1519,7 @@ export function SceneEditor({
                 type="primary"
                 icon={<Sparkles size={17} />}
                 loading={videoGenerating || persistedVideoGenerating}
-                disabled={!description.trim() || pastingImages}
+                disabled={!description.trim() || pastingImages || uploadingReferences}
                 onClick={generateVideo}
               >
                 {persistedVideoGenerating ? "后台生成中" : "生成新视频"}
@@ -1463,6 +1532,7 @@ export function SceneEditor({
               <h2>
                 视频版本 <span>{sceneVideos(currentScene).length}</span>
               </h2>
+              {!!sceneVideos(currentScene).length && <p className="helper">主视频用于默认预览和剧集合并，设置后立即保存。</p>}
               {sceneVideos(currentScene).length ? (
                 sceneVideos(currentScene).map((video, index) => (
                   <article className="video-version" key={video.id}>
@@ -1477,7 +1547,7 @@ export function SceneEditor({
                         }
                       >
                         {video.id === currentScene.video_media_id
-                          ? "工作台已选"
+                          ? "主视频"
                           : "候选版本"}
                       </Tag>
                     </div>
@@ -2217,7 +2287,7 @@ export function SettingsPage({
           （i2i），并将画面比例映射为官方支持的尺寸。视频 Base URL 会按生成方式补全接口路径。Prompt 优化使用 OpenAI 格式的{" "}
           <code>/chat/completions</code>。CAST 图片接口也会按生成方式补全路径。{" "}
           <code>
-            POST /v1/generations/{"{"}t2i | i2i | t2v | i2v | fl2v{"}"}
+            POST /v1/generations/{"{"}t2i | i2i | t2v | ref2v | fl2v{"}"}
           </code>{" "}
           格式。
         </Typography.Paragraph>

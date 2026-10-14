@@ -14,3 +14,13 @@ export function resolveReferencePrompt(prompt: string, data: Snapshot) {
     return item.kind === "role" ? `${name}（${item.description}）` : `参考图片（${item.description}）`;
   }) : prompt;
 }
+
+export function resolveH3Prompt(prompt: string, data: Snapshot, imageIds: number[]) {
+  prompt = resolvePromptReferences(prompt, data.prompts);
+  const items = promptMentions(data.roles, data), pattern = mentionPattern(items);
+  return pattern ? prompt.replace(pattern, (_, name: string) => {
+    const item = items.find(item => item.name === name)!;
+    const picture = item.media ? imageIds.indexOf(item.media.id) : -1;
+    return `${name} (${item.description}${picture >= 0 ? `; from <Picture ${picture + 1}>` : ""})`;
+  }) : prompt;
+}
