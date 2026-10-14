@@ -97,7 +97,7 @@
 .arco-drawer { max-width: 100vw; }
 .arco-drawer-body { min-width: 0; overflow-wrap: anywhere; }
 .scene-video-preview-toolbar { flex-wrap: wrap; }
-.scene-video-preview-toolbar > div { flex: 1 1 180px; }
+.scene-video-preview-toolbar > .scene-video-preview-info { flex: 1 1 180px; }
 .image-preview-full { min-height: 0; height: min(65dvh, 720px); }
 .image-reference-toolbar { flex-wrap: wrap; }
 @container (max-width: 900px) {

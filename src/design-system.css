@@ -433,7 +433,7 @@ html[data-theme="dark"] .library-card small,
 html[data-theme="dark"] .sequence-flow small,
 html[data-theme="dark"] .image-result-card p,
 html[data-theme="dark"] .prompt-suggestions small,
-html[data-theme="dark"] .scene-video-preview-toolbar span {
+html[data-theme="dark"] .scene-video-preview-info span {
   color: var(--ui-secondary-text) !important;
 }
 html[data-theme="dark"] .scene-list,

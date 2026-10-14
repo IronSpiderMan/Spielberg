@@ -57,7 +57,7 @@ import { confirmDiscard,useEditGuard } from "./edit-guard";
 import { resolvePrompt, resolveH3Prompt } from "./resolve-prompt";
 import { StoryboardEditor, type Storyboard } from "./StoryboardEditor";
 import { PromptInput } from "./PromptInput";
-import { findMentions, promptMentions } from "./prompt-mentions";
+import { findMentions, promptMentions, syncMentionReferences } from "./prompt-mentions";
 import { STYLE_PRESETS } from "./prompt-presets";
 import { PROMPT_TEMPLATES } from "./prompt-templates";
 const SequencePreview=lazy(()=>import("./creation").then(m=>({default:m.SequencePreview})));
@@ -726,7 +726,7 @@ export function Episodes({
       >
         {previewVideo && <>
           <div className="scene-video-preview-toolbar">
-            <div>
+            <div className="scene-video-preview-info">
               <b>{previewVideo.name}</b>
               <span>{previewVideo.id === previewScene?.video_media_id ? "主视频" : "其他版本"}</span>
             </div>
@@ -1120,6 +1120,7 @@ export function SceneEditor({
   const [ratio, setRatio] = useState(
     (scene.generation_options || defaultOptions).aspect_ratio,
   );
+  const automaticReferenceIds = useRef<number[]>([]);
   const mentionedReferenceIds = JSON.stringify([...new Set(
     findMentions(effectivePrompt, promptMentions(data.roles, data))
       .flatMap(mention => mention.media?.kind === "image" ? [mention.media.id] : []),
@@ -1127,12 +1128,12 @@ export function SceneEditor({
   useEffect(() => {
     if (options.video_mode !== "i2v" || pastingImages) return;
     const mentionedIds: number[] = JSON.parse(mentionedReferenceIds);
-    setOptions(current => {
-      const existing = current.reference_media_ids || [];
-      const merged = [...new Set([...existing, ...mentionedIds])].slice(0, 9);
-      if (merged.length === existing.length) return current;
-      return { ...current, reference_media_ids: merged };
-    });
+    const existing = options.reference_media_ids || [];
+    const {ids,automatic} = syncMentionReferences(existing, automaticReferenceIds.current, mentionedIds);
+    automaticReferenceIds.current = automatic;
+    if (ids.length !== existing.length || ids.some((id,index)=>id!==existing[index])) {
+      setOptions(current => ({...current, reference_media_ids:ids}));
+    }
   }, [mentionedReferenceIds, options.video_mode, pastingImages]);
   const signature = JSON.stringify({title, description, prompt, frames, options, ratio});
   const [savedSignature, setSavedSignature] = useState(signature);

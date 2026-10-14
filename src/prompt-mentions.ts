@@ -42,7 +42,13 @@ export function promptMentions(roles:Role[], data?:Snapshot):PromptMention[] {
 }
 export function mentionPattern(items:{name:string}[]) {
   const names=[...new Set(items.map(item=>item.name).filter(Boolean))].sort((a,b)=>b.length-a.length).map(name=>name.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"));
-  return names.length ? new RegExp(`@(${names.join("|")})(?=$|[\\s，。！？、；：,.!?;:()（）])`,"g") : null;
+  // A dot followed by a name continues a qualified mention, not a role boundary.
+  return names.length ? new RegExp(`@(${names.join("|")})(?=$|[\\s，。！？、；：,!?;:()（）]|\\.(?=$|[\\s，。！？、；：,!?;:()（）]))`,"g") : null;
+}
+export function syncMentionReferences(existing:number[], previousAutomatic:number[], mentioned:number[], limit=9) {
+  const manual=existing.filter(id=>!previousAutomatic.includes(id));
+  const ids=[...new Set([...manual,...mentioned])].slice(0,limit);
+  return {ids,automatic:ids.filter(id=>!manual.includes(id))};
 }
 export function findMentions(value:string,items:PromptMention[]) {
   const pattern=mentionPattern(items);
