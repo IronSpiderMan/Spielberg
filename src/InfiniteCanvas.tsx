@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Button, Form, Input, Message, Modal, Select } from "@arco-design/web-react";
 import { Plus, Save, Undo2, Redo2, Maximize, Download, StickyNote, Trash2, ArrowLeft, Image, Film, Music, Upload } from "lucide-react";
-import { defaultGenerationSize, imageUrl, post, type Media, type Scene, type Snapshot } from "./core";
+import { defaultGenerationSize, normalizeGenerationSize, imageUrl, post, type Media, type Scene, type Snapshot } from "./core";
 import { uploadAsset } from "./api";
 import { buildVideoRequest } from "./generation-request";
 import { resolvePrompt } from "./resolve-prompt";
@@ -17,6 +17,13 @@ type Edge = { id: string; from: string; to: string };
 type Draft = { version: 1; nodes: Node[]; edges: Edge[]; viewport: { x: number; y: number; zoom: number } };
 type Board = { draft: Draft; revision: number };
 const empty = (): Draft => ({ version: 1, nodes: [], edges: [], viewport: { x: 80, y: 80, zoom: 1 } });
+function normalizeDraftSizes(draft: Draft): Draft {
+  return { ...draft, nodes: draft.nodes.map(node => {
+    if (node.kind !== "image" && node.kind !== "video") return node;
+    const ratio = node.ratio || "16:9";
+    return { ...node, ratio, size: normalizeGenerationSize(ratio, node.size) };
+  }) };
+}
 const labels: Record<Kind, string> = { image: "图片", audio: "音频", video: "视频", scene: "场景", role: "角色", media: "素材", prompt: "Prompt", note: "便签" };
 const mediaKind = (kind: Kind): kind is MediaKind => ["image", "video", "audio"].includes(kind);
 const uid = () => crypto.randomUUID();
@@ -49,7 +56,8 @@ export default function InfiniteCanvas({ data, scene, reload, onClose }: {
     setLoading(true); setError("");
     try {
       const b = await post<Board>("/canvas/load", payload);
-      setDraft(b.draft); setSaved(JSON.stringify(b.draft)); setRevision(b.revision); setPast([]); setFuture([]); setSelected(""); setLinkFrom(""); setLinkTo(""); setLinkPoint(null);
+      const loaded = normalizeDraftSizes(b.draft);
+      current.current = loaded; setDraft(loaded); setSaved(JSON.stringify(b.draft)); setRevision(b.revision); setPast([]); setFuture([]); setSelected(""); setLinkFrom(""); setLinkTo(""); setLinkPoint(null);
       setTitle(scene.title); setSavedTitle(scene.title);
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   };
@@ -172,7 +180,7 @@ export default function InfiniteCanvas({ data, scene, reload, onClose }: {
     const imageIds = [...new Set([...references.filter(m => m?.kind === "image").map(m => m!.id), ...(node.kind === "image" && node.ref_id ? [node.ref_id] : [])])];
     let request: object;
     try {
-      request = node.kind === "image" ? { operation: imageIds.length ? "i2i" : "t2i", prompt: resolvePrompt(prompt, data.roles, data.prompts), aspect_ratio: node.ratio || "16:9", size: node.size || defaultGenerationSize(node.ratio || "16:9"), image_media_ids: imageIds } : buildVideoRequest({ mode: references.length ? "i2v" : "t2v", prompt: resolvePrompt(prompt, data.roles, data.prompts), duration: node.duration || 5, ratio: node.ratio || "16:9", size: node.size || defaultGenerationSize(node.ratio || "16:9"), sceneId: scene.id,
+      request = node.kind === "image" ? { operation: imageIds.length ? "i2i" : "t2i", prompt: resolvePrompt(prompt, data.roles, data.prompts), aspect_ratio: node.ratio || "16:9", size: normalizeGenerationSize(node.ratio || "16:9", node.size), image_media_ids: imageIds } : buildVideoRequest({ mode: references.length ? "i2v" : "t2v", prompt: resolvePrompt(prompt, data.roles, data.prompts), duration: node.duration || 5, ratio: node.ratio || "16:9", size: normalizeGenerationSize(node.ratio || "16:9", node.size), sceneId: scene.id,
         referenceIds: references.filter(m => m?.kind === "image").map(m => m!.id), referenceVideoIds: references.filter(m => m?.kind === "video").map(m => m!.id), referenceAudioIds: references.filter(m => m?.kind === "audio").map(m => m!.id) });
     } catch (e) { return void Message.warning(String(e)); }
     busy.current = true; setBusyNode(node.id);

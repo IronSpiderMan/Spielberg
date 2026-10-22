@@ -1,5 +1,5 @@
 import { Form, Select, Tabs } from "@arco-design/web-react";
-import { GENERATION_SIZES, defaultGenerationSize } from "../../core";
+import { GENERATION_SIZES, normalizeGenerationSize } from "../../generation-sizes";
 
 export function MediaSizeFields({ ratio, size, onChange, ratioLabel = "画幅", ariaPrefix = "", disabled }: {
   ratio: string;
@@ -14,10 +14,10 @@ export function MediaSizeFields({ ratio, size, onChange, ratioLabel = "画幅", 
     <Form.Item label={ratioLabel}>
       <Select aria-label={`${ariaPrefix}${ratioLabel}`} disabled={disabled} value={ratio}
         options={GENERATION_SIZES.map(group => ({ label: group.label, value: group.ratio }))}
-        onChange={value => onChange({ ratio: value, size: defaultGenerationSize(value) })} />
+        onChange={value => onChange({ ratio: value, size: normalizeGenerationSize(value, size) })} />
     </Form.Item>
-    <Form.Item label="输出尺寸">
-      <Select aria-label={`${ariaPrefix}输出尺寸`} disabled={disabled} value={size || defaultGenerationSize(ratio)}
+    <Form.Item label="输出尺寸" extra="宽 × 高（像素）；部分尺寸为接近所选画幅的模型适配值">
+      <Select aria-label={`${ariaPrefix}输出尺寸`} disabled={disabled} value={normalizeGenerationSize(ratio, size)}
         options={sizes.map(value => ({ label: value, value }))}
         onChange={value => onChange({ ratio, size: value })} />
     </Form.Item>

@@ -158,10 +158,7 @@
 .episode-info p, .scene-row p, .role-card p, .prompt-card p { color: var(--ui-secondary-text); }
 .scene-list { padding-top: 0; border-color: var(--ui-border); }
 .scene-row { padding: 16px 4px; border-radius: 0; }
-.scene-create-button { margin-left: 40px; }
-@container (max-width: 580px) {
-  .scene-create-button { margin-left: 34px; }
-}
+.scene-create-button { margin-left: 4px; }
 .scene-row:hover { background: #f8fafc; }
 .scene-row:last-child { border-bottom: 0; }
 .scene-copy b { font-size: 13px; font-weight: 500; }

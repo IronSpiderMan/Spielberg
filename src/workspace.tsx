@@ -52,7 +52,7 @@ ZoomIn
 } from "lucide-react";
 
 
-import { api,defaultOptions,Episode,FrameKey,GenerationOptions,imageUrl,Media,ModelSettings,post,Project,Role,Scene,Snapshot } from "./core";
+import { api,defaultOptions,normalizeGenerationSize,Episode,FrameKey,GenerationOptions,imageUrl,Media,ModelSettings,post,Project,Role,Scene,Snapshot } from "./core";
 import { confirmDiscard,useEditGuard } from "./edit-guard";
 import { resolvePrompt, resolveH3Prompt } from "./resolve-prompt";
 import { StoryboardEditor, type Storyboard } from "./StoryboardEditor";
@@ -1113,12 +1113,13 @@ export function SceneEditor({
   });
   const [options, setOptions] = useState<GenerationOptions>(
     { ...defaultOptions, ...scene.generation_options,
+      size: normalizeGenerationSize(scene.generation_options?.aspect_ratio || defaultOptions.aspect_ratio, scene.generation_options?.size),
       video_mode: scene.generation_options?.video_mode || ((scene.generation_options?.reference_media_ids?.length || scene.reference_media_id) ? "i2v" : "fl2v"),
       reference_media_ids: scene.generation_options?.reference_media_ids ?? (scene.reference_media_id ? [scene.reference_media_id] : []),
     },
   );
   const [ratio, setRatio] = useState(
-    (scene.generation_options || defaultOptions).aspect_ratio,
+    scene.generation_options?.aspect_ratio || defaultOptions.aspect_ratio,
   );
   const automaticReferenceIds = useRef<number[]>([]);
   const mentionedReferenceIds = JSON.stringify([...new Set(
@@ -1689,7 +1690,7 @@ export function SceneEditor({
             />
           </Form.Item>
           <Form.Item label="画面比例">
-            <Select value={ratio} onChange={setRatio}>
+            <Select value={ratio} onChange={value => { setRatio(value); setOptions(o => ({ ...o, aspect_ratio: value, size: normalizeGenerationSize(value, o.size) })); }}>
               <Select.Option value="16:9">16:9 横屏</Select.Option>
               <Select.Option value="9:16">9:16 竖屏</Select.Option>
               <Select.Option value="1:1">1:1 方形</Select.Option>

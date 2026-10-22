@@ -1,3 +1,5 @@
+import { normalizeGenerationSize } from "./generation-sizes";
+
 export type VideoMode = "t2v" | "fl2v" | "i2v";
 
 // All entry points use the same mode contract; irrelevant image inputs must
@@ -28,7 +30,7 @@ export function buildVideoRequest({ mode, prompt, duration, ratio, size, sceneId
     ...(sceneId === undefined ? {} : { scene_id: sceneId }),
     operation: mode === "i2v" ? "ref2v" : mode,
     ...(mode === "t2v" ? {} : { video_mode: mode }),
-    prompt, duration, aspect_ratio: ratio, size,
+    prompt, duration, aspect_ratio: ratio, size: normalizeGenerationSize(ratio, size),
     first_media_id: mode === "fl2v" ? firstId : null,
     last_media_id: mode === "fl2v" ? lastId : null,
     image_media_ids: ids,
