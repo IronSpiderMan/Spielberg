@@ -25,7 +25,7 @@ fn cached(path:&Path,dir:&Path)->Result<PathBuf,String> {
     if !output.is_file() {
         let temporary=dir.join(format!("{}.jpg",Uuid::new_v4()));
         let binary=if Path::new("/opt/homebrew/bin/ffmpeg").exists(){"/opt/homebrew/bin/ffmpeg"}else{"ffmpeg"};
-        let result=std::process::Command::new(binary).args(["-nostdin","-v","error","-i"]).arg(path).args(["-vf","scale=480:320:force_original_aspect_ratio=decrease","-frames:v","1","-threads","1","-q:v","4"]).arg(&temporary).output().map_err(|e|format!("缩略图需要 FFmpeg：{e}"))?;
+        let result=crate::background_command(binary).args(["-nostdin","-v","error","-i"]).arg(path).args(["-vf","scale=480:320:force_original_aspect_ratio=decrease","-frames:v","1","-threads","1","-q:v","4"]).arg(&temporary).output().map_err(|e|format!("缩略图需要 FFmpeg：{e}"))?;
         if !result.status.success(){let _=fs::remove_file(temporary);return Err("无法生成缩略图".into())}
         fs::rename(temporary,&output).map_err(|e|e.to_string())?;
     }

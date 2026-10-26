@@ -10,7 +10,7 @@ fn run(cmd: &mut Command) -> Result<std::process::Output, String> {
     Ok(output)
 }
 fn probe(path: &str) -> Result<Value, String> {
-    let out = run(Command::new(binary("ffprobe")).args(["-v","error","-show_format","-show_streams","-of","json",path]))?;
+    let out = run(crate::background_command(binary("ffprobe")).args(["-v","error","-show_format","-show_streams","-of","json",path]))?;
     let v: Value = serde_json::from_slice(&out.stdout).map_err(|e| e.to_string())?;
     let duration = v["format"]["duration"].as_str().and_then(|s| s.parse::<f64>().ok()).filter(|n| n.is_finite() && *n > 0.0).ok_or("无法读取媒体时长")?;
     let streams = v["streams"].as_array().ok_or("媒体没有可用轨道")?;
@@ -94,7 +94,7 @@ pub(super) fn command(s: &AppState, v: &Value, export: bool) -> Result<Value,Str
             if at+duration>7200.0{return Err("音轨超出两小时限制".into());}
             audio_end=audio_end.max(at+duration);audio_offsets.push(at);
             let filter=format!("asetpts=PTS-STARTPTS,atempo={speed},volume={volume},aresample=48000,aformat=channel_layouts=stereo,apad,atrim=duration={duration}");
-            run(Command::new(binary("ffmpeg")).args(["-v","error","-nostdin","-y","-ss",&start.to_string(),"-t",&(end-start).to_string(),"-i",path,"-vn","-af",&filter,"-c:a","pcm_s16le"]).arg(work.join(format!("audio-{i}.wav"))))?;
+            run(crate::background_command(binary("ffmpeg")).args(["-v","error","-nostdin","-y","-ss",&start.to_string(),"-t",&(end-start).to_string(),"-i",path,"-vn","-af",&filter,"-c:a","pcm_s16le"]).arg(work.join(format!("audio-{i}.wav"))))?;
         }
         let mut total=0.0;
         for (i,clip) in clips.iter().enumerate() {
@@ -103,7 +103,7 @@ pub(super) fn command(s: &AppState, v: &Value, export: bool) -> Result<Value,Str
             let path=item["path"].as_str().ok_or("素材路径无效")?;let info=probe(path)?;
             let (start,end,speed,volume)=bounds(clip,info["duration"].as_f64().unwrap())?;
             let duration=(end-start)/speed;total+=duration;if total>7200.0{return Err("简易剪辑单次导出最多支持两小时".into());}
-            let mut cmd=Command::new(binary("ffmpeg"));cmd.args(["-v","error","-nostdin","-y","-ss",&start.to_string(),"-t",&(end-start).to_string(),"-i",path]);
+            let mut cmd=crate::background_command(binary("ffmpeg"));cmd.args(["-v","error","-nostdin","-y","-ss",&start.to_string(),"-t",&(end-start).to_string(),"-i",path]);
             let has_audio=info["audio"]==true;let has_video=info["video"]==true;
             if !has_audio {cmd.args(["-f","lavfi","-i","anullsrc=r=48000:cl=stereo"]);}
             if !audio && !has_video {cmd.args(["-f","lavfi","-i",&format!("color=c=black:s={width}x{height}:r=30")]);}
@@ -120,7 +120,7 @@ pub(super) fn command(s: &AppState, v: &Value, export: bool) -> Result<Value,Str
         fs::write(work.join("list.txt"),list).map_err(|e|e.to_string())?;
         let dir=root.join(if audio{"assets/audio"}else{"assets/videos"});fs::create_dir_all(&dir).map_err(|e|e.to_string())?;
         let out=dir.join(format!("edit-{}.{}",Uuid::new_v4(),ext));
-        let mut cmd=Command::new(binary("ffmpeg"));cmd.args(["-v","error","-nostdin","-y"]);
+        let mut cmd=crate::background_command(binary("ffmpeg"));cmd.args(["-v","error","-nostdin","-y"]);
         let final_duration=total.max(audio_end);
         if clips.is_empty() {
             cmd.args(["-f","lavfi","-i","anullsrc=r=48000:cl=stereo"]);
@@ -170,8 +170,8 @@ pub(super) fn command(s: &AppState, v: &Value, export: bool) -> Result<Value,Str
         let result=(|| -> Result<(),String> {
             let p=create_project(&s,&json!({"name":"Editor test"}))?;let pid=p["id"].as_str().unwrap();
             let video=root.join("silent.mp4");let audio=root.join("tone.wav");
-            run(Command::new(binary("ffmpeg")).args(["-v","error","-f","lavfi","-i","color=c=red:s=160x120:r=30","-t","1","-c:v","libx264"]).arg(&video))?;
-            run(Command::new(binary("ffmpeg")).args(["-v","error","-f","lavfi","-i","sine=frequency=440","-t","1"]).arg(&audio))?;
+            run(crate::background_command(binary("ffmpeg")).args(["-v","error","-f","lavfi","-i","color=c=red:s=160x120:r=30","-t","1","-c:v","libx264"]).arg(&video))?;
+            run(crate::background_command(binary("ffmpeg")).args(["-v","error","-f","lavfi","-i","sine=frequency=440","-t","1"]).arg(&audio))?;
             let a=import_media(&s,&json!({"project_id":pid,"source_path":video}))?;let b=import_media(&s,&json!({"project_id":pid,"source_path":audio}))?;
             let clips=json!([{"media_id":a["id"],"duration":1,"start":0.2,"end":0.8,"speed":2,"volume":0},{"media_id":b["id"],"duration":1,"start":0,"end":0.6,"speed":0.5,"volume":0.5}]);
             for format in ["mp4","mp3"] {
@@ -204,7 +204,7 @@ pub(super) fn command(s: &AppState, v: &Value, export: bool) -> Result<Value,Str
         let result=(|| -> Result<(),String> {
             let p=create_project(&s,&json!({"name":"Audio test"}))?;let pid=p["id"].as_str().unwrap();
             let source=root.join("tone.mp4");
-            run(Command::new(binary("ffmpeg")).args(["-v","error","-f","lavfi","-i","color=c=red:s=160x120:r=30","-f","lavfi","-i","sine=frequency=440:sample_rate=48000","-t","1","-c:v","libx264","-c:a","aac"]).arg(&source))?;
+            run(crate::background_command(binary("ffmpeg")).args(["-v","error","-f","lavfi","-i","color=c=red:s=160x120:r=30","-f","lavfi","-i","sine=frequency=440:sample_rate=48000","-t","1","-c:v","libx264","-c:a","aac"]).arg(&source))?;
             let m=import_media(&s,&json!({"project_id":pid,"source_path":source}))?;
             let base=json!([{"media_id":m["id"],"start":0,"end":1,"speed":1,"volume":0}]);
             let tracks=json!([{"media_id":m["id"],"start":0.1,"end":0.7,"speed":2,"volume":0.5,"at":1.2}]);
@@ -213,7 +213,7 @@ pub(super) fn command(s: &AppState, v: &Value, export: bool) -> Result<Value,Str
                     let out=command(&s,&json!({"project_id":pid,"clips":main,"audio_clips":tracks,"format":format}),true)?;
                     let path=out["path"].as_str().unwrap();let info=probe(path)?;
                     assert!((info["duration"].as_f64().unwrap()-1.5).abs()<0.15,"{info}");
-                    let pcm=run(Command::new(binary("ffmpeg")).args(["-v","error","-i",path,"-vn","-ac","1","-ar","48000","-f","f32le","pipe:1"]))?;
+                    let pcm=run(crate::background_command(binary("ffmpeg")).args(["-v","error","-i",path,"-vn","-ac","1","-ar","48000","-f","f32le","pipe:1"]))?;
                     let samples:Vec<f32>=pcm.stdout.chunks_exact(4).map(|x|f32::from_le_bytes(x.try_into().unwrap())).collect();
                     let rms=|from:usize,to:usize| (samples[from..to].iter().map(|x|x*x).sum::<f32>()/(to-from) as f32).sqrt();
                     assert!(rms(4800,48000)<0.001,"Original video must be muted");

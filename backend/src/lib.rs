@@ -114,13 +114,13 @@ fn extract_video_frame(source: &Path, destination: &Path, last: bool) -> Result<
     let mut filter = "select=eq(n\\,0)".to_string();
     if last {
         let probe = if Path::new("/opt/homebrew/bin/ffprobe").exists() { "/opt/homebrew/bin/ffprobe" } else { "ffprobe" };
-        let output = std::process::Command::new(probe).args(["-v", "error", "-select_streams", "v:0", "-count_frames", "-show_entries", "stream=nb_read_frames", "-of", "json"]).arg(source).output().map_err(|e|format!("读取尾帧需要 FFprobe：{e}"))?;
+        let output = crate::background_command(probe).args(["-v", "error", "-select_streams", "v:0", "-count_frames", "-show_entries", "stream=nb_read_frames", "-of", "json"]).arg(source).output().map_err(|e|format!("读取尾帧需要 FFprobe：{e}"))?;
         if !output.status.success() { return Err("无法读取视频帧数".into()); }
         let info: Value = serde_json::from_slice(&output.stdout).map_err(|e|e.to_string())?;
         let count = info["streams"][0]["nb_read_frames"].as_str().and_then(|n|n.parse::<u64>().ok()).filter(|n|*n > 0).ok_or("视频没有可用画面")?;
         filter = format!("select=eq(n\\,{})", count - 1);
     }
-    let output = std::process::Command::new(binary).args(["-nostdin", "-v", "error", "-y", "-i"]).arg(source).args(["-map", "0:v:0", "-vf", &filter, "-frames:v", "1", "-vsync", "0"]).arg(destination).output().map_err(|e|format!("提取画面需要 FFmpeg：{e}"))?;
+    let output = crate::background_command(binary).args(["-nostdin", "-v", "error", "-y", "-i"]).arg(source).args(["-map", "0:v:0", "-vf", &filter, "-frames:v", "1", "-vsync", "0"]).arg(destination).output().map_err(|e|format!("提取画面需要 FFmpeg：{e}"))?;
     if !output.status.success() || !destination.is_file() { let _ = fs::remove_file(destination); return Err(format!("视频帧提取失败：{}", String::from_utf8_lossy(&output.stderr))); }
     Ok(())
 }
@@ -221,9 +221,9 @@ fn merge_video_files(paths:&[String],out:&Path)->Result<(),String>{
  if paths.is_empty(){return Err("没有可合并的视频".into())}
  let binary=if Path::new("/opt/homebrew/bin/ffmpeg").exists(){"/opt/homebrew/bin/ffmpeg"}else{"ffmpeg"};
  let probe=if Path::new("/opt/homebrew/bin/ffprobe").exists(){"/opt/homebrew/bin/ffprobe"}else{"ffprobe"};
- let mut cmd=std::process::Command::new(binary);cmd.args(["-nostdin","-v","error"]);
+ let mut cmd=crate::background_command(binary);cmd.args(["-nostdin","-v","error"]);
  let mut metadata=Vec::new();
- for path in paths{let output=std::process::Command::new(probe).args(["-v","error","-show_streams","-show_format","-of","json",path]).output().map_err(|e|format!("读取视频需要 FFprobe：{e}"))?;if !output.status.success(){return Err(format!("无法读取视频：{path}"))}let info:Value=serde_json::from_slice(&output.stdout).map_err(|e|e.to_string())?;let duration=info["format"]["duration"].as_str().and_then(|v|v.parse::<f64>().ok()).filter(|v|v.is_finite()&&*v>0.0).ok_or("无法读取视频时长")?;let audio=info["streams"].as_array().map(|xs|xs.iter().any(|x|x["codec_type"]=="audio")).unwrap_or(false);metadata.push((duration,audio));cmd.arg("-i").arg(path);}
+ for path in paths{let output=crate::background_command(probe).args(["-v","error","-show_streams","-show_format","-of","json",path]).output().map_err(|e|format!("读取视频需要 FFprobe：{e}"))?;if !output.status.success(){return Err(format!("无法读取视频：{path}"))}let info:Value=serde_json::from_slice(&output.stdout).map_err(|e|e.to_string())?;let duration=info["format"]["duration"].as_str().and_then(|v|v.parse::<f64>().ok()).filter(|v|v.is_finite()&&*v>0.0).ok_or("无法读取视频时长")?;let audio=info["streams"].as_array().map(|xs|xs.iter().any(|x|x["codec_type"]=="audio")).unwrap_or(false);metadata.push((duration,audio));cmd.arg("-i").arg(path);}
  let mut filters=Vec::new();for (i,(duration,audio)) in metadata.iter().enumerate(){filters.push(format!("[{i}:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,setpts=PTS-STARTPTS[v{i}]"));filters.push(if *audio{format!("[{i}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,apad,atrim=duration={duration},asetpts=PTS-STARTPTS[a{i}]")}else{format!("anullsrc=r=48000:cl=stereo,atrim=duration={duration},asetpts=PTS-STARTPTS[a{i}]")});}
  filters.push(format!("{}concat=n={}:v=1:a=1[outv][outa]",(0..paths.len()).map(|i|format!("[v{i}][a{i}]")).collect::<String>(),paths.len()));
  let result=cmd.args(["-filter_complex",&filters.join(";"),"-map","[outv]","-map","[outa]","-c:v","libx264","-preset","fast","-c:a","aac","-pix_fmt","yuv420p","-movflags","+faststart"]).arg(out).output().map_err(|e|format!("合并需要 FFmpeg：{e}"))?;
@@ -824,4 +824,15 @@ mod role_image_name_tests {
   assert!(after["media"].as_i64().unwrap()>before["media"].as_i64().unwrap());
   drop(c);fs::remove_dir_all(root).unwrap();
  }
+}
+
+// Avoid console windows when the desktop app invokes media tools.
+fn background_command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Command {
+    let mut command = std::process::Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    command
 }

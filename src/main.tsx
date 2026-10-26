@@ -36,7 +36,6 @@ import { lazy,Suspense,useCallback,useEffect,useRef,useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import "./role-media.css";
-import "./welcome.css";
 
 import "./logo.css";
 import "./studio-modern.css";
@@ -55,6 +54,7 @@ import "./library-polish.css";
 import "./creation-polish.css";
 import "./image-generator-modal.css";
 import "./editors-polish.css";
+import "./welcome.css";
 import { PageHeading, PageLoading } from "./ui";
 import { FloatingImageGenerator } from "./components/FloatingImageGenerator";
 const CreationDesk=lazy(()=>import("./creation").then(m=>({default:m.CreationDesk})));
@@ -529,8 +529,8 @@ function Welcome({
           <Button size="large" icon={<FolderOpen />} onClick={onOpen}>
             打开已有项目
           </Button>
+          <Suspense fallback={null}><ProjectTools onRestored={onRestored}/></Suspense>
         </div>
-        <Suspense fallback={null}><ProjectTools onRestored={onRestored}/></Suspense>
         <div className="welcome-features">
           <div><FileText size={20}/><b>故事与分镜</b><span>从一个想法，到完整镜头脚本</span></div>
           <div><Users size={20}/><b>角色与素材</b><span>为每个故事建立自己的视觉世界</span></div>

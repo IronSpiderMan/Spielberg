@@ -24,7 +24,14 @@ npm run server:build
 # 打包桌面应用 / macOS DMG
 npm run desktop:build
 npm run desktop:dmg
+
+# Windows：构建桌面 EXE 和 NSIS 安装包
+npm run desktop:exe
 ```
+
+Windows 构建需要 Node.js、Rust MSVC 工具链及 Visual Studio C++ Build Tools；首次运行脚本会自动安装前端依赖。默认输出为 `src-tauri/target/x86_64-pc-windows-msvc/release/spielberg-studio.exe` 和其下 `bundle/nsis/*-setup.exe`，脚本结束会打印实际路径。可通过 `npm run desktop:exe -- -Target aarch64-pc-windows-msvc` 指定目标架构（需先安装对应 Rust target 和编译工具）。
+
+发布版桌面 EXE 使用 Windows GUI 子系统，启动时不弹出控制台；FFmpeg/FFprobe 子进程也隐藏控制台。开发模式和独立服务器仍保留终端日志。
 
 服务器只需运行一个 `spielberg-backend` 进程，它同时提供 `/api/v1` 接口、素材和前端页面。页面在构建时嵌入后端程序，无需额外启动 Vite、Node.js 或附带 `dist/`。构建产物为 `backend/target/release/spielberg-backend`（Windows 加 `.exe`）。服务器端不依赖 Tauri、GTK 或 WebKit；`npm run server:build:linux-arm64` 可使用 Podman/Docker 构建 Linux ARM64 程序。
 

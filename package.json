@@ -19,7 +19,8 @@
     "backend:build": "cargo build --release --manifest-path backend/Cargo.toml",
     "test:api": "python3 scripts/qa/http-api.py",
     "test:agent": "python3 scripts/qa/agent.py",
-    "test:skills": "python3 scripts/qa/skills.py"
+    "test:skills": "python3 scripts/qa/skills.py",
+    "desktop:exe": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-exe.ps1"
   },
   "dependencies": {
     "@arco-design/web-react": "^2.66.16",
