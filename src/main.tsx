@@ -49,6 +49,7 @@ import "./assets.css";
 import "./layout.css";
 import "./design-system.css";
 import "./scene-editor.css";
+import "./image-generator-modal.css";
 import { PageHeading, PageLoading } from "./ui";
 import { FloatingImageGenerator } from "./components/FloatingImageGenerator";
 const CreationDesk=lazy(()=>import("./creation").then(m=>({default:m.CreationDesk})));

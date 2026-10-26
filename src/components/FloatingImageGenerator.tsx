@@ -21,9 +21,10 @@ export function FloatingImageGenerator({ data, reload }: { data: Snapshot; reloa
     >生图</Button>
     <Modal
       className="image-generator-modal"
-      title="生成图片"
+      title={null}
+      aria-label="生成图片"
       visible={open}
-      style={{ width: "min(1100px, 94vw)" }}
+      style={{ width: "min(1200px, 94vw)" }}
       footer={null}
       unmountOnExit
       closable={!busy}
@@ -32,7 +33,7 @@ export function FloatingImageGenerator({ data, reload }: { data: Snapshot; reloa
       onCancel={() => { if (!busy) setOpen(false); }}
     >
       {open && <Suspense fallback={<PageLoading />}>
-        <ImageStudio data={data} reload={reload} onBusyChange={setBusy} />
+        <ImageStudio compact data={data} reload={reload} onBusyChange={setBusy} />
       </Suspense>}
     </Modal>
   </>;
