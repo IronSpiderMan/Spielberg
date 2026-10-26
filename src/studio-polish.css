@@ -94,7 +94,7 @@ button:focus-visible, [role=button]:focus-visible, .arco-menu-item:focus-visible
 .project-card.selected { outline-width: 1px; outline-offset: 0; border-color: var(--ui-primary); }
 .project-art { position: relative; height: 136px; border: 1px solid var(--ui-border); border-radius: 9px; background: var(--ui-subtle); color: var(--ui-primary); }
 .project-art > svg { width: 20px; opacity: .45; }
-.project-art span { font-size: 40px; font-weight: 600; }
+.project-art > .project-art-initial { font-size: 40px; font-weight: 600; }
 .project-art .project-active-tag { position: absolute; top: 10px; right: 10px; font-size: 10px; font-weight: 500; background: var(--ui-surface); color: var(--ui-primary); border: 1px solid var(--ui-border); }
 .project-card h3 { margin: 18px 0 6px; font-size: 16px; }
 .project-card p { margin: 0 0 10px; font-size: 12px; line-height: 1.7; }

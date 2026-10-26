@@ -597,7 +597,7 @@ function ProjectPage({
           >
             <div className="project-art">
               <Film />
-              <span>{p.name.slice(0, 1)}</span>
+              <span className="project-art-initial">{p.name.slice(0, 1)}</span>
               {active?.id === p.id && <Tag className="project-active-tag">当前项目</Tag>}
             </div>
             <h3>{p.name}</h3>

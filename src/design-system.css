@@ -190,7 +190,7 @@
 .prompt-meta { padding-top: 12px; border-top: 1px solid var(--ui-border); }
 .project-card.selected { outline: 2px solid var(--ui-primary); outline-offset: 2px; }
 .project-art { background: #e4eaf3; color: #637797; height: 100px; }
-.project-art span { font-family: inherit; font-size: 36px; }
+.project-art > .project-art-initial { font-family: inherit; font-size: 36px; }
 .project-card p, .project-card small { color: var(--ui-muted); }
 .setting-block { display: grid; grid-template-columns: minmax(150px, 180px) minmax(0, 1fr); align-items: start; column-gap: 24px; padding: 28px 20px; margin: 0; border: 0; border-top: 1px solid var(--ui-border); border-radius: 0; background: transparent; }
 .setting-heading, .setting-block > .arco-form { min-width: 0; }
