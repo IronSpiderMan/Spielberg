@@ -30,6 +30,22 @@ npm run desktop:dmg
 
 桌面壳复用同一个后端库，绑定固定地址 `0.0.0.0:8080`，允许局域网设备连接；桌面界面本身仍通过 `127.0.0.1:8080` 调用 API。生产桌面端加载相同的前端构建，使用固定 Tauri 页面源保留主题等浏览器设置；开发时页面由 Vite 提供，API 地址由壳注入。窗口退出时本地服务随应用停止。后端没有用户认证，监听 `0.0.0.0` 会向本机网络开放 API 和素材，请只在可信网络中运行。
 
+### GitHub Actions 构建安装包
+
+工作流位于 [desktop-build.yml](.github/workflows/desktop-build.yml)，推送到 `main` / `master`、向这些分支提交 PR 或推送 `v*` 标签时自动构建，也可在 GitHub 仓库的 **Actions → Build desktop installers → Run workflow** 手动运行（工作流需先合入默认分支）。
+
+运行完成后，在该次运行页面底部的 **Artifacts** 下载并解压：
+
+| Artifact | 安装包 |
+|---|---|
+| `Spielberg-macOS-arm64` | Apple Silicon Mac 的 `.dmg` |
+| `Spielberg-macOS-x64` | Intel Mac 的 `.dmg` |
+| `Spielberg-Windows-x64` | Windows x64 的 NSIS `-setup.exe` 安装包 |
+
+产物保留 30 天，标签构建也通过 Artifacts 下载，不自动发布 GitHub Release。工作流使用 GitHub 托管 runner，无需连接本地电脑或配置额外 Secrets。版本号沿用 `src-tauri/tauri.conf.json`，推送标签前请同步更新该文件、`package.json` 和 Cargo 包版本。
+
+当前安装包未配置 Apple Developer ID 签名/公证或 Windows 代码签名，系统可能显示安全提示。FFmpeg / FFprobe 不包含在安装包中，缩略图和音视频处理需要在目标电脑安装并确保应用能通过 `PATH` 找到。
+
 ### 独立开发和部署
 
 ```bash
