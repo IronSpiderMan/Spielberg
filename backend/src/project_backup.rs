@@ -43,7 +43,7 @@ fn rewrite(value:&mut Value, paths:&HashMap<String,String>, strip_secrets:bool) 
         Value::String(text)=>{if let Some(next)=paths.get(text){*text=next.clone();}},
         Value::Array(items)=>for item in items {rewrite(item,paths,strip_secrets)},
         Value::Object(items)=>for (key,item) in items {
-            if strip_secrets && ["api_key","apiKey","authorization","access_token"].contains(&key.as_str()) {*item=json!("")} else {rewrite(item,paths,strip_secrets)}
+            if strip_secrets && ["api_key","apiKey","search_api_key","authorization","access_token"].contains(&key.as_str()) {*item=json!("")} else {rewrite(item,paths,strip_secrets)}
         },
         _=>{},
     }
@@ -200,6 +200,7 @@ mod tests {
         c.execute("INSERT INTO media(id,name,path,kind,created_at) VALUES(1,'hero',?,'image','1'),(2,'trash',?,'image','1')",params![file.to_string_lossy(),file.to_string_lossy()]).unwrap();
         c.execute_batch("UPDATE media SET deleted_at='1' WHERE id=2;INSERT INTO roles(id,name,design_media_id,created_at) VALUES(1,'Hero',1,'1');").unwrap();
         c.execute("INSERT INTO settings VALUES('models',?)",[json!({"t2i":{"api_key":"secret-value","url":"http://model.local"}}).to_string()]).unwrap();
+        c.execute("INSERT INTO settings VALUES('agent',?)",[json!({"api_key":"agent-secret","search_api_key":"search-secret","search_provider":"brave"}).to_string()]).unwrap();
         c.execute("INSERT INTO background_jobs(operation,status,prompt,created_at,updated_at,result_json) VALUES('image','completed','','1','1',?)",[json!({"id":1,"path":file,"kind":"image"}).to_string()]).unwrap();
         let shot_csv=format!("编号,景别,运镜,画面,描述\r\n001,中景,固定,{},\"逗号,与\"\"引号\"\"\n换行\"",file.to_string_lossy());
         c.execute("INSERT INTO screenplays(title,content,format,created_at,updated_at) VALUES('分镜',?,'csv','1','1')",[&shot_csv]).unwrap();
@@ -211,6 +212,9 @@ mod tests {
         let extracted=base.join("extracted");unpack_archive(&backup,&extracted).unwrap();
         let copy=Connection::open(extracted.join("spielberg.sqlite")).unwrap();
         let raw:String=copy.query_row("SELECT value FROM settings WHERE key='models'",[],|r|r.get(0)).unwrap();assert!(!raw.contains("secret-value"));
+        let agent_config:String=copy.query_row("SELECT value FROM settings WHERE key='agent'",[],|r|r.get(0)).unwrap();
+        assert!(!agent_config.contains("agent-secret") && !agent_config.contains("search-secret"));
+        assert!(agent_config.contains("brave"));
         assert_eq!(c.query_row("SELECT value FROM settings WHERE key='models'",[],|r|r.get::<_,String>(0)).unwrap().contains("secret-value"),true);
         assert!(!fs::read(extracted.join("spielberg.sqlite")).unwrap().windows(12).any(|bytes|bytes==b"secret-value"));
         let restored=base.join("restored");assert_eq!(restore(&backup,&restored).unwrap(),"Test");

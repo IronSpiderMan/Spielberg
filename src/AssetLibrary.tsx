@@ -1,7 +1,7 @@
 import { AssetAssignmentModal } from "./components/AssetAssignmentModal";
 import { Button,Drawer,Dropdown,Empty,Input,Menu,Message,Modal,Pagination,Select,Space,Spin,Tag } from "@arco-design/web-react";
 import { open,save } from "./platform";
-import { HardDrive,MoreHorizontal,Plus,RotateCcw,WandSparkles } from "lucide-react";
+import { Eye,HardDrive,MoreHorizontal,Plus,RotateCcw,WandSparkles } from "lucide-react";
 import { useEffect,useRef,useState } from "react";
 import AssetThumbnail from "./AssetThumbnail";
 import { Media,Snapshot,imageUrl,post } from "./core";
@@ -72,8 +72,10 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
   });
   const exportAsset=async(m:Media)=>{try{const path=await save({defaultPath:m.name});if(path)await post("/media/export",{project_id:pid,media_id:m.id,destination_path:path});}catch(e){Message.error(String(e));}};
   const inspectDisk=async()=>{setScanning(true);try{setScan(await post<DiskScan>("/storage/scan",{project_id:pid}));}catch(e){Message.error(String(e));}finally{setScanning(false);}};
-  return <section>
-    <div className="section-title page-actions"><Space wrap>
+  const filtered=kind!=="all"||filter!=="all"||!!query.trim();
+  const clearFilters=()=>{setQuery("");setSearch("");setKind("all");setFilter("all");setPage(1);};
+  return <section className="asset-library" aria-busy={loading}>
+    <div className="section-title page-actions"><div className="page-intro"><h1>资产库</h1><p>让图片、视频与声音，在故事里各就其位。</p></div><Space wrap>
       <Button loading={scanning} icon={<HardDrive size={16}/>} onClick={inspectDisk}>磁盘清理</Button>
       <Button type="primary" loading={busy} icon={<Plus size={16}/>} onClick={importFiles}>导入资产</Button>
     </Space></div>
@@ -81,14 +83,14 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
       <Select aria-label="资产类型" value={kind} onChange={value=>{setKind(value);setPage(1);}} options={[{label:"全部类型",value:"all"},{label:"图片",value:"image"},{label:"视频",value:"video"},{label:"音频",value:"audio"}]}/>
       <Select aria-label="使用状态" value={filter} onChange={value=>{setFilter(value);setPage(1);}} options={[{label:"全部资产",value:"all"},{label:"使用中",value:"used"},{label:"未使用",value:"unused"},{label:"回收站",value:"trash"}]}/>
       <Input.Search value={query} onChange={setQuery} placeholder="搜索资产名称" allowClear/>
-      <span className="helper">共 {total} 项</span>
+      <span className="helper asset-total" role="status">共 <b>{total}</b> 项资产</span>
     </div>
     {filter==="trash"&&<p className="helper">回收站保留原文件；永久删除才会释放磁盘空间。</p>}
-    {error?<div role="alert"><p>{error}</p><Button onClick={()=>setVersion(v=>v+1)}>重试</Button></div>:<Spin loading={loading} style={{display:"block"}}>
+    {error?<div className="library-status" role="alert"><div><b>资产暂时未能加载</b><p>{error}</p></div><Button onClick={()=>setVersion(v=>v+1)}>重新加载</Button></div>:<Spin loading={loading} style={{display:"block"}}>
       <div className="library-grid">{items.map(m=><article className="library-card" key={m.id}>
-        <button className="library-thumbnail" onClick={()=>setPreview(m)} aria-label={`预览 ${m.name}`}><AssetThumbnail media={m} projectId={pid}/><Tag>{m.kind==="video"?"视频":m.kind==="image"?"图片":m.kind==="audio"?"音频":"文件"}</Tag></button>
-        <b title={m.name}>{m.name}</b>{(m.kind==="image"||m.kind==="video")&&<MediaDimensions media={m}/>}<small>{new Date(Number(m.created_at)*1000).toLocaleString()}</small>
-        {filter!=="trash"&&m.kind!=="file"&&<button className="asset-usage-link" onClick={()=>setTracking(m)}>{m.usage_count?`使用中 · ${m.usage_count} 处用途`:"未使用 · 查看用途"}</button>}
+        <button type="button" className="library-thumbnail" onClick={()=>setPreview(m)} aria-label={`预览 ${m.name}`}><AssetThumbnail media={m} projectId={pid}/><span className="library-preview-hint"><Eye size={15}/>预览</span><Tag>{m.kind==="video"?"视频":m.kind==="image"?"图片":m.kind==="audio"?"音频":"文件"}</Tag></button>
+        <div className="library-card-copy"><b title={m.name}>{m.name}</b>{(m.kind==="image"||m.kind==="video")&&<MediaDimensions media={m}/>}<small>{new Date(Number(m.created_at)*1000).toLocaleString()}</small></div>
+        {filter!=="trash"&&m.kind!=="file"&&<button type="button" className="asset-usage-link" data-used={m.usage_count>0} onClick={()=>setTracking(m)}>{m.usage_count?`使用中 · ${m.usage_count} 处用途`:"未使用 · 查看用途"}</button>}
         <div className="asset-card-actions">
           {filter==="trash"?<Button size="small" disabled={busy} icon={<RotateCcw size={14}/>} onClick={()=>action("/media/restore",m)}>恢复资产</Button>:m.kind==="image"?<><Button size="small" icon={<WandSparkles size={14}/>} onClick={()=>onImageToImage(m)}>图生图</Button><Button size="small" onClick={()=>beginAssignment(m)}>设置用途</Button></>:m.kind==="video"?<Button size="small" onClick={()=>beginAssignment(m)}>设置用途</Button>:<Button size="small" onClick={()=>exportAsset(m)}>导出文件</Button>}
           <Dropdown trigger="click" droplist={<Menu onClickMenuItem={key=>{if(key==="rename")setRename({...m});if(key==="export")void exportAsset(m);if(key==="delete")confirmDelete(m);if(key==="usage")setTracking(m);}}>
@@ -96,7 +98,7 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
           </Menu>}><Button size="small" aria-label={`更多操作 ${m.name}`} icon={<MoreHorizontal size={16}/>}/></Dropdown>
         </div>
       </article>)}</div>
-      {!items.length&&!loading&&<Empty description={filter==="trash"?"回收站为空":"没有符合条件的资产"}/>}
+      {!items.length&&!loading&&<div className="asset-empty"><Empty description={filter==="trash"?"回收站为空":filtered?"没有符合条件的资产":"导入第一个资产，开始构建你的素材库"}/><Button type={filtered?"secondary":"primary"} icon={filtered?undefined:<Plus size={16}/>} onClick={filtered?clearFilters:importFiles}>{filtered?"清除筛选":"导入资产"}</Button></div>}
     </Spin>}
     <Pagination className="asset-pagination" current={page} pageSize={24} total={total} onChange={setPage} showTotal/>
     <Drawer width={460} visible={!!tracking} title="资产用途" footer={null} onCancel={()=>setTracking(null)}>

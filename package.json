@@ -17,7 +17,9 @@
     "frontend:dev": "vite",
     "backend:dev": "cargo run --manifest-path backend/Cargo.toml",
     "backend:build": "cargo build --release --manifest-path backend/Cargo.toml",
-    "test:api": "python3 scripts/qa/http-api.py"
+    "test:api": "python3 scripts/qa/http-api.py",
+    "test:agent": "python3 scripts/qa/agent.py",
+    "test:skills": "python3 scripts/qa/skills.py"
   },
   "dependencies": {
     "@arco-design/web-react": "^2.66.16",

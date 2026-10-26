@@ -82,6 +82,7 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
 
   return <div className="creation-split video-creation-split">
     <div className="creation-panel">
+      <div className="generation-panel-heading"><span className="generation-eyebrow">VIDEO STUDIO</span><h2>让画面动起来</h2><p>描述镜头语言，制作属于你的动态片段。</p></div>
       <Form layout="vertical" disabled={disabled}>
         <GenerationModeTabs value={mode} onChange={setMode} disabled={disabled} modes={[
           { value: "t2v", label: "文生视频" }, { value: "fl2v", label: "首尾帧" }, { value: "i2v", label: "全能参考" },
@@ -103,13 +104,16 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
         {mode === "i2v" && <ReferenceMediaPicker projectId={data.project.id} media={data.media} videoIds={referenceVideos} audioIds={referenceAudios} reload={reload} disabled={busy || uploading || optimizing} onUploading={setUploadingReferences} onChange={(kind, ids) => kind === "video" ? setReferenceVideos(ids) : setReferenceAudios(ids)} />}
         <VideoDurationField value={duration} onChange={setDuration} />
         <MediaSizeFields ratio={ratio} size={size} ariaPrefix="视频" onChange={value => { setRatio(value.ratio); setSize(value.size); }} />
-        <Button type="primary" long icon={<Film size={16} />} loading={busy} disabled={uploading || optimizing || uploadingReferences} onClick={() => void generate()}>{busy ? "视频生成中…" : "生成视频"}</Button>
-      </Form>
+        </Form>
+      <Button className="generation-submit" type="primary" long icon={<Film size={16} />} loading={busy} disabled={uploading || optimizing || uploadingReferences} onClick={() => void generate()}>{busy ? "视频生成中…" : "生成视频"}</Button>
     </div>
     <div className="creation-panel image-result video-result" aria-busy={busy}>
-      {result ? <><video key={result.id} src={imageUrl(result)} controls preload="metadata" /><p className="helper">{result.name} · 已保存到资产库</p></> : <Empty description={busy ? "正在生成视频，请稍候…" : "生成的视频将在这里展示，并自动进入资产库"} />}
+      <div className="generation-preview-heading"><h2>生成预览</h2><span className={`generation-state${busy ? " is-busy" : result ? " is-ready" : ""}`}>{busy ? "生成中" : result ? "已完成" : "等待创作"}</span></div>
+      <div className="generation-preview-body">
+      {result ? <><video key={result.id} src={imageUrl(result)} controls preload="metadata" /><p className="helper">{result.name} · 已保存到资产库</p></> : <Empty icon={<Film size={28} />} description={<><b>{busy ? "视频正在生成" : "下一个精彩镜头，从这里开始"}</b><p>{busy ? "稍候片刻，完成后将自动展示" : "在左侧描述画面，生成的视频将自动存入资产库"}</p></>} />}
       {error && <p className="image-generation-errors" role="alert">{error}</p>}
-      <p className="helper">生成任务可在「后台任务」中查看进度与错误信息。</p>
+      </div>
+      <p className="helper generation-result-note">生成任务可在「后台任务」中查看进度与错误信息。</p>
     </div>
   </div>;
 }

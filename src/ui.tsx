@@ -16,5 +16,5 @@ export function ProjectSummary({data}: {data:Snapshot}) {
   </dl>;
 }
 export function PageLoading() {
-  return <div className="page-loading" role="status" aria-live="polite"><span>正在加载页面…</span><div/><div/><div/></div>;
+  return <div className="page-loading" role="status" aria-live="polite"><span>正在加载工作区…</span><div aria-hidden="true"/><div aria-hidden="true"/><div aria-hidden="true"/></div>;
 }

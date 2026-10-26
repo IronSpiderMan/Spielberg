@@ -14,6 +14,7 @@ Tag
 import "@arco-design/web-react/dist/css/arco.css";
 import { open } from "./platform";
 import {
+Bot,
 ChevronRight,
 Clapperboard,
 Film,
@@ -49,7 +50,11 @@ import "./assets.css";
 import "./layout.css";
 import "./design-system.css";
 import "./scene-editor.css";
+import "./studio-polish.css";
+import "./library-polish.css";
+import "./creation-polish.css";
 import "./image-generator-modal.css";
+import "./editors-polish.css";
 import { PageHeading, PageLoading } from "./ui";
 import { FloatingImageGenerator } from "./components/FloatingImageGenerator";
 const CreationDesk=lazy(()=>import("./creation").then(m=>({default:m.CreationDesk})));
@@ -58,6 +63,7 @@ const MediaEditor=lazy(()=>import("./MediaEditor"));
 const AssetLibrary=lazy(()=>import("./AssetLibrary"));
 const ScreenplayManager=lazy(()=>import("./ScreenplayManager"));
 const ProjectTools=lazy(()=>import("./ProjectTools"));
+const AgentWorkspace=lazy(()=>import("./AgentWorkspace"));
 
 const Studio=lazy(()=>import("./workspace").then(m=>({default:m.Studio})));
 const Tasks=lazy(()=>import("./workspace").then(m=>({default:m.Tasks})));
@@ -147,8 +153,13 @@ function App() {
       if(activeRef.current!==id||sequence!==refreshSequence.current)return;
       const merged={...snapshotRef.current,...changes} as Snapshot;
       snapshotRef.current=merged;
+      const projectChanged=JSON.stringify(current.project)!==JSON.stringify(merged.project);
+      if(projectChanged){
+        setActive(merged.project);
+        setProjects(items=>items.map(project=>project.id===id?merged.project:project));
+      }
       // No changed domain means no React render or media-grid requery.
-      if(Object.keys(changes).some(key=>key!=="project"&&key!=="revisions") || JSON.stringify(current.revisions)!==JSON.stringify(changes.revisions))setData(merged);
+      if(projectChanged || Object.keys(changes).some(key=>key!=="project"&&key!=="revisions") || JSON.stringify(current.revisions)!==JSON.stringify(changes.revisions))setData(merged);
     };
     const next=refreshQueue.current.catch(()=>{}).then(run);
     refreshQueue.current=next;
@@ -263,8 +274,9 @@ function App() {
   };
   return (
     <EditGuardContext.Provider value={registerDirty}>
-    <Layout className={`app${darkMode ? " dark-theme" : ""}${sceneEditing?.scene.creation_mode === "canvas" ? " canvas-mode" : ""}`}>
-      <Layout.Sider className={`side${sidebarCollapsed ? " side-collapsed" : ""}`} width={216}>
+    <Layout className={`app${page === "agent" && !sceneEditing ? " agent-page" : ""}${darkMode ? " dark-theme" : ""}${sceneEditing?.scene.creation_mode === "canvas" ? " canvas-mode" : ""}`}>
+      <a className="skip-to-content" href="#workspace-content">跳转到工作区</a>
+      <Layout.Sider className={`side${sidebarCollapsed || (page === "agent" && !sceneEditing) ?  " side-collapsed" : ""}`} width={216}>
         <div className="logo">
           <img className="logo-mark" src={logoSrc} alt="Spielberg" />
           <div>
@@ -282,6 +294,7 @@ function App() {
         </button>
         <div className="nav-label">制作空间</div>
         <Menu selectedKeys={[page]} onClickMenuItem={navigate} className="nav">
+          <Menu.Item key="agent" title="Agent 助手" aria-label="Agent 助手"><Bot />Agent 助手</Menu.Item>
           <Menu.Item key="studio" title="工作台" aria-label="工作台">
             <LayoutDashboard />
             工作台
@@ -353,6 +366,7 @@ function App() {
                 : (
                     {
                       studio: "工作台",
+                      agent: "Agent 助手",
                       episodes: "剧集管理",
                       screenplays: "剧本管理",
                       assets: "资产库",
@@ -388,6 +402,10 @@ function App() {
           </Space>
         </Layout.Header>
         <Layout.Content
+          id="workspace-content"
+          tabIndex={-1}
+          aria-label="项目工作区"
+          data-page={sceneEditing ? "scene" : page}
           ref={contentRef}
           key={data.project.id}
           className={sceneEditing ? `content scene-page-content${sceneImageFlow ? " scene-image-workbench-content" : ""}` : "content"}
@@ -434,6 +452,7 @@ function App() {
                 />
               )}{" "}
               {page === "screenplays" && <ScreenplayManager key={data.project.id} data={data} reload={refresh} />}
+              {page === "agent" && <AgentWorkspace key={data.project.id} data={data} reload={refresh} onNavigate={navigate} />}
               {page === "episodes" && (
                 <Episodes
                   initialEpisodeId={locate?.kind==="episode"?locate.target_id:undefined}
@@ -494,7 +513,8 @@ function Welcome({
   return (
     <div className="welcome">
       <div className="welcome-card">
-        <img className="hero-logo" src={logoSrc} alt="Spielberg" />
+        <div className="welcome-brand"><img className="hero-logo" src={logoSrc} alt="" /><div><b>Spielberg</b><span>AI COMIC STUDIO</span></div></div>
+        <span className="welcome-kicker">给每一个故事，开场的机会</span>
         <h1>把灵感，剪成一部漫剧</h1>
         <p>角色、分镜、视觉资产与生成模型都归于一个本地项目。</p>
         <div className="welcome-actions">
@@ -511,6 +531,11 @@ function Welcome({
           </Button>
         </div>
         <Suspense fallback={null}><ProjectTools onRestored={onRestored}/></Suspense>
+        <div className="welcome-features">
+          <div><FileText size={20}/><b>故事与分镜</b><span>从一个想法，到完整镜头脚本</span></div>
+          <div><Users size={20}/><b>角色与素材</b><span>为每个故事建立自己的视觉世界</span></div>
+          <div><Clapperboard size={20}/><b>生成与剪辑</b><span>让画面动起来，串联成你的作品</span></div>
+        </div>
         <div className="welcome-notes">
           <span>本地项目</span>
           <i /> <span>统一素材管理</span>
@@ -573,11 +598,12 @@ function ProjectPage({
             <div className="project-art">
               <Film />
               <span>{p.name.slice(0, 1)}</span>
+              {active?.id === p.id && <Tag className="project-active-tag">当前项目</Tag>}
             </div>
             <h3>{p.name}</h3>
             <p>{p.path}</p>
             <small>最近更新 {p.updated_at}</small>
-            <div style={{marginTop:16}} onClick={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}>
+            <div className="project-card-actions" onClick={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}>
               <Space size="mini">
                 <Button size="small" disabled={pending} onClick={()=>{setEditing(p);setName(p.name);}}>重命名</Button>
                 <Button size="small" disabled={pending} onClick={()=>void relocate(p)}>迁移</Button>

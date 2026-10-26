@@ -6,6 +6,7 @@ import { ImagePreviewModal } from "./components/ImagePreviewModal";
 import { usePromptOptimization } from "./hooks/usePromptOptimization";
 import { supportedPastedImages, useImageUpload } from "./hooks/useImageUpload";
 import { AssetImagePicker } from "./components/AssetImagePicker";
+import { SkillsSettings } from "./SkillsSettings";
 import { MediaSizeFields, VideoDurationField } from "./components/generation/GenerationFields";
 import React,{ lazy,useEffect,useRef,useState } from "react";
 
@@ -355,6 +356,25 @@ function VideoAsset({video, scene, projectId, reload}: {video:Media;scene?:Scene
 type BackgroundJob = {id:number;project_id:string;project_name:string;scene_id?:number;operation:string;status:string;prompt:string;created_at:string;updated_at:string;error?:string;result?:Media};
 type JobCursor = Pick<BackgroundJob,"created_at"|"project_id"|"id">;
 type JobPage = {items:BackgroundJob[];next_cursor:JobCursor|null;has_more:boolean};
+function TaskText({text,error=false}:{text:string;error?:boolean}) {
+  const [expanded,setExpanded]=useState(false);
+  const [overflowing,setOverflowing]=useState(false);
+  const content=useRef<HTMLParagraphElement>(null);
+  const id=React.useId();
+  useEffect(()=>{
+    const element=content.current;
+    if(!element)return;
+    const measure=()=>setOverflowing(element.scrollHeight>parseFloat(getComputedStyle(element).lineHeight)*6+1);
+    const observer=new ResizeObserver(measure);
+    observer.observe(element);
+    measure();
+    return ()=>observer.disconnect();
+  },[text]);
+  return <div className="task-text">
+    <p ref={content} id={id} className={`task-text-content${expanded?" is-expanded":""}${error?" generation-error":""}`} tabIndex={expanded?0:undefined}>{text}</p>
+    {overflowing&&<Button type="text" size="mini" aria-expanded={expanded} aria-controls={id} onClick={()=>setExpanded(value=>!value)}>{expanded?"收起":"展开全文"}</Button>}
+  </div>;
+}
 export function Tasks({projectId}:{projectId:string}) {
   const [jobs,setJobs] = useState<BackgroundJob[]>([]);
   const [filter,setFilter] = useState("all");
@@ -396,12 +416,13 @@ export function Tasks({projectId}:{projectId:string}) {
   },[filter,projectId]);
   const labels:Record<string,string>={running:"执行中",completed:"已完成",failed:"失败",interrupted:"已中断"};
   return <section><div className="section-title page-actions">
+    <div className="page-intro"><h1>后台任务</h1><p>在这里追踪生成进度，查看结果与运行记录。</p></div>
     <Select aria-label="任务状态" value={filter} onChange={setFilter} style={{width:160}}><Select.Option value="all">全部状态</Select.Option>{Object.entries(labels).map(([k,v])=><Select.Option key={k} value={k}>{v}</Select.Option>)}</Select></div>
     {error && <p role="alert">{error}</p>}
     <div className="task-list">{jobs.map(job=><Card key={`${job.project_id}-${job.id}`}>
       <Space wrap><b>{job.project_name}</b><Tag>{job.operation.includes("image")?"图片生成":job.operation.includes("video")?"视频生成":"剧集合并"}</Tag><Tag color={job.status==="failed"?"red":job.status==="completed"?"green":"blue"}>{labels[job.status]||job.status}</Tag></Space>
-      <p>{job.prompt}</p><small>{new Date(Number(job.created_at)*1000).toLocaleString()} · #{job.id}</small>
-      {job.error && <p className="generation-error">{job.error}</p>}
+      <TaskText text={job.prompt}/><small>{new Date(Number(job.created_at)*1000).toLocaleString()} · #{job.id}</small>
+      {job.error && <TaskText text={job.error} error/>}
       {job.result?.kind==="video" && <VideoAsset video={job.result} projectId={job.project_id}/>}
       {job.result?.kind==="image" && <img className="task-image" src={imageUrl(job.result)} alt="生成结果"/>}
     </Card>)}</div>
@@ -567,6 +588,7 @@ export function Episodes({
   return (
     <section>
       <div className="section-title page-actions">
+        <div className="page-intro"><h1>剧集管理</h1><p>将故事拆解成镜头，让每一集逐渐成形。</p></div>
         <Button
           type="primary"
           icon={<Plus size={16} />}
@@ -1718,6 +1740,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
   return (
     <section>
       <div className="section-title page-actions">
+        <div className="page-intro"><h1>角色设定</h1><p>记录人物特征，保持故事中的角色形象一致。</p></div>
         <Button
           className="role-create-button"
           type="primary"
@@ -2058,6 +2081,7 @@ export function Prompts({ data, reload }: { data: Snapshot; reload: () => void }
   return (
     <section>
       <div className="section-title page-actions">
+        <div className="page-intro"><h1>Prompt 库</h1><p>收藏灵感与常用风格，让下一次创作更从容。</p></div>
         <Button
           type="primary"
           className="prompt-create-button"
@@ -2230,6 +2254,7 @@ export function SettingsPage({
   return (
     <section>
       <div className="section-title page-actions">
+        <div className="page-intro"><h1>工作室设置</h1><p>管理项目存储位置、Skills 技能与创作服务配置。</p></div>
         <Button
           type="primary"
           icon={<Save size={16} />}
@@ -2258,6 +2283,7 @@ export function SettingsPage({
           </Space>
         </Form>
       </div>
+      <SkillsSettings />
       {methods.map(([key, label, sub]) => {
         const image = key === "image";
         const video = key === "video";
@@ -2268,10 +2294,6 @@ export function SettingsPage({
             <div className="setting-heading"><span className="setting-code">{key.toUpperCase()}</span><h3>{label}</h3>
             <p>{sub}</p></div>
             <Form layout="vertical" disabled={saving}>
-              {image && <Form.Item label="接口类型">
-                <Select value={provider} onChange={v => set(key, "provider", v)} style={{width:260}}
-                  options={[{label:"CAST 兼容接口",value:"cast"},{label:"OpenAI 官方兼容接口",value:"openai"}]}/>
-              </Form.Item>}
               <div className={`settings-fields ${image && provider === "openai" ? "settings-fields-openai" : ""}`}>
                 {image && <Form.Item label="接口类型">
                   <Select value={provider} onChange={v => set(key, "provider", v)} style={{width:260}}

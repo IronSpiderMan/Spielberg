@@ -1,24 +1,24 @@
 /* Spielberg UI foundations. Loaded after feature styles, including lazy pages.
    4px spacing scale · 6/8/12px radii · 180ms feedback · one action accent. */
 :root, body {
-  --ui-primary: #315dcc;
-  --ui-primary-hover: #244ba9;
+  --ui-primary: #4664d8;
+  --ui-primary-hover: #3652bd;
   --ui-secondary: #475569;
-  --ui-bg: #f7f8fa;
+  --ui-bg: #f5f7fb;
   --ui-surface: #fff;
-  --ui-subtle: #f0f2f5;
-  --ui-border: #e2e5ea;
-  --ui-text: #202733;
+  --ui-subtle: #f0f3f9;
+  --ui-border: #e1e7f0;
+  --ui-text: #202d43;
   --ui-secondary-text: #596577;
   --ui-muted: #687588;
   --ui-success: #23734f;
   --ui-warning: #946215;
   --ui-error: #b33b42;
   --ui-info: #315dcc;
-  --ui-accent-soft: #eaf0ff;
-  --ui-radius-control: 6px;
-  --ui-radius-panel: 8px;
-  --ui-radius-dialog: 12px;
+  --ui-accent-soft: #edf1ff;
+  --ui-radius-control: 8px;
+  --ui-radius-panel: 14px;
+  --ui-radius-dialog: 18px;
   --ui-space-1: 4px;
   --ui-space-2: 8px;
   --ui-space-3: 12px;
@@ -26,9 +26,9 @@
   --ui-space-6: 24px;
   --ui-space-8: 32px;
   --ui-shadow: 0 12px 40px #20273314;
-  --primary-6: 49, 93, 204;
-  --primary-5: 62, 107, 222;
-  --primary-7: 36, 75, 169;
+  --primary-6: 70, 100, 216;
+  --primary-5: 88, 117, 229;
+  --primary-7: 54, 82, 189;
   --color-primary-light-1: var(--ui-accent-soft);
   --color-text-1: var(--ui-text);
   --color-text-2: var(--ui-secondary-text);
@@ -335,9 +335,9 @@ input.arco-input:disabled, textarea.arco-textarea:disabled, .arco-input-inner-wr
 /* Dark appearance follows the same design tokens. */
 html[data-theme="dark"], html[data-theme="dark"] body {
   color-scheme: dark;
-  --ui-primary: #87a7ff; --ui-primary-hover: #a2baff; --ui-secondary: #aab6c8;
-  --ui-bg: #171a20; --ui-surface: #20242c; --ui-subtle: #292e38; --ui-border: #343b48;
-  --ui-text: #e4e8f0; --ui-secondary-text: #bac2d0; --ui-muted: #909aaa;
+  --ui-primary: #9bb4ff; --ui-primary-hover: #b7c9ff; --ui-secondary: #bac5d7;
+  --ui-bg: #141923; --ui-surface: #1c2330; --ui-subtle: #242d3c; --ui-border: #323e50;
+  --ui-text: #e8edf7; --ui-secondary-text: #bac5d7; --ui-muted: #96a4ba;
   --ui-success: #70c49a; --ui-warning: #e5b967; --ui-error: #ff8b91; --ui-info: #87a7ff;
   --ui-accent-soft: #293653; --color-primary-light-1: var(--ui-accent-soft);
   --color-text-1: var(--ui-text); --color-text-2: var(--ui-secondary-text); --color-text-3: var(--ui-muted);

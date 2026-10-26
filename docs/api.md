@@ -97,6 +97,44 @@ curl 'http://127.0.0.1:8080/api/v1/projects/PID/assets/1/content?download=1' -o 
 
 `GET /api/v1/health` 返回服务状态和 API 版本。原来的 `/api` RPC 包装路由和 Tauri 业务 IPC 不再提供。
 
+## Agent
+
+Agent 接口使用 `POST /api/v1/actions/agent/{动作}`，全部传入 `project_id`，会话 ID 为 UUID 且只在所属项目有效。
+
+| 动作 | 请求字段（除 project_id） | 返回 |
+|---|---|---|
+| `config` | 无 | 配置及 `has_api_key`、`has_search_api_key` 标记，不返回 Key |
+| `config/save` | `config` 对象 | 保存后的配置；省略字段保持原值，空 Key 保留已有 Key |
+| `sessions` | 无 | `{items:[会话摘要]}` |
+| `create` | `title?` | 新会话 |
+| `session` | `session_id` | 完整会话、消息与工具执行记录 |
+| `run` | `session_id, message, web_enabled?` | 状态为 `running` 的会话；后台继续执行 |
+| `cancel` | `session_id` | 取消后的会话 |
+| `delete` | `session_id` | `{ok:true}` |
+
+`config` 支持 `inherit_llm`（默认 true）、`base_url`、`model`、`api_key`、`search_provider`（`duckduckgo/brave/tavily`）、`search_api_key` 和 `max_steps`。继承模式从项目的 `settings.models.llm` 读取服务地址、模型和 API Key；独立模式使用 Agent 配置。服务地址自动补全 `/chat/completions`。
+
+会话包含 `id,title,status,messages,error,updated_at`。状态为 `idle/running/completed/failed/cancelled`；消息包含 `role,content`，工具消息还包含 `tool_name,tool_call_id,arguments,status`。客户端在运行期间轮询 `session` 获取新增记录。同一会话只允许一个运行；取消后不再开始新的工具步骤，已提交的业务操作不会回滚。进程重启后中断的运行标记为失败，不会自动重放写入。
+
+模型工具包括 `get_project`、`list_skills`、`read_skill`、`app_describe`、`app_request`、`app_action`、`web_search`、`fetch_webpage`。`app_request` 使用现有 REST 校验，`app_action` 使用白名单业务操作，项目 ID 由服务端绑定；模型不能跨项目访问、直接运行系统命令或读取任意本地文件。网页工具仅允许公开 HTTP/HTTPS 地址，并限制响应体和请求时长。搜索 Key 仅由后端用于搜索服务请求。
+
+## Skills
+
+技能管理使用 `POST /api/v1/actions/skills/{动作}`，属于全工作室配置，无需 `project_id`。返回值放在统一的 `{data: ...}` 包装中。
+
+| 动作 | 请求字段 | 返回 |
+|---|---|---|
+| `list` | 无 | `{items:[技能摘要],directory}` |
+| `detail` | `id` | 技能摘要及 `content`（完整 SKILL.md）、`files:[{path,size}]` |
+| `install` | `source`（公开 GitHub 仓库或 tree 目录 URL），或 `files:[{path,content_base64}],source_name?` | 安装后的技能摘要 |
+| `toggle` | `id,enabled`（布尔值） | 更新后的技能摘要 |
+| `update` | `id` | 从原 GitHub 来源重新安装，保留启用状态，返回技能摘要 |
+| `delete` | `id` | `{ok:true}` |
+
+技能摘要为 `{id,name,description,enabled,source,installed_at,updated_at,files_count}`，时间字段为 Unix 秒字符串。本地上传路径相对于 Skill 根目录，必须包含根目录的 `SKILL.md`；文件须以 YAML frontmatter 提供 `name` 和 `description`。本地重装使用 `install` 并增加 `replace_id`，新文件的 `name` 须与原技能相同，保留启用状态和安装时间。拒绝重复技能名、目录越界和符号链接。单技能上限为 256 个文件、10 MiB 总大小；说明文件上限 32 KiB，其余单文件上限 2 MiB。GitHub 安装仅下载指定目录中的技能文件，仓库根目录无说明文件时须指定 Skill 子目录。
+
+Agent 的 `list_skills` 工具读取当前启用目录，支持 `offset` 和 `limit`（1–20）；`read_skill` 接受 `id,path?`（默认 `SKILL.md`）、`offset?`（Unicode 字符下标）、`max_chars?`（1–10000，另受单页字节上限约束）。返回 `{id,name,path,content,total_chars,offset,truncated,next_offset}`，有 `next_offset` 时继续读取。技能文件读取限于已安装且启用的 Skill 目录，不受联网开关影响；模型没有安装、卸载或执行脚本工具。技能库与项目数据库独立保存。
+
 ## 部署边界
 
 静态页面与 API 默认同源，不需要 CORS 配置。默认允许 Tauri 页面源和 Vite 的 1420 端口，其他来源通过 `SPIELBERG_ALLOWED_ORIGINS` 精确配置；未授权跨源写入会被拒绝。服务器默认绑定回环地址，局域网访问须显式设置 `SPIELBERG_BIND=0.0.0.0:8080`。接口用于单用户/可信网络的工作室，不包含账号或多租户隔离；公网部署通过反向代理提供认证与 HTTPS。

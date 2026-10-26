@@ -11,6 +11,9 @@ mod catalog;
 mod project_backup;
 mod app_settings;
 mod thumbnails;
+mod agent;
+mod agent_tools;
+mod skills;
 mod server_assets { include!(concat!(env!("OUT_DIR"), "/server_assets.rs")); }
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};

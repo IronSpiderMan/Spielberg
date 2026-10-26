@@ -142,6 +142,46 @@ PLAYWRIGHT_PATH=/path/to/playwright node scripts/qa-screenplays.cjs
 
 可通过 `PLAYWRIGHT_EXECUTABLE_PATH` 指定已有 Chromium 可执行文件。
 
+## Agent 助手
+
+打开项目，在侧栏选择「Agent 助手」，即可用自然语言安排创作工作，例如「根据这段故事创建剧本、角色和第一集场景」或「搜索雨夜车站的摄影参考，再整理成 Prompt」。Agent 会读取当前项目、调用业务工具并继续处理结果，界面显示每一步的参数和执行结果。
+
+- 默认复用「设置」中的 LLM（分镜与 Prompt）配置。也可以在 Agent 配置中填写独立的 Base URL、模型名称和 API Key。模型服务须支持 OpenAI Chat Completions 的函数工具调用。
+- 支持当前项目的剧本、角色、Prompt、剧集、场景和资产增删改查，以及脚本发布、素材关联、画布、分镜规划、图片与视频生成、剪辑保存与导出、剧集合并、任务查询和项目备份等业务工具。生成和导出仍需对应服务或 FFmpeg 可用。
+- 联网搜索默认无需 Key，使用 DuckDuckGo，并在不可用时尝试 Bing；也可以配置 Brave Search 或 Tavily。搜索结果包含来源链接，Agent 可以继续读取公开网页。每次发送前可关闭联网。搜索服务受网络连通性和上游限流影响。
+- 会话、消息与执行记录保存在当前项目数据库，支持新建、切换和删除会话。后台执行不依赖页面持续打开；「停止」阻止后续工具步骤，已经开始的生成或导出可能继续完成。
+- 工具限定在当前项目，沿用已有校验和素材引用保护。Agent 不提供任意 Shell 或文件系统访问；本机文件选择、姿态编辑等交互仍由界面完成。项目内容和检索内容会发送给所配置的模型服务；API Key 不进入模型上下文，普通备份默认移除模型和搜索 Key。
+
+开发验证使用临时项目及本地模型夹具，不调用真实模型或产生生成费用：
+
+```bash
+npm run build
+cargo build --manifest-path backend/Cargo.toml
+npm run test:agent
+```
+
+## Skills 技能
+
+在「设置 → Skills 技能」中，可从公开 GitHub 仓库的 Skill 目录、单个 `SKILL.md` 或本地 Skill 文件夹安装技能。GitHub 仓库根目录没有 `SKILL.md` 时，请填写具体子目录链接，例如 `https://github.com/owner/repo/tree/main/skills/storyboard`。文件夹安装保留 `references/`、`scripts/` 等辅助文件；只上传 `SKILL.md` 时不会包含这些文件。
+
+技能说明采用 Markdown，文件开头须有 YAML 元数据：
+
+```markdown
+---
+name: storyboard-guide
+description: 将故事整理为角色、剧集和镜头表，适用于分镜规划任务。
+---
+
+先读取当前项目的剧本和角色，再按剧情顺序整理镜头。
+更多约定见 references/guide.md。
+```
+
+已安装列表支持搜索、启用/停用、查看说明和辅助文件清单、卸载，以及从原 GitHub 来源更新。技能保存在工作室数据目录下的 `skills/`，所有项目共用，重启后保留；项目备份不包含这份全局技能库。每个技能最多 256 个文件、总计 10 MiB；`SKILL.md` 最多 32 KiB，其他单个文件最多 2 MiB。
+
+Agent 每次运行会获得已启用技能的目录；任务匹配或消息中点名技能（如 `$storyboard-guide`）时，通过 `read_skill` 分页读取说明和引用的文本文件。已安装技能的读取不需要开启联网。技能可指导现有项目工具的操作流程，脚本文件可作为参考读取；应用未提供 Shell 或脚本执行能力，依赖这些能力的技能只能执行现有工具支持的部分。
+
+验证：`npm run test:skills` 使用临时技能库、临时项目与本地模型夹具，覆盖安装、状态持久化和 Agent 技能读取；`PLAYWRIGHT_PATH=/path/to/playwright node scripts/qa/skills-ui.cjs` 验证设置界面。
+
 ## License
 
 Private

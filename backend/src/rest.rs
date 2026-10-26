@@ -211,6 +211,12 @@ pub(crate) fn import_uploaded(state:&AppState,pid:&str,path:&Path,name:&str,role
 }
 
 pub(crate) fn action(state:&AppState,path:&str,value:Value)->ApiResult<Value>{
+    if let Some(action)=path.strip_prefix("/skills/") {
+        return Ok(skills::command(state, action, &value)?);
+    }
+    if ["/agent/config", "/agent/config/save", "/agent/sessions", "/agent/create", "/agent/session", "/agent/run", "/agent/cancel", "/agent/delete"].contains(&path) {
+        return Ok(agent::command(state, path, &value)?);
+    }
     const ALLOWED:&[&str]=&["/canvas/load","/canvas/save","/editor/projects","/editor/save","/editor/probe","/editor/export","/app/settings/load","/app/settings/save","/project","/project/changes","/projects/open","/projects/migrate","/projects/backup","/projects/restore","/media/import","/media/export","/media/pose-reference","/media/thumbnail","/media/usage","/media/restore","/media/purge","/media/video-frame","/storage/scan","/storage/cleanup","/roles/media/add","/roles/media/delete","/scripts/load","/scripts/save","/scripts/publish","/tasks","/generations/image","/generations/video","/prompts/optimize","/storyboard/generate","/storyboard/plan","/storyboard/validate","/scenes/reorder","/scenes/duplicate","/scenes/select-video","/scenes/delete-video","/episodes/reorder","/episodes/merge","/settings"];
     if !ALLOWED.contains(&path){return Err(missing())}
     Ok(dispatch(state,"POST".into(),path.into(),Some(value))?)

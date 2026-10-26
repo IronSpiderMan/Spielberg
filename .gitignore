@@ -36,7 +36,11 @@ __pycache__/
 npm-debug.log*
 
 # Local QA scripts
-/scripts/qa/
+/scripts/qa/*
+!/scripts/qa/agent.py
+!/scripts/qa/agent-ui.cjs
+!/scripts/qa/skills.py
+!/scripts/qa/skills-ui.cjs
 
 # Tauri
 src-tauri/gen/
