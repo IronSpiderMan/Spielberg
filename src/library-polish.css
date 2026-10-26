@@ -5,11 +5,12 @@
 
 .asset-library .asset-toolbar {
   gap: 12px;
-  padding: 16px;
+  padding: 0 0 16px;
   margin: 0 0 24px;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-panel);
-  background: var(--ui-surface);
+  border: 0;
+  border-bottom: 1px solid var(--ui-border);
+  border-radius: 0;
+  background: transparent;
 }
 
 .asset-library .asset-toolbar > .arco-select {
@@ -278,27 +279,6 @@
   margin-right: auto;
 }
 
-.content .role-create {
-  background: transparent;
-}
-
-.content .role-create .role-pic {
-  min-height: 360px;
-  color: var(--ui-muted);
-}
-
-.content .role-create .role-pic > div {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-}
-
-.content .role-create p {
-  min-height: 0;
-  margin: 0;
-}
-
 /* Episodes use a quiet summary header above their shot list. */
 .content .episode-list {
   gap: 24px;
@@ -373,12 +353,12 @@
 }
 
 .content .episode-card .scene-create-button {
-  margin: 14px 0 0;
+  margin: 0;
 }
 
 /* Prompt cards have a stable reading rhythm and visible card-level actions. */
 .content .prompt-library-heading {
-  margin: 32px 0 18px;
+  margin: 28px 0 16px;
 }
 
 .content .prompt-library-heading:first-of-type {
@@ -411,34 +391,27 @@
   padding: 16px 20px 20px;
 }
 
-.content .prompt-presets .arco-card-header {
-  flex-wrap: wrap;
-  row-gap: 6px;
-}
-
-.content .prompt-presets .arco-card-header-extra .arco-btn {
-  height: 24px;
-  padding-inline: 0;
-  font-size: 11px;
-}
-
 .content .prompt-card p {
   width: 100%;
   margin: 14px 0 0;
   color: var(--ui-secondary-text);
   font-size: 13px;
-  line-height: 1.85;
+  line-height: 1.75;
   scrollbar-width: thin;
   scrollbar-color: var(--ui-border) transparent;
 }
 
-.content .prompt-card .prompt-meta {
+.content .prompt-card-actions {
   width: 100%;
-  margin-top: 18px;
-  padding-top: 14px;
-  color: var(--ui-muted);
-  line-height: 1.6;
+  margin-top: auto;
+  padding-top: 20px;
+  display: flex;
+  justify-content: flex-end;
 }
+
+.content .prompt-card .arco-tag { margin-bottom: 12px; }
+.content .prompt-card .arco-card-header-title { white-space: normal; overflow-wrap: anywhere; }
+.content .prompt-card p { overflow-wrap: anywhere; }
 
 /* Background jobs stay a list, with clear separation and bounded media. */
 .content .task-list {

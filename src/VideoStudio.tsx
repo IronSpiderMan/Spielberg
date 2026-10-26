@@ -82,7 +82,7 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
 
   return <div className="creation-split video-creation-split">
     <div className="creation-panel">
-      <div className="generation-panel-heading"><span className="generation-eyebrow">VIDEO STUDIO</span><h2>让画面动起来</h2><p>描述镜头语言，制作属于你的动态片段。</p></div>
+      <div className="generation-panel-heading"><h2>视频生成</h2></div>
       <Form layout="vertical" disabled={disabled}>
         <GenerationModeTabs value={mode} onChange={setMode} disabled={disabled} modes={[
           { value: "t2v", label: "文生视频" }, { value: "fl2v", label: "首尾帧" }, { value: "i2v", label: "全能参考" },

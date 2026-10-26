@@ -588,7 +588,7 @@ export function Episodes({
   return (
     <section>
       <div className="section-title page-actions">
-        <div className="page-intro"><h1>剧集管理</h1><p>将故事拆解成镜头，让每一集逐渐成形。</p></div>
+        <div className="page-intro"><h1>剧集管理</h1><p>管理剧集、场景与生成素材。</p></div>
         <Button
           type="primary"
           icon={<Plus size={16} />}
@@ -1792,27 +1792,8 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
             </div>
           </Card>
         ))}
-        <Card
-          className="role-card role-create"
-          role="button"
-          tabIndex={0}
-          aria-label="创建角色"
-          onKeyDown={event => { if(event.key === "Enter" || event.key === " ") { event.preventDefault(); void make().catch(e => Message.error(String(e))); } }}
-          bodyStyle={{ padding: 0 }}
-          onClick={() => make().catch((e) => Message.error(String(e)))}
-          hoverable
-        >
-          <div
-            className="role-pic"
-
-          >
-            <div style={{ textAlign: "center" }}>
-              <Plus size={26} />
-              <p>创建角色</p>
-            </div>
-          </div>
-        </Card>
       </div>
+      {!data.roles.length && <Empty description="暂无角色，点击「创建角色」添加人物设定" />}
       <ImagePreviewModal media={roleImagePreview} title="角色图预览" onClose={()=>setRoleImagePreview(null)} />
       <RoleEditor
         role={editing}
@@ -2081,7 +2062,7 @@ export function Prompts({ data, reload }: { data: Snapshot; reload: () => void }
   return (
     <section>
       <div className="section-title page-actions">
-        <div className="page-intro"><h1>Prompt 库</h1><p>收藏灵感与常用风格，让下一次创作更从容。</p></div>
+        <div className="page-intro"><h1>Prompt 库</h1><p>管理常用提示词，在角色与场景生成时复用。</p></div>
         <Button
           type="primary"
           className="prompt-create-button"
@@ -2097,10 +2078,9 @@ export function Prompts({ data, reload }: { data: Snapshot; reload: () => void }
       </div>
       <div className="prompt-grid prompt-presets">
         {STYLE_PRESETS.map((preset) => (
-          <Card key={preset.id} className="prompt-card" title={preset.name}
-            extra={<Button type="text" size="mini" onClick={() => setEditing({ name: preset.name, content: preset.content, category: preset.category })}>另存为我的 Prompt</Button>}>
-            <Tag>风格</Tag>
+          <Card key={preset.id} className="prompt-card" title={preset.name}>
             <p>{preset.content}</p>
+            <div className="prompt-card-actions"><Button size="small" onClick={() => setEditing({ name: preset.name, content: preset.content, category: preset.category })}>另存为我的 Prompt</Button></div>
           </Card>
         ))}
       </div>
@@ -2111,20 +2091,11 @@ export function Prompts({ data, reload }: { data: Snapshot; reload: () => void }
           <Card
             key={p.id}
             className="prompt-card"
-            title={
-              <Space>
-                <span>{p.name}</span>
-              </Space>
-            }
-            extra={
-              <Button type="text" size="mini" onClick={() => setEditing(p)}>
-                编辑
-              </Button>
-            }
+            title={p.name}
           >
             <Tag>{p.category}</Tag>
             <p>{p.content || "尚未填写内容"}</p>
-            <div className="prompt-meta">可在角色与场景生成时复用</div>
+            <div className="prompt-card-actions"><Button size="small" onClick={() => setEditing(p)} icon={<Pencil size={14} />}>编辑</Button></div>
           </Card>
         ))}
       </div>

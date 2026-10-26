@@ -75,7 +75,7 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
   const filtered=kind!=="all"||filter!=="all"||!!query.trim();
   const clearFilters=()=>{setQuery("");setSearch("");setKind("all");setFilter("all");setPage(1);};
   return <section className="asset-library" aria-busy={loading}>
-    <div className="section-title page-actions"><div className="page-intro"><h1>资产库</h1><p>让图片、视频与声音，在故事里各就其位。</p></div><Space wrap>
+    <div className="section-title page-actions"><div className="page-intro"><h1>资产库</h1><p>管理项目中的图片、视频与音频。</p></div><Space wrap>
       <Button loading={scanning} icon={<HardDrive size={16}/>} onClick={inspectDisk}>磁盘清理</Button>
       <Button type="primary" loading={busy} icon={<Plus size={16}/>} onClick={importFiles}>导入资产</Button>
     </Space></div>
