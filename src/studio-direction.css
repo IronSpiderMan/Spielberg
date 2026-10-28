@@ -102,6 +102,10 @@ html .arco-input-wrapper input.arco-input, html .arco-input-inner-wrapper input.
 html .arco-btn-primary:not(.arco-btn-disabled) { background: var(--ui-primary); border-color: var(--ui-primary); color: var(--ui-surface); }
 html .arco-btn-primary:not(.arco-btn-disabled):hover { background: var(--ui-primary-hover); border-color: var(--ui-primary-hover); }
 .generation-submit.arco-btn { height: 44px; font-size: 14px; }
+.generation-submit-row { display: flex; align-items: center; gap: 10px; flex-shrink: 0; margin-top: 18px; }
+.generation-submit-row .generation-count { flex: 0 0 96px; }
+.generation-submit-row .generation-count .arco-select-view { height: 44px; border-color: var(--studio-control-border); }
+.generation-submit-row .generation-submit.arco-btn { flex: 1 1 auto; width: auto; min-width: 0; margin: 0; }
 html .image-mode-tabs .arco-radio-button-checked, html .generation-mode-tabs .arco-radio-button-checked { color: var(--ui-text); background: var(--ui-surface); }
 .creation-split > .image-result { padding: 20px 24px; background: var(--ui-surface); }
 .generation-preview-heading { padding-bottom: 16px; }
@@ -149,6 +153,166 @@ html .welcome { background: var(--studio-frame) !important; }
 .welcome-slate > span { font-size: 22px; font-weight: 600; letter-spacing: -.5px; }
 .welcome-slate > p { margin: 20px 0 48px; font-size: 21px; line-height: 1.7; font-weight: 400; }
 .welcome-slate > div { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ui-secondary-text); }
+
+/* ── Second pass: one empty state, calmer lists, clearer actions ───────────── */
+html .arco-btn-primary.arco-btn-disabled {
+  background: var(--ui-subtle);
+  border-color: var(--ui-border);
+  color: var(--ui-muted);
+}
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 64px 24px 68px;
+  text-align: center;
+}
+.empty-state-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  margin-bottom: 18px;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  background: var(--ui-subtle);
+  color: var(--studio-accent);
+}
+.empty-state-mark::before {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border: 1px solid var(--ui-border);
+  border-radius: 7px;
+  pointer-events: none;
+}
+.empty-state-mark > svg { position: relative; z-index: 1; }
+.empty-state > b { font-size: 15px; font-weight: 600; letter-spacing: -.2px; }
+.empty-state > p { max-width: 38em; margin: 8px 0 0; color: var(--ui-muted); font-size: 13px; line-height: 1.8; text-wrap: pretty; }
+.empty-state-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+.asset-empty .empty-state { padding: 24px 12px 8px; }
+.asset-empty .empty-state-mark { width: 48px; height: 48px; margin-bottom: 14px; }
+
+/* Role portraits keep the whole character sheet; the create slot matches the same square frame. */
+.role-card .role-pic { height: auto; border-radius: 6px; background: var(--ui-subtle); }
+.role-card .role-pic img { object-fit: contain; }
+.role-kind.arco-tag {
+  position: absolute;
+  z-index: 1;
+  top: 10px;
+  left: 10px;
+  height: 20px;
+  line-height: 18px;
+  padding: 0 7px;
+  border: 1px solid var(--ui-border);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--ui-surface) 88%, transparent);
+  color: var(--ui-secondary-text);
+  font-size: 11px;
+  backdrop-filter: blur(4px);
+}
+.role-card.role-create {
+  border-style: dashed;
+  background: transparent;
+  color: var(--ui-text);
+  cursor: pointer;
+  transition: border-color 180ms, background-color 180ms;
+}
+.role-card.role-create:hover { border-color: var(--studio-accent); background: var(--ui-surface); }
+.role-card.role-create:focus-visible { outline: 2px solid var(--studio-accent); outline-offset: 3px; }
+.role-card.role-create .role-pic { display: grid; place-items: center; min-height: 0; height: auto; aspect-ratio: 1 / 1; border: 1px dashed var(--ui-border); background: transparent; color: var(--ui-muted); }
+.role-card.role-create h3 { margin: 16px 0 6px; }
+.role-card.role-create p { min-height: 0; color: var(--ui-muted); }
+.role-foot { font-size: 12px; }
+
+/* Keep primary generation controls above the fold in the desktop workbench. */
+.creation-panel .arco-tabs-content { padding-top: 0; }
+.generation-panel-heading { padding-bottom: 12px; margin-bottom: 14px; }
+.creation-split .image-mode-tabs { margin-bottom: 14px; }
+@media (min-width: 1101px) {
+  .creation-desk.images-active .creation-split .arco-form-item { margin-bottom: 16px; }
+  .creation-desk.images-active .image-generation-options { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+}
+
+/* Scene rows: state belongs next to the title, actions become quiet links. */
+.scene-title-line { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.scene-title-line b { margin-right: 2px; }
+.scene-state.arco-tag, .scene-mode.arco-tag {
+  height: 20px;
+  margin: 0;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  line-height: 18px;
+}
+.scene-mode.arco-tag { border: 1px solid var(--ui-border); background: transparent; color: var(--ui-muted); }
+.scene-state.arco-tag-gray { border: 1px solid var(--ui-border); background: transparent; color: var(--ui-muted); }
+.scene-state.arco-tag-green { border: 1px solid color-mix(in srgb, #1e7b4f 24%, var(--ui-border)); background: color-mix(in srgb, #1e7b4f 7%, var(--ui-surface)); color: #1e7b4f; }
+.scene-state { margin-left: auto; }
+.scene-actions { justify-content: flex-end; gap: 6px; }
+.scene-actions > .arco-space { display: inline-flex; gap: 0; border: 1px solid var(--ui-border); border-radius: 6px; background: var(--ui-surface); overflow: hidden; }
+.scene-actions > .arco-space .arco-btn { height: 27px; border: 0; border-radius: 0; background: transparent; }
+.scene-actions > .arco-space .arco-btn + .arco-btn { border-left: 1px solid var(--ui-border); }
+.scene-actions > .arco-btn { height: 28px; padding-inline: 8px; border-color: transparent; background: transparent; color: var(--ui-secondary-text); }
+.scene-actions > .arco-btn:not(.arco-btn-disabled):hover { border-color: var(--ui-border); background: var(--ui-subtle); color: var(--ui-text); }
+.scene-actions > .arco-btn-status-danger { color: var(--ui-error); }
+html[data-theme="dark"] .scene-state.arco-tag-green { border-color: color-mix(in srgb, #6bc99a 28%, var(--ui-border)); background: color-mix(in srgb, #6bc99a 10%, var(--ui-surface)); color: #8ad7ad; }
+
+/* Background jobs read as a compact ledger instead of three identical cards. */
+.content .task-list { gap: 12px; }
+.content .task-list > .arco-card > .arco-card-body { padding: 18px 20px; }
+.task-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.task-head > b { font-size: 13px; font-weight: 600; }
+.task-head .task-time { margin-left: auto; color: var(--ui-muted); font-size: 12px; }
+.task-state { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--ui-muted); }
+.task-state.task-running { background: var(--studio-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--studio-accent) 16%, transparent); }
+.task-state.task-completed { background: #1e7b4f; }
+.task-state.task-failed { background: #c4242a; }
+.task-state.task-interrupted { background: #92400e; }
+.task-list .arco-card-body > p { margin: 10px 0 0; }
+.task-id { display: block; margin-top: 6px; color: var(--ui-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+html[data-theme="dark"] .task-state.task-completed { background: #6bc99a; }
+html[data-theme="dark"] .task-state.task-failed { background: #ef8b8f; }
+
+/* Settings: one heading column, one form column, no decorative code labels. */
+.setting-block .setting-heading h3 { margin-top: 0; }
+.setting-block .setting-heading p { text-wrap: pretty; }
+.skills-body .empty-state { padding: 40px 16px 24px; }
+.skills-body .empty-state-mark { width: 48px; height: 48px; margin-bottom: 14px; }
+.setting-block > .arco-form, .setting-block > .skills-body { padding-left: 24px; border-left: 1px solid var(--ui-border); }
+.connection-help.arco-card { margin-top: 8px; border: 1px solid var(--ui-border) !important; border-radius: var(--ui-radius-panel); background: var(--ui-subtle); }
+.connection-help .arco-card-header { padding: 16px 20px 0; border: 0; }
+.connection-help .arco-card-header-title { font-size: 13px; }
+.connection-help .arco-card-body { padding: 10px 20px 18px; }
+.connection-help .arco-typography { color: var(--ui-secondary-text); font-size: 13px; line-height: 1.9; }
+.connection-help code { padding: 1px 5px; border: 1px solid var(--ui-border); border-radius: 4px; background: var(--ui-surface); color: var(--ui-text); font-size: 12px; }
+
+/* Project cards: framed covers and a quiet create slot at the end of the grid. */
+.project-art { background: linear-gradient(160deg, var(--ui-subtle), var(--studio-frame)); color: var(--ui-muted); }
+.project-art::after { content: ""; position: absolute; inset: 10px; border: 1px solid color-mix(in srgb, var(--ui-surface) 70%, transparent); border-radius: 5px; pointer-events: none; }
+.project-art > .project-art-initial { color: var(--ui-secondary-text); font-size: 34px; font-weight: 500; }
+.project-card.selected { outline: 0; border-color: var(--studio-accent); box-shadow: 0 0 0 1px var(--studio-accent); }
+.project-card-actions .arco-btn { border-color: transparent; background: transparent; color: var(--ui-secondary-text); }
+.project-card-actions .arco-btn:not(.arco-btn-disabled):hover { border-color: var(--ui-border); background: var(--ui-subtle); color: var(--ui-text); }
+.project-card-actions .arco-btn-status-danger { color: var(--ui-error); }
+.project-create { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; height: 100%; min-height: 300px; padding: 24px; border: 1px dashed var(--studio-control-border); border-radius: 12px; background: transparent; color: var(--ui-secondary-text); font: inherit; text-align: center; cursor: pointer; transition: border-color 180ms, background-color 180ms, color 180ms; }
+.project-create:hover { border-color: var(--studio-accent); background: var(--ui-surface); color: var(--ui-text); }
+.project-create:focus-visible { outline: 2px solid var(--studio-accent); outline-offset: 3px; }
+.project-create-mark { display: grid; place-items: center; width: 46px; height: 46px; margin-bottom: 6px; border: 1px solid var(--ui-border); border-radius: 10px; background: var(--ui-subtle); color: var(--studio-accent); }
+.project-create b { font-size: 14px; font-weight: 600; }
+.project-create small { color: var(--ui-muted); font-size: 12px; line-height: 1.7; }
+
+/* Keep the floating generator from covering the screenplay footer on wide screens. */
+.screenplay-page .screenplay-footer { padding-right: 104px; }
+
+/* Secondary metadata reads one step larger; still quiet next to primary text. */
+.studio-local-note, .role-foot, .project-card small, .library-card small, .prompt-meta, .task-list small { font-size: 12px; }
+.role-image-zoom > span, .prompt-starts, .project-card p { font-size: 12px; }
+
+@container (max-width: 700px) {
+  .setting-block > .arco-form, .setting-block > .skills-body { padding-left: 0; border-left: 0; }
+}
 
 @media (min-width: 601px) {
   .app .side.side-collapsed .nav .arco-menu-item { font-size: 0; }
@@ -215,6 +379,9 @@ html .welcome { background: var(--studio-frame) !important; }
   .welcome .welcome-features { flex-direction: column; gap: 20px; }
   .welcome .welcome-card h1 { font-size: 24px; }
   .welcome .welcome-actions .arco-btn { width: 100%; }
+  .empty-state { padding: 44px 12px 48px; }
+  .empty-state-mark { width: 50px; height: 50px; margin-bottom: 14px; }
+  .project-create { min-height: 200px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; animation-iteration-count: 1 !important; }

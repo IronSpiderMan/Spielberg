@@ -59,6 +59,7 @@ import { resolvePrompt, resolveH3Prompt } from "./resolve-prompt";
 import { StoryboardEditor, type Storyboard } from "./StoryboardEditor";
 import { PromptInput } from "./PromptInput";
 import { findMentions, promptMentions, syncMentionReferences } from "./prompt-mentions";
+import { EmptyState } from "./ui";
 import { STYLE_PRESETS } from "./prompt-presets";
 import { PROMPT_TEMPLATES } from "./prompt-templates";
 const SequencePreview=lazy(()=>import("./creation").then(m=>({default:m.SequencePreview})));
@@ -419,9 +420,16 @@ export function Tasks({projectId}:{projectId:string}) {
     <div className="page-intro"><h1>后台任务</h1><p>在这里追踪生成进度，查看结果与运行记录。</p></div>
     <Select aria-label="任务状态" value={filter} onChange={setFilter} style={{width:160}}><Select.Option value="all">全部状态</Select.Option>{Object.entries(labels).map(([k,v])=><Select.Option key={k} value={k}>{v}</Select.Option>)}</Select></div>
     {error && <p role="alert">{error}</p>}
-    <div className="task-list">{jobs.map(job=><Card key={`${job.project_id}-${job.id}`}>
-      <Space wrap><b>{job.project_name}</b><Tag>{job.operation.includes("image")?"图片生成":job.operation.includes("video")?"视频生成":"剧集合并"}</Tag><Tag color={job.status==="failed"?"red":job.status==="completed"?"green":"blue"}>{labels[job.status]||job.status}</Tag></Space>
-      <TaskText text={job.prompt}/><small>{new Date(Number(job.created_at)*1000).toLocaleString()} · #{job.id}</small>
+    <div className="task-list">{jobs.map(job=><Card key={`${job.project_id}-${job.id}`} className="task-card">
+      <div className="task-head">
+        <span className={`task-state task-${job.status}`} aria-hidden="true" />
+        <b>{job.project_name}</b>
+        <Tag>{job.operation.includes("image")?"图片生成":job.operation.includes("video")?"视频生成":"剧集合并"}</Tag>
+        <Tag className="task-status" color={job.status==="failed"?"red":job.status==="completed"?"green":"blue"}>{labels[job.status]||job.status}</Tag>
+        <small className="task-time">{new Date(Number(job.created_at)*1000).toLocaleString()}</small>
+      </div>
+      <TaskText text={job.prompt}/>
+      <small className="task-id">任务 #{job.id}</small>
       {job.error && <TaskText text={job.error} error/>}
       {job.result?.kind==="video" && <VideoAsset video={job.result} projectId={job.project_id}/>}
       {job.result?.kind==="image" && <img className="task-image" src={imageUrl(job.result)} alt="生成结果"/>}
@@ -430,7 +438,10 @@ export function Tasks({projectId}:{projectId:string}) {
       {(hasMore||loading||error)&&<Button loading={loading} onClick={()=>loadMore.current()}>{error?"重试":hasMore?"加载更多":"加载中"}</Button>}
       {!hasMore&&!loading&&jobs.length>0&&<span className="helper">已加载全部任务</span>}
     </div>
-    {!jobs.length&&!loading&&!error&&<Empty description={filter==="all"?"暂无后台任务":"暂无符合此状态的任务"}/>}</section>;
+    {!jobs.length&&!loading&&!error&&<EmptyState
+      title={filter==="all"?"暂无后台任务":"暂无符合此状态的任务"}
+      description={filter==="all"?"生成图片、视频或合并剧集后，进度和结果会按时间出现在这里。":"切换到「全部状态」查看其他运行记录。"}
+    />}</section>;
 }
 function SceneThumb({ scene, media, onPreview }: { scene: Scene; media: Media[]; onPreview?: () => void }) {
   const thumbnail = scene.first_media || media.find(m=>m.id===scene.first_media_id&&m.kind==='image')
@@ -648,11 +659,17 @@ export function Episodes({
                   <div className="scene-row" key={s.id}>
                     <span>{String(i + 1).padStart(2, "0")}</span>
                     <SceneThumb scene={s} media={data.media} onPreview={sceneVideos(s).length ? () => openScenePreview(s) : undefined} />
-                    <div className="scene-copy"><b>{s.title} {s.creation_mode === "canvas" && <Tag color="arcoblue">画布</Tag>}</b><p>{s.description || "尚未填写镜头描述"}</p></div>
+                    <div className="scene-copy">
+                      <div className="scene-title-line">
+                        <b>{s.title}</b>
+                        {s.creation_mode === "canvas" && <Tag className="scene-mode">画布</Tag>}
+                        <Tag className="scene-state" color={s.video_media_id ? "green" : "gray"}>
+                          {s.video_media_id ? "视频已就绪" : (s.first_media_id || s.last_media_id || s.reference_media_id || s.generation_options?.reference_media_ids?.length) ? "已设画面" : "待制作"}
+                        </Tag>
+                      </div>
+                      <p>{s.description || "尚未填写镜头描述"}</p>
+                    </div>
                     <div className="scene-actions">
-                    <Tag color={s.video_media_id ? "green" : "gray"}>
-                      {s.video_media_id ? "视频已就绪" : (s.first_media_id || s.last_media_id || s.reference_media_id || s.generation_options?.reference_media_ids?.length) ? "已设画面" : "待制作"}
-                    </Tag>
                     <SceneOrderControls episode={ep} index={i} project={data.project} reload={reload}/>
                     <Button size="mini" disabled={!sceneVideos(s).length} icon={<Play size={13}/>} onClick={() => openScenePreview(s)}>预览</Button>
                     <Button size="mini" onClick={() => editScene(s, false)}>编辑</Button>
@@ -679,7 +696,11 @@ export function Episodes({
             </Card>
           ))
         ) : (
-          <Empty description="创建第一个剧集，开始排布场景" />
+          <EmptyState
+            title="还没有剧集"
+            description="创建第一个剧集，把故事排成连续的场景与镜头。"
+            action={<Button type="primary" icon={<Plus size={16} />} onClick={() => void makeEpisode().catch((e) => Message.error(String(e)))}>新建剧集</Button>}
+          />
         )}
       </div>
       <Modal title="新建场景" visible={sceneCreation!==null} confirmLoading={inserting!==null} onCancel={()=>{if(inserting===null)setSceneCreation(null);}} onOk={()=>sceneCreation!==null?makeScene(sceneCreation).catch(e=>{Message.error(String(e));throw e;}):undefined}>
@@ -1762,12 +1783,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
               ) : (
                 r.name.slice(0, 1)
               )}
-              <Tag
-                color="arcoblue"
-                style={{ position: "absolute", top: 9, left: 9 }}
-              >
-                角色
-              </Tag>
+              <Tag className="role-kind">角色</Tag>
             </div>
             <h3>{r.name}</h3>
             <p>{r.description || "添加角色形象描述，保持生成的一致性。"}</p>
@@ -1792,8 +1808,25 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
             </div>
           </Card>
         ))}
+        <Card
+          className="role-card role-create"
+          bodyStyle={{ padding: 16 }}
+          role="button"
+          tabIndex={0}
+          aria-label="创建角色"
+          onClick={() => void make().catch((e) => Message.error(String(e)))}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              void make().catch((e) => Message.error(String(e)));
+            }
+          }}
+        >
+          <div className="role-pic"><Plus size={28} strokeWidth={1.4} /></div>
+          <h3>创建角色</h3>
+          <p>{data.roles.length ? "继续添加人物设定" : "记录第一个角色，让镜头保持形象一致。"}</p>
+        </Card>
       </div>
-      {!data.roles.length && <Empty description="暂无角色，点击「创建角色」添加人物设定" />}
       <ImagePreviewModal media={roleImagePreview} title="角色图预览" onClose={()=>setRoleImagePreview(null)} />
       <RoleEditor
         role={editing}
@@ -2085,7 +2118,11 @@ export function Prompts({ data, reload }: { data: Snapshot; reload: () => void }
         ))}
       </div>
       <div className="prompt-library-heading"><h2>我的 Prompt</h2></div>
-      {!data.prompts.length && <Empty description="暂无自定义 Prompt，可新建或从预设风格另存"/>}
+      {!data.prompts.length && <EmptyState
+        title="还没有自定义 Prompt"
+        description="新建一条提示词，或从上方预设风格中另存为你自己的版本。"
+        action={<Button type="primary" icon={<Plus size={16} />} onClick={() => void add().catch((e) => Message.error(String(e)))}>新建 Prompt</Button>}
+      />}
       <div className="prompt-grid">
         {data.prompts.map((p) => (
           <Card
@@ -2233,12 +2270,12 @@ export function SettingsPage({
           disabled={!dirty}
           onClick={() => save().catch((e) => Message.error(String(e)))}
         >
-          保存配置
+          {dirty ? "保存配置" : "配置已保存"}
         </Button>
       </div>
       <div className="setting-block">
         <div className="setting-heading">
-          <span className="setting-code">PROJECT</span><h3>项目存储</h3>
+          <h3>项目存储</h3>
           <p>项目地址路径</p>
         </div>
         <Form layout="vertical" disabled={loadingDirectory || savingDirectory || savedDirectory === null}>
@@ -2262,7 +2299,7 @@ export function SettingsPage({
         const provider = settings[key]?.provider || "cast";
         return (
           <div className="setting-block" key={key}>
-            <div className="setting-heading"><span className="setting-code">{key.toUpperCase()}</span><h3>{label}</h3>
+            <div className="setting-heading"><h3>{label}</h3>
             <p>{sub}</p></div>
             <Form layout="vertical" disabled={saving}>
               <div className={`settings-fields ${image && provider === "openai" ? "settings-fields-openai" : ""}`}>
@@ -2287,9 +2324,7 @@ export function SettingsPage({
         );
       })}
       <Card className="connection-help" title="接口约定" bordered={false}>
-        <Typography.Paragraph
-          style={{ margin: 0, color: "#64748b", fontSize: 12 }}
-        >
+        <Typography.Paragraph style={{ margin: 0 }}>
           图片配置共用一组 URL 与 API Key；OpenAI 模式会根据 Base URL 自动调用 <code>/images/generations</code>
           （t2i）或 <code>/images/edits</code>
           （i2i），并将画面比例映射为官方支持的尺寸。视频 Base URL 会按生成方式补全接口路径。Prompt 优化使用 OpenAI 格式的{" "}

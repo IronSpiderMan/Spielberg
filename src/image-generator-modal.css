@@ -31,9 +31,10 @@
 .image-generator-modal .prompt-backdrop { font-size: 13px; }
 .image-generator-modal .helper { font-size: 11px; line-height: 1.7; }
 .image-generator-modal .image-generation-options { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
-.image-generator-modal .image-generation-options > :last-child { grid-column: 1 / -1; }
 .image-generator-modal .arco-select-view { border-radius: 9px; }
-.image-generator-modal .generation-submit.arco-btn { flex-shrink: 0; margin-top: 16px; min-height: 46px; border-radius: 11px; box-shadow: 0 5px 14px color-mix(in srgb, var(--ui-primary) 20%, transparent); }
+.image-generator-modal .generation-submit-row { display: flex; align-items: center; gap: 10px; flex-shrink: 0; margin-top: 16px; }
+.image-generator-modal .generation-submit-row .generation-count { flex: 0 0 96px; }
+.image-generator-modal .generation-submit.arco-btn { flex: 1 1 auto; width: auto; min-width: 0; margin-top: 0; min-height: 46px; border-radius: 11px; box-shadow: 0 5px 14px color-mix(in srgb, var(--ui-primary) 20%, transparent); }
 .image-generator-modal .creation-split > .image-result { display: flex; flex-direction: column; position: static; overflow: hidden; background: var(--ui-bg); }
 .image-generator-modal .generation-preview-heading { padding-bottom: 16px; border: 0; }
 .image-generator-modal .generation-preview-body { flex: 1; min-height: 0; padding: 20px; overflow-y: auto; border: 1px solid var(--ui-border); border-radius: 16px; background-color: var(--ui-surface); background-image: radial-gradient(var(--ui-border) .7px, transparent .7px); background-size: 18px 18px; }
@@ -49,7 +50,7 @@
   .image-generator-modal .creation-split > .creation-panel { padding: 20px; }
   .image-generator-modal .creation-panel:first-child { overflow: visible; border-right: 0; }
   .image-generator-modal .creation-panel:first-child > .arco-form { flex: none; overflow: visible; }
-  .image-generator-modal .generation-submit { position: sticky; bottom: 0; z-index: 2; }
+  .image-generator-modal .generation-submit-row { position: sticky; bottom: 0; z-index: 2; }
   .image-generator-modal .creation-split > .image-result { min-height: 380px; }
   .image-generator-modal .generation-preview-body { min-height: 260px; }
 }

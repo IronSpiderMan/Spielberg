@@ -1,9 +1,19 @@
 import type { ReactNode } from "react";
+import { Clapperboard } from "lucide-react";
 import type { Snapshot } from "./core";
 
 /** Shared visual primitives; all values come from the existing project snapshot. */
 export function PageHeading({title, description, actions}: {title:string;description?:string;actions?:ReactNode}) {
   return <div className="section-title"><div><h1>{title}</h1>{description && <p>{description}</p>}</div>{actions}</div>;
+}
+/** One empty state for lists and libraries: a framed mark, a clear next step. */
+export function EmptyState({title, description, action, icon}: {title:string;description?:string;action?:ReactNode;icon?:ReactNode}) {
+  return <div className="empty-state">
+    <span className="empty-state-mark" aria-hidden="true">{icon || <Clapperboard size={22} strokeWidth={1.4} />}</span>
+    <b>{title}</b>
+    {description && <p>{description}</p>}
+    {action && <div className="empty-state-actions">{action}</div>}
+  </div>;
 }
 export function ProjectSummary({data}: {data:Snapshot}) {
   const scenes=data.episodes.flatMap(episode=>episode.scenes);

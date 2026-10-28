@@ -5,7 +5,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { post, type Media, type Screenplay, type Snapshot } from "./core";
 import { confirmDiscard, useEditGuard } from "./edit-guard";
-import { PageHeading } from "./ui";
+import { EmptyState, PageHeading } from "./ui";
 import { newShot, parseShotCsv, serializeShotCsv, shotSizes, cameraMoves, type ScriptShot } from "./shot-script";
 import { ShotPictureField } from "./components/ShotPictureField";
 import { uploadAsset } from "./api";
@@ -144,7 +144,6 @@ export default function ScreenplayManager({ data, reload }: { data: Snapshot; re
               aria-pressed={draft?.id === item.id} disabled={busy} onClick={() => { if (draft?.id !== item.id) choose(item); }}>
               <FileText size={18} /><span><strong>{item.title}</strong><small>{item.format === "csv" ? "CSV 分镜头 · " : "Markdown · "}{item.content.replace(/[#*>`]/g, "").trim().slice(0, 45) || "空白剧本"}</small></span>
             </button>)}
-          {!scripts.length && <p className="screenplay-list-empty">还没有剧本，开始写下第一个故事吧。</p>}
           {scripts.length > 0 && !scripts.some(item => item.title.toLowerCase().includes(query.toLowerCase())) && <p className="screenplay-list-empty">没有匹配的剧本</p>}
         </div>
       </aside>
@@ -193,7 +192,11 @@ export default function ScreenplayManager({ data, reload }: { data: Snapshot; re
           </div>
         </div>
         <footer className="screenplay-footer"><span>{draft.content.replace(/\s/g, "").length} 字符 · {draft.content.split("\n").length} 行</span><span>支持标题、粗体、对白引用、列表和表格</span></footer></>}
-      </div> : <div className="screenplay-empty"><Empty description="新建一份剧本，开始编写你的故事" /><Button type="primary" onClick={() => choose({ format: "markdown", title: "", content: "" })}>新建剧本</Button></div>}
+      </div> : <div className="screenplay-empty"><EmptyState
+        title="还没有剧本"
+        description="新建一份 Markdown 剧本，或用 CSV 编排分镜头，左侧会保留所有历史版本。"
+        action={<Space><Button onClick={() => choose({ format: "csv", title: "", content: serializeShotCsv([]) })}>新建分镜头剧本</Button><Button type="primary" onClick={() => choose({ format: "markdown", title: "", content: "" })}>新建剧本</Button></Space>}
+      /></div>}
     </div>
   </section>;
 }

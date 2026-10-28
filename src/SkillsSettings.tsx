@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Empty, Input, Message, Modal, Spin, Switch, Tabs, Tag } from "@arco-design/web-react";
-import { Download, FileText, FolderOpen, RefreshCw, Search, Trash2, Upload } from "lucide-react";
+import { Button, Input, Message, Modal, Spin, Switch, Tabs, Tag } from "@arco-design/web-react";
+import { Download, FileText, FolderOpen, RefreshCw, Search, Sparkles, Trash2, Upload } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { post } from "./core";
+import { EmptyState } from "./ui";
 import "./skills.css";
 
 type Skill = {
@@ -145,7 +146,7 @@ export function SkillsSettings() {
   };
   const filtered = items.filter(skill => `${skill.name} ${skill.description} ${skill.source}`.toLowerCase().includes(query.trim().toLowerCase()));
   return <div className="setting-block skills-settings" data-testid="skills-settings">
-    <div className="setting-heading"><span className="setting-code">SKILLS</span><h3>Skills 技能</h3><p>安装与管理 Agent 的工作技能。全工作室共享，所有项目均可使用。</p></div>
+    <div className="setting-heading"><h3>Skills 技能</h3><p>安装与管理 Agent 技能，全工作室共享。</p></div>
     <div className="skills-body">
       <p className="skills-explanation">Agent 会根据任务按需读取已启用的 Skill 说明和参考文件。Skill 中的 Shell 脚本不会被执行。</p>
       <div className="skills-install-form">
@@ -160,7 +161,11 @@ export function SkillsSettings() {
       {actionError && <div className="skills-error" role="alert">{actionError}</div>}
       <div className="skills-list-heading"><strong>已安装技能 <span>{items.length}</span></strong><div className="skills-list-tools"><Input data-testid="skills-search" aria-label="搜索已安装技能" value={query} onChange={setQuery} allowClear placeholder="搜索名称、描述或来源" prefix={<Search size={14} />} /><Button aria-label="刷新技能列表" title="刷新技能列表" icon={<RefreshCw size={15} />} loading={loading} disabled={locked} onClick={() => void loadSkills()} /></div></div>
       {listError ? <div className="skills-error skills-load-error" role="alert"><div><strong>技能列表加载失败</strong><p>{listError}</p></div><Button onClick={() => void loadSkills()} loading={loading}>重新加载</Button></div> : <Spin loading={loading} style={{ display: "block" }}>
-        {!filtered.length ? <Empty description={loading ? "正在读取技能…" : query.trim() ? "没有匹配的技能，试试其他关键词" : "还没有安装技能，通过 GitHub 链接或本地文件添加你的第一个 Skill"} /> : <div className="skills-list">{filtered.map(skill => <div className="skills-item" data-testid={`skill-row-${skill.id}`} key={skill.id}>
+        {!filtered.length ? <EmptyState
+          icon={<Sparkles size={22} strokeWidth={1.4} />}
+          title={loading ? "正在读取技能…" : query.trim() ? "没有匹配的技能" : "还没有安装技能"}
+          description={loading ? "技能列表加载完成后会显示在这里。" : query.trim() ? "试试其他关键词，或清空搜索重新查看。" : "通过上方 GitHub 链接或本地文件添加第一个 Skill。"}
+        /> : <div className="skills-list">{filtered.map(skill => <div className="skills-item" data-testid={`skill-row-${skill.id}`} key={skill.id}>
           <div className="skills-item-copy"><div className="skills-item-title"><FileText size={17} /><strong>{skill.name}</strong><Tag color={skill.enabled ? "green" : undefined}>{skill.enabled ? "已启用" : "已停用"}</Tag></div><p>{skill.description || "暂无描述"}</p><div className="skills-item-meta"><span title={skill.source}>{skill.source.startsWith("https://github.com/") ? "GitHub" : "本地上传"} · {skill.files_count} 个文件</span><span>更新于 {dateText(skill.updated_at)}</span></div></div>
           <div className="skills-item-actions"><label className="skills-toggle"><span>{skill.enabled ? "启用中" : "已停用"}</span><Switch size="small" checked={skill.enabled} loading={busy?.id === skill.id && busy.action === "toggle"} disabled={locked} aria-label={`${skill.name} 启用状态`} data-testid={`skill-toggle-${skill.id}`} onChange={enabled => void changeSkill(skill, "toggle", enabled)} /></label><div className="skills-item-buttons"><Button size="small" data-testid={`skill-detail-${skill.id}`} onClick={() => void loadDetail(skill.id)}>详情</Button>{skill.source.startsWith("https://github.com/") ? <Button size="small" data-testid={`skill-update-${skill.id}`} loading={busy?.id === skill.id && busy.action === "update"} disabled={locked} onClick={() => void changeSkill(skill, "update")}>更新</Button> : <Button size="small" data-testid={`skill-reinstall-${skill.id}`} disabled={locked} onClick={() => { setActionError(""); setReinstallTarget(skill); }}>重装</Button>}<Button size="small" status="danger" data-testid={`skill-delete-${skill.id}`} icon={<Trash2 size={13} />} disabled={locked} onClick={() => { setRemoveError(""); setRemoveTarget(skill); }}>卸载</Button></div></div>
         </div>)}</div>}

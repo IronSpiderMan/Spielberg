@@ -5,6 +5,7 @@ import { Eye,HardDrive,MoreHorizontal,Plus,RotateCcw,WandSparkles } from "lucide
 import { useEffect,useRef,useState } from "react";
 import AssetThumbnail from "./AssetThumbnail";
 import { Media,Snapshot,imageUrl,post } from "./core";
+import { EmptyState } from "./ui";
 import "./creation.css";
 
 export type AssetUsage = {kind:"role"|"episode"|"scene"|"canvas";target_id:number;title:string;episode_id?:number;episode_title?:string;purpose:string};
@@ -98,9 +99,13 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
           </Menu>}><Button size="small" aria-label={`更多操作 ${m.name}`} icon={<MoreHorizontal size={16}/>}/></Dropdown>
         </div>
       </article>)}</div>
-      {!items.length&&!loading&&<div className="asset-empty"><Empty description={filter==="trash"?"回收站为空":filtered?"没有符合条件的资产":"导入第一个资产，开始构建你的素材库"}/><Button type={filtered?"secondary":"primary"} icon={filtered?undefined:<Plus size={16}/>} onClick={filtered?clearFilters:importFiles}>{filtered?"清除筛选":"导入资产"}</Button></div>}
+      {!items.length&&!loading&&<div className="asset-empty"><EmptyState
+        title={filter==="trash"?"回收站为空":filtered?"没有符合条件的资产":"素材库还是空的"}
+        description={filter==="trash"?"删除的资产会先进入回收站，可随时恢复。":filtered?"调整类型、用途或搜索词，再试一次。":"导入图片、视频或音频，在角色、场景与剪辑中重复使用。"}
+        action={<Button type={filtered?"secondary":"primary"} icon={filtered?undefined:<Plus size={16}/>} onClick={filtered?clearFilters:importFiles}>{filtered?"清除筛选":"导入资产"}</Button>}
+      /></div>}
     </Spin>}
-    <Pagination className="asset-pagination" current={page} pageSize={24} total={total} onChange={setPage} showTotal/>
+    {total>0&&<Pagination className="asset-pagination" current={page} pageSize={24} total={total} onChange={setPage} showTotal/>}
     <Drawer width={460} visible={!!tracking} title="资产用途" footer={null} onCancel={()=>setTracking(null)}>
       <h3>{tracking?.name}</h3><Spin loading={usageLoading} style={{display:"block"}}>
         {usageError?<p role="alert">{usageError}</p>:uses.length?uses.map((use,index)=><div className="usage-record" key={index}><Tag>{use.purpose}</Tag><b>{use.episode_title&&use.kind==="scene"?`${use.episode_title} / `:""}{use.title}</b><Button size="small" onClick={()=>{setTracking(null);onLocate(use);}}>前往{use.kind==="role"?"角色":use.kind==="episode"?"剧集":use.kind==="canvas"?"画布":"场景"}</Button></div>):!usageLoading&&<Empty description="尚未被角色、剧集或场景使用"/>}

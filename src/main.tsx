@@ -497,6 +497,7 @@ function App() {
                 <ProjectPage
                   projects={projects}
                   active={active}
+                  onCreate={() => leaveEditor(() => setCreating(true))}
                   changed={async () => { await load(); setPage("projects"); }}
                   select={(id) => { void load(id).catch(e => Message.error(String(e))); }}
                 />
@@ -570,11 +571,13 @@ function ProjectPage({
   active,
   select,
   changed,
+  onCreate,
 }: {
   changed: () => Promise<void>;
   projects: Project[];
   active: Project | null;
   select: (id: string) => void;
+  onCreate: () => void;
 }) {
   const [editing,setEditing]=useState<Project|null>(null);
   const [name,setName]=useState("");
@@ -635,6 +638,11 @@ function ProjectPage({
             </div>
           </Card>
         ))}
+        <button type="button" className="project-create" onClick={onCreate}>
+          <span className="project-create-mark"><Plus size={22} /></span>
+          <b>新建项目</b>
+          <small>创建一个独立的漫剧工作区</small>
+        </button>
       </div>
     </section>
   );

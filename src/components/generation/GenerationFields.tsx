@@ -16,7 +16,7 @@ export function MediaSizeFields({ ratio, size, onChange, ratioLabel = "画幅", 
         options={GENERATION_SIZES.map(group => ({ label: group.label, value: group.ratio }))}
         onChange={value => onChange({ ratio: value, size: normalizeGenerationSize(value, size) })} />
     </Form.Item>
-    <Form.Item label="输出尺寸" extra="宽 × 高（像素）；部分尺寸为接近所选画幅的模型适配值">
+    <Form.Item label="输出尺寸" extra="宽 × 高（像素）">
       <Select aria-label={`${ariaPrefix}输出尺寸`} disabled={disabled} value={normalizeGenerationSize(ratio, size)}
         options={sizes.map(value => ({ label: value, value }))}
         onChange={value => onChange({ ratio, size: value })} />
