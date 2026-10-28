@@ -55,6 +55,7 @@ import "./creation-polish.css";
 import "./image-generator-modal.css";
 import "./editors-polish.css";
 import "./welcome.css";
+import "./studio-direction.css";
 import { PageHeading, PageLoading } from "./ui";
 import { FloatingImageGenerator } from "./components/FloatingImageGenerator";
 const CreationDesk=lazy(()=>import("./creation").then(m=>({default:m.CreationDesk})));
@@ -75,6 +76,18 @@ const SettingsPage=lazy(()=>import("./workspace").then(m=>({default:m.SettingsPa
 
 function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("spielberg-sidebar-collapsed") === "true");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobileNavOpen(false);
+        document.querySelector<HTMLButtonElement>(".sidebar-toggle")?.focus();
+      }
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [mobileNavOpen]);
   useEffect(() => {
     localStorage.setItem("spielberg-sidebar-collapsed", String(sidebarCollapsed));
   }, [sidebarCollapsed]);
@@ -269,19 +282,21 @@ function App() {
     setSceneEditing(null);setPage(usage.kind==="role"?"roles":"episodes");
   });
   const navigate = (next: string) => {
+    setMobileNavOpen(false);
     if (next === page && !sceneEditing) return;
     leaveEditor(() => { setLocate(null);setImageSource(undefined);setSceneEditing(null);setSceneImageFlow(null); setPage(next); });
   };
   return (
     <EditGuardContext.Provider value={registerDirty}>
-    <Layout className={`app${page === "agent" && !sceneEditing ? " agent-page" : ""}${darkMode ? " dark-theme" : ""}${sceneEditing?.scene.creation_mode === "canvas" ? " canvas-mode" : ""}`}>
+    <Layout className={`app${mobileNavOpen ? " mobile-nav-open" : ""}${page === "agent" && !sceneEditing ? " agent-page" : ""}${darkMode ? " dark-theme" : ""}${sceneEditing?.scene.creation_mode === "canvas" ? " canvas-mode" : ""}`}>
       <a className="skip-to-content" href="#workspace-content">跳转到工作区</a>
+      {mobileNavOpen && <button className="mobile-nav-backdrop" aria-label="关闭导航" onClick={() => setMobileNavOpen(false)} />}
       <Layout.Sider className={`side${sidebarCollapsed || (page === "agent" && !sceneEditing) ?  " side-collapsed" : ""}`} width={216}>
         <div className="logo">
           <img className="logo-mark" src={logoSrc} alt="Spielberg" />
           <div>
             <b>Spielberg</b>
-            <small>AI COMIC STUDIO</small>
+            <small>漫剧制作工作室</small>
           </div>
         </div>
         <button type="button" title={`切换项目：${active?.name}`} aria-label={`切换项目：${active?.name}`} className="project-switch" onClick={() => navigate("projects")}>
@@ -316,7 +331,12 @@ function App() {
             Prompt 库
           </Menu.Item>
         </Menu>
+        <div className="mobile-project-actions">
+          <Button icon={<FolderOpen size={16}/>} onClick={() => { setMobileNavOpen(false); openProject(); }}>打开项目</Button>
+          <Button icon={<Plus size={16}/>} onClick={() => leaveEditor(() => { setMobileNavOpen(false); setCreating(true); })}>新建项目</Button>
+        </div>
         <div className="side-bottom">
+          <div className="studio-local-note"><span className="project-dot" /><span>故事与素材，保存在本地</span></div>
           <div className="nav-label">工作室设置</div>
           <Button
             type="text"
@@ -348,11 +368,11 @@ function App() {
             <Button
               type="text"
               className="sidebar-toggle"
-              title={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
-              aria-label={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
-              aria-expanded={!sidebarCollapsed}
+              title="切换导航"
+              aria-label="切换导航"
+              aria-expanded={window.matchMedia("(max-width: 600px)").matches ? mobileNavOpen : !sidebarCollapsed}
               icon={sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-              onClick={() => setSidebarCollapsed(value => !value)}
+              onClick={() => window.matchMedia("(max-width: 600px)").matches ? setMobileNavOpen(value => !value) : setSidebarCollapsed(value => !value)}
             />
             <span className="crumb">{active?.name}</span>
             <span className="crumb-sep">/</span>
@@ -514,7 +534,6 @@ function Welcome({
     <div className="welcome">
       <div className="welcome-card">
         <div className="welcome-brand"><img className="hero-logo" src={logoSrc} alt="" /><div><b>Spielberg</b><span>AI COMIC STUDIO</span></div></div>
-        <span className="welcome-kicker">给每一个故事，开场的机会</span>
         <h1>把灵感，剪成一部漫剧</h1>
         <p>角色、分镜、视觉资产与生成模型都归于一个本地项目。</p>
         <div className="welcome-actions">
@@ -536,6 +555,7 @@ function Welcome({
           <div><Users size={20}/><b>角色与素材</b><span>为每个故事建立自己的视觉世界</span></div>
           <div><Clapperboard size={20}/><b>生成与剪辑</b><span>让画面动起来，串联成你的作品</span></div>
         </div>
+        <div className="welcome-slate" aria-hidden="true"><Clapperboard size={48} strokeWidth={1}/><span>Spielberg</span><p>每一个镜头<br/>都从一个想法开始。</p><div><span>故事</span><ChevronRight size={14}/><span>分镜</span><ChevronRight size={14}/><span>成片</span></div></div>
         <div className="welcome-notes">
           <span>本地项目</span>
           <i /> <span>统一素材管理</span>

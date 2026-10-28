@@ -1,0 +1,221 @@
+/* Framed sheet: the neutral studio frame holds a single white working sheet.
+   Desktop: viewport = 216px navigation + (sheet width + 8px inset).
+   Workbench: inner width = minmax(300px, 360px) + 24px + remaining preview. */
+:root, body {
+  --ui-primary: #303638;
+  --ui-primary-hover: #181c1e;
+  --ui-secondary: #555e63;
+  --ui-bg: #f1f3f3;
+  --ui-surface: #ffffff;
+  --ui-subtle: #f6f7f7;
+  --ui-border: #e5e8e8;
+  --ui-text: #202628;
+  --ui-secondary-text: #555e63;
+  --ui-muted: #60696d;
+  --ui-accent-soft: #edf2f2;
+  --studio-accent: #287b80;
+  --studio-frame: #edf0f0;
+  --studio-selected: #dfe5e5;
+  --studio-control-border: #cdd3d4;
+  --ui-radius-control: 8px;
+  --ui-radius-panel: 12px;
+  --primary-6: 48, 54, 56;
+  --primary-5: 69, 77, 80;
+  --primary-7: 24, 28, 30;
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+html[data-theme="dark"], html[data-theme="dark"] body {
+  --ui-primary: #e3e8e8;
+  --ui-primary-hover: #ffffff;
+  --ui-secondary: #b6bcbc;
+  --ui-bg: #161818;
+  --ui-surface: #1b1d1d;
+  --ui-subtle: #222525;
+  --ui-border: #303535;
+  --ui-text: #edf0f0;
+  --ui-secondary-text: #b6bcbc;
+  --ui-muted: #9da6a6;
+  --ui-accent-soft: #283131;
+  --studio-accent: #8ac7c7;
+  --studio-frame: #111313;
+  --studio-selected: #2a3030;
+  --studio-control-border: #4b5353;
+  --color-bg-4: #2a3030;
+  --color-bg-5: #343b3b;
+  --color-border-3: #4b5353;
+  --color-border-4: #677171;
+}
+html .app, html .app .app-main { background: var(--studio-frame) !important; }
+html .app .side { background: var(--studio-frame) !important; border-right: 0; padding-top: 28px; box-shadow: none; }
+.side .logo { padding-bottom: 28px; }
+.side .logo b { font-family: "Segoe UI", sans-serif; font-weight: 650; letter-spacing: -.7px; }
+.side .logo small { font-size: 11px; letter-spacing: .4px; margin-top: 5px; }
+html .side .project-switch { background: transparent !important; border-color: var(--studio-control-border); border-radius: 8px; margin-bottom: 28px; }
+.side .project-switch:hover { background: var(--ui-surface) !important; }
+.project-switch strong { font-size: 13px; }
+.project-dot { background: var(--studio-accent) !important; }
+.side .nav-label { font-size: 12px; letter-spacing: 0; margin-bottom: 6px; }
+.side .nav .arco-menu-item { font-size: 14px; font-weight: 400; height: 40px; line-height: 40px; margin-block: 4px; }
+html .side .nav .arco-menu-item:hover { background: var(--studio-selected) !important; color: var(--ui-text) !important; }
+html .side .nav .arco-menu-selected, html .side .nav .arco-menu-selected:hover {
+  background: var(--studio-selected) !important; color: var(--ui-text) !important; font-weight: 600;
+}
+html .side-bottom .arco-btn[data-active=true] { background: var(--studio-selected) !important; color: var(--ui-text) !important; }
+html[data-theme="dark"] .app .side-bottom .arco-btn[data-active=true] { background: var(--studio-selected) !important; color: var(--ui-text) !important; }
+html[data-theme="dark"] .arco-btn-primary.arco-btn-disabled { background: var(--ui-subtle); border-color: var(--studio-control-border); color: var(--ui-muted); }
+.studio-local-note { display: flex; align-items: center; gap: 8px; padding: 0 12px 20px; color: var(--ui-muted); font-size: 11px; white-space: nowrap; }
+.studio-local-note .project-dot { width: 5px; height: 5px; border-radius: 50%; }
+.side-collapsed .studio-local-note { display: none; }
+html .app .topbar { min-height: 56px; height: 56px !important; padding: 0 24px !important; background: var(--studio-frame) !important; border-bottom: 0; }
+.topbar .arco-btn, .topbar b, .topbar .crumb { font-size: 12px; }
+html .app .content { margin: 0 8px 8px 0; border: 1px solid var(--ui-border); border-radius: 16px; background: var(--ui-surface) !important; padding: 28px 28px 32px; }
+.app .content.scene-page-content { padding: 24px; }
+.content h1 { font-size: 24px; font-weight: 600; letter-spacing: -.5px; }
+.section-title, .page-heading { margin-bottom: 24px; }
+.section-title.page-actions { justify-content: space-between; }
+.section-title p, .page-heading p { font-size: 13px; }
+.workbench-links { display: flex; gap: 8px; align-items: center; }
+.workbench-links .arco-btn-text { color: var(--ui-secondary-text); font-size: 12px; }
+.workbench-links span { margin-left: 6px; font-variant-numeric: tabular-nums; }
+.creation-desk > .arco-tabs > .arco-tabs-header-nav { margin-bottom: 0; }
+.creation-desk > .arco-tabs > .arco-tabs-content { padding-top: 24px; }
+.creation-desk > .arco-tabs .arco-tabs-header-title { padding-block: 13px; }
+.arco-tabs-header-title-text { font-size: 14px; }
+.arco-tabs-header-title-active { color: var(--ui-text); }
+.arco-tabs-header-ink { background: var(--studio-accent); }
+.creation-split { gap: 24px; grid-template-columns: minmax(300px, 360px) minmax(0, 1fr); }
+.creation-split > .creation-panel { padding: 20px; background: var(--ui-subtle); border-color: var(--ui-border); }
+html .creation-split > .creation-panel:not(.image-result) { background: var(--ui-subtle) !important; }
+.generation-panel-heading { padding-bottom: 16px; margin-bottom: 20px; }
+.generation-panel-heading h2 { font-size: 14px; }
+.creation-split .arco-form-item { margin-bottom: 20px; }
+.creation-split .arco-form-label-item > label { font-size: 13px; font-weight: 500; }
+.creation-split .prompt-editor { border-color: var(--studio-control-border); background: var(--ui-surface); }
+.creation-split .prompt-editor textarea, .creation-split .prompt-backdrop { font-size: 13px; line-height: 1.85; }
+html .arco-input-wrapper, html .arco-input-inner-wrapper, html .arco-select .arco-select-view, html input.arco-input, html textarea.arco-textarea {
+  border-color: var(--studio-control-border); background: var(--ui-surface); color: var(--ui-text); box-shadow: none;
+}
+.prompt-tools button { background: var(--ui-surface); color: var(--ui-secondary-text); border-color: var(--studio-control-border); }
+html[data-theme="dark"] .prompt-tools button { background: var(--ui-surface); color: var(--ui-secondary-text); border-color: var(--studio-control-border); }
+html .arco-input-wrapper input.arco-input, html .arco-input-inner-wrapper input.arco-input { border: 0; background: transparent; }
+html .arco-btn-primary:not(.arco-btn-disabled) { background: var(--ui-primary); border-color: var(--ui-primary); color: var(--ui-surface); }
+html .arco-btn-primary:not(.arco-btn-disabled):hover { background: var(--ui-primary-hover); border-color: var(--ui-primary-hover); }
+.generation-submit.arco-btn { height: 44px; font-size: 14px; }
+html .image-mode-tabs .arco-radio-button-checked, html .generation-mode-tabs .arco-radio-button-checked { color: var(--ui-text); background: var(--ui-surface); }
+.creation-split > .image-result { padding: 20px 24px; background: var(--ui-surface); }
+.generation-preview-heading { padding-bottom: 16px; }
+.generation-preview-heading h2 { font-size: 14px; }
+.generation-state { background: transparent; padding-right: 0; font-size: 12px; }
+.generation-preview-body { min-height: 260px; flex: 1 1 auto; gap: 20px; }
+.generation-preview-body .viewfinder-empty { position: relative; width: 100%; max-width: 620px; aspect-ratio: 16 / 9; min-height: 180px; display: grid; align-content: center; padding: 24px; border: 1px solid var(--studio-control-border); border-radius: 4px; background: var(--ui-subtle); }
+.viewfinder-empty::before, .viewfinder-empty::after { content: ""; position: absolute; inset: 12px; pointer-events: none; border: solid var(--studio-control-border); border-width: 1px 0; }
+.viewfinder-empty::after { inset: 24px 12px; border-width: 0 1px; }
+.viewfinder-empty .arco-empty-image { display: none; }
+.generation-preview-body .arco-empty-description b { font-size: 16px; font-weight: 500; color: var(--ui-text); }
+.generation-preview-body .arco-empty-description p { max-width: 280px; margin-top: 12px; font-size: 13px; line-height: 1.8; }
+.prompt-starts { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; font-size: 12px; color: var(--ui-muted); }
+.prompt-starts > span { margin-right: 4px; }
+.prompt-starts button { padding: 7px 12px; border: 1px solid var(--ui-border); border-radius: 6px; background: var(--ui-surface); color: var(--ui-secondary-text); cursor: pointer; font: inherit; transition: border-color 160ms, color 160ms; }
+.prompt-starts button:hover { color: var(--ui-text); border-color: var(--studio-accent); }
+.image-result .generation-result-note { font-size: 12px; padding-top: 16px; }
+.arco-card, .library-card, .role-card, .episode-card, .prompt-card { box-shadow: none; }
+.arco-card:hover { box-shadow: none; }
+.project-summary { border-color: var(--ui-border); }
+.project-summary dd { font-weight: 500; }
+html .arco-modal-footer { background: var(--ui-subtle) !important; }
+.arco-tag { font-variant-numeric: tabular-nums; white-space: nowrap; }
+button:focus-visible, a:focus-visible, .arco-menu-item:focus-visible { outline: 2px solid var(--studio-accent); outline-offset: 3px; }
+.mobile-nav-backdrop { display: none; }
+.mobile-project-actions { display: none; }
+
+/* The first project starts with a slate, using the studio's own mark and process. */
+html .welcome { background: var(--studio-frame) !important; }
+.welcome .welcome-card { position: relative; width: min(1080px, 100%); max-width: 1080px; min-height: 560px; padding: 48px; padding-right: 42%; background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: 16px; box-shadow: none; overflow: hidden; }
+.welcome .welcome-brand { margin-bottom: 40px; }
+.welcome-brand span { text-transform: none; letter-spacing: .7px; font-size: 11px; }
+.welcome .welcome-card h1 { font-family: inherit; font-size: clamp(24px, 2.4vw, 32px); font-weight: 600; letter-spacing: -1px; line-height: 1.45; margin-top: 0; }
+.welcome .welcome-card > p { font-size: 14px; max-width: 400px; }
+.welcome .welcome-actions { gap: 10px; }
+.welcome .welcome-actions .arco-btn { padding-inline: 14px; font-size: 13px; }
+.welcome .welcome-features { display: flex; flex-direction: column; gap: 18px; margin-top: 32px; padding-top: 0; border: 0; }
+.welcome .welcome-features > div { display: grid; grid-template-columns: 20px auto; gap: 2px 12px; }
+.welcome-features svg { grid-row: span 2; color: var(--ui-muted); margin-top: 2px; }
+.welcome-features b { font-size: 13px; font-weight: 500; }
+.welcome-features span { font-size: 12px; color: var(--ui-muted); }
+.welcome .welcome-notes { display: none; }
+.welcome-slate { position: absolute; inset: 16px 16px 16px 64%; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; padding: 32px; background: var(--studio-frame); border-radius: 10px; color: var(--ui-text); }
+.welcome-slate > svg { margin-bottom: 24px; color: var(--studio-accent); }
+.welcome-slate > span { font-size: 22px; font-weight: 600; letter-spacing: -.5px; }
+.welcome-slate > p { margin: 20px 0 48px; font-size: 21px; line-height: 1.7; font-weight: 400; }
+.welcome-slate > div { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ui-secondary-text); }
+
+@media (min-width: 601px) {
+  .app .side.side-collapsed .nav .arco-menu-item { font-size: 0; }
+}
+@media (min-width: 601px) and (max-width: 1100px) {
+  .app .content { padding: 24px 20px; }
+  .creation-split { grid-template-columns: minmax(280px, 320px) minmax(0, 1fr); gap: 16px; }
+  .creation-split > .creation-panel { padding: 16px; }
+  .app .topbar { height: auto !important; min-height: 56px; padding: 10px 20px !important; }
+  .studio-local-note { display: none; }
+}
+@media (max-width: 800px) {
+  .welcome .welcome-card { padding: 32px; min-height: 0; }
+  .welcome-slate { display: none; }
+  .welcome .welcome-features { flex-direction: row; flex-wrap: wrap; gap: 24px; }
+  .creation-desk.images-active .creation-split { display: flex; flex-direction: column; overflow: visible; }
+  .app .content:has(.creation-desk.images-active) { display: block; overflow-y: auto; }
+  .creation-desk.images-active .creation-split > .creation-panel { overflow: visible; flex: none; }
+  .creation-desk.images-active .creation-split > .image-result { min-height: 360px; }
+}
+@media (max-width: 600px) {
+  html .app .side { display: none; }
+  html .app.mobile-nav-open .side { display: flex; position: fixed; z-index: 1001; inset: 56px auto 0 0; width: 232px !important; min-width: 232px !important; height: calc(100dvh - 56px) !important; max-height: none; padding: 20px 12px; border-radius: 0; flex-direction: column; overflow-y: auto; box-shadow: 8px 0 24px #00000012; }
+  .mobile-nav-open .side .arco-layout-sider-children { width: 100%; height: auto; min-height: 100%; display: flex; flex-direction: column; overflow: visible; }
+  .mobile-nav-open .side .logo { display: flex; }
+  .mobile-nav-open .side .nav { width: 100%; height: auto !important; max-height: none; flex: 0 0 auto; overflow: visible; }
+  .mobile-nav-open .side .nav .arco-menu-inner { display: block; width: 100%; min-width: 0; height: auto !important; max-height: none; overflow: visible; }
+  .mobile-nav-open .side .nav .arco-menu-item { width: 100%; flex: none; flex-direction: row; gap: 0; min-height: 44px; padding: 0 12px !important; }
+  .mobile-nav-open .side .logo > div, .mobile-nav-open .side .nav-label, .mobile-nav-open .side .project-switch > div, .mobile-nav-open .side .side-bottom .arco-btn > span { display: block; }
+  .mobile-nav-open .side .logo { justify-content: flex-start; padding: 0 12px 24px; }
+  .mobile-nav-open .side .nav .arco-menu-item { justify-content: flex-start; font-size: 14px; height: 44px; line-height: 44px; }
+  .mobile-nav-open .side .nav svg { margin-right: 12px; }
+  .mobile-nav-open .side .project-switch { display: flex; justify-content: flex-start; text-align: left; }
+  .mobile-nav-open .side .side-bottom { display: block; width: 100%; border-left: 0; margin-top: 20px; padding-left: 0; }
+  .mobile-nav-open .side .side-bottom .arco-btn { justify-content: flex-start; gap: 8px; padding: 0 12px; width: 100%; }
+  .mobile-nav-open .mobile-project-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; }
+  .mobile-project-actions .arco-btn { min-height: 44px; }
+  .mobile-nav-backdrop { display: block; position: fixed; z-index: 1000; inset: 56px 0 0; background: #00000040; border: 0; }
+  html .app .topbar { min-height: 56px; height: 56px !important; padding: 8px 12px !important; gap: 8px; flex-wrap: nowrap; }
+  .app .topbar > div:first-child { flex: 1 1 0 !important; width: auto; }
+  .app .topbar > .arco-space { flex: 0 0 auto; width: auto; }
+  .topbar .sidebar-toggle { display: inline-flex; width: 40px; height: 40px; margin-right: 4px; }
+  .topbar .mobile-projects-button, .topbar .crumb-sep, .topbar .crumb { display: none; }
+  .topbar > .arco-space > .arco-space-item:not(:first-child) { display: none; }
+  .topbar .theme-toggle { height: 40px; width: 40px; }
+  html .app .content, .app .content.scene-page-content { margin: 0; padding: 20px 16px 32px; border: 0; border-radius: 0; }
+  .section-title { gap: 12px; margin-bottom: 20px; }
+  .content h1 { font-size: 22px; }
+  .workbench-links { gap: 0; }
+  .workbench-links .arco-btn { padding: 0 6px; min-height: 40px; }
+  .creation-desk > .arco-tabs > .arco-tabs-content { padding-top: 20px; }
+  .creation-desk > .arco-tabs .arco-tabs-header-title { margin: 0 16px 0 0; }
+  .arco-tabs-header-title-text { font-size: 13px; white-space: nowrap; }
+  .creation-split { gap: 20px; grid-template-columns: minmax(0, 1fr); }
+  .creation-split > .creation-panel { padding: 16px; }
+  .creation-split .arco-btn, .creation-split .arco-select .arco-select-view { min-height: 40px; }
+  .prompt-starts { gap: 8px; }
+  .prompt-starts > span { flex-basis: 100%; text-align: center; }
+  .prompt-starts button { min-height: 44px; }
+  .generation-preview-body .arco-empty-description b { font-size: 14px; }
+  .generation-preview-body .arco-empty-description p { font-size: 12px; }
+  .welcome .welcome-card { padding: 28px 24px; }
+  .welcome .welcome-brand { margin-bottom: 28px; }
+  .welcome .welcome-features { flex-direction: column; gap: 20px; }
+  .welcome .welcome-card h1 { font-size: 24px; }
+  .welcome .welcome-actions .arco-btn { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; animation-iteration-count: 1 !important; }
+}

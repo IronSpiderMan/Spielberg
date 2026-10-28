@@ -33,7 +33,7 @@ export function PromptInput({value,onChange,roles,data,prompts=[],templates=[],p
     requestAnimationFrame(()=>{input.current?.focus();input.current?.setSelectionRange(start+token.length,start+token.length);setCaret(start+token.length);});
   };
   return <div className="prompt-input">
-    {onOptimize&&<div className="prompt-tools"><button type="button" disabled={disabled||optimizing||!value.trim()} onClick={onOptimize}>{optimizing?"正在优化…":"✨ 优化 Prompt"}</button></div>}
+    {onOptimize&&<div className="prompt-tools"><button type="button" disabled={disabled||optimizing||!value.trim()} onClick={onOptimize}>{optimizing?"正在优化…":"优化描述"}</button></div>}
     <div className={`prompt-editor${disabled?" disabled":""}`}>
       <div ref={backdrop} className="prompt-backdrop" aria-hidden="true">{parts}</div>
       <textarea ref={input} value={value} disabled={disabled} rows={4} aria-label="画面描述" aria-autocomplete="list" aria-controls={show?listId:undefined} aria-activedescendant={show?`${listId}-${selected}`:undefined}
