@@ -683,3 +683,71 @@
     transition: none;
   }
 }
+
+.role-details-trigger {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.role-details-trigger:hover h3 { color: var(--ui-primary); }
+.role-details-trigger:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+
+/* A character sheet: a large portrait, quiet typography, and a reference contact sheet. */
+.role-detail-page { max-width: 1240px; margin: 0 auto; padding-bottom: 32px; }
+.role-detail-topbar { display: flex; align-items: center; gap: 16px; padding-bottom: 24px; }
+.role-detail-topbar > span { flex: 1; padding-left: 16px; border-left: 1px solid var(--ui-border); font-size: 12px; color: var(--ui-muted); }
+.role-detail-topbar > .arco-btn:first-child { padding-left: 0; color: var(--ui-secondary-text); }
+.role-detail-hero { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.15fr); gap: clamp(28px, 5vw, 72px); align-items: start; }
+.role-detail-portrait { position: relative; border-radius: 16px; overflow: hidden; background: var(--ui-subtle); border: 1px solid var(--ui-border); }
+.role-detail-portrait > button { position: relative; display: block; width: 100%; height: clamp(380px, 50vh, 600px); padding: 20px; border: 0; background: transparent; cursor: zoom-in; }
+.role-detail-portrait img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.role-detail-portrait-label { position: absolute; top: 16px; left: 16px; padding: 5px 10px; border: 1px solid var(--ui-border); border-radius: 6px; background: var(--ui-surface); font-size: 11px; color: var(--ui-secondary-text); pointer-events: none; }
+.role-detail-zoom { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 30px; background: rgba(30,28,26,.7); color: white; font-size: 12px; opacity: 0; transition: opacity 160ms; white-space: nowrap; }
+.role-detail-portrait button:hover .role-detail-zoom, .role-detail-portrait button:focus-visible .role-detail-zoom { opacity: 1; }
+.role-detail-no-image { min-height: 380px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; color: var(--ui-muted); }
+.role-detail-profile { min-width: 0; padding-top: 24px; }
+.role-detail-eyebrow { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .15em; color: var(--ui-primary); }
+.role-detail-eyebrow > span { width: 18px; height: 2px; background: currentColor; }
+.content .role-detail-profile h1 { margin: 16px 0 14px; font-size: clamp(30px, 3vw, 44px); line-height: 1.3; letter-spacing: .04em; overflow-wrap: anywhere; }
+.role-detail-meta { display: flex; align-items: center; gap: 12px; color: var(--ui-muted); font-size: 12px; }
+.role-detail-meta > span { color: var(--ui-primary); }
+.role-detail-meta > i { width: 3px; height: 3px; border-radius: 50%; background: var(--ui-muted); }
+.role-detail-description { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--ui-border); }
+.role-detail-description h2 { margin: 0 0 14px; font-size: 12px; font-weight: 500; color: var(--ui-muted); }
+.role-detail-description p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 2; font-size: 14px; color: var(--ui-secondary-text); }
+.role-detail-gallery { margin-top: 40px; padding-top: 28px; border-top: 1px solid var(--ui-border); }
+.role-detail-gallery-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.role-detail-gallery-heading h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.role-detail-gallery-heading h2 span { margin-left: 8px; font-size: 12px; color: var(--ui-muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+.role-detail-gallery-heading p { margin: 6px 0 0; font-size: 12px; color: var(--ui-muted); }
+.role-detail-gallery-heading > span { font-size: 11px; color: var(--ui-muted); }
+.role-detail-images { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 20px; }
+.role-detail-images figure { margin: 0; min-width: 0; }
+.role-detail-images button { position: relative; display: block; width: 100%; height: 210px; padding: 10px; border: 1px solid var(--ui-border); border-radius: 10px; background: var(--ui-subtle); cursor: zoom-in; overflow: hidden; transition: border-color 160ms, box-shadow 160ms; }
+.role-detail-images button:hover { border-color: var(--ui-primary); box-shadow: 0 4px 16px rgba(0,0,0,.05); }
+.role-detail-images img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.role-detail-images figcaption { margin-top: 10px; font-size: 12px; color: var(--ui-secondary-text); white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.role-detail-image-number { position: absolute; bottom: 8px; left: 10px; font-size: 10px; color: var(--ui-muted); font-variant-numeric: tabular-nums; }
+.role-detail-main-badge { position: absolute; top: 8px; right: 8px; border-radius: 4px; padding: 3px 7px; color: var(--ui-primary); background: var(--ui-surface); font-size: 10px; }
+.role-detail-page button:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: 3px; }
+@media (max-width: 800px) {
+  .role-detail-hero { grid-template-columns: minmax(0, .85fr) minmax(0, 1fr); gap: 24px; }
+  .role-detail-portrait > button { height: 380px; padding: 12px; }
+  .role-detail-profile { padding-top: 8px; }
+}
+@media (max-width: 600px) {
+  .role-detail-hero { grid-template-columns: 1fr; gap: 20px; }
+  .role-detail-portrait > button { height: 400px; }
+  .role-detail-topbar { gap: 8px; }
+  .role-detail-topbar > span { padding-left: 8px; }
+  .role-detail-gallery-heading > span { display: none; }
+  .role-detail-images { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .role-detail-images button { height: 180px; }
+}

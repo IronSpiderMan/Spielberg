@@ -1711,7 +1711,15 @@ export function SceneEditor({
 }
 export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload: () => void; initialRoleId?:number }) {
   const [roleImagePreview, setRoleImagePreview] = useState<Media | null>(null);
-  const [editing, setEditing] = useState<Role | null>(()=>data.roles.find(r=>r.id===initialRoleId)||null);
+  const [previewRoleId, setPreviewRoleId] = useState<number | null>(null);
+  const openRoleImage = (role: Role, media: Media) => { setPreviewRoleId(role.id); setRoleImagePreview(media); };
+  const [editing, setEditing] = useState<Role | null>(null);
+  const [detailId, setDetailId] = useState<number | null>(initialRoleId ?? null);
+  const detail = data.roles.find(role => role.id === detailId);
+  const detailImages = detail ? [...detail.images].sort((a, b) => Number(b.id === detail.design_media_id) - Number(a.id === detail.design_media_id)) : [];
+  const previewRole = data.roles.find(role => role.id === previewRoleId);
+  const previewImages = [...(previewRole?.images || [])].sort((a, b) => Number(b.id === previewRole?.design_media_id) - Number(a.id === previewRole?.design_media_id));
+  useEffect(() => { if (initialRoleId != null) setDetailId(initialRoleId); }, [initialRoleId]);
   const make = async () => {
     const x = await post<Role>("/roles", {
       project_id: data.project.id,
@@ -1723,6 +1731,35 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
   };
   return (
     <section>
+      {detail ? <div className="role-detail-page">
+        <div className="role-detail-topbar">
+          <Button type="text" icon={<ArrowLeft size={16} />} onClick={() => setDetailId(null)}>角色列表</Button>
+          <span>角色档案</span>
+          <Button icon={<Pencil size={15} />} onClick={() => setEditing(detail)}>编辑设定</Button>
+        </div>
+        <div className="role-detail-hero">
+          <div className="role-detail-portrait">
+            {detailImages[0] ? <button type="button" onClick={() => openRoleImage(detail, detailImages[0])} aria-label={`放大查看${detail.name}的角色图`}>
+              <img src={imageUrl(detailImages[0])} alt={`${detail.name}的角色主图`} />
+              <span className="role-detail-zoom"><ZoomIn size={16} /> 放大查看</span>
+            </button> : <div className="role-detail-no-image"><Users size={48} strokeWidth={1} /><span>暂无角色图片</span></div>}
+            <span className="role-detail-portrait-label">角色主图</span>
+          </div>
+          <section className="role-detail-profile" aria-label="角色描述">
+            <div className="role-detail-eyebrow"><span /> 人物档案</div>
+            <h1>{detail.name}</h1>
+            <div className="role-detail-meta"><span>角色设定</span><i />{detail.images.length} 张形象参考</div>
+            <div className="role-detail-description"><h2>人物描述</h2><p>{detail.description || "还没有人物描述。点击编辑设定，记录这个角色的故事与形象。"}</p></div>
+          </section>
+        </div>
+        <section className="role-detail-gallery" aria-label="角色图片">
+          <div className="role-detail-gallery-heading"><div><h2>形象参考 <span>{detail.images.length.toString().padStart(2, "0")}</span></h2><p>记录角色的每一种样子</p></div><span>点击图片放大查看</span></div>
+          {detailImages.length ? <div className="role-detail-images">{detailImages.map((media, index) => <figure key={media.id}>
+            <button type="button" onClick={() => openRoleImage(detail, media)} aria-label={`预览 ${media.name}`}><img src={imageUrl(media)} alt={media.name} /><span className="role-detail-image-number">{String(index + 1).padStart(2, "0")}</span>{media.id === detail.design_media_id && <span className="role-detail-main-badge">主图</span>}</button>
+            <figcaption title={media.name}>{media.name}</figcaption>
+          </figure>)}</div> : <Empty description="添加角色图片，让人物形象更清晰" />}
+        </section>
+      </div> : <>
       <div className="section-title page-actions">
         <div className="page-intro"><h1>角色设定</h1><p>记录人物特征，保持故事中的角色形象一致。</p></div>
         <Button
@@ -1739,7 +1776,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
           <Card key={r.id} className="role-card" bodyStyle={{ padding: 16 }}>
             <div className="role-pic">
               {(r.images.find((image) => image.id === r.design_media_id) || r.images[0]) ? (
-                <button type="button" className="role-image-zoom" onClick={() => setRoleImagePreview(r.images.find((image) => image.id === r.design_media_id) || r.images[0])} aria-label={`放大查看${r.name}的角色图`} title="放大查看">
+                <button type="button" className="role-image-zoom" onClick={() => openRoleImage(r, r.images.find((image) => image.id === r.design_media_id) || r.images[0])} aria-label={`放大查看${r.name}的角色图`} title="放大查看">
                   <img src={imageUrl(r.images.find((image) => image.id === r.design_media_id) || r.images[0])} alt={`${r.name}的角色图片`} />
                   <span><ZoomIn size={16} /> 放大查看</span>
                 </button>
@@ -1748,8 +1785,10 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
               )}
               <Tag className="role-kind">角色</Tag>
             </div>
-            <h3>{r.name}</h3>
-            <p>{r.description || "添加角色形象描述，保持生成的一致性。"}</p>
+            <button type="button" className="role-details-trigger" aria-label={`查看${r.name}的角色详情`} onClick={() => setDetailId(r.id)}>
+              <h3>{r.name}</h3>
+              <p>{r.description || "添加角色形象描述，保持生成的一致性。"}</p>
+            </button>
             <div className="role-foot">
               <span>{r.images.length} 张角色图</span>
               <Button type="text" size="mini" onClick={() => setEditing(r)}>
@@ -1790,7 +1829,8 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
           <p>{data.roles.length ? "继续添加人物设定" : "记录第一个角色，让镜头保持形象一致。"}</p>
         </Card>
       </div>
-      <ImagePreviewModal media={roleImagePreview} title="角色图预览" onClose={()=>setRoleImagePreview(null)} />
+      </>}
+      <ImagePreviewModal media={roleImagePreview} images={previewImages} onMediaChange={setRoleImagePreview} title="角色图预览" onClose={()=>setRoleImagePreview(null)} />
       <RoleEditor
         role={editing}
         data={data}
@@ -2034,7 +2074,7 @@ function RoleEditor({
           <Input autoFocus value={renamingImage?.name || ""} onChange={name => setRenamingImage(current => current ? {...current,name} : null)} onPressEnter={renameImage}/>
         </Form.Item></Form>
       </Modal>
-      <ImagePreviewModal media={imagePreview} title="角色图预览" onClose={()=>setImagePreview(null)} />
+      <ImagePreviewModal media={imagePreview} images={currentRole?.images || []} onMediaChange={setImagePreview} title="角色图预览" onClose={()=>setImagePreview(null)} />
     </Drawer>
   );
 }

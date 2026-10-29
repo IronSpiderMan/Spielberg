@@ -1,17 +1,37 @@
 import { Button, Message, Modal } from "@arco-design/web-react";
-import { Download, Minus, Plus, RotateCcw, RotateCw, WandSparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Minus, Plus, RotateCcw, RotateCw, WandSparkles } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { imageUrl, type Media } from "../core";
 import "./image-preview.css";
 
-export function ImagePreviewModal({ media, onClose, title = "参考图片预览", visible = !!media, footer = null, className = "" }: {
+export function ImagePreviewModal({ media, onClose, title = "参考图片预览", visible = !!media, footer = null, className = "", images = [], onMediaChange }: {
   media: Media | null;
+  images?: Media[];
+  onMediaChange?: (media: Media) => void;
   onClose: () => void;
   title?: string;
   visible?: boolean;
   footer?: ReactNode;
   className?: string;
 }) {
+  const currentIndex = images.findIndex(item => item.id === media?.id);
+  const canNavigate = images.length > 1 && currentIndex >= 0 && !!onMediaChange;
+  const move = (offset: number) => {
+    if (canNavigate) onMediaChange?.(images[(currentIndex + offset + images.length) % images.length]);
+  };
+  useEffect(() => {
+    if (!visible || !canNavigate) return;
+    const keydown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+      if (target.closest('input, textarea, select, [contenteditable="true"]') || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        onMediaChange?.(images[(currentIndex + (event.key === "ArrowLeft" ? -1 : 1) + images.length) % images.length]);
+      }
+    };
+    document.addEventListener("keydown", keydown);
+    return () => document.removeEventListener("keydown", keydown);
+  }, [visible, canNavigate, currentIndex, images, onMediaChange]);
   const [rotation, setRotation] = useState(0);
   const [downloading, setDownloading] = useState(false);
   const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
@@ -73,6 +93,8 @@ export function ImagePreviewModal({ media, onClose, title = "参考图片预览"
       }}>图生图</Button>
       <Button onClick={reset} icon={<RotateCcw size={16} />}>适应窗口</Button>
     </div>
+    <div className="image-preview-stage">
+    {canNavigate && <button type="button" className="image-preview-nav is-previous" aria-label="上一张图片" onClick={() => move(-1)}><ChevronLeft size={24} /></button>}
     <div ref={viewport} className={`image-preview-full${view.scale > 1 ? " is-zoomed" : ""}`} title="滚轮缩放，放大后可拖动；双击复位"
       onDoubleClick={reset}
       onPointerDown={event => {
@@ -93,6 +115,13 @@ export function ImagePreviewModal({ media, onClose, title = "参考图片预览"
       {media && <img src={imageUrl(media)} alt={media.name} draggable={false}
         style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale}) rotate(${rotation}deg)` }} />}
     </div>
+    {canNavigate && <button type="button" className="image-preview-nav is-next" aria-label="下一张图片" onClick={() => move(1)}><ChevronRight size={24} /></button>}
+    </div>
+    {canNavigate && <div className="image-preview-filmstrip" aria-label="角色图片列表">
+      <span className="image-preview-position" aria-live="polite">{currentIndex + 1} / {images.length}</span>
+      <div>{images.map((item, index) => <button type="button" key={item.id} aria-label={`查看第 ${index + 1} 张：${item.name}`} aria-pressed={item.id === media?.id} onClick={() => onMediaChange?.(item)} ref={element => { if (item.id === media?.id) element?.scrollIntoView({ block: "nearest", inline: "nearest" }); }}><img src={imageUrl(item)} alt={item.name} /></button>)}</div>
+      <span className="image-preview-key-hint">← → 切换图片</span>
+    </div>}
   </Modal>;
 }
 

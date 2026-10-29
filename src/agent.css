@@ -254,3 +254,10 @@ html[data-theme=dark] .agent-workspace .agent-model-button.arco-btn:not(.arco-bt
 .agent-image-previews img { width:84px; height:84px; object-fit:cover; border-radius:8px; }
 .agent-image-previews button { position:absolute; right:2px; top:2px; border:0; border-radius:50%; background:#fff; color:#333; cursor:pointer; display:flex; padding:3px; }
 .agent-message-image { max-width:min(100%,320px); max-height:240px; object-fit:contain; border-radius:8px; margin:4px 8px 8px 0; }
+
+.agent-tool-result { min-width: 0; }
+.agent-generated-images { display: flex; flex-wrap: wrap; gap: 12px; margin: 10px 0 18px; }
+.agent-generated-images button { display: flex; flex-direction: column; gap: 8px; width: 220px; max-width: 100%; padding: 8px; border: 1px solid var(--agent-border); border-radius: 10px; background: var(--agent-surface); color: var(--agent-muted); font: inherit; text-align: left; cursor: zoom-in; }
+.agent-generated-images button:focus-visible { outline: 2px solid var(--agent-accent); outline-offset: 3px; }
+.agent-generated-images img { display: block; width: 100%; height: 220px; object-fit: contain; border-radius: 6px; }
+.agent-generated-images span { max-width: 100%; overflow-wrap: anywhere; font-size: 12px; }

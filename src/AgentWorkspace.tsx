@@ -3,8 +3,9 @@ import { ArrowUp, ArrowUpRight, Clapperboard, Folder, PencilLine, Search, Bot, C
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { post, type Snapshot } from "./core";
+import { imageUrl, post, type Media, type Snapshot } from "./core";
 import "./agent.css";
+import { ImagePreviewModal } from "./components/ImagePreviewModal";
 import { backendUrl } from "./transport";
 
 type AgentMessage = { role: "user" | "assistant" | "tool"; content: string; images?: string[]; tool_name?: string; tool_call_id?: string; arguments?: unknown; status?: string; tool_calls?: unknown[] };
@@ -15,8 +16,34 @@ const statusText: Record<string, string> = { idle: "准备就绪", running: "执
 const toolText: Record<string, string> = { get_project: "读取项目", list_skills: "查找技能", read_skill: "读取技能", app_describe: "查看操作说明", app_request: "操作项目数据", app_action: "执行创作操作", web_search: "联网搜索", fetch_webpage: "读取网页" };
 function displayJson(value: unknown) { if (typeof value === "string") { try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; } } return JSON.stringify(value, null, 2); }
 
+// Only generation output is eligible: reference images in arguments must never
+// be presented as successful output. Bounded tool results may wrap data.
+function generatedImages(message: AgentMessage): Media[] {
+  if (message.status === "running" || message.status === "failed" || message.tool_name !== "app_action" ||
+      !message.arguments || typeof message.arguments !== "object" ||
+      (message.arguments as Record<string, unknown>).operation !== "generations/image") return [];
+  try {
+    const result = JSON.parse(message.content);
+    const found = new Map<number, Media>();
+    const visit = (value: unknown) => {
+      if (!value || typeof value !== "object") return;
+      if (Array.isArray(value)) { value.forEach(visit); return; }
+      const item = value as Record<string, unknown>;
+      if (typeof item.id === "number" && item.kind === "image" && typeof item.path === "string" && item.path) {
+        found.set(item.id, { id: item.id, kind: "image", path: item.path,
+          name: typeof item.name === "string" ? item.name : "生成图片", created_at: typeof item.created_at === "string" ? item.created_at : "" });
+        return;
+      }
+      Object.values(item).forEach(visit);
+    };
+    visit(result);
+    return [...found.values()];
+  } catch { return []; }
+}
+
 export default function AgentWorkspace({ data, reload, onNavigate }: { data: Snapshot; reload: () => Promise<void>; onNavigate?: (page: string) => void }) {
   const pid = data.project.id;
+  const [preview, setPreview] = useState<Media | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selected, setSelected] = useState<Session | null>(null);
   const selectedRef = useRef<Session | null>(null);
@@ -189,10 +216,12 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
             <div className="agent-empty-mark" aria-hidden="true"><Clapperboard size={28} strokeWidth={1.5} /><Sparkles size={13} /></div>
             <span className="agent-empty-eyebrow">灵感就位，即刻开场</span>
             <h2>下一幕，从这里开始<span>。</span></h2><p>从一个想法到一个好故事，和你的 AI 创作搭档一起完成。</p>
-          </div> : selected.messages.map((message, index) => message.role === "tool" ? <details className="agent-tool" key={`${message.tool_call_id || index}:${index}`}>
+          </div> : selected.messages.map((message, index) => message.role === "tool" ? <div className="agent-tool-result" key={`${message.tool_call_id || index}:${index}`}><details className="agent-tool">
             <summary><Wrench size={14} /><span>{toolText[message.tool_name || ""] || message.tool_name || "执行工具"}</span><small>{message.arguments && typeof message.arguments === "object" ? String((message.arguments as Record<string, unknown>).operation || (message.arguments as Record<string, unknown>).resource || "") : ""}</small><span className={`agent-tool-status ${message.status}`}>{message.status === "running" ? "执行中" : message.status === "failed" ? "失败" : <><Check size={12} />完成</>}</span><ChevronDown size={14} /></summary>
             {message.arguments != null && <div><b>参数</b><pre>{displayJson(message.arguments)}</pre></div>}<div><b>结果</b><pre>{message.content ? displayJson(message.content) : "等待执行结果…"}</pre></div>
-          </details> : message.content || message.images?.length ? <article className={`agent-message is-${message.role}`} key={index}>
+          </details>
+          {generatedImages(message).length > 0 && <div className="agent-generated-images">{generatedImages(message).map(media => <button type="button" key={media.id} onClick={() => setPreview(media)} aria-label={`预览 ${media.name}`}><img src={imageUrl(media)} alt={media.name} onLoad={() => { if (followBottom.current && log.current) log.current.scrollTop = log.current.scrollHeight; }} /><span>{media.name}</span></button>)}</div>}
+          </div> : message.content || message.images?.length ? <article className={`agent-message is-${message.role}`} key={index}>
             <div className="agent-message-label">{message.role === "user" ? "你" : <><Bot size={15} />Agent</>}</div><div className="agent-message-content">{message.role === "user" ? <>{message.images?.map((image, i) => <a key={i} href={image} target="_blank" rel="noopener noreferrer"><img className="agent-message-image" src={image} alt={`附件图片 ${i + 1}`} /></a>)}{message.content && <p>{message.content}</p>}</> : <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ children, href, ...props }) => <a {...props} href={href?.startsWith("/api/v1/") ? backendUrl(href) : href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{message.content}</ReactMarkdown>}</div>
           </article> : null)}
           {running && <div className="agent-working"><span className="agent-pulse" /><span>Agent 正在处理项目，可以查看上方执行详情。</span></div>}
@@ -217,6 +246,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
         </div>
       </div>
     </div>
+    <ImagePreviewModal media={preview} onClose={() => setPreview(null)} />
     <Modal title="Agent 设置" visible={settingsOpen} onCancel={() => !saving && setSettingsOpen(false)} onOk={() => void saveSettings()} okText="保存设置" cancelText="取消" confirmLoading={saving} maskClosable={!saving} style={{ width: 580 }} className="agent-settings-modal">
       <div className="agent-settings-form"><label className="agent-inherit"><span><b>沿用项目 LLM 配置</b><small>使用「设置」中的 LLM（分镜与 Prompt）服务。</small></span><Switch aria-label="沿用项目 LLM 配置" checked={form.inherit_llm} onChange={value => setForm(item => ({ ...item, inherit_llm: value }))} disabled={saving} /></label>
         <label>Base URL<Input aria-label="Base URL" value={form.base_url} disabled={form.inherit_llm || saving} placeholder="https://your-service.example/v1" onChange={value => setForm(item => ({ ...item, base_url: value }))} /></label>
