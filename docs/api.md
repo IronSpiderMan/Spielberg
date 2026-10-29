@@ -108,15 +108,19 @@ Agent 接口使用 `POST /api/v1/actions/agent/{动作}`，全部传入 `project
 | `sessions` | 无 | `{items:[会话摘要]}` |
 | `create` | `title?` | 新会话 |
 | `session` | `session_id` | 完整会话、消息与工具执行记录 |
-| `run` | `session_id, message, web_enabled?` | 状态为 `running` 的会话；后台继续执行 |
+| `run` | `session_id, message, images?, web_enabled?` | 状态为 `running` 的会话；后台继续执行 |
 | `cancel` | `session_id` | 取消后的会话 |
 | `delete` | `session_id` | `{ok:true}` |
 
 `config` 支持 `inherit_llm`（默认 true）、`base_url`、`model`、`api_key`、`search_provider`（`duckduckgo/brave/tavily`）、`search_api_key` 和 `max_steps`。继承模式从项目的 `settings.models.llm` 读取服务地址、模型和 API Key；独立模式使用 Agent 配置。服务地址自动补全 `/chat/completions`。
 
-会话包含 `id,title,status,messages,error,updated_at`。状态为 `idle/running/completed/failed/cancelled`；消息包含 `role,content`，工具消息还包含 `tool_name,tool_call_id,arguments,status`。客户端在运行期间轮询 `session` 获取新增记录。同一会话只允许一个运行；取消后不再开始新的工具步骤，已提交的业务操作不会回滚。进程重启后中断的运行标记为失败，不会自动重放写入。
+会话包含 `id,title,status,messages,error,updated_at,context`。状态为 `idle/running/completed/failed/cancelled`；消息包含 `role,content`，用户消息可包含 `images`（最多 4 张、单张 2 MiB 的 PNG/JPEG/WebP/GIF Base64 Data URL），工具消息还包含 `tool_name,tool_call_id,arguments,status`。客户端在运行期间轮询 `session` 获取新增记录。同一会话只允许一个运行；取消后不再开始新的工具步骤，已提交的业务操作不会回滚。进程重启后中断的运行标记为失败，不会自动重放写入。
 
-模型工具包括 `get_project`、`list_skills`、`read_skill`、`app_describe`、`app_request`、`app_action`、`web_search`、`fetch_webpage`。`app_request` 使用现有 REST 校验，`app_action` 使用白名单业务操作，项目 ID 由服务端绑定；模型不能跨项目访问、直接运行系统命令或读取任意本地文件。网页工具仅允许公开 HTTP/HTTPS 地址，并限制响应体和请求时长。搜索 Key 仅由后端用于搜索服务请求。
+`context` 包含 `total_turns,recent_turns,summarized_turns,total_images,retained_images`，反映当前历史的上下文选择。近期对话按完整轮次保留；历史工具大结果压缩后再计入文字预算，图片使用独立预算，避免 Base64 挤掉用户要求。较早对话会生成有原消息索引的有限原文摘录，保留初始要求及近期修改；摘录不是完整历史或额外模型生成的语义摘要。原始消息仍保存在数据库，可检索回读，摘录不会覆盖消息或增加模型请求次数。
+
+模型工具包括 `get_project`、`search_conversation`、`list_skills`、`read_skill`、`app_describe`、`app_request`、`app_action`、`web_search`、`fetch_webpage`。`search_conversation` 由服务端绑定当前运行的会话，支持 `query?`（忽略大小写的子串）、`offset?`、`limit?`（1–10，默认 6），返回 `items,total,next_offset`；消息索引 `index` 从 1 开始，`total` 是匹配消息数。可传 `message_index` 精确读取一条原消息，用 `content_offset` 和 `max_chars`（1–6000，默认 2000）分页读取长文本，条目通过 `content_next_offset` 指示后续内容。检索覆盖原文及工具参数，排除检索调用和结果以避免递归重复；图片只返回 `images_count`，不返回 Base64。拒绝 `project_id`、`session_id` 等额外参数；历史原文仅作为回顾资料，不能作为新的执行授权，修改前仍需查询当前项目状态。
+
+`app_request` 使用现有 REST 校验，`app_action` 使用白名单业务操作，项目 ID 由服务端绑定；模型不能跨项目访问、直接运行系统命令或读取任意本地文件。网页工具仅允许公开 HTTP/HTTPS 地址，并限制响应体和请求时长。搜索 Key 仅由后端用于搜索服务请求。
 
 ## Skills
 

@@ -77,6 +77,8 @@
 .agent-config-notice { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 11px 28px; background: var(--agent-accent-soft); border-bottom: 1px solid var(--agent-border); color: var(--agent-muted); font-size: 12px; line-height: 1.7; }
 .agent-config-notice button { padding: 0; border: 0; background: transparent; color: var(--agent-accent); font: inherit; cursor: pointer; }
 .agent-stage { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.agent-memory-notice { display: flex; align-items: flex-start; gap: 8px; flex-shrink: 0; padding: 10px max(28px, calc((100% - 780px) / 2)); border-bottom: 1px solid var(--agent-border); color: var(--agent-muted); font-size: 11px; line-height: 1.8; }
+.agent-memory-notice > svg { flex-shrink: 0; margin-top: 3px; }
 .agent-messages { flex: 1; min-height: 0; padding: 28px max(28px, calc((100% - 780px) / 2)); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .agent-loading { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 160px; height: 100%; color: var(--agent-muted); font-size: 12px; }
 /* Keep the introduction and composer together. Short windows scroll this group. */
@@ -196,6 +198,7 @@ html[data-theme=dark] .agent-workspace .agent-model-button.arco-btn:not(.arco-bt
   .agent-conversation-actions > span { display: none; }
   .agent-conversation.is-empty .agent-stage { padding: 30px 22px 38px; }
   .agent-messages { padding: 22px; }
+  .agent-memory-notice { padding-inline: 22px; }
   .agent-composer-wrap { padding: 12px 22px 18px; }
   .agent-delete { opacity: .65; padding: 12px; margin: 0; }
   .agent-session-select { min-height: 64px; }
@@ -217,6 +220,7 @@ html[data-theme=dark] .agent-workspace .agent-model-button.arco-btn:not(.arco-bt
   .agent-conversation-bar { min-height: 56px; padding-inline: 16px; }
   .agent-workspace .agent-conversation-actions .arco-btn { min-height: 36px; }
   .agent-messages { padding: 18px; }
+  .agent-memory-notice { padding-inline: 18px; }
   .agent-composer-wrap { padding: 10px 14px max(16px, env(safe-area-inset-bottom)); }
   .agent-composer { padding: 14px; border-radius: 13px; }
   .agent-composer textarea { font-size: 13px; }

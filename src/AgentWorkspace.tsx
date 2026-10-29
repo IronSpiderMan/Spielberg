@@ -9,11 +9,12 @@ import { ImagePreviewModal } from "./components/ImagePreviewModal";
 import { backendUrl } from "./transport";
 
 type AgentMessage = { role: "user" | "assistant" | "tool"; content: string; images?: string[]; tool_name?: string; tool_call_id?: string; arguments?: unknown; status?: string; tool_calls?: unknown[] };
-type Session = { id: string; title: string; status: string; messages: AgentMessage[]; error?: string; updated_at: string };
+type ConversationContext = { total_turns: number; recent_turns: number; summarized_turns: number; total_images: number; retained_images: number };
+type Session = { id: string; title: string; status: string; messages: AgentMessage[]; error?: string; updated_at: string; context?: ConversationContext };
 type Config = { inherit_llm: boolean; base_url: string; model: string; has_api_key: boolean; search_provider: string; has_search_api_key: boolean; max_steps: number };
 const initialConfig: Config = { inherit_llm: true, base_url: "", model: "", has_api_key: false, search_provider: "duckduckgo", has_search_api_key: false, max_steps: 16 };
 const statusText: Record<string, string> = { idle: "准备就绪", running: "执行中", completed: "已完成", failed: "执行失败", cancelled: "已停止" };
-const toolText: Record<string, string> = { get_project: "读取项目", list_skills: "查找技能", read_skill: "读取技能", app_describe: "查看操作说明", app_request: "操作项目数据", app_action: "执行创作操作", web_search: "联网搜索", fetch_webpage: "读取网页" };
+const toolText: Record<string, string> = { get_project: "读取项目", search_conversation: "检索对话记录", list_skills: "查找技能", read_skill: "读取技能", app_describe: "查看操作说明", app_request: "操作项目数据", app_action: "执行创作操作", web_search: "联网搜索", fetch_webpage: "读取网页" };
 function displayJson(value: unknown) { if (typeof value === "string") { try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; } } return JSON.stringify(value, null, 2); }
 
 // Only generation output is eligible: reference images in arguments must never
@@ -211,6 +212,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
         <div className="agent-conversation-bar"><div><Button ref={historyTrigger} className="agent-mobile-history" aria-label="打开会话列表" aria-controls="agent-history" aria-expanded={mobileSessions} icon={<MessageSquare size={16} />} onClick={() => setMobileSessions(value => !value)} /><span className="agent-bar-label">创作助手</span><span className="agent-bar-separator">/</span><b>{selected?.title || "新对话"}</b></div><div className="agent-conversation-actions">{running && <span><i className="agent-status-dot" />正在执行</span>}<Button type="text" data-testid="agent-settings" aria-label="Agent 设置" icon={<Settings2 size={15} />} onClick={openSettings}>Agent 设置</Button></div></div>
         {!configured && !loading && <div className="agent-config-notice">配置支持工具调用的 LLM 后，即可开始使用。<button onClick={openSettings}>配置 Agent</button>{onNavigate && <button onClick={() => onNavigate("settings")}>打开项目设置</button>}</div>}
         <div className="agent-stage">
+        {!loading && !!selected?.context?.summarized_turns && <div className="agent-memory-notice" data-testid="agent-memory-notice"><MessageSquare size={14} aria-hidden="true" /><span>保留近期 {selected.context.recent_turns} 轮对话，较早 {selected.context.summarized_turns} 轮已整理为摘录；助手可按需检索原记录。</span></div>}
         <div className="agent-messages" ref={log} role="log" aria-label="Agent 对话记录" aria-busy={running || loading} onScroll={() => { const element = log.current; if (element) followBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100; }}>
           {loading ? <div className="agent-loading"><Spin /><span>正在读取会话</span></div> : !selected?.messages.length ? <div className="agent-empty">
             <div className="agent-empty-mark" aria-hidden="true"><Clapperboard size={28} strokeWidth={1.5} /><Sparkles size={13} /></div>
