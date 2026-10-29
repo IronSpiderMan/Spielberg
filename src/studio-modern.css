@@ -172,7 +172,7 @@ body {
   border-radius: 7px;
 }
 .empty-scene {
-  color: #355ec5 !important;
+  color: var(--ui-primary) !important;
 }
 .scene-image-preview {
   background: #f3f5f8;

@@ -6,7 +6,7 @@
 .pose-modal,
 .ic-asset-picker,
 .infinite-canvas {
-  --editor-shadow: 0 2px 6px #15243c04, 0 12px 32px #15243c06;
+  --editor-shadow: var(--ui-shadow-soft);
   --editor-focus: color-mix(in srgb, var(--ui-primary) 20%, transparent);
 }
 
@@ -68,13 +68,13 @@
 .media-editor .me-asset-preview .me-asset-caption { gap: 5px; padding: 12px 34px 12px 12px; }
 .media-editor .me-asset-caption b { font-size: 12px; font-weight: 600; }
 .media-editor .me-asset-add { color: var(--ui-primary); bottom: 25px; }
-.media-editor .me-preview { border: 1px solid #293447; border-radius: 14px; background: #141c2a; box-shadow: var(--editor-shadow); }
-.media-editor .me-preview .me-panel-title { color: #e4ebf6; }
-.media-editor .me-preview .me-panel-title > span { color: #99a9c0; padding: 4px 8px; background: #ffffff0a; border-radius: 5px; }
-.media-editor .me-preview .me-empty { color: #9aa9bf; }
-.media-editor .me-preview .me-empty > svg { color: #778ca9; stroke-width: 1.3; }
-.media-editor .me-player-controls { gap: 14px; padding: 14px 0 0; margin-top: 10px; border-top: 1px solid #ffffff12; color: #c6d2e5; }
-.media-editor .me-player-controls .arco-btn:not(.arco-btn-disabled) { background: #ffffff10; color: #e4ebf6; border-color: #ffffff1a; }
+.media-editor .me-preview { border: 1px solid #353831; border-radius: 14px; background: #20221f; box-shadow: var(--editor-shadow); }
+.media-editor .me-preview .me-panel-title { color: #e8e7e1; }
+.media-editor .me-preview .me-panel-title > span { color: #a1a399; padding: 4px 8px; background: #ffffff0a; border-radius: 5px; }
+.media-editor .me-preview .me-empty { color: #a1a399; }
+.media-editor .me-preview .me-empty > svg { color: #8b8f83; stroke-width: 1.3; }
+.media-editor .me-player-controls { gap: 14px; padding: 14px 0 0; margin-top: 10px; border-top: 1px solid #ffffff12; color: #d0d1c9; }
+.media-editor .me-player-controls .arco-btn:not(.arco-btn-disabled) { background: #ffffff10; color: #e8e7e1; border-color: #ffffff1a; }
 .media-editor .me-player-controls .arco-btn:not(.arco-btn-disabled):hover { background: #ffffff1f; }
 .media-editor .me-inspector strong { padding: 10px 12px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--ui-bg); line-height: 1.5; }
 .media-editor .me-inspector label { gap: 8px; margin-top: 18px; color: var(--ui-secondary-text); }
@@ -96,7 +96,7 @@
 .media-editor .me-clip.selected { border-color: var(--ui-primary); box-shadow: 0 0 0 2px var(--editor-focus); }
 .media-editor .me-clip-delete { padding: 4px; background: var(--ui-surface); color: var(--ui-secondary-text); transition: opacity 140ms, color 140ms; }
 .media-editor .me-clip-delete:hover { color: var(--ui-error); }
-.media-editor .me-playhead { background: #e66b73; }
+.media-editor .me-playhead { background: var(--ui-error); }
 .media-editor .me-track-empty { padding: 28px 16px; border: 0; color: var(--ui-muted); }
 .media-editor .me-notice { gap: 12px; padding: 12px 16px; background: var(--ui-accent-soft); border: 1px solid var(--ui-border); border-radius: 10px; color: var(--ui-secondary-text); font-size: 12px; line-height: 1.8; }
 .media-editor .me-projects { grid-template-columns: repeat(auto-fill, minmax(min(290px, 100%), 1fr)); gap: 20px; }
@@ -225,10 +225,10 @@
   to { opacity: 1; transform: translateY(0) rotate(-6deg); }
 }
 
-html[data-theme="dark"] :is(.media-editor, .screenplay-page, .storyboard-columns, .pose-modal, .infinite-canvas) { --editor-shadow: 0 2px 6px #00000012, 0 12px 32px #00000016; }
-html[data-theme="dark"] .media-editor .me-preview { background: #111722; border-color: #344052; }
+html[data-theme="dark"] :is(.media-editor, .screenplay-page, .storyboard-columns, .pose-modal, .infinite-canvas) { --editor-shadow: var(--ui-shadow-soft); }
+html[data-theme="dark"] .media-editor .me-preview { background: #181a18; border-color: #353831; }
 html[data-theme="dark"] .media-editor .me-clip { background: var(--ui-accent-soft); color: var(--ui-primary); }
-html[data-theme="dark"] .media-editor .me-clip.audio { background: #203b31; color: #a3e3c5; }
+html[data-theme="dark"] .media-editor .me-clip.audio { background: color-mix(in srgb, var(--ui-success) 14%, var(--ui-surface)); color: var(--ui-success); }
 html[data-theme="dark"] .pose-modal .pose-viewport { border-color: var(--ui-border); }
 html[data-theme="dark"] .infinite-canvas .ic-node-preview { background-color: var(--ui-bg); }
 html[data-theme="dark"] .infinite-canvas .ic-image .ic-node-preview { background-color: transparent; }

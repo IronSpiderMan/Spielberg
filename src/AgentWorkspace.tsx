@@ -1,5 +1,5 @@
 import { Button, Input, Message, Modal, Select, Spin, Switch } from "@arco-design/web-react";
-import { ArrowUp, Folder, PencilLine, Search, Bot, Check, ChevronDown, Globe, MessageSquare, Plus, Settings2, Square, Trash2, Wrench, X } from "lucide-react";
+import { ArrowUp, ArrowUpRight, Clapperboard, Folder, PencilLine, Search, Bot, Check, ChevronDown, Globe, MessageSquare, Plus, Settings2, Sparkles, Square, Trash2, Wrench, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -11,7 +11,7 @@ type AgentMessage = { role: "user" | "assistant" | "tool"; content: string; tool
 type Session = { id: string; title: string; status: string; messages: AgentMessage[]; error?: string; updated_at: string };
 type Config = { inherit_llm: boolean; base_url: string; model: string; has_api_key: boolean; search_provider: string; has_search_api_key: boolean; max_steps: number };
 const initialConfig: Config = { inherit_llm: true, base_url: "", model: "", has_api_key: false, search_provider: "duckduckgo", has_search_api_key: false, max_steps: 16 };
-const statusText: Record<string, string> = { idle: "新对话", running: "执行中", completed: "已完成", failed: "执行失败", cancelled: "已停止" };
+const statusText: Record<string, string> = { idle: "准备就绪", running: "执行中", completed: "已完成", failed: "执行失败", cancelled: "已停止" };
 const toolText: Record<string, string> = { get_project: "读取项目", list_skills: "查找技能", read_skill: "读取技能", app_describe: "查看操作说明", app_request: "操作项目数据", app_action: "执行创作操作", web_search: "联网搜索", fetch_webpage: "读取网页" };
 function displayJson(value: unknown) { if (typeof value === "string") { try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; } } return JSON.stringify(value, null, 2); }
 
@@ -40,6 +40,8 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   const log = useRef<HTMLDivElement>(null);
   const followBottom = useRef(true);
   const composer = useRef<HTMLTextAreaElement>(null);
+  const history = useRef<HTMLElement>(null);
+  const historyTrigger = useRef<HTMLButtonElement>(null);
   const draftKey = selected?.id || "new";
   const draft = drafts[draftKey] || "";
   const running = selected?.status === "running";
@@ -92,6 +94,23 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
     return () => { disposed = true; clearTimeout(timer); };
   }, [anyRunning, running, call, accept]);
   useEffect(() => { if (followBottom.current && log.current) log.current.scrollTop = log.current.scrollHeight; }, [selected?.messages, selected?.id, running]);
+  useEffect(() => {
+    if (!mobileSessions) return;
+    const panel = history.current;
+    const focusable = () => Array.from(panel?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') || []);
+    focusable()[0]?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); setMobileSessions(false); }
+      if (event.key === "Tab") {
+        const buttons = focusable(); const first = buttons[0]; const last = buttons[buttons.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    };
+    const onResize = () => { if (window.innerWidth > 800) setMobileSessions(false); };
+    document.addEventListener("keydown", onKeyDown); window.addEventListener("resize", onResize);
+    return () => { document.removeEventListener("keydown", onKeyDown); window.removeEventListener("resize", onResize); if (window.innerWidth <= 800) historyTrigger.current?.focus(); };
+  }, [mobileSessions]);
 
   const createSession = async () => {
     if (busy.current || creating) return;
@@ -136,21 +155,26 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
 
   return <section className="agent-workspace" data-testid="agent-workspace">
     <div className="agent-layout">
-      <aside className={`agent-history${mobileSessions ? " is-open" : ""}`} aria-label="Agent 会话">
-        <button className="agent-project-picker" onClick={() => onNavigate?.("projects")}><Folder size={21} /><strong>{data.project.name}</strong><ChevronDown size={14} /><small><i className="agent-status-dot" />本地项目</small></button>
+      {mobileSessions && <button className="agent-history-backdrop" tabIndex={-1} aria-label="关闭会话列表" onClick={() => setMobileSessions(false)} />}
+      <aside ref={history} id="agent-history" className={`agent-history${mobileSessions ? " is-open" : ""}`} aria-label="Agent 会话" role={mobileSessions ? "dialog" : undefined} aria-modal={mobileSessions || undefined}>
+        <button className="agent-project-picker" title={`切换项目：${data.project.name}`} onClick={() => onNavigate?.("projects")}><span className="agent-project-icon"><Folder size={19} /></span><span className="agent-project-copy"><strong>{data.project.name}</strong><small><i className="agent-status-dot" />本地项目</small></span><ChevronDown size={14} /></button>
         <Button long data-testid="agent-new-session" icon={<Plus size={16} />} loading={creating} disabled={loading || sending} onClick={() => void createSession()}>新建会话</Button>
-        <div className="agent-history-heading"><span>项目会话</span><Button size="mini" type="text" className="agent-mobile-history" aria-label="关闭会话列表" icon={<X size={16} />} onClick={() => setMobileSessions(false)} /></div>
+        <div className="agent-history-heading"><span>项目会话 <small>{sessions.length}</small></span><Button size="mini" type="text" className="agent-mobile-history" aria-label="关闭会话列表" icon={<X size={16} />} onClick={() => setMobileSessions(false)} /></div>
         <div className="agent-session-list">{sessions.length === 0 && <div className="agent-history-empty"><MessageSquare size={28} /><b>暂无会话</b><p>开始创作后，会话将保存在这里</p></div>}{sessions.map(session => <div className={`agent-session${selected?.id === session.id ? " is-selected" : ""}`} key={session.id}>
-          <button data-testid={`agent-session-${session.id}`} className="agent-session-select" onClick={() => void choose(session)} disabled={creating}><MessageSquare size={15} /><span><strong>{session.title}</strong><small data-status={session.status}>{statusText[session.status] || session.status}</small></span></button>
+          <button data-testid={`agent-session-${session.id}`} className="agent-session-select" title={session.title} aria-current={selected?.id === session.id ? "page" : undefined} onClick={() => void choose(session)} disabled={creating}><MessageSquare size={15} /><span><strong>{session.title}</strong><small data-status={session.status}>{statusText[session.status] || session.status}</small></span></button>
           <button type="button" className="agent-delete" aria-label={`删除会话 ${session.title}`} disabled={session.status === "running" || sending} onClick={() => remove(session)}><Trash2 size={14} /></button>
         </div>)}</div>
+        <div className="agent-history-footer"><Clapperboard size={15} /><span>每个好故事，都始于一次对话</span></div>
       </aside>
       <div className={`agent-conversation${empty ? " is-empty" : ""}`}>
-        <div className="agent-conversation-bar"><div><Button className="agent-mobile-history" aria-label="打开会话列表" icon={<MessageSquare size={16} />} onClick={() => setMobileSessions(value => !value)} /><b>{selected?.title || "Agent 助手"}</b></div><div className="agent-conversation-actions">{running && <span><i className="agent-status-dot" />正在执行</span>}<Button type="text" data-testid="agent-settings" aria-label="Agent 设置" icon={<Settings2 size={16} />} onClick={openSettings}>Agent 设置</Button></div></div>
+        <div className="agent-conversation-bar"><div><Button ref={historyTrigger} className="agent-mobile-history" aria-label="打开会话列表" aria-controls="agent-history" aria-expanded={mobileSessions} icon={<MessageSquare size={16} />} onClick={() => setMobileSessions(value => !value)} /><span className="agent-bar-label">创作助手</span><span className="agent-bar-separator">/</span><b>{selected?.title || "新对话"}</b></div><div className="agent-conversation-actions">{running && <span><i className="agent-status-dot" />正在执行</span>}<Button type="text" data-testid="agent-settings" aria-label="Agent 设置" icon={<Settings2 size={15} />} onClick={openSettings}>Agent 设置</Button></div></div>
         {!configured && !loading && <div className="agent-config-notice">配置支持工具调用的 LLM 后，即可开始使用。<button onClick={openSettings}>配置 Agent</button>{onNavigate && <button onClick={() => onNavigate("settings")}>打开项目设置</button>}</div>}
+        <div className="agent-stage">
         <div className="agent-messages" ref={log} role="log" aria-label="Agent 对话记录" aria-busy={running || loading} onScroll={() => { const element = log.current; if (element) followBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100; }}>
           {loading ? <div className="agent-loading"><Spin /><span>正在读取会话</span></div> : !selected?.messages.length ? <div className="agent-empty">
-            <h2>下一幕，从这里开始</h2><p>描述你的目标，我会结合当前项目开始创作。</p>
+            <div className="agent-empty-mark" aria-hidden="true"><Clapperboard size={28} strokeWidth={1.5} /><Sparkles size={13} /></div>
+            <span className="agent-empty-eyebrow">灵感就位，即刻开场</span>
+            <h2>下一幕，从这里开始<span>。</span></h2><p>从一个想法到一个好故事，和你的 AI 创作搭档一起完成。</p>
           </div> : selected.messages.map((message, index) => message.role === "tool" ? <details className="agent-tool" key={`${message.tool_call_id || index}:${index}`}>
             <summary><Wrench size={14} /><span>{toolText[message.tool_name || ""] || message.tool_name || "执行工具"}</span><small>{message.arguments && typeof message.arguments === "object" ? String((message.arguments as Record<string, unknown>).operation || (message.arguments as Record<string, unknown>).resource || "") : ""}</small><span className={`agent-tool-status ${message.status}`}>{message.status === "running" ? "执行中" : message.status === "failed" ? "失败" : <><Check size={12} />完成</>}</span><ChevronDown size={14} /></summary>
             {message.arguments != null && <div><b>参数</b><pre>{displayJson(message.arguments)}</pre></div>}<div><b>结果</b><pre>{message.content ? displayJson(message.content) : "等待执行结果…"}</pre></div>
@@ -161,16 +185,20 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
           {(error || selected?.error) && <div className="agent-error" role="alert">{error || selected?.error}</div>}
         </div>
         <div className="agent-composer-wrap">
-          <div className="agent-composer"><textarea ref={composer} data-testid="agent-composer" aria-label="向 Agent 发送消息" value={draft} maxLength={16000} disabled={loading || sending || creating} placeholder="描述你想完成的创作…" onChange={event => updateDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} />
-            <div className="agent-composer-actions"><label className="agent-web-toggle"><Switch size="small" checked={online} onChange={setOnline} disabled={running || sending} aria-label="联网搜索" /><Globe size={14} />联网搜索</label><Button className="agent-model-button" onClick={openSettings}>{config.model || "配置模型"}<ChevronDown size={14} /></Button>{running ? <Button data-testid="agent-stop" aria-label="停止执行" status="danger" icon={<Square size={14} />} loading={stopping} onClick={() => void stop()}>停止</Button> : <Button type="primary" data-testid="agent-send" aria-label="发送消息" icon={<ArrowUp size={20} />} loading={sending} disabled={!draft.trim() || loading || creating} onClick={() => void send()} />}</div>
+          <div className="agent-composer">
+            <div className="agent-composer-context"><Folder size={12} /><span>{data.project.name}</span><span className="agent-context-label">项目上下文</span></div>
+            <textarea ref={composer} data-testid="agent-composer" aria-label="向 Agent 发送消息" value={draft} maxLength={16000} disabled={loading || sending || creating} placeholder="写下一个灵感，或告诉我你想完成什么…" onChange={event => updateDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} />
+            <div className="agent-composer-actions"><label className={`agent-web-toggle${online ? " is-online" : ""}`}><Globe size={14} /><span>联网搜索</span><Switch size="small" checked={online} onChange={setOnline} disabled={running || sending} aria-label="联网搜索" /></label><Button className="agent-model-button" title={config.model || "配置模型"} onClick={openSettings}><span>{config.model || "配置模型"}</span><ChevronDown size={13} /></Button>{running ? <Button data-testid="agent-stop" aria-label="停止执行" status="danger" icon={<Square size={14} />} loading={stopping} onClick={() => void stop()}>停止</Button> : <Button type="primary" data-testid="agent-send" aria-label="发送消息" icon={<ArrowUp size={19} />} loading={sending} disabled={!draft.trim() || loading || creating} onClick={() => void send()} />}</div>
           </div>
           {empty && <>
+            <div className="agent-starters-heading">也可以从这里开始</div>
             <div className="agent-starters">{[
-              ["整理项目", "查看当前项目，整理剧本、角色、剧集和场景的制作进度，并提出下一步建议。"],
-              ["开始一个故事", "写一个雨夜车站重逢的短片剧本，创建主要角色，并建立第一集和三个场景。"],
-              ["搜索创作参考", "联网搜索电影雨夜车站场景的灯光和镜头参考，注明来源，并把可用的创作提示词保存到 Prompt 库。"],
-            ].map(([label, text]) => <button key={label} onClick={() => { updateDraft(text); composer.current?.focus(); }}><span>{label === "搜索创作参考" ? <Search size={20} /> : label === "整理项目" ? <Folder size={20} /> : <PencilLine size={20} />}{label}</span></button>)}</div>
-          <p className="agent-keyboard-hint">Enter 发送 · Shift + Enter 换行</p></>}
+              ["整理项目", "梳理进度，找到下一步", "查看当前项目，整理剧本、角色、剧集和场景的制作进度，并提出下一步建议。"],
+              ["开始一个故事", "让一个灵感，长成剧本", "写一个雨夜车站重逢的短片剧本，创建主要角色，并建立第一集和三个场景。"],
+              ["搜索创作参考", "发现镜头、光影与灵感", "联网搜索电影雨夜车站场景的灯光和镜头参考，注明来源，并把可用的创作提示词保存到 Prompt 库。"],
+            ].map(([label, description, text]) => <button key={label} onClick={() => { updateDraft(text); composer.current?.focus(); }}><span className="agent-starter-icon">{label === "搜索创作参考" ? <Search size={17} /> : label === "整理项目" ? <Folder size={17} /> : <PencilLine size={17} />}</span><span className="agent-starter-copy"><strong>{label}</strong><small>{description}</small></span><ArrowUpRight className="agent-starter-arrow" size={15} /></button>)}</div>
+          <p className="agent-keyboard-hint"><kbd>Enter</kbd> 发送<span>·</span><kbd>Shift + Enter</kbd> 换行</p></>}
+        </div>
         </div>
       </div>
     </div>

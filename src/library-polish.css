@@ -64,8 +64,8 @@
   padding-inline: 8px;
   background: rgb(255 255 255 / 94%);
   border: 1px solid rgb(255 255 255 / 75%);
-  color: #39475c;
-  box-shadow: 0 2px 8px #13233a14;
+  color: var(--ui-text);
+  box-shadow: var(--ui-shadow-soft);
 }
 
 .library-preview-hint {
@@ -78,7 +78,7 @@
   padding: 8px 12px;
   border: 1px solid rgb(255 255 255 / 20%);
   border-radius: 100px;
-  background: rgb(20 30 45 / 76%);
+  background: rgb(32 34 31 / 76%);
   color: white;
   font-size: 12px;
   line-height: 1;
@@ -562,7 +562,7 @@
   .asset-library .library-card:hover,
   .content .role-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 24px #172b4d0a;
+    box-shadow: var(--ui-shadow-soft);
   }
 
   .asset-library .library-thumbnail:hover img {

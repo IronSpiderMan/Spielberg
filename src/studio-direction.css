@@ -1,50 +1,11 @@
-/* Framed sheet: the neutral studio frame holds a single white working sheet.
+/* Framed sheet: a warm neutral frame holds the shared writing surface.
    Desktop: viewport = 216px navigation + (sheet width + 8px inset).
    Workbench: inner width = minmax(300px, 360px) + 24px + remaining preview. */
 :root, body {
-  --ui-primary: #303638;
-  --ui-primary-hover: #181c1e;
-  --ui-secondary: #555e63;
-  --ui-bg: #f1f3f3;
-  --ui-surface: #ffffff;
-  --ui-subtle: #f6f7f7;
-  --ui-border: #e5e8e8;
-  --ui-text: #202628;
-  --ui-secondary-text: #555e63;
-  --ui-muted: #60696d;
-  --ui-accent-soft: #edf2f2;
-  --studio-accent: #287b80;
-  --studio-frame: #edf0f0;
-  --studio-selected: #dfe5e5;
-  --studio-control-border: #cdd3d4;
   --ui-radius-control: 8px;
   --ui-radius-panel: 12px;
-  --primary-6: 48, 54, 56;
-  --primary-5: 69, 77, 80;
-  --primary-7: 24, 28, 30;
   font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
   font-variant-numeric: tabular-nums;
-}
-html[data-theme="dark"], html[data-theme="dark"] body {
-  --ui-primary: #e3e8e8;
-  --ui-primary-hover: #ffffff;
-  --ui-secondary: #b6bcbc;
-  --ui-bg: #161818;
-  --ui-surface: #1b1d1d;
-  --ui-subtle: #222525;
-  --ui-border: #303535;
-  --ui-text: #edf0f0;
-  --ui-secondary-text: #b6bcbc;
-  --ui-muted: #9da6a6;
-  --ui-accent-soft: #283131;
-  --studio-accent: #8ac7c7;
-  --studio-frame: #111313;
-  --studio-selected: #2a3030;
-  --studio-control-border: #4b5353;
-  --color-bg-4: #2a3030;
-  --color-bg-5: #343b3b;
-  --color-border-3: #4b5353;
-  --color-border-4: #677171;
 }
 html .app, html .app .app-main { background: var(--studio-frame) !important; }
 html .app .side { background: var(--studio-frame) !important; border-right: 0; padding-top: 28px; box-shadow: none; }
@@ -59,17 +20,17 @@ html .side .project-switch { background: transparent !important; border-color: v
 .side .nav .arco-menu-item { font-size: 14px; font-weight: 400; height: 40px; line-height: 40px; margin-block: 4px; }
 html .side .nav .arco-menu-item:hover { background: var(--studio-selected) !important; color: var(--ui-text) !important; }
 html .side .nav .arco-menu-selected, html .side .nav .arco-menu-selected:hover {
-  background: var(--studio-selected) !important; color: var(--ui-text) !important; font-weight: 600;
+  background: var(--studio-selected) !important; color: var(--ui-primary) !important; font-weight: 600;
 }
-html .side-bottom .arco-btn[data-active=true] { background: var(--studio-selected) !important; color: var(--ui-text) !important; }
-html[data-theme="dark"] .app .side-bottom .arco-btn[data-active=true] { background: var(--studio-selected) !important; color: var(--ui-text) !important; }
+html .side-bottom .arco-btn[data-active=true] { background: var(--studio-selected) !important; color: var(--ui-primary) !important; }
+html[data-theme="dark"] .app .side-bottom .arco-btn[data-active=true] { background: var(--studio-selected) !important; color: var(--ui-primary) !important; }
 html[data-theme="dark"] .arco-btn-primary.arco-btn-disabled { background: var(--ui-subtle); border-color: var(--studio-control-border); color: var(--ui-muted); }
 .studio-local-note { display: flex; align-items: center; gap: 8px; padding: 0 12px 20px; color: var(--ui-muted); font-size: 11px; white-space: nowrap; }
 .studio-local-note .project-dot { width: 5px; height: 5px; border-radius: 50%; }
 .side-collapsed .studio-local-note { display: none; }
 html .app .topbar { min-height: 56px; height: 56px !important; padding: 0 24px !important; background: var(--studio-frame) !important; border-bottom: 0; }
 .topbar .arco-btn, .topbar b, .topbar .crumb { font-size: 12px; }
-html .app .content { margin: 0 8px 8px 0; border: 1px solid var(--ui-border); border-radius: 16px; background: var(--ui-surface) !important; padding: 28px 28px 32px; }
+html .app .content { margin: 0 8px 8px 0; border: 1px solid var(--ui-border); border-radius: 16px; background: var(--ui-bg) !important; padding: 28px 28px 32px; }
 .app .content.scene-page-content { padding: 24px; }
 .content h1 { font-size: 24px; font-weight: 600; letter-spacing: -.5px; }
 .section-title, .page-heading { margin-bottom: 24px; }
@@ -82,7 +43,7 @@ html .app .content { margin: 0 8px 8px 0; border: 1px solid var(--ui-border); bo
 .creation-desk > .arco-tabs > .arco-tabs-content { padding-top: 24px; }
 .creation-desk > .arco-tabs .arco-tabs-header-title { padding-block: 13px; }
 .arco-tabs-header-title-text { font-size: 14px; }
-.arco-tabs-header-title-active { color: var(--ui-text); }
+.arco-tabs-header-title-active { color: var(--ui-primary); }
 .arco-tabs-header-ink { background: var(--studio-accent); }
 .creation-split { gap: 24px; grid-template-columns: minmax(300px, 360px) minmax(0, 1fr); }
 .creation-split > .creation-panel { padding: 20px; background: var(--ui-subtle); border-color: var(--ui-border); }
@@ -99,14 +60,14 @@ html .arco-input-wrapper, html .arco-input-inner-wrapper, html .arco-select .arc
 .prompt-tools button { background: var(--ui-surface); color: var(--ui-secondary-text); border-color: var(--studio-control-border); }
 html[data-theme="dark"] .prompt-tools button { background: var(--ui-surface); color: var(--ui-secondary-text); border-color: var(--studio-control-border); }
 html .arco-input-wrapper input.arco-input, html .arco-input-inner-wrapper input.arco-input { border: 0; background: transparent; }
-html .arco-btn-primary:not(.arco-btn-disabled) { background: var(--ui-primary); border-color: var(--ui-primary); color: var(--ui-surface); }
+html .arco-btn-primary:not(.arco-btn-disabled) { background: var(--ui-primary); border-color: var(--ui-primary); color: var(--ui-on-primary); }
 html .arco-btn-primary:not(.arco-btn-disabled):hover { background: var(--ui-primary-hover); border-color: var(--ui-primary-hover); }
 .generation-submit.arco-btn { height: 44px; font-size: 14px; }
 .generation-submit-row { display: flex; align-items: center; gap: 10px; flex-shrink: 0; margin-top: 18px; }
 .generation-submit-row .generation-count { flex: 0 0 96px; }
 .generation-submit-row .generation-count .arco-select-view { height: 44px; line-height: 42px; border-color: var(--studio-control-border); }
 .generation-submit-row .generation-submit.arco-btn { flex: 1 1 auto; width: auto; min-width: 0; margin: 0; }
-html .image-mode-tabs .arco-radio-button-checked, html .generation-mode-tabs .arco-radio-button-checked { color: var(--ui-text); background: var(--ui-surface); }
+html .image-mode-tabs .arco-radio-button-checked, html .generation-mode-tabs .arco-radio-button-checked { color: var(--ui-primary); background: var(--ui-surface); }
 .creation-split > .image-result { padding: 20px 24px; background: var(--ui-surface); }
 .generation-preview-heading { padding-bottom: 16px; }
 .generation-preview-heading h2 { font-size: 14px; }
