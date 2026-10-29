@@ -59,3 +59,13 @@
 .shot-picture-preview { display: block; padding: 0; border: 1px solid var(--ui-border); border-radius: 4px; background: var(--ui-bg); cursor: zoom-in; width: 100%; height: 100px; overflow: hidden; }
 .shot-picture-preview img { width: 100%; height: 100%; object-fit: contain; }
 .shot-picture-field .arco-input { font-size: 11px; }
+
+.screenplay-dropzone { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 100%; box-sizing: border-box; padding: 20px 16px; margin-bottom: 16px; border: 1px dashed var(--ui-border); border-radius: 8px; background: var(--ui-bg); color: var(--ui-secondary-text); font: inherit; cursor: pointer; text-align: center; }
+.screenplay-dropzone svg { color: var(--ui-primary); }
+.screenplay-dropzone strong { font-size: 13px; }
+.screenplay-dropzone span { color: var(--ui-muted); font-size: 12px; }
+.screenplay-dropzone:hover, .screenplay-dropzone.dragging, .screenplay-dropzone:focus-visible { border-color: var(--ui-primary); background: var(--ui-accent-soft); }
+.screenplay-dropzone:disabled { cursor: wait; opacity: .7; }
+.screenplay-import-result { margin-bottom: 16px; padding: 12px 16px; border: 1px solid var(--ui-border); border-radius: 8px; color: var(--ui-secondary-text); font-size: 13px; overflow-wrap: anywhere; }
+.screenplay-import-result details { margin-top: 8px; }
+.screenplay-import-result ul { max-height: 180px; overflow: auto; padding-left: 20px; }

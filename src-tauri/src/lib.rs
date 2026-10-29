@@ -12,6 +12,8 @@ pub fn run() {
             tauri::WebviewWindowBuilder::new(app,"main",tauri::WebviewUrl::App("index.html".into()))
                 .title("Spielberg")
                 .inner_size(1420.0,920.0).min_inner_size(1100.0,720.0)
+                // Let Finder/Explorer file drops reach the frontend HTML5 handlers.
+                .disable_drag_drop_handler()
                 .initialization_script(&bootstrap)
                 .build()?;
             Ok(())
