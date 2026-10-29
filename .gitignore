@@ -41,6 +41,7 @@ npm-debug.log*
 !/scripts/qa/agent-ui.cjs
 !/scripts/qa/skills.py
 !/scripts/qa/skills-ui.cjs
+!/scripts/qa/test_comfyui_video_api.py
 
 # Tauri
 src-tauri/gen/

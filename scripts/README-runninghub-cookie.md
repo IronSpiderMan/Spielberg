@@ -8,6 +8,18 @@
 在 Spielberg 项目根目录执行：
 
 ```sh
+./scripts/start-runninghub.sh
+# 自定义端口：
+./scripts/start-runninghub.sh --port 8091
+```
+
+脚本自动创建 `.venv-runninghub`，缺少依赖时自动安装，默认监听 `127.0.0.1:8090`，
+前台运行，按 Ctrl+C 停止。支持从任意目录调用；环境变量配置继续生效。
+`RUNNINGHUB_VENV_DIR` 可覆盖虚拟环境目录。首次安装依赖需要联网。
+
+也可手动准备环境并启动：
+
+```sh
 python3 -m venv .venv-runninghub
 .venv-runninghub/bin/python -m pip install -r scripts/requirements-runninghub.txt
 
