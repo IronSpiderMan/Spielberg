@@ -427,7 +427,7 @@ function App() {
           aria-label="项目工作区"
           data-page={sceneEditing ? "scene" : page}
           ref={contentRef}
-          key={data.project.id}
+          key={`workspace:${data.project.id}`}
           className={sceneEditing ? `content scene-page-content${sceneImageFlow ? " scene-image-workbench-content" : ""}` : "content"}
         >
           <Suspense fallback={<PageLoading/>}>
@@ -507,7 +507,7 @@ function App() {
           </Suspense>
         </Layout.Content>
         {(
-          <FloatingImageGenerator showButton={!!((sceneEditing && sceneEditing.scene.creation_mode !== "canvas") || page === "screenplays" || page === "roles")} key={data.project.id} data={data} reload={refresh} />
+          <FloatingImageGenerator showButton={!!((sceneEditing && sceneEditing.scene.creation_mode !== "canvas") || page === "screenplays" || page === "roles")} key={`floating-generator:${data.project.id}`} data={data} reload={refresh} />
         )}
       </Layout>
       <Modal title="创建项目" visible={creating} onCancel={() => !creatingProject && setCreating(false)}
