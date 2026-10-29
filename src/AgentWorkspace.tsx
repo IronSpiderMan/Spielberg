@@ -7,7 +7,7 @@ import { post, type Snapshot } from "./core";
 import "./agent.css";
 import { backendUrl } from "./transport";
 
-type AgentMessage = { role: "user" | "assistant" | "tool"; content: string; tool_name?: string; tool_call_id?: string; arguments?: unknown; status?: string; tool_calls?: unknown[] };
+type AgentMessage = { role: "user" | "assistant" | "tool"; content: string; images?: string[]; tool_name?: string; tool_call_id?: string; arguments?: unknown; status?: string; tool_calls?: unknown[] };
 type Session = { id: string; title: string; status: string; messages: AgentMessage[]; error?: string; updated_at: string };
 type Config = { inherit_llm: boolean; base_url: string; model: string; has_api_key: boolean; search_provider: string; has_search_api_key: boolean; max_steps: number };
 const initialConfig: Config = { inherit_llm: true, base_url: "", model: "", has_api_key: false, search_provider: "duckduckgo", has_search_api_key: false, max_steps: 16 };
@@ -23,6 +23,8 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [imageDrafts, setImageDrafts] = useState<Record<string, string[]>>({});
+  const [readingImages, setReadingImages] = useState(false);
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -44,6 +46,17 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   const historyTrigger = useRef<HTMLButtonElement>(null);
   const draftKey = selected?.id || "new";
   const draft = drafts[draftKey] || "";
+  const images = imageDrafts[draftKey] || [];
+  const pasteImages = async (files: File[]) => {
+    const key = draftKey;
+    if (files.length + images.length > 4) { Message.warning("每条消息最多 4 张图片"); return; }
+    if (files.some(file => !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type) || file.size > 2 * 1024 * 1024)) { Message.warning("支持 PNG、JPEG、WebP、GIF，每张不超过 2 MB"); return; }
+    setReadingImages(true);
+    try {
+      const added = await Promise.all(files.map(file => new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error("读取图片失败")); reader.readAsDataURL(file); })));
+      if (mounted.current) setImageDrafts(items => ({ ...items, [key]: [...(items[key] || []), ...added].slice(0, 4) }));
+    } catch (e) { Message.error(String(e)); } finally { if (mounted.current) setReadingImages(false); }
+  };
   const running = selected?.status === "running";
   const configured = !!(config.base_url.trim() && config.model.trim());
   const anyRunning = sessions.some(item => item.status === "running");
@@ -120,13 +133,14 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
     finally { if (mounted.current) setCreating(false); }
   };
   const send = async () => {
-    const text = draft.trim(); if (!text || busy.current || running || loading || creating) return;
+    const text = draft.trim(); if ((!text && !images.length) || readingImages || busy.current || running || loading || creating) return;
     if (!configured) { openSettings(); return; }
     busy.current = true; setSending(true); setError(""); const version = ++selectionVersion.current; const key = draftKey;
     try {
       const session = selectedRef.current || await call<Session>("create");
-      const result = await call<Session>("run", { session_id: session.id, message: text, web_enabled: online });
+      const result = await call<Session>("run", { session_id: session.id, message: text, images, web_enabled: online });
       if (!mounted.current) return;
+      setImageDrafts(items => ({ ...items, [key]: [] }));
       setDrafts(items => ({ ...items, [key]: items[key] === text || items[key]?.trim() === text ? "" : items[key] }));
       if (version === selectionVersion.current) { followBottom.current = true; accept(result); }
       else setSessions(items => [result, ...items.filter(item => item.id !== result.id)]);
@@ -178,8 +192,8 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
           </div> : selected.messages.map((message, index) => message.role === "tool" ? <details className="agent-tool" key={`${message.tool_call_id || index}:${index}`}>
             <summary><Wrench size={14} /><span>{toolText[message.tool_name || ""] || message.tool_name || "执行工具"}</span><small>{message.arguments && typeof message.arguments === "object" ? String((message.arguments as Record<string, unknown>).operation || (message.arguments as Record<string, unknown>).resource || "") : ""}</small><span className={`agent-tool-status ${message.status}`}>{message.status === "running" ? "执行中" : message.status === "failed" ? "失败" : <><Check size={12} />完成</>}</span><ChevronDown size={14} /></summary>
             {message.arguments != null && <div><b>参数</b><pre>{displayJson(message.arguments)}</pre></div>}<div><b>结果</b><pre>{message.content ? displayJson(message.content) : "等待执行结果…"}</pre></div>
-          </details> : message.content ? <article className={`agent-message is-${message.role}`} key={index}>
-            <div className="agent-message-label">{message.role === "user" ? "你" : <><Bot size={15} />Agent</>}</div><div className="agent-message-content">{message.role === "user" ? <p>{message.content}</p> : <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ children, href, ...props }) => <a {...props} href={href?.startsWith("/api/v1/") ? backendUrl(href) : href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{message.content}</ReactMarkdown>}</div>
+          </details> : message.content || message.images?.length ? <article className={`agent-message is-${message.role}`} key={index}>
+            <div className="agent-message-label">{message.role === "user" ? "你" : <><Bot size={15} />Agent</>}</div><div className="agent-message-content">{message.role === "user" ? <>{message.images?.map((image, i) => <a key={i} href={image} target="_blank" rel="noopener noreferrer"><img className="agent-message-image" src={image} alt={`附件图片 ${i + 1}`} /></a>)}{message.content && <p>{message.content}</p>}</> : <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ children, href, ...props }) => <a {...props} href={href?.startsWith("/api/v1/") ? backendUrl(href) : href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{message.content}</ReactMarkdown>}</div>
           </article> : null)}
           {running && <div className="agent-working"><span className="agent-pulse" /><span>Agent 正在处理项目，可以查看上方执行详情。</span></div>}
           {(error || selected?.error) && <div className="agent-error" role="alert">{error || selected?.error}</div>}
@@ -187,8 +201,9 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
         <div className="agent-composer-wrap">
           <div className="agent-composer">
             <div className="agent-composer-context"><Folder size={12} /><span>{data.project.name}</span><span className="agent-context-label">项目上下文</span></div>
-            <textarea ref={composer} data-testid="agent-composer" aria-label="向 Agent 发送消息" value={draft} maxLength={16000} disabled={loading || sending || creating} placeholder="写下一个灵感，或告诉我你想完成什么…" onChange={event => updateDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} />
-            <div className="agent-composer-actions"><label className={`agent-web-toggle${online ? " is-online" : ""}`}><Globe size={14} /><span>联网搜索</span><Switch size="small" checked={online} onChange={setOnline} disabled={running || sending} aria-label="联网搜索" /></label><Button className="agent-model-button" title={config.model || "配置模型"} onClick={openSettings}><span>{config.model || "配置模型"}</span><ChevronDown size={13} /></Button>{running ? <Button data-testid="agent-stop" aria-label="停止执行" status="danger" icon={<Square size={14} />} loading={stopping} onClick={() => void stop()}>停止</Button> : <Button type="primary" data-testid="agent-send" aria-label="发送消息" icon={<ArrowUp size={19} />} loading={sending} disabled={!draft.trim() || loading || creating} onClick={() => void send()} />}</div>
+            {!!images.length && <div className="agent-image-previews">{images.map((image, i) => <div key={i}><img src={image} alt={`待发送图片 ${i + 1}`} /><button type="button" aria-label={`移除图片 ${i + 1}`} disabled={sending} onClick={() => setImageDrafts(items => ({ ...items, [draftKey]: images.filter((_, index) => index !== i) }))}><X size={14} /></button></div>)}</div>}
+            <textarea ref={composer} data-testid="agent-composer" aria-label="向 Agent 发送消息" value={draft} maxLength={16000} disabled={loading || sending || creating} placeholder="写下一个灵感，或粘贴图片告诉我你想完成什么…" onPaste={event => { if (readingImages) return; const files = Array.from(event.clipboardData.items).filter(item => item.type.startsWith("image/")).map(item => item.getAsFile()).filter((file): file is File => !!file); if (files.length) { event.preventDefault(); void pasteImages(files); } }} onChange={event => updateDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} />
+            <div className="agent-composer-actions"><label className={`agent-web-toggle${online ? " is-online" : ""}`}><Globe size={14} /><span>联网搜索</span><Switch size="small" checked={online} onChange={setOnline} disabled={running || sending} aria-label="联网搜索" /></label><Button className="agent-model-button" title={config.model || "配置模型"} onClick={openSettings}><span>{config.model || "配置模型"}</span><ChevronDown size={13} /></Button>{running ? <Button data-testid="agent-stop" aria-label="停止执行" status="danger" icon={<Square size={14} />} loading={stopping} onClick={() => void stop()}>停止</Button> : <Button type="primary" data-testid="agent-send" aria-label="发送消息" icon={<ArrowUp size={19} />} loading={sending} disabled={(!draft.trim() && !images.length) || readingImages || loading || creating} onClick={() => void send()} />}</div>
           </div>
           {empty && <>
             <div className="agent-starters-heading">也可以从这里开始</div>

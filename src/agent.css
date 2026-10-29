@@ -248,3 +248,9 @@ html[data-theme=dark] .agent-workspace .agent-model-button.arco-btn:not(.arco-bt
   .agent-workspace *, .agent-workspace *::before { transition: none; }
   .agent-starters > button:hover { transform: none; }
 }
+
+.agent-image-previews { display:flex; gap:10px; flex-wrap:wrap; margin:12px 0; }
+.agent-image-previews > div { position:relative; }
+.agent-image-previews img { width:84px; height:84px; object-fit:cover; border-radius:8px; }
+.agent-image-previews button { position:absolute; right:2px; top:2px; border:0; border-radius:50%; background:#fff; color:#333; cursor:pointer; display:flex; padding:3px; }
+.agent-message-image { max-width:min(100%,320px); max-height:240px; object-fit:contain; border-radius:8px; margin:4px 8px 8px 0; }
