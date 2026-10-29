@@ -57,8 +57,7 @@ export function AssetImagePicker({ visible, label, value, data, onSelect, onClos
                   className="media-option-select"
                   disabled={busy}
                   onClick={() => {
-                    if (multiple) onToggle?.(media.id);
-                    else onSelect(media.id);
+                    setAssetPreview(media);
                   }}
                   aria-label={`选择资产 ${media.name}`}
                 >
@@ -91,7 +90,9 @@ export function AssetImagePicker({ visible, label, value, data, onSelect, onClos
               loading={busy}
               onClick={() => {
                 if (!assetPreview) return;
-                onSelect(assetPreview.id);
+                if (multiple) onToggle?.(assetPreview.id);
+                else onSelect(assetPreview.id);
+                setAssetPreview(null);
               }}
             >
               选择此图片

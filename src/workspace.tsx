@@ -2,7 +2,7 @@ import { sceneVideoPrompt } from "./core";
 import { ReferenceMediaPicker } from "./components/generation/ReferenceMediaPicker";
 import { buildVideoRequest } from "./generation-request";
 import { RoleImagePicker } from "./components/RoleImagePicker";
-import { ImagePreviewModal } from "./components/ImagePreviewModal";
+import { ImagePreviewModal, PreviewImage } from "./components/ImagePreviewModal";
 import { usePromptOptimization } from "./hooks/usePromptOptimization";
 import { supportedPastedImages, useImageUpload } from "./hooks/useImageUpload";
 import { AssetImagePicker } from "./components/AssetImagePicker";
@@ -432,7 +432,7 @@ export function Tasks({projectId}:{projectId:string}) {
       <small className="task-id">任务 #{job.id}</small>
       {job.error && <TaskText text={job.error} error/>}
       {job.result?.kind==="video" && <VideoAsset video={job.result} projectId={job.project_id}/>}
-      {job.result?.kind==="image" && <img className="task-image" src={imageUrl(job.result)} alt="生成结果"/>}
+      {job.result?.kind==="image" && <PreviewImage className="task-image" media={job.result} alt="生成结果"/>}
     </Card>)}</div>
     <div style={{textAlign:"center",padding:24}}>
       {(hasMore||loading||error)&&<Button loading={loading} onClick={()=>loadMore.current()}>{error?"重试":hasMore?"加载更多":"加载中"}</Button>}
@@ -995,22 +995,6 @@ function SceneImageField({
   const [generatorSource, setGeneratorSource] = useState<Media | null>(null);
   const [generatorBusy, setGeneratorBusy] = useState(false);
   const selected = data.media.find((m) => m.id === value);
-  const download = async () => {
-    if (!selected) return;
-    const extension = selected.path.split(".").pop() || "png";
-    const destination = await saveDialog({
-      title: "下载图片",
-      defaultPath: selected.name,
-      filters: [{ name: "图片", extensions: [extension] }],
-    });
-    if (!destination) return;
-    await post("/media/export", {
-      project_id: data.project.id,
-      media_id: selected.id,
-      destination_path: destination,
-    });
-    Message.success("图片已保存");
-  };
   return (
     <div className="scene-image-field">
       <div className="scene-image-label">
@@ -1059,28 +1043,7 @@ function SceneImageField({
           <Button type="text" size="small" icon={<Sparkles size={14}/>} onClick={onGenerate}>生成图片</Button>
         </div>
       </div>
-      <ImagePreviewModal media={selected||null} title={label} visible={previewOpen} onClose={()=>setPreviewOpen(false)}
-        footer={
-          <Space>
-            <Button onClick={() => setPreviewOpen(false)}>关闭</Button>
-            <Button icon={<ImagePlus size={15} />} disabled={!selected} onClick={() => {
-              if (!selected) return;
-              setGeneratorSource(selected);
-              setPreviewOpen(false);
-            }}>图生图</Button>
-            <Button
-              type="primary"
-              icon={<Download size={15} />}
-              onClick={() =>
-                download().catch((e) =>
-                  Message.error(e instanceof Error ? e.message : String(e)),
-                )
-              }
-            >
-              下载图片
-            </Button>
-          </Space>
-        } />
+      <ImagePreviewModal media={selected||null} title={label} visible={previewOpen} onClose={()=>setPreviewOpen(false)} />
       <AssetImagePicker
         visible={assetsOpen}
         label={label}
