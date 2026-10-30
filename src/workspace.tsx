@@ -1848,7 +1848,8 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
               <p>{r.description || "添加角色形象描述，保持生成的一致性。"}</p>
             </button>
             <div className="role-foot">
-              <span>{r.images.length} 张角色图 · {r.audios?.length || 0} 段音色参考</span>
+              <span className="role-asset-count">{r.images.length} 张角色图 · {r.audios?.length || 0} 段音色参考</span>
+              <div className="role-card-actions">
               <Button type="text" size="mini" onClick={() => setEditing(r)}>
                 设定
               </Button>
@@ -1865,6 +1866,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
                   删除
                 </Button>
               </Popconfirm>
+              </div>
             </div>
           </Card>
         ))}

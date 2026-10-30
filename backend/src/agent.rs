@@ -1,6 +1,6 @@
 //! Project-scoped, durable Agent conversations. Network calls never hold the data lock.
 use super::*;
-use std::{collections::HashMap, io::Read, sync::{Arc, OnceLock, atomic::{AtomicBool, Ordering}}, time::{Duration, Instant}};
+use std::{collections::HashMap, io::Read, sync::{Arc, OnceLock, atomic::{AtomicBool, Ordering}}, time::Duration};
 
 #[path = "agent_context.rs"]
 mod conversation_context;
@@ -139,9 +139,9 @@ fn completion(client:&reqwest::blocking::Client,url:&str,cfg:&Value,messages:Vec
  let mut bytes=Vec::new();response.take(1_000_001).read_to_end(&mut bytes).map_err(|_|"读取 Agent 模型响应失败")?;if bytes.len()>1_000_000{return Err("Agent 模型响应过大".into())}let response:Value=serde_json::from_slice(&bytes).map_err(|_|"Agent 模型返回了无效 JSON")?;let message=response.pointer("/choices/0/message").filter(|v|v.is_object()).ok_or("Agent 模型没有返回有效消息")?;if response.pointer("/choices/0/finish_reason").and_then(Value::as_str)==Some("length"){return Err("Agent 模型输出被长度限制截断，请拆分任务后重试。".into())}Ok(message.clone())
 }
 fn run_loop(s:&AppState,pid:&str,mut session:Value,cfg:&Value,web:bool,cancel:&AtomicBool,secrets:&[String])->Result<(),String>{
- let url=endpoint(cfg)?;let client=reqwest::blocking::Client::builder().connect_timeout(Duration::from_secs(10)).timeout(Duration::from_secs(90)).redirect(reqwest::redirect::Policy::none()).build().map_err(|_|"无法初始化 Agent 网络服务")?;let instruction=system_prompt(s,pid,web)?;let tools=agent_tools::definitions();let limit=cfg["max_steps"].as_u64().unwrap_or(16).clamp(1,64)as usize;let started=Instant::now();let mut executed=0;
+ let url=endpoint(cfg)?;let client=reqwest::blocking::Client::builder().connect_timeout(Duration::from_secs(10)).timeout(Duration::from_secs(90)).redirect(reqwest::redirect::Policy::none()).build().map_err(|_|"无法初始化 Agent 网络服务")?;let instruction=system_prompt(s,pid,web)?;let tools=agent_tools::definitions();let limit=cfg["max_steps"].as_u64().unwrap_or(16).clamp(1,64)as usize;let mut executed=0;
  for _ in 0..limit{
-  if cancel.load(Ordering::SeqCst){return Err("执行已取消".into())}if started.elapsed()>Duration::from_secs(600){return Err("已达到本次 10 分钟执行时限。已完成操作已保留，请继续发送消息处理剩余工作。".into())}
+  if cancel.load(Ordering::SeqCst){return Err("执行已取消".into())}
   let message=completion(&client,&url,cfg,context(&session,&instruction),&tools)?;if cancel.load(Ordering::SeqCst){return Err("执行已取消".into())}
   let content=clipped(&redact(message["content"].as_str().or_else(||message["refusal"].as_str()).unwrap_or(""),secrets),16_000);let calls=message["tool_calls"].as_array().cloned().unwrap_or_default();if calls.is_empty(){if content.trim().is_empty(){return Err("Agent 模型返回了空消息，请确认模型支持工具调用。".into())}session["messages"].as_array_mut().unwrap().push(json!({"role":"assistant","content":content,"created_at":now()}));progress(s,pid,&mut session,cancel)?;return Ok(())}
   if calls.len()>8{return Err("模型单次请求的工具过多（最多 8 个），请拆分任务。".into())}let mut ids=std::collections::HashSet::new();for call in &calls{let id=call["id"].as_str().filter(|id|!id.is_empty()&&id.len()<=200).ok_or("模型返回了无效工具调用 ID")?;if !ids.insert(id){return Err("模型返回了重复工具调用 ID".into())}if call["type"]!="function"||!call["function"]["name"].is_string(){return Err("模型返回了不支持的工具调用格式".into())}if call.to_string().len()>64_000{return Err("模型工具参数过大，请拆分任务。".into())}}
@@ -149,7 +149,7 @@ fn run_loop(s:&AppState,pid:&str,mut session:Value,cfg:&Value,web:bool,cancel:&A
   let safe_calls=Value::Array(calls.iter().map(|call|{let mut call=call.clone();if let Some(text)=call["function"]["arguments"].as_str(){let safe=serde_json::from_str::<Value>(text).ok().map(|v|safe_value(&v,secrets,0).to_string()).unwrap_or_else(||clipped(&redact(text,secrets),12_000));call["function"]["arguments"]=json!(safe);}call}).collect());
   session["messages"].as_array_mut().unwrap().push(json!({"role":"assistant","content":content,"tool_calls":safe_calls,"created_at":now()}));progress(s,pid,&mut session,cancel)?;
   for call in calls{
-   if cancel.load(Ordering::SeqCst){return Err("执行已取消".into())}if executed>=limit{return Err(format!("已达到本次 {limit} 步执行上限，已完成 {executed} 次工具操作。已完成操作已保留，请继续发送消息处理剩余工作。"))}if started.elapsed()>Duration::from_secs(600){return Err("已达到本次执行时限，已完成操作已保留。".into())}if session["messages"].as_array().unwrap().len()>=MAX_MESSAGES-8{return Err("会话记录已达上限，请创建新对话。已完成操作已保留。".into())}
+   if cancel.load(Ordering::SeqCst){return Err("执行已取消".into())}if executed>=limit{return Err(format!("已达到本次 {limit} 步执行上限，已完成 {executed} 次工具操作。已完成操作已保留，请继续发送消息处理剩余工作。"))}if session["messages"].as_array().unwrap().len()>=MAX_MESSAGES-8{return Err("会话记录已达上限，请创建新对话。已完成操作已保留。".into())}
    if session["messages"].to_string().len()+call.to_string().len()>MAX_SESSION-80_000{return Err("会话记录已达上限，请创建新对话。已完成操作已保留。".into())}
    let name=call["function"]["name"].as_str().unwrap_or("");let id=call["id"].as_str().unwrap_or("");let args=call["function"]["arguments"].as_str().and_then(|raw|serde_json::from_str::<Value>(raw).ok()).filter(Value::is_object);let trace=json!({"role":"tool","content":"","tool_name":name,"tool_call_id":id,"arguments":args.as_ref().map(|v|safe_value(v,secrets,0)),"status":"running","created_at":now()});session["messages"].as_array_mut().unwrap().push(trace);progress(s,pid,&mut session,cancel)?;
    let result=if cancel.load(Ordering::SeqCst){return Err("执行已取消".into())}else if let Some(args)=args{if name=="search_conversation"{conversation_history::search(&session,&args)}else{agent_tools::execute(s,pid,name,&args,web,cfg)}}else{Err("工具参数必须是有效的 JSON 对象，请修正后重试。".into())};executed+=1;let trace=session["messages"].as_array_mut().unwrap().last_mut().unwrap();trace["status"]=json!(if result.is_ok(){"completed"}else{"failed"});trace["content"]=json!(tool_content(&result,secrets));progress(s,pid,&mut session,cancel)?;
