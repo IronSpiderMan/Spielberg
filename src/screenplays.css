@@ -107,6 +107,23 @@
 .episode-details-pane .episode-cover-controls .episode-cover { width: min(100%, 240px); height: auto; aspect-ratio: 16 / 9; }
 .episode-details-pane .episode-cover-actions { gap: 8px; }
 .episode-details-pane .episode-cover-actions .arco-btn { padding: 0 10px; }
+.episode-scene-browser { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 4px 16px 0; }
+.episode-scene-browser-heading { margin-bottom: 20px; }
+.episode-scene-browser-heading h2 { margin: 0; font-size: 16px; }
+.episode-scene-browser-heading h2 span { margin-left: 8px; font-weight: 400; }
+.episode-scene-browser-heading p { margin: 8px 0 0; }
+.episode-scene-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 16px; }
+.episode-scene-card { display: flex; flex-direction: column; min-width: 0; padding: 0; overflow: hidden; border: 1px solid var(--ui-border); border-radius: 12px; background: var(--ui-surface); color: var(--ui-text); font: inherit; text-align: left; cursor: pointer; transition: border-color 160ms; }
+.episode-scene-card:hover { border-color: var(--ui-primary); }
+.episode-scene-card:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: 3px; }
+.episode-scene-card:disabled { opacity: .55; cursor: wait; }
+.episode-scene-card > .scene-thumb { width: 100%; height: auto; aspect-ratio: 16 / 9; border-radius: 0; flex: none; background: var(--ui-subtle); }
+.episode-scene-card-body { display: flex; flex: 1; flex-direction: column; gap: 12px; min-width: 0; width: 100%; padding: 16px; }
+.episode-scene-card-title { display: flex; align-items: baseline; gap: 8px; }
+.episode-scene-card-title b { min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
+.episode-scene-card-body > p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin: 0; color: var(--ui-muted); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.episode-scene-card-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: auto; }
+.episode-scene-edit-link { display: inline-flex; align-items: center; gap: 2px; color: var(--ui-primary); font-size: 12px; }
 @media (max-width: 1100px) {
   .episode-editor-navigation { flex-wrap: wrap; }
   .episode-editor-tabs { flex: 1 1 100%; }
@@ -122,6 +139,7 @@
   .episode-editor-tabs { gap: 16px; overflow-x: auto; }
   .episode-editor-tabs > button { font-size: 12px; }
   .episode-writing-pane { flex: none; }
+  .episode-scene-browser { flex: none; overflow: visible; padding-right: 0; }
   .episode-writing-pane .screenplay-workspace { flex: none; }
   .episode-editor-columns { display: flex; flex-direction: column; }
   .episode-editor-columns > .episode-editor-card > .arco-card-body { overflow: visible; }

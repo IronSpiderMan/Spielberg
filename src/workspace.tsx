@@ -157,7 +157,7 @@ export function Studio({
       setMerging(false);
     }
   };
-  if (editing) return <EpisodeEditor episode={editing} project={data.project} data={data} onClose={() => setEditing(null)} reload={reload}/>;
+  if (editing) return <EpisodeEditor episode={editing} project={data.project} data={data} editScene={editScene} onClose={() => setEditing(null)} reload={reload}/>;
   return (
     <section className="studio">
       <div className="cut-toolbar">
@@ -303,6 +303,7 @@ export function Studio({
         episode={editing}
         project={data.project}
         data={data}
+        editScene={editScene}
         onClose={() => setEditing(null)}
         reload={reload}
       />
@@ -592,7 +593,7 @@ export function Episodes({
     editScene(x, true);
     } finally { setInserting(null); }
   };
-  if (episode) return <EpisodeEditor episode={episode} project={data.project} data={data} onClose={() => setEpisode(null)} reload={reload}/>;
+  if (episode) return <EpisodeEditor episode={episode} project={data.project} data={data} editScene={scene => editScene(scene, false)} onClose={() => setEpisode(null)} reload={reload}/>;
   return (
     <section>
       <div className="section-title page-actions">
@@ -784,6 +785,7 @@ export function Episodes({
         episode={episode}
         project={data.project}
         data={data}
+        editScene={scene => editScene(scene, false)}
         onClose={() => setEpisode(null)}
         reload={reload}
       />
@@ -850,14 +852,16 @@ function EpisodeEditor({
   project,
   onClose,
   reload,
+  editScene,
 }: {
   data: Snapshot;
   episode: { id: number; title: string; description: string; cover_media?: Media; scenes?: Scene[]; storyboard?: Storyboard } | null;
   project: Project;
   onClose: () => void;
   reload: () => void;
+  editScene: (scene: Scene) => void;
 }) {
-  const [view, setView] = useState<"markdown" | "csv" | "details">("markdown");
+  const [view, setView] = useState<"markdown" | "csv" | "details" | "scenes">("markdown");
   const scriptEditor = useRef<ScreenplayEditorHandle>(null);
   const [scriptStatus, setScriptStatus] = useState({ dirty: false, busy: false });
   const onScriptStatus = useCallback((dirty: boolean, busy: boolean) => setScriptStatus(current => current.dirty === dirty && current.busy === busy ? current : { dirty, busy }), []);
@@ -922,6 +926,11 @@ function EpisodeEditor({
   });
   const currentEpisode = data.episodes.find(ep => ep.id === episode?.id);
   const editorLocked = saving || generatingBoard || scriptStatus.busy;
+  const openScene = (scene: Scene) => {
+    if (editorLocked) return;
+    if (dirty) confirmDiscard(() => editScene(scene));
+    else editScene(scene);
+  };
   if (!episode) return null;
   return (
     <section className="episode-editor-page">
@@ -934,10 +943,27 @@ function EpisodeEditor({
           <button type="button" role="tab" aria-selected={view === "markdown"} disabled={editorLocked} onClick={() => scriptEditor.current?.chooseFormat("markdown")}>剧本</button>
           <button type="button" role="tab" aria-selected={view === "csv"} disabled={editorLocked} onClick={() => scriptEditor.current?.chooseFormat("csv")}>分镜头剧本</button>
           <button type="button" role="tab" aria-selected={view === "details"} disabled={editorLocked} onClick={() => setView("details")}>剧集信息与场景</button>
+          <button type="button" role="tab" aria-selected={view === "scenes"} disabled={editorLocked} onClick={() => setView("scenes")}>场景</button>
         </div>
       </div>
-      <div className="episode-writing-pane" hidden={view === "details"}>
+      <div className="episode-writing-pane" hidden={view !== "markdown" && view !== "csv"}>
         <ScreenplayManager key={episode.id} ref={scriptEditor} data={data} episodeId={episode.id} reload={async () => { await reload(); }} disabled={saving || generatingBoard} board={board} onBoard={setBoard} onBoardBusy={setGeneratingBoard} onStatus={onScriptStatus} onFormatChange={setView} />
+      </div>
+      <div className="episode-scene-browser" hidden={view !== "scenes"}>
+        <div className="episode-scene-browser-heading"><h2>全部场景 <span className="subtle">{currentEpisode?.scenes.length || 0} 个场景</span></h2><p className="subtle">按剧集顺序查看场景，点击进入编辑。</p></div>
+        {currentEpisode?.scenes.length ? <div className="episode-scene-grid">
+          {currentEpisode.scenes.map((scene, index) => <button type="button" className="episode-scene-card" key={scene.id} disabled={editorLocked} aria-label={`编辑场景：${scene.title}`} onClick={() => openScene(scene)}>
+            <SceneThumb scene={scene} media={data.media}/>
+            <div className="episode-scene-card-body">
+              <div className="episode-scene-card-title"><span className="subtle">{String(index + 1).padStart(2, "0")}</span><b>{scene.title}</b></div>
+              <p>{scene.description || "尚未填写场景描述"}</p>
+              <div className="episode-scene-card-footer"><Space size={6} wrap>
+                <Tag color={scene.video_media_id ? "green" : "gray"}>{scene.video_media_id ? "视频已就绪" : (scene.first_media_id || scene.last_media_id || scene.reference_media_id || scene.generation_options?.reference_media_ids?.length) ? "已设画面" : "待制作"}</Tag>
+                {scene.creation_mode === "canvas" && <Tag>画布</Tag>}
+              </Space><span className="episode-scene-edit-link">编辑场景 <ChevronRight size={14}/></span></div>
+            </div>
+          </button>)}
+        </div> : <Empty description="本集暂无场景，可返回剧集列表新建场景"/>}
       </div>
       <div className="episode-editor-columns" hidden={view !== "details"}>
       <Card className="episode-editor-card episode-details-pane">
