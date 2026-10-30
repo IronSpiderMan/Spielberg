@@ -11,6 +11,7 @@ export type Role = {
   description: string;
   design_media_id: number | null;
   images: Media[];
+  audios?: Media[];
 };
 export type FrameKey = "first" | "last" | "reference";
 export type GenerationOptions = {

@@ -1,3 +1,4 @@
+import { RoleAudioReferences } from "./components/RoleAudioReferences";
 import { PreviewVideo, VideoPreviewModal } from "./components/VideoPreviewModal";
 import { sceneVideoPrompt } from "./core";
 import { ReferenceMediaPicker } from "./components/generation/ReferenceMediaPicker";
@@ -1808,6 +1809,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
             <div className="role-detail-description"><h2>人物描述</h2><p>{detail.description || "还没有人物描述。点击编辑设定，记录这个角色的故事与形象。"}</p></div>
           </section>
         </div>
+        <RoleAudioReferences key={detail.id} role={detail} data={data} reload={reload}/>
         <section className="role-detail-gallery" aria-label="角色图片">
           <div className="role-detail-gallery-heading"><div><h2>形象参考 <span>{detail.images.length.toString().padStart(2, "0")}</span></h2><p>记录角色的每一种样子</p></div><span>点击图片放大查看</span></div>
           {detailImages.length ? <div className="role-detail-images">{detailImages.map((media, index) => <figure key={media.id}>
@@ -1846,7 +1848,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
               <p>{r.description || "添加角色形象描述，保持生成的一致性。"}</p>
             </button>
             <div className="role-foot">
-              <span>{r.images.length} 张角色图</span>
+              <span>{r.images.length} 张角色图 · {r.audios?.length || 0} 段音色参考</span>
               <Button type="text" size="mini" onClick={() => setEditing(r)}>
                 设定
               </Button>
@@ -2095,6 +2097,7 @@ function RoleEditor({
             </div>
       </Space>
         </Form.Item>
+        {currentRole&&<RoleAudioReferences key={currentRole.id} role={currentRole} data={data} reload={reload} editable/>}
         <Form.Item label="生成方式">
           <Space>
             <Button icon={<Sparkles size={15} />} type="primary" loading={generating} onClick={() => generateRoleImage("t2i")}>

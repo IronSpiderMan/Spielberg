@@ -49,6 +49,7 @@ fn rows(c: &Connection, table: &str, id: Option<i64>) -> ApiResult<Vec<Value>> {
 fn enrich(c: &Connection, resource: &str, mut value: Value) -> ApiResult<Value> {
     let id=value["id"].as_i64().unwrap();
     if resource=="roles" {
+        value["audios"]=json!(role_audios(c,id)?);
         let mut q=c.prepare("SELECT m.id FROM media m WHERE m.deleted_at IS NULL AND (m.id=? OR EXISTS(SELECT 1 FROM role_media r WHERE r.role_id=? AND r.media_id=m.id)) ORDER BY CASE WHEN m.id=? THEN 0 ELSE 1 END,m.id DESC").map_err(sql_error)?;
         let ids=q.query_map(params![opti(&value,"design_media_id"),id,opti(&value,"design_media_id")],|r|r.get::<_,i64>(0)).map_err(sql_error)?.collect::<Result<Vec<_>,_>>().map_err(sql_error)?;
         value["images"]=json!(ids.into_iter().filter_map(|id|media(c,Some(id))).collect::<Vec<_>>());

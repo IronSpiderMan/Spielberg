@@ -31,8 +31,9 @@ fn project(s:&AppState,id:&str)->Result<Value,String>{registry(s)?.into_iter().f
 fn migrate(c:&Connection)->Result<(),String>{
  c.execute_batch("PRAGMA foreign_keys=ON;").map_err(|e|e.to_string())?;
  let version:i64=c.query_row("PRAGMA user_version",[],|r|r.get(0)).map_err(|e|e.to_string())?;
- if version>=12{return Ok(())}
- if version==11{screenplays::install_single_documents(c)?;return Ok(())}
+ if version>=13{return Ok(())}
+ if version==12{c.execute_batch("BEGIN IMMEDIATE").map_err(|e|e.to_string())?;let result=(||{catalog::install(c)?;c.execute_batch("PRAGMA user_version=13; COMMIT").map_err(|e|e.to_string())})();if result.is_err(){let _=c.execute_batch("ROLLBACK");}return result}
+ if version==11{screenplays::install_single_documents(c)?;return migrate(c)}
  if version==10{screenplays::install_episodes(c)?;return migrate(c)}
  if version==9{
    c.execute_batch("BEGIN IMMEDIATE").map_err(|e|e.to_string())?;
@@ -59,6 +60,7 @@ fn migrate(c:&Connection)->Result<(),String>{
  c.execute_batch("PRAGMA foreign_keys=ON;
  CREATE TABLE IF NOT EXISTS media(id INTEGER PRIMARY KEY,name TEXT NOT NULL,path TEXT NOT NULL,kind TEXT NOT NULL,created_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS roles(id INTEGER PRIMARY KEY,name TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',design_media_id INTEGER REFERENCES media(id),created_at TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS role_audio(role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,name TEXT NOT NULL,PRIMARY KEY(role_id,media_id));
  CREATE TABLE IF NOT EXISTS role_media(role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,PRIMARY KEY(role_id,media_id));
  CREATE TABLE IF NOT EXISTS episodes(id INTEGER PRIMARY KEY,title TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',sort_order INTEGER NOT NULL,created_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS scenes(id INTEGER PRIMARY KEY,episode_id INTEGER NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,title TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',sort_order INTEGER NOT NULL,first_media_id INTEGER REFERENCES media(id),last_media_id INTEGER REFERENCES media(id),reference_media_id INTEGER REFERENCES media(id),created_at TEXT NOT NULL);
@@ -97,7 +99,7 @@ fn snapshot_database(connection:&mut Connection,p:Value,known:&Value)->Result<Va
  let mut result=json!({"project":p,"revisions":versions});
  if known["media"]!=versions["media"] || known.is_null() { let media_items={let mut q=c.prepare("SELECT id,name,path,kind,created_at FROM media WHERE deleted_at IS NULL ORDER BY id DESC").map_err(|e|e.to_string())?;let rows=q.query_map([],|r|Ok(json!({"id":r.get::<_,i64>(0)?,"name":r.get::<_,String>(1)?,"path":r.get::<_,String>(2)?,"kind":r.get::<_,String>(3)?,"created_at":r.get::<_,String>(4)?}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;rows};
  result["media"]=json!(media_items); }
- if known["roles"]!=versions["roles"] || known.is_null() { let mut roles=Vec::new();let mut qr=c.prepare("SELECT id,name,description,design_media_id FROM roles ORDER BY id DESC").map_err(|e|e.to_string())?;for x in qr.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<i64>>(3)?))).map_err(|e|e.to_string())?{let(id,name,description,design)=x.map_err(|e|e.to_string())?;let mut qi=c.prepare("SELECT m.id,m.name,m.path,m.kind,m.created_at FROM media m WHERE m.deleted_at IS NULL AND (m.id=? OR EXISTS(SELECT 1 FROM role_media rm WHERE rm.role_id=? AND rm.media_id=m.id)) ORDER BY CASE WHEN m.id=? THEN 0 ELSE 1 END,m.id DESC").map_err(|e|e.to_string())?;let images=qi.query_map(params![design,id,design],|r|Ok(json!({"id":r.get::<_,i64>(0)?,"name":r.get::<_,String>(1)?,"path":r.get::<_,String>(2)?,"kind":r.get::<_,String>(3)?,"created_at":r.get::<_,String>(4)?}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;roles.push(json!({"id":id,"name":name,"description":description,"design_media_id":design,"images":images}));}
+ if known["roles"]!=versions["roles"] || known.is_null() { let mut roles=Vec::new();let mut qr=c.prepare("SELECT id,name,description,design_media_id FROM roles ORDER BY id DESC").map_err(|e|e.to_string())?;for x in qr.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<i64>>(3)?))).map_err(|e|e.to_string())?{let(id,name,description,design)=x.map_err(|e|e.to_string())?;let mut qi=c.prepare("SELECT m.id,m.name,m.path,m.kind,m.created_at FROM media m WHERE m.deleted_at IS NULL AND (m.id=? OR EXISTS(SELECT 1 FROM role_media rm WHERE rm.role_id=? AND rm.media_id=m.id)) ORDER BY CASE WHEN m.id=? THEN 0 ELSE 1 END,m.id DESC").map_err(|e|e.to_string())?;let images=qi.query_map(params![design,id,design],|r|Ok(json!({"id":r.get::<_,i64>(0)?,"name":r.get::<_,String>(1)?,"path":r.get::<_,String>(2)?,"kind":r.get::<_,String>(3)?,"created_at":r.get::<_,String>(4)?}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;roles.push(json!({"id":id,"name":name,"description":description,"design_media_id":design,"images":images,"audios":role_audios(&c,id)?}));}
  result["roles"]=json!(roles); }
  if known["episodes"]!=versions["episodes"] || known.is_null() { let mut episodes=Vec::new();let mut qe=c.prepare("SELECT id,title,description FROM episodes ORDER BY sort_order,id").map_err(|e|e.to_string())?;for x in qe.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(|e|e.to_string())?{let(eid,title,description)=x.map_err(|e|e.to_string())?;let mut qs=c.prepare("SELECT id,title,description,sort_order,first_media_id,last_media_id,reference_media_id,video_media_id,prompt,creation_mode FROM scenes WHERE episode_id=? ORDER BY sort_order,id").map_err(|e|e.to_string())?;let mut scenes=Vec::new();for z in qs.query_map([eid],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,i64>(3)?,r.get::<_,Option<i64>>(4)?,r.get::<_,Option<i64>>(5)?,r.get::<_,Option<i64>>(6)?,r.get::<_,Option<i64>>(7)?,r.get::<_,String>(8)?,r.get::<_,String>(9)?))).map_err(|e|e.to_string())?{let(id,t,d,o,f,l,rf,vid,prompt,mode)=z.map_err(|e|e.to_string())?;scenes.push(json!({"id":id,"title":t,"description":d,"prompt":prompt,"creation_mode":mode,"sort_order":o,"first_media_id":f,"last_media_id":l,"reference_media_id":rf,"video_media_id":vid,"first_media":media(&c,f),"last_media":media(&c,l),"reference_media":media(&c,rf),"video_media":media(&c,vid),"videos":scene_videos(&c,id)?,"generation_options":scene_options(&c,id)?,"script":scene_script(&c,id)?}));}episodes.push(json!({"id":eid,"title":title,"description":description,"scenes":scenes,"storyboard":storyboard::load(&c,eid)?,"cover_media":media(&c,c.query_row("SELECT cover_media_id FROM episodes WHERE id=?",[eid],|r|r.get::<_,Option<i64>>(0)).map_err(|e|e.to_string())?)}));}
  result["episodes"]=json!(episodes); }
@@ -149,7 +151,7 @@ fn video_frame(s: &AppState, v: &Value) -> Result<Value, String> {
 }
 
 fn project_id(v:&Value)->Result<String,String>{strv(v,"project_id")}
-fn insert_role(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let c=db(s,&pid)?;let name=strv(v,"name")?;let d=v.get("description").and_then(Value::as_str).unwrap_or("");c.execute("INSERT INTO roles(name,description,created_at) VALUES(?,?,?)",params![name,d,now()]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"id":c.last_insert_rowid(),"name":name,"description":d,"design_media_id":null,"images":[]}))}
+fn insert_role(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let c=db(s,&pid)?;let name=strv(v,"name")?;let d=v.get("description").and_then(Value::as_str).unwrap_or("");c.execute("INSERT INTO roles(name,description,created_at) VALUES(?,?,?)",params![name,d,now()]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"id":c.last_insert_rowid(),"name":name,"description":d,"design_media_id":null,"images":[],"audios":[]}))}
 fn update_role(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;db(s,&pid)?.execute("UPDATE roles SET name=?,description=?,design_media_id=? WHERE id=?",params![strv(v,"name")?,v.get("description").and_then(Value::as_str).unwrap_or(""),opti(v,"design_media_id"),intv(v,"id")?]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
 fn delete_role(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;db(s,&pid)?.execute("DELETE FROM roles WHERE id=?",[intv(v,"id")?]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
 fn link_role_media(c: &Connection, role_id: i64, media_id: i64) -> Result<(), String> {
@@ -180,6 +182,19 @@ fn add_role_media(s: &AppState, v: &Value) -> Result<Value, String> {
     tx.commit().map_err(|e| e.to_string())?;
     touch(s, &pid);
     Ok(json!({"ok": true}))
+}
+fn role_audios(c:&Connection, role_id:i64)->Result<Vec<Value>,String>{
+ let mut q=c.prepare("SELECT m.id,a.name,m.path,m.kind,m.created_at FROM role_audio a JOIN media m ON m.id=a.media_id WHERE a.role_id=? AND m.deleted_at IS NULL ORDER BY m.id DESC").map_err(|e|e.to_string())?;
+ let result=q.query_map([role_id],|r|Ok(json!({"id":r.get::<_,i64>(0)?,"name":r.get::<_,String>(1)?,"path":r.get::<_,String>(2)?,"kind":r.get::<_,String>(3)?,"created_at":r.get::<_,String>(4)?}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string());result
+}
+fn manage_role_audio(s:&AppState,v:&Value,delete:bool)->Result<Value,String>{
+ let pid=project_id(v)?;let c=db(s,&pid)?;let rid=intv(v,"role_id")?;let mid=intv(v,"media_id")?;
+ if delete {c.execute("DELETE FROM role_audio WHERE role_id=? AND media_id=?",params![rid,mid]).map_err(|e|e.to_string())?;}
+ else {let name=strv(v,"name")?;if name.trim().is_empty(){return Err("请输入音频名称".into())}
+ if !c.query_row("SELECT EXISTS(SELECT 1 FROM roles WHERE id=?)",[rid],|r|r.get::<_,bool>(0)).map_err(|e|e.to_string())?{return Err("角色不存在".into())}
+ if media(&c,Some(mid)).map(|m|m["kind"]!="audio").unwrap_or(true){return Err("请选择有效的音频资产".into())}
+ c.execute("INSERT INTO role_audio(role_id,media_id,name) VALUES(?,?,?) ON CONFLICT(role_id,media_id) DO UPDATE SET name=excluded.name",params![rid,mid,name.trim()]).map_err(|e|e.to_string())?;}
+ touch(s,&pid);Ok(json!({"ok":true}))
 }
 fn delete_role_media(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let role_id=intv(v,"role_id")?;let media_id=intv(v,"media_id")?;let mut c=db(s,&pid)?;let tx=c.transaction().map_err(|e|e.to_string())?;tx.execute("DELETE FROM role_media WHERE role_id=? AND media_id=?",params![role_id,media_id]).map_err(|e|e.to_string())?;tx.execute("UPDATE roles SET design_media_id=NULL WHERE id=? AND design_media_id=?",params![role_id,media_id]).map_err(|e|e.to_string())?;tx.commit().map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
 fn insert_episode(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let c=db(s,&pid)?;let n:i64=c.query_row("SELECT COUNT(*) FROM episodes",[],|r|r.get(0)).map_err(|e|e.to_string())?;let title=strv(v,"title")?;let d=v.get("description").and_then(Value::as_str).unwrap_or("");c.execute("INSERT INTO episodes(title,description,sort_order,created_at,storyboard) VALUES(?,?,?,?,?)",params![title,d,n,now(),v.get("storyboard").unwrap_or(&Value::Null).to_string()]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"id":c.last_insert_rowid(),"title":title,"description":d}))}
@@ -576,7 +591,7 @@ fn dispatch(state:&AppState,method:String,path:String,payload:Option<Value>)->Re
 ("POST","/media/purge")=>{let pid=project_id(&v)?;catalog::purge(&db(state,&pid)?,Path::new(&strv(&project(state,&pid)?,"path")?),intv(&v,"id")?)?;Ok(json!({"ok":true}))},
 ("POST","/storage/scan")=>{let pid=project_id(&v)?;catalog::disk_scan(&db(state,&pid)?,Path::new(&strv(&project(state,&pid)?,"path")?))},
 ("POST","/storage/cleanup")=>{let pid=project_id(&v)?;catalog::cleanup(&db(state,&pid)?,Path::new(&strv(&project(state,&pid)?,"path")?),&v)},
-("GET","/tasks")|("POST","/tasks")=>list_jobs(state,&v),("POST","/scripts/load")=>script_command(state,&v,"load"),("POST","/scripts/save")=>script_command(state,&v,"save"),("POST","/scripts/publish")=>script_command(state,&v,"publish"),("POST","/media/rename")=>manage_media(state,&v,false),("POST","/media/delete")=>manage_media(state,&v,true),("POST","/scenes/delete")=>{db(state,&project_id(&v)?)?.execute("DELETE FROM scenes WHERE id=?",[intv(&v,"id")?]).map_err(|e|e.to_string())?;Ok(json!({"ok":true}))},("POST","/scenes/delete-video")=>delete_scene_video(state,&v),("GET","/projects")=>Ok(Value::Array(registry(&state)?)),("POST","/project")=>snapshot(&state,v.get("id").and_then(Value::as_str).ok_or("缺少项目 ID")?),("POST","/projects")=>create_project(&state,&v),("POST","/projects/open")=>open_project(&state,&v),("POST","/media/import")=>import_media(&state,&v),("POST","/media/pose-reference")=>import_pose_reference(&state,&v),("POST","/media/export")=>export_media(&state,&v),("POST","/generations/image")=>generate_image(&state,&v),("POST","/generations/video")=>generate_video(&state,&v),("POST","/roles")=>insert_role(&state,&v),("POST","/roles/update")=>update_role(&state,&v),("POST","/roles/delete")=>delete_role(&state,&v),("POST","/roles/media/add")=>add_role_media(&state,&v),("POST","/roles/media/delete")=>delete_role_media(&state,&v),("POST","/episodes")=>insert_episode(&state,&v),("POST","/episodes/update")=>update_episode(&state,&v),("POST","/episodes/reorder")=>reorder_episodes(&state,&v),("POST","/episodes/delete")=>delete_episode(&state,&v),("POST","/scenes")=>insert_scene(&state,&v),("POST","/scenes/duplicate")=>duplicate_scene(&state,&v),("POST","/scenes/update")=>update_scene(&state,&v),("POST","/scenes/reorder")=>reorder_scenes(&state,&v),("POST","/scenes/select-video")=>select_video(&state,&v),("POST","/episodes/merge")=>merge_episode(&state,&v),("POST","/prompts")=>insert_prompt(&state,&v),("POST","/prompts/update")=>update_prompt(&state,&v),("POST","/settings")=>save_settings(&state,&v),_=>Err(format!("未实现的本地命令：{method} {path}"))} }
+("GET","/tasks")|("POST","/tasks")=>list_jobs(state,&v),("POST","/scripts/load")=>script_command(state,&v,"load"),("POST","/scripts/save")=>script_command(state,&v,"save"),("POST","/scripts/publish")=>script_command(state,&v,"publish"),("POST","/media/rename")=>manage_media(state,&v,false),("POST","/media/delete")=>manage_media(state,&v,true),("POST","/scenes/delete")=>{db(state,&project_id(&v)?)?.execute("DELETE FROM scenes WHERE id=?",[intv(&v,"id")?]).map_err(|e|e.to_string())?;Ok(json!({"ok":true}))},("POST","/scenes/delete-video")=>delete_scene_video(state,&v),("GET","/projects")=>Ok(Value::Array(registry(&state)?)),("POST","/project")=>snapshot(&state,v.get("id").and_then(Value::as_str).ok_or("缺少项目 ID")?),("POST","/projects")=>create_project(&state,&v),("POST","/projects/open")=>open_project(&state,&v),("POST","/media/import")=>import_media(&state,&v),("POST","/media/pose-reference")=>import_pose_reference(&state,&v),("POST","/media/export")=>export_media(&state,&v),("POST","/generations/image")=>generate_image(&state,&v),("POST","/generations/video")=>generate_video(&state,&v),("POST","/roles")=>insert_role(&state,&v),("POST","/roles/update")=>update_role(&state,&v),("POST","/roles/delete")=>delete_role(&state,&v),("POST","/roles/audio/save")=>manage_role_audio(state,&v,false),("POST","/roles/audio/delete")=>manage_role_audio(state,&v,true),("POST","/roles/media/add")=>add_role_media(&state,&v),("POST","/roles/media/delete")=>delete_role_media(&state,&v),("POST","/episodes")=>insert_episode(&state,&v),("POST","/episodes/update")=>update_episode(&state,&v),("POST","/episodes/reorder")=>reorder_episodes(&state,&v),("POST","/episodes/delete")=>delete_episode(&state,&v),("POST","/scenes")=>insert_scene(&state,&v),("POST","/scenes/duplicate")=>duplicate_scene(&state,&v),("POST","/scenes/update")=>update_scene(&state,&v),("POST","/scenes/reorder")=>reorder_scenes(&state,&v),("POST","/scenes/select-video")=>select_video(&state,&v),("POST","/episodes/merge")=>merge_episode(&state,&v),("POST","/prompts")=>insert_prompt(&state,&v),("POST","/prompts/update")=>update_prompt(&state,&v),("POST","/settings")=>save_settings(&state,&v),_=>Err(format!("未实现的本地命令：{method} {path}"))} }
 
 #[cfg(test)]
 mod task_project_tests {
@@ -837,4 +852,34 @@ fn background_command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Com
         command.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
     command
+}
+
+#[cfg(test)]
+mod role_audio_tests {
+ use super::*;
+ #[test]
+ fn multiple_named_audio_references_survive_reload_and_migration(){
+  let root=std::env::temp_dir().join(format!("spielberg-role-audio-{}",Uuid::new_v4()));
+  storage::initialize_root(&root).unwrap();
+  let state=AppState{root:root.clone(),guard:std::sync::Arc::new(Mutex::new(()))};
+  let project=create_project(&state,&json!({"name":"Audio"})).unwrap();let pid=project["id"].as_str().unwrap();
+  let role=insert_role(&state,&json!({"project_id":pid,"name":"Hero"})).unwrap();let rid=role["id"].as_i64().unwrap();
+  let c=db(&state,pid).unwrap();
+  c.execute_batch("INSERT INTO media(id,name,path,kind,created_at) VALUES(1,'one.wav','/one.wav','audio','1'),(2,'two.mp3','/two.mp3','audio','2'),(3,'image.png','/image.png','image','3');").unwrap();
+  // Simulate opening an existing project before audio references were introduced.
+  c.execute_batch("DROP TABLE role_audio; PRAGMA user_version=12;").unwrap();drop(c);
+  for (id,name) in [(1,"平静"),(2,"激动")] {manage_role_audio(&state,&json!({"project_id":pid,"role_id":rid,"media_id":id,"name":name}),false).unwrap();}
+  let c=db(&state,pid).unwrap();assert_eq!(role_audios(&c,rid).unwrap().len(),2);
+  assert!(manage_role_audio(&state,&json!({"project_id":pid,"role_id":rid,"media_id":3,"name":"图片"}),false).is_err());
+  assert!(manage_role_audio(&state,&json!({"project_id":pid,"role_id":rid,"media_id":1,"name":" "}),false).is_err());
+  let before=catalog::revisions(&c).unwrap();
+  manage_role_audio(&state,&json!({"project_id":pid,"role_id":rid,"media_id":1,"name":"低语"}),false).unwrap();
+  assert_eq!(media(&c,Some(1)).unwrap()["name"],"one.wav");
+  assert!(catalog::revisions(&c).unwrap()["roles"].as_i64().unwrap()>before["roles"].as_i64().unwrap());
+  assert_eq!(c.query_row("SELECT COUNT(*) FROM asset_usage WHERE media_id=1 AND kind='role'",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+  let snap=snapshot(&state,pid).unwrap();assert_eq!(snap["roles"][0]["audios"].as_array().unwrap().len(),2);
+  manage_role_audio(&state,&json!({"project_id":pid,"role_id":rid,"media_id":1}),true).unwrap();
+  assert_eq!(role_audios(&c,rid).unwrap().len(),1);assert!(media(&c,Some(1)).is_some());
+  drop(c);fs::remove_dir_all(root).unwrap();
+ }
 }

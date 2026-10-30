@@ -1,6 +1,7 @@
 use super::*;
 
 pub fn install(c: &Connection) -> Result<(), String> {
+    c.execute_batch("CREATE TABLE IF NOT EXISTS role_audio(role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,name TEXT NOT NULL,PRIMARY KEY(role_id,media_id));").map_err(|e|e.to_string())?;
     let _ = c.execute("ALTER TABLE media ADD COLUMN deleted_at TEXT", []);
     let _ = c.execute("ALTER TABLE media ADD COLUMN purged_at TEXT", []);
     c.execute_batch("CREATE TABLE IF NOT EXISTS edit_projects(id TEXT PRIMARY KEY,name TEXT NOT NULL,draft TEXT NOT NULL DEFAULT '{}',status TEXT NOT NULL DEFAULT 'draft',created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
@@ -8,12 +9,13 @@ pub fn install(c: &Connection) -> Result<(), String> {
     CREATE TABLE IF NOT EXISTS edit_outputs(edit_id TEXT NOT NULL REFERENCES edit_projects(id) ON DELETE CASCADE,media_id INTEGER NOT NULL REFERENCES media(id),created_at TEXT NOT NULL,PRIMARY KEY(edit_id,media_id));").map_err(|e|e.to_string())?;
     let _=c.execute("ALTER TABLE edit_outputs ADD COLUMN request TEXT",[]);
     let view_sql:Option<String>=c.query_row("SELECT sql FROM sqlite_master WHERE type='view' AND name='asset_usage'",[],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
-    if view_sql.is_some_and(|sql|!sql.contains("edit_sources")){c.execute_batch("DROP VIEW asset_usage;").map_err(|e|e.to_string())?;}
+    if view_sql.is_some_and(|sql|!sql.contains("edit_sources") || !sql.contains("role_audio")){c.execute_batch("DROP VIEW asset_usage;").map_err(|e|e.to_string())?;}
     c.execute_batch("CREATE INDEX IF NOT EXISTS media_active ON media(deleted_at,id);
     CREATE TABLE IF NOT EXISTS revisions(section TEXT PRIMARY KEY, version INTEGER NOT NULL DEFAULT 0);
     CREATE VIEW IF NOT EXISTS asset_usage AS
     SELECT design_media_id AS media_id,'role' AS kind,id AS target_id,name AS title,NULL AS episode_id,NULL AS episode_title,'角色主图' AS purpose FROM roles WHERE design_media_id IS NOT NULL
     UNION ALL SELECT rm.media_id,'role',r.id,r.name,NULL,NULL,'角色图片' FROM role_media rm JOIN roles r ON r.id=rm.role_id WHERE rm.media_id IS NOT r.design_media_id
+    UNION ALL SELECT a.media_id,'role',r.id,r.name,NULL,NULL,'角色音色参考' FROM role_audio a JOIN roles r ON r.id=a.role_id
     UNION ALL SELECT cover_media_id,'episode',id,title,id,title,'剧集封面' FROM episodes WHERE cover_media_id IS NOT NULL
     UNION ALL SELECT s.first_media_id,'scene',s.id,s.title,e.id,e.title,'场景首帧' FROM scenes s JOIN episodes e ON e.id=s.episode_id WHERE s.first_media_id IS NOT NULL
     UNION ALL SELECT s.last_media_id,'scene',s.id,s.title,e.id,e.title,'场景尾帧' FROM scenes s JOIN episodes e ON e.id=s.episode_id WHERE s.last_media_id IS NOT NULL
@@ -26,7 +28,7 @@ pub fn install(c: &Connection) -> Result<(), String> {
     UNION ALL SELECT eo.media_id,'edit',0,p.name,NULL,NULL,'剪辑产出' FROM edit_outputs eo JOIN edit_projects p ON p.id=eo.edit_id;").map_err(|e| e.to_string())?;
     for (table, sections) in [
         ("media", vec!["media", "roles", "episodes"]), ("roles",vec!["roles"]),
-        ("role_media",vec!["roles"]), ("episodes",vec!["episodes"]), ("scenes",vec!["episodes"]),
+        ("role_audio",vec!["roles"]), ("role_media",vec!["roles"]), ("episodes",vec!["episodes"]), ("scenes",vec!["episodes"]),
         ("scene_videos",vec!["episodes"]), ("scene_scripts",vec!["episodes"]),
         ("scene_options",vec!["episodes"]), ("prompts",vec!["prompts"]),
         ("settings",vec!["settings"]), ("background_jobs",vec!["jobs"]),
@@ -38,7 +40,7 @@ pub fn install(c: &Connection) -> Result<(), String> {
         }
     }
     // Foreign keys also need to reject references to soft-deleted assets.
-    for (table, columns) in [("roles",vec!["design_media_id"]),("role_media",vec!["media_id"]),("episodes",vec!["cover_media_id"]),("scenes",vec!["first_media_id","last_media_id","reference_media_id","video_media_id"]),("scene_videos",vec!["media_id"])] {
+    for (table, columns) in [("roles",vec!["design_media_id"]),("role_audio",vec!["media_id"]),("role_media",vec!["media_id"]),("episodes",vec!["cover_media_id"]),("scenes",vec!["first_media_id","last_media_id","reference_media_id","video_media_id"]),("scene_videos",vec!["media_id"])] {
         for event in ["INSERT","UPDATE"] {
             for column in &columns {
                 c.execute_batch(&format!("CREATE TRIGGER IF NOT EXISTS active_{table}_{column}_{event} BEFORE {event} ON {table} WHEN EXISTS(SELECT 1 FROM media WHERE id=NEW.{column} AND deleted_at IS NOT NULL) BEGIN SELECT RAISE(ABORT,'资产已在回收站，请先恢复'); END;")).map_err(|e|e.to_string())?;
