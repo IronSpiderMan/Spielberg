@@ -109,6 +109,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
     localStorage.setItem(`spielberg-agent-session-${pid}`, session.id);
   }, [pid, reload]);
   const choose = async (summary: Session) => {
+    if (selectedRef.current?.id === summary.id && !error) return;
     const version = ++selectionVersion.current;
     selectedRef.current = summary; setSelected(summary); setLoading(true); setError(""); setMobileSessions(false); followBottom.current = true;
     try { const session = await call<Session>("session", { session_id: summary.id }); if (mounted.current && version === selectionVersion.current) accept(session); }
@@ -117,14 +118,16 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   };
   useEffect(() => {
     mounted.current = true;
+    let disposed = false;
+    const version = selectionVersion.current;
     void Promise.all([call<{ items: Session[] }>("sessions"), call<Config>("config")]).then(async ([list, cfg]) => {
-      if (!mounted.current) return;
+      if (disposed || !mounted.current || version !== selectionVersion.current) return;
       setSessions(list.items); setConfig(cfg);
       const previous = localStorage.getItem(`spielberg-agent-session-${pid}`);
       const summary = list.items.find(item => item.id === previous) || list.items[0];
-      if (summary) { selectedRef.current = summary; const detail = await call<Session>("session", { session_id: summary.id }); if (mounted.current) accept(detail); }
-    }).catch(e => { if (mounted.current) setError(String(e)); }).finally(() => { if (mounted.current) setLoading(false); });
-    return () => { mounted.current = false; selectionVersion.current++; };
+      if (summary) { selectedRef.current = summary; const detail = await call<Session>("session", { session_id: summary.id }); if (!disposed && mounted.current && version === selectionVersion.current) accept(detail); }
+    }).catch(e => { if (!disposed && mounted.current && version === selectionVersion.current) setError(String(e)); }).finally(() => { if (!disposed && mounted.current && version === selectionVersion.current) setLoading(false); });
+    return () => { disposed = true; mounted.current = false; selectionVersion.current++; };
   }, [call, pid, accept]);
   useEffect(() => {
     if (!anyRunning && !running) return;

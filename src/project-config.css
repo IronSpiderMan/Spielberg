@@ -26,3 +26,18 @@
 .project-document-editor > .arco-space{flex:none}
 @media(max-width:1100px){.project-config-page{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}.project-document-editor .screenplay-panels{grid-template-columns:1fr}.project-document-editor .screenplay-source{border-right:0;border-bottom:1px solid var(--ui-border)}.project-document-editor .screenplay-source textarea{min-height:300px}.project-document-editor .screenplay-markdown{min-height:180px;max-height:400px;overflow:auto}}
 @media(max-width:800px){.project-config-page{grid-template-columns:minmax(0,1fr);grid-template-rows:auto;min-height:0}.project-config-page > .arco-card{grid-column:1;grid-row:auto}.project-config-heading{align-items:flex-start;flex-wrap:wrap}.project-config-outline .arco-textarea-wrapper,.project-config-outline textarea{min-height:220px}.project-config-documents > .arco-card-body > .arco-empty{min-height:280px}.project-document-editor > .screenplay-workspace{flex:auto}}
+
+/* Bound the workspace to the shell; long documents scroll inside their panes. */
+.app .content:has(> .project-config-page){display:flex;flex-direction:column;overflow:hidden}
+.project-config-page{flex:1;min-height:0;grid-template-rows:auto auto minmax(0,1fr);overflow:hidden}
+.project-config-page > .arco-card{min-height:0;overflow:hidden}
+.project-config-outline .arco-textarea-wrapper,.project-config-outline textarea{min-height:0;height:100%;resize:none;overflow-y:auto;overscroll-behavior:contain}
+.project-config-documents > .arco-card-body{overflow:auto;overscroll-behavior:contain}
+.project-config-documents > .arco-card-body > .arco-empty{min-height:0}
+.project-document-layout,.project-document-editor{min-height:0}
+.project-document-editor > .screenplay-workspace{min-height:0;display:grid;overflow:hidden}
+.project-document-editor .screenplay-panels{min-height:0}
+.project-document-editor .screenplay-source textarea{min-height:0;height:100%;flex:1;overflow:auto}
+.project-document-editor .screenplay-markdown{min-height:0;max-height:none;overflow:auto}
+@media(max-width:1100px){.project-document-editor .screenplay-panels{grid-template-rows:minmax(0,1fr) minmax(0,1fr)}}
+@media(max-width:800px){.project-config-page{overflow:auto;grid-template-rows:auto auto 240px minmax(520px,1fr);overscroll-behavior:contain}.project-document-editor > .screenplay-workspace{flex:1;min-height:240px}.project-config-documents > .arco-card-body > .arco-empty{min-height:0}}

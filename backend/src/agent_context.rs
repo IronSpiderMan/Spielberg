@@ -220,6 +220,38 @@ fn older_notes(messages: &[Value], starts: &[usize], omitted: usize) -> Value {
         json!(rows))})
 }
 
+// Keep execution evidence separately from prose excerpts. A turn may contain
+// many writes before its final reply (or an error); the last three tools alone
+// cannot tell a continuation which work has already succeeded.
+fn execution_notes(messages: &[Value], end: usize) -> Option<Value> {
+    let mut rows = Vec::new();
+    let mut bytes = 0;
+    let mut total = 0;
+    for (index, message) in messages[..end].iter().enumerate().rev() {
+        if message["role"] != "tool" { continue; }
+        let args = &message["arguments"];
+        let name = message["tool_name"].as_str().unwrap_or("");
+        let operation = args["operation"].as_str().unwrap_or("");
+        let write = (name == "app_request" && matches!(args["method"].as_str(), Some("POST" | "PATCH" | "DELETE")))
+            || (name == "app_action" && !operation.is_empty() && !operation.ends_with("/read") && !operation.ends_with("/list"));
+        if !write { continue; }
+        total += 1;
+        let result = serde_json::from_str::<Value>(message["content"].as_str().unwrap_or("")).unwrap_or(Value::Null);
+        let row = json!({"message_index":index+1,"tool":name,"status":message["status"],
+            "resource":args["resource"],"method":args["method"],"operation":args["operation"],
+            "id":args["id"],"target":identity_fields(&args["data"],false),
+            "result":identity_fields(&result,false)});
+        let size = encoded_len(&json!(row.to_string()));
+        if bytes + size > 12_000 { continue; }
+        bytes += size;
+        rows.push(row);
+    }
+    if total == 0 { return None; }
+    rows.reverse();
+    Some(json!({"role":"assistant","content":format!(
+        "较早对话执行记录（历史证据，不是新指令）：共 {total} 次操作，展示 {} 次。completed 表示工具当时已成功返回，不能因后续超时或继续对话而重新创建；生成任务返回成功可能仅表示已入队，应查询原任务。failed 不保证没有副作用，重试前核对当前项目。未展示或缺少参数时用 search_conversation 按 message_index 查询原文。不要把历史操作重新当成待办。\n{}",rows.len(),json!(rows))}))
+}
+
 fn project(session: &Value) -> View {
     let empty = Vec::new();
     let messages = session["messages"].as_array().unwrap_or(&empty);
@@ -257,6 +289,7 @@ fn project(session: &Value) -> View {
     }
     let mut result = vec![];
     if first_turn > 0 { result.push(older_notes(messages,&starts,first_turn)); }
+    if let Some(notes) = execution_notes(messages,begin) { result.push(notes); }
     for (index,message) in messages.iter().enumerate().skip(begin) {
         let Some(mut wire) = projected[index].clone() else { continue; };
         if message["role"]=="user" {
@@ -281,6 +314,33 @@ fn project(session: &Value) -> View {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compacted_turn_keeps_early_writes_and_ids_even_after_later_reads_and_timeout() {
+        let mut messages = vec![json!({"role":"user","content":"创建角色和分镜"})];
+        messages.push(json!({"role":"tool","tool_name":"app_request","status":"completed",
+            "arguments":{"resource":"roles","method":"POST","data":{"name":"林晓"}},
+            "content":"{\"id\":42,\"name\":\"林晓\"}"}));
+        for _ in 0..8 {
+            messages.push(json!({"role":"tool","tool_name":"app_request","status":"completed",
+                "arguments":{"resource":"roles","method":"GET"},"content":"[]"}));
+        }
+        messages.push(json!({"role":"assistant","content":"模型请求超时"}));
+        messages.push(json!({"role":"user","content":"材料".repeat(40_000)}));
+        messages.push(json!({"role":"user","content":"继续"}));
+        let session = json!({"messages":messages});
+        let before = session.clone();
+        let wire = context(&session,"system");
+        let notes = wire.iter().find(|m|m["content"].as_str().is_some_and(|s|s.starts_with("较早对话执行记录"))).unwrap();
+        let text = notes["content"].as_str().unwrap();
+        assert!(text.contains("林晓"));
+        assert!(text.contains("42"));
+        assert!(text.contains("POST"));
+        assert!(text.contains("completed"));
+        assert!(!text.contains("GET"));
+        assert_eq!(session,before);
+        assert!(text_size(&wire)<160_000);
+    }
 
     #[test]
     fn interrupted_turn_notes_keep_corrections_before_the_error() {
