@@ -96,6 +96,11 @@ fn snapshot_changes(s:&AppState,pid:&str,known:&Value)->Result<Value,String>{
 fn snapshot_database(connection:&mut Connection,p:Value,known:&Value)->Result<Value,String>{
  let c=connection.transaction().map_err(|e|e.to_string())?;
  let versions=catalog::revisions(&c)?;
+ let mut p=p;
+ let raw:Option<String>=c.query_row("SELECT value FROM settings WHERE key='project_config'",[],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
+ let config:Value=raw.and_then(|raw|serde_json::from_str(&raw).ok()).unwrap_or(json!({}));
+ p["outline"]=config.get("outline").cloned().unwrap_or(json!(""));
+ p["documents"]=config.get("documents").cloned().unwrap_or(json!([]));
  let mut result=json!({"project":p,"revisions":versions});
  if known["media"]!=versions["media"] || known.is_null() { let media_items={let mut q=c.prepare("SELECT id,name,path,kind,created_at FROM media WHERE deleted_at IS NULL ORDER BY id DESC").map_err(|e|e.to_string())?;let rows=q.query_map([],|r|Ok(json!({"id":r.get::<_,i64>(0)?,"name":r.get::<_,String>(1)?,"path":r.get::<_,String>(2)?,"kind":r.get::<_,String>(3)?,"created_at":r.get::<_,String>(4)?}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;rows};
  result["media"]=json!(media_items); }

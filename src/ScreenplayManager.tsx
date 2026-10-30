@@ -1,12 +1,12 @@
-import { forwardRef, useImperativeHandle, memo, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useImperativeHandle, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Empty, Input, Message, Modal, Select, Space } from "@arco-design/web-react";
-import { Download, FileText, Trash2 } from "lucide-react";
+import { Download, Trash2 } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { post, type Media, type Screenplay, type Snapshot } from "./core";
 import { newShot, parseShotCsv, serializeShotCsv, shotSizes, cameraMoves, type ScriptShot } from "./shot-script";
 import { ShotPictureField } from "./components/ShotPictureField";
-import { ScreenplayInput } from "./components/ScreenplayInput";
+import { MarkdownEditor } from "./components/MarkdownEditor";
 import { uploadAsset } from "./api";
 import { isSupportedImage } from "./hooks/useImageUpload";
 import { promptMentions, savedPromptMentions } from "./prompt-mentions";
@@ -26,12 +26,6 @@ function readDocuments(data: Snapshot, episodeId: number): Documents {
   return { markdown: read("markdown"), csv: read("csv") };
 }
 const template = "# 剧本标题\n\n## 第一场 · 内景 / 房间 / 夜\n\n窗外下着雨，桌上的台灯忽明忽暗。\n\n**林舟**\n> 你终于来了。\n\n**苏晓**\n> 我有一件事必须告诉你。\n\n---\n\n## 第二场 · 外景 / 街道 / 清晨\n\n";
-
-const StoryPreview = memo(function StoryPreview({ content }: { content: string }) {
-  // Keep progress updates and unrelated polling from reparsing the whole document.
-  return <Markdown remarkPlugins={[remarkGfm]} skipHtml
-    components={{ a: ({ children, href }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{content}</Markdown>;
-});
 
 export type ScreenplayEditorHandle = { save: () => Promise<boolean>; chooseFormat: (format: Format) => void };
 type Props = { data: Snapshot; episodeId: number; reload: () => Promise<void>; disabled: boolean;
@@ -71,15 +65,7 @@ const ScreenplayManager = forwardRef<ScreenplayEditorHandle, Props>(function Scr
     try { return { shots: parseShotCsv(draft.content, false), csvError: "" }; }
     catch (error) { return { shots: [] as ScriptShot[], csvError: (error as Error).message }; }
   }, [format, draft.content]);
-  const textStats = useMemo(() => ({ characters: draft.content.replace(/\s/g, "").length, lines: draft.content.split("\n").length }), [draft.content]);
   const mentions = useMemo(() => [...promptMentions(data.roles, data), ...savedPromptMentions(data.prompts)], [data.roles, data.media, data.episodes, data.prompts]);
-  const insert = (prefix: string, suffix = "", fallback = "文字") => {
-    if (!editor.current || busy) return;
-    const { selectionStart: start, selectionEnd: end } = editor.current;
-    const text = draft.content.slice(start, end) || fallback;
-    editContent("markdown", draft.content.slice(0, start) + prefix + text + suffix + draft.content.slice(end));
-    requestAnimationFrame(() => { editor.current?.focus(); editor.current?.setSelectionRange(start + prefix.length, start + prefix.length + text.length); });
-  };
   const editShots = (next: ScriptShot[]) => editContent("csv", serializeShotCsv(next));
   const editShot = (index: number, change: Partial<ScriptShot>) => editShots(shots.map((shot, i) => i === index ? { ...shot, ...change } : shot));
   const uploadPicture = async (index: number, file: File) => {
@@ -165,27 +151,7 @@ const ScreenplayManager = forwardRef<ScreenplayEditorHandle, Props>(function Scr
             </tr>)}
           </tbody></table>}{!csvError && !shots.length && <Empty description="添加镜头，开始编写分镜头剧本" />}</div>
           <footer className="screenplay-footer"><span>共 {shots.length} 个镜头 · {shots.filter(shot => shot.picture).length} 个已配画面</span><span>画面可从资产、角色或本地文件添加</span></footer>
-        </> : <><div className="screenplay-formatbar">
-          <Space size={4} wrap>
-            <Button size="small" disabled={busy} title="插入场景标题" onClick={() => insert("\n## ", "\n", "第一场 · 内景 / 房间 / 夜")}>标题</Button>
-            <Button size="small" disabled={busy} title="加粗角色名" onClick={() => insert("**", "**", "角色名")}>粗体</Button>
-            <Button size="small" disabled={busy} title="插入对白" onClick={() => insert("\n> ", "\n", "角色对白")}>对白</Button>
-            <Button size="small" disabled={busy} onClick={() => insert("\n- ", "\n", "场景说明")}>列表</Button>
-            {!draft.content && <Button size="small" disabled={busy} onClick={() => editContent(format, template)}>使用剧本模板</Button>}
-          </Space><Button icon={<Download size={15}/>} aria-label="导出 Markdown" onClick={exportDocument}>导出</Button>
-        </div>
-        <div className="screenplay-panels">
-          <div className="screenplay-source"><div className="screenplay-panel-label">编辑</div>
-            <ScreenplayInput inputRef={editor} value={draft.content} disabled={busy} mentions={mentions} onChange={content => editContent("markdown", content)} />
-          </div>
-          <div className="screenplay-preview"><div className="screenplay-panel-label">预览</div>
-            <article className="screenplay-markdown" aria-label="剧本实时预览">
-              {draft.content ? <StoryPreview content={draft.content} />
-                : <div className="screenplay-preview-empty"><FileText size={32} /><p>在左侧开始编写，预览会实时更新</p></div>}
-            </article>
-          </div>
-        </div>
-        <footer className="screenplay-footer"><span>{textStats.characters} 字符 · {textStats.lines} 行</span></footer></>}
+        </> : <MarkdownEditor value={draft.content} onChange={content => editContent("markdown", content)} disabled={busy} mentions={mentions} screenplay template={template} onExport={exportDocument} label="Markdown 剧本内容" previewLabel="剧本实时预览" placeholder="输入剧本，使用 @ 引用角色、场景或提示词…" />}
     </div></div>
   </section>;
 });

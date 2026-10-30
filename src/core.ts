@@ -67,7 +67,8 @@ export type Episode = {
   scenes: Scene[];
   cover_media?: Media;
 };
-export type Project = { id: string; name: string; path: string; updated_at: string };
+export type ProjectDocument = { id: string; title: string; content: string };
+export type Project = { id: string; name: string; path: string; updated_at: string; outline?: string; documents?: ProjectDocument[] };
 export type ModelSettings = Record<
   string,
   {

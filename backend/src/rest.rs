@@ -126,12 +126,31 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
                 _=>Err(ApiError(StatusCode::METHOD_NOT_ALLOWED,"集合支持 GET/POST".into())),
             };
         }
-        let id=id.unwrap();let current=project(state,id)?;
+        let id=id.unwrap();project(state,id)?;
         match method {
-            "GET"=>Ok(current),
+            "GET"=>Ok(snapshot(state,id)?["project"].clone()),
             "PATCH"=>{
-                let name=value["name"].as_str().filter(|s|!s.trim().is_empty()).ok_or_else(||bad("项目名称不能为空"))?;
-                let mut all=registry(state)?;let p=all.iter_mut().find(|p|p["id"]==id).ok_or_else(missing)?;p["name"]=json!(name.trim());p["updated_at"]=json!("刚刚");let result=p.clone();save_registry(state,&all)?;Ok(result)
+                let fields=value.as_object().ok_or_else(||bad("JSON 必须是对象"))?;
+                for key in fields.keys() {if !["name","outline","documents"].contains(&key.as_str()){return Err(bad("不支持的项目字段"))}}
+                if let Some(name)=value.get("name") {if name.as_str().map_or(true,|s|s.trim().is_empty()){return Err(bad("项目名称不能为空"))}}
+                if value.get("outline").is_some_and(|v|!v.is_string()){return Err(bad("大纲必须是文本"))}
+                if let Some(docs)=value.get("documents") {
+                    let docs=docs.as_array().ok_or_else(||bad("文档必须是数组"))?;
+                    let mut ids=std::collections::HashSet::new();
+                    for doc in docs {
+                        let id=doc["id"].as_str().filter(|s|!s.trim().is_empty()).ok_or_else(||bad("文档 ID 无效"))?;
+                        if !ids.insert(id) || doc["title"].as_str().map_or(true,|s|s.trim().is_empty()) || !doc["content"].is_string(){return Err(bad("文档需要唯一 ID、标题和正文"))}
+                    }
+                }
+                let c=db(state,id)?;
+                let raw:Option<String>=c.query_row("SELECT value FROM settings WHERE key='project_config'",[],|r|r.get(0)).optional().map_err(sql_error)?;
+                let mut config:Value=raw.and_then(|s|serde_json::from_str(&s).ok()).unwrap_or(json!({"outline":"","documents":[]}));
+                for key in ["outline","documents"] {if let Some(v)=value.get(key){config[key]=v.clone();}}
+                c.execute("INSERT INTO settings(key,value) VALUES('project_config',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[config.to_string()]).map_err(sql_error)?;
+                let mut all=registry(state)?;let p=all.iter_mut().find(|p|p["id"]==id).ok_or_else(missing)?;
+                if let Some(name)=value["name"].as_str(){p["name"]=json!(name.trim());}
+                p["updated_at"]=json!("刚刚");let mut result=p.clone();save_registry(state,&all)?;
+                result["outline"]=config["outline"].clone();result["documents"]=config["documents"].clone();Ok(result)
             },
             "DELETE"=>{catalog::no_running_jobs(&db(state,id)?)?;let mut all=registry(state)?;all.retain(|p|p["id"]!=id);save_registry(state,&all)?;Ok(json!({"deleted":true,"data_retained":true}))},
             _=>Err(ApiError(StatusCode::METHOD_NOT_ALLOWED,"不支持的方法".into())),
@@ -229,4 +248,38 @@ pub(crate) fn action(state:&AppState,path:&str,value:Value)->ApiResult<Value>{
     const ALLOWED:&[&str]=&["/canvas/load","/canvas/save","/editor/projects","/editor/save","/editor/probe","/editor/export","/app/settings/load","/app/settings/save","/project","/project/changes","/projects/open","/projects/migrate","/projects/backup","/projects/restore","/media/import","/media/export","/media/pose-reference","/media/thumbnail","/media/usage","/media/restore","/media/purge","/media/video-frame","/storage/scan","/storage/cleanup","/roles/media/add","/roles/media/delete","/scripts/load","/scripts/save","/scripts/publish","/tasks","/generations/image","/generations/video","/prompts/optimize","/storyboard/generate","/storyboard/plan","/storyboard/validate","/scenes/reorder","/scenes/duplicate","/scenes/select-video","/scenes/delete-video","/episodes/reorder","/episodes/merge","/settings"];
     if !ALLOWED.contains(&path){return Err(missing())}
     Ok(dispatch(state,"POST".into(),path.into(),Some(value))?)
+}
+
+#[cfg(test)]
+mod project_config_tests {
+    use super::*;
+    #[test]
+    fn configuration_survives_reload_and_rejects_invalid_documents() {
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("tmp-codex-diagnostics").join(format!("project-config-{}",Uuid::new_v4()));
+        storage::initialize_root(&root).unwrap();
+        let state=AppState{root:root.clone(),guard:std::sync::Arc::new(Mutex::new(()))};
+        let created=crud(&state,"POST","projects",json!({"name":"Original"})).unwrap();
+        let pid=created["id"].as_str().unwrap();let path=format!("projects/{pid}");
+        let documents=json!([{"id":"world","title":"世界观","content":"# 雨夜\n故事背景"}]);
+        crud(&state,"PATCH",&path,json!({"name":"新项目","outline":"起因、转折、结局","documents":documents})).unwrap();
+        let reopened=AppState{root:root.clone(),guard:std::sync::Arc::new(Mutex::new(()))};
+        let saved=crud(&reopened,"GET",&path,json!({})).unwrap();
+        assert_eq!(saved["name"],"新项目");assert_eq!(saved["outline"],"起因、转折、结局");assert_eq!(saved["documents"],documents);
+        let backup=root.join("config.spielberg-backup");
+        project_backup::command(&reopened,&json!({"project_id":pid,"path":backup}),false).unwrap();
+        let restored=project_backup::command(&reopened,&json!({"path":backup}),true).unwrap();
+        let restored_pid=restored["id"].as_str().unwrap();
+        let restored_config=snapshot(&reopened,restored_pid).unwrap();
+        assert_eq!(restored_config["project"]["outline"],"起因、转折、结局");
+        assert_eq!(restored_config["project"]["documents"],documents);
+        crud(&reopened,"PATCH",&path,json!({"name":"Rename only"})).unwrap();
+        assert_eq!(snapshot(&reopened,pid).unwrap()["project"]["documents"],documents);
+        assert!(crud(&reopened,"PATCH",&path,json!({"documents":[{"id":"bad","title":"","content":""}]})).is_err());
+        assert!(crud(&reopened,"PATCH",&path,json!({"outline":123})).is_err());
+        assert_eq!(crud(&reopened,"GET",&path,json!({})).unwrap()["documents"],documents);
+        crud(&reopened,"PATCH",&path,json!({"outline":"","documents":[]})).unwrap();
+        assert_eq!(snapshot(&reopened,pid).unwrap()["project"]["documents"],json!([]));
+        assert_eq!(snapshot(&reopened,restored_pid).unwrap()["project"]["documents"],documents);
+        fs::remove_dir_all(root).unwrap();
+    }
 }

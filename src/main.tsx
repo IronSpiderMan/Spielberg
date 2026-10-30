@@ -62,6 +62,7 @@ const CreationDesk=lazy(()=>import("./creation").then(m=>({default:m.CreationDes
 const InfiniteCanvas=lazy(()=>import("./InfiniteCanvas"));
 const MediaEditor=lazy(()=>import("./MediaEditor"));
 const AssetLibrary=lazy(()=>import("./AssetLibrary"));
+const ProjectConfig=lazy(()=>import("./ProjectConfig"));
 const ProjectTools=lazy(()=>import("./ProjectTools"));
 const AgentWorkspace=lazy(()=>import("./AgentWorkspace"));
 
@@ -323,6 +324,7 @@ function App() {
             <Users />
             角色设定
           </Menu.Item>
+          <Menu.Item key="project-config" title="项目配置" aria-label="项目配置"><Settings />项目配置</Menu.Item>
           <Menu.Item key="tasks" title="后台任务" aria-label="后台任务"><Film />后台任务</Menu.Item>
           <Menu.Item key="prompts" title="Prompt 库" aria-label="Prompt 库">
             <WandSparkles />
@@ -392,6 +394,7 @@ function App() {
                       prompts: "Prompt 库",
                       tasks: "后台任务",
                       settings: "设置",
+                      "project-config": "项目配置",
                       projects: "项目",
                     } as Record<string, string>
                   )[page]}
@@ -486,6 +489,7 @@ function App() {
               {page === "prompts" && (
                 <Prompts data={data} reload={refresh} />
               )}{" "}
+              {page === "project-config" && <ProjectConfig project={data.project} reload={refresh} />}
               {page === "settings" && (
                 <SettingsPage data={data} reload={refresh} />
               )}{" "}

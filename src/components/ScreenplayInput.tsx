@@ -21,9 +21,9 @@ function caretPosition(input: HTMLTextAreaElement) {
   return position;
 }
 
-export function ScreenplayInput({ inputRef, value, onChange, mentions, disabled }: {
+export function ScreenplayInput({ inputRef, value, onChange, mentions, disabled, label = "Markdown 剧本内容", placeholder = "输入剧本，使用 @ 引用角色、场景或提示词…" }: {
   inputRef: RefObject<HTMLTextAreaElement>; value: string; onChange: (value: string) => void;
-  mentions: PromptMention[]; disabled: boolean;
+  mentions: PromptMention[]; disabled: boolean; label?: string; placeholder?: string;
 }) {
   const listId = useId();
   const list = useRef<HTMLDivElement>(null);
@@ -84,9 +84,9 @@ export function ScreenplayInput({ inputRef, value, onChange, mentions, disabled 
     setDismissed(true);
   };
   return <div className="screenplay-input">
-    <textarea ref={inputRef} aria-label="Markdown 剧本内容" value={value} disabled={disabled} spellCheck={false}
+    <textarea ref={inputRef} aria-label={label} value={value} disabled={disabled} spellCheck={false}
       aria-autocomplete="list" aria-controls={show ? listId : undefined} aria-activedescendant={show ? `${listId}-${selected}` : undefined}
-      placeholder={"输入剧本，使用 @ 引用角色、场景或提示词…"}
+      placeholder={placeholder}
       onFocus={event => { setFocused(true); updateSelection(event.currentTarget); }} onBlur={() => setFocused(false)}
       onSelect={event => updateSelection(event.currentTarget)}
       onChange={event => { onChange(event.currentTarget.value); updateSelection(event.currentTarget); setActive(0); setDismissed(false); }}

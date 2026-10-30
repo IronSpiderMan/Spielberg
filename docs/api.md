@@ -168,3 +168,7 @@ Agent 的 `list_skills` 工具读取当前启用目录，支持 `offset` 和 `li
 导出可额外传入 `audio_clips` 数组，每项为 `{media_id,start,end,speed,volume,at}`，其中 `at` 为输出时间线上的起始秒数（非负）。独立音轨按时间位置混入主轨声音，成片时长取主轨和所有音轨的最大结束时间；主轨视频不足部分补黑。分离音轨时客户端将对应主轨片段的 `volume` 设为 `0`，避免重复播放。允许 `clips: []` 且 `audio_clips` 非空；两者合计最多 100 个片段，成片最长两小时。省略 `audio_clips` 保持原有单轨导出行为。
 
 场景 `description` 保存手工描述，`prompt` 保存视频生成提示词。视频生成时优先使用非空 `prompt`，为空或只有空白时回退到 `description`；优化描述只更新 `prompt`。
+# 项目创作配置
+
+`PATCH /api/v1/projects/{project_id}` 支持可选的 `name`、`outline`（字符串）与 `documents`（数组）字段。未提交的字段保持原值；提交空大纲或空文档数组可清空对应内容。每份文档格式为 `{ "id": "唯一标识", "title": "文档标题", "content": "正文" }`，标题不得为空，同一项目文档 ID 不得重复。`GET /api/v1/projects/{project_id}` 与项目快照的 `project` 字段返回这些配置。项目列表仅返回基本信息。
+

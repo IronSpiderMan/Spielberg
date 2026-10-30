@@ -1,0 +1,28 @@
+.project-config-page{width:100%;min-width:0;min-height:calc(100dvh - 180px);display:grid;grid-template-columns:minmax(280px,.9fr) minmax(0,2fr);grid-template-rows:auto auto minmax(400px,1fr);gap:20px;align-content:start}
+.project-config-heading{grid-column:1/-1}
+.project-config-page > .arco-card{min-width:0}
+.project-config-info{grid-column:1;grid-row:2}
+.project-config-info .arco-form-item{margin-bottom:0}
+.project-config-outline{grid-column:1;grid-row:3}
+.project-config-documents{grid-column:2;grid-row:2/4}
+.project-config-outline,.project-config-documents{display:flex;flex-direction:column}
+.project-config-outline > .arco-card-body,.project-config-documents > .arco-card-body{flex:1;min-height:0;display:flex;flex-direction:column}
+.project-config-outline .arco-textarea-wrapper{display:flex;flex:1;min-height:320px}
+.project-config-outline textarea{flex:1;min-height:320px;resize:vertical}
+.project-config-documents .arco-card-header{height:auto;min-height:52px;gap:12px;flex-wrap:wrap;padding-top:10px;padding-bottom:10px}
+.project-config-documents > .arco-card-body > .arco-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:400px}
+.project-config-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.project-config-heading h1{margin:0 0 8px}.project-config-heading p{margin:0;color:var(--color-text-3)}
+.project-document-layout{display:flex;flex-direction:column;flex:1;min-width:0;gap:16px;margin-top:12px}
+.project-document-layout nav{display:flex;flex-wrap:wrap;gap:8px;max-height:140px;overflow:auto;flex:none}
+.project-document-layout nav button{display:flex;align-items:center;gap:8px;padding:12px;border:1px solid var(--color-border-2);border-radius:8px;background:var(--color-bg-2);color:var(--color-text-1);text-align:left;cursor:pointer}
+.project-document-layout nav button[aria-pressed=true]{background:var(--color-fill-2);border-color:rgb(var(--primary-6))}
+.project-document-layout nav button{max-width:240px;padding:8px 12px}
+.project-document-layout nav button:focus-visible{outline:2px solid var(--ui-primary);outline-offset:2px}
+.project-document-layout nav svg{flex:none}
+.project-document-layout nav span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.project-document-editor{display:flex;flex-direction:column;flex:1;min-width:0}
+.project-document-editor > .screenplay-workspace{flex:1;min-height:460px;margin-bottom:16px}
+.project-document-editor .screenplay-panels{min-height:360px}
+.project-document-editor > .arco-space{flex:none}
+@media(max-width:1100px){.project-config-page{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}.project-document-editor .screenplay-panels{grid-template-columns:1fr}.project-document-editor .screenplay-source{border-right:0;border-bottom:1px solid var(--ui-border)}.project-document-editor .screenplay-source textarea{min-height:300px}.project-document-editor .screenplay-markdown{min-height:180px;max-height:400px;overflow:auto}}
+@media(max-width:800px){.project-config-page{grid-template-columns:minmax(0,1fr);grid-template-rows:auto;min-height:0}.project-config-page > .arco-card{grid-column:1;grid-row:auto}.project-config-heading{align-items:flex-start;flex-wrap:wrap}.project-config-outline .arco-textarea-wrapper,.project-config-outline textarea{min-height:220px}.project-config-documents > .arco-card-body > .arco-empty{min-height:280px}.project-document-editor > .screenplay-workspace{flex:auto}}
