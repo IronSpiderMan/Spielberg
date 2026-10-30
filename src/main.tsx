@@ -507,7 +507,7 @@ function App() {
           </Suspense>
         </Layout.Content>
         {(
-          <FloatingImageGenerator showButton={!!((sceneEditing && sceneEditing.scene.creation_mode !== "canvas") || page === "screenplays" || page === "roles")} key={`floating-generator:${data.project.id}`} data={data} reload={refresh} />
+          <FloatingImageGenerator showButton={!!((sceneEditing && sceneEditing.scene.creation_mode !== "canvas") || page === "roles")} key={`floating-generator:${data.project.id}`} data={data} reload={refresh} />
         )}
       </Layout>
       <Modal title="创建项目" visible={creating} onCancel={() => !creatingProject && setCreating(false)}

@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Empty, Input, Message, Modal, Select, Space, Tag } from "@arco-design/web-react";
-import { Download, FileText, Plus, Save, Trash2, Upload } from "lucide-react";
+import { Download, FileText, ImagePlus, Plus, Save, Trash2, Upload, X } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { post, type Media, type Screenplay, type Snapshot } from "./core";
@@ -207,15 +207,11 @@ export default function ScreenplayManager({ data, reload }: { data: Snapshot; re
     onDragOver={event => { if (!event.dataTransfer.types.includes("Files")) return; event.preventDefault(); event.dataTransfer.dropEffect = busy ? "none" : "copy"; }}
     onDragLeave={event => { if (!event.dataTransfer.types.includes("Files")) return; event.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDragging(false); } }}
     onDrop={event => { if (!event.dataTransfer.types.includes("Files")) return; event.preventDefault(); dragDepth.current = 0; setDragging(false); void importScreenplays(Array.from(event.dataTransfer.files)); }}>
-    <PageHeading title="剧本管理" description="编写或导入 Markdown、TXT 故事剧本，或用 CSV 管理分镜头剧本。"
-      actions={<Space><Button icon={<Upload size={16} />} disabled={busy} onClick={() => importer.current?.click()}>导入剧本</Button><Button disabled={busy} onClick={() => choose({ format: "csv", title: "", content: serializeShotCsv([]) })}>新建分镜头剧本</Button><Button type="primary" icon={<Plus size={16} />} disabled={busy} onClick={() => choose({ format: "markdown", title: "", content: "" })}>新建剧本</Button></Space>} />
+    <PageHeading title="剧本管理" description="从故事到镜头，在这里专注创作。"
+      actions={<Space><Button icon={<ImagePlus size={16} />} aria-label="打开生图模态框" onClick={() => window.dispatchEvent(new CustomEvent("spielberg:image-to-image"))}>生图</Button><Button icon={<Upload size={16} />} disabled={busy} onClick={() => importer.current?.click()}>导入剧本</Button><Button disabled={busy} onClick={() => choose({ format: "csv", title: "", content: serializeShotCsv([]) })}>新建分镜头剧本</Button><Button type="primary" icon={<Plus size={16} />} disabled={busy} onClick={() => choose({ format: "markdown", title: "", content: "" })}>新建剧本</Button></Space>} />
     <input ref={importer} type="file" multiple accept=".md,.markdown,.txt,.csv,text/markdown,text/plain,text/csv" disabled={busy} hidden aria-label="导入剧本文件" onChange={event => { const files = Array.from(event.target.files || []); event.target.value = ""; void importScreenplays(files); }} />
-    <button type="button" className={`screenplay-dropzone${dragging ? " dragging" : ""}`} disabled={busy}
-      aria-label="拖拽或选择剧本文件" onClick={() => importer.current?.click()}>
-      <Upload size={22} /><strong>{importProgress ? `正在导入 ${importProgress.done} / ${importProgress.total}` : "拖拽剧本文件到这里，或点击批量选择"}</strong>
-      <span>支持 Markdown、TXT、CSV · 每份不超过 10 MB · 自动保存为独立剧本</span>
-    </button>
     {importResult && <div className="screenplay-import-result" role="status">
+      <Button className="screenplay-import-dismiss" type="text" aria-label="关闭导入结果" icon={<X size={14} />} onClick={() => setImportResult(null)} />
       <span>已导入并保存 {importResult.count} 份剧本{importResult.errors.length ? `，${importResult.errors.length} 项需要处理` : ""}。</span>
       {importResult.errors.length > 0 && <details open><summary>查看失败详情（可单独重试）</summary><ul>{importResult.errors.map((error, index) => <li key={index}>{error}</li>)}</ul></details>}
     </div>}
@@ -227,11 +223,16 @@ export default function ScreenplayManager({ data, reload }: { data: Snapshot; re
           {draft && draft.id === undefined && <div className="screenplay-new"><FileText size={16} />新剧本 · 尚未保存</div>}
           {scripts.filter(item => item.title.toLowerCase().includes(query.toLowerCase())).map(item =>
             <button type="button" key={item.id} className={`screenplay-item${draft?.id === item.id ? " selected" : ""}`}
-              aria-pressed={draft?.id === item.id} disabled={busy} onClick={() => { if (draft?.id !== item.id) choose(item); }}>
+              title={item.title} aria-pressed={draft?.id === item.id} disabled={busy} onClick={() => { if (draft?.id !== item.id) choose(item); }}>
               <FileText size={18} /><span><strong>{item.title}</strong><small>{item.format === "csv" ? "CSV 分镜头 · " : "Markdown · "}{item.content.slice(0, 256).replace(/[#*>`]/g, "").trim().slice(0, 45) || "空白剧本"}</small></span>
             </button>)}
           {scripts.length > 0 && !scripts.some(item => item.title.toLowerCase().includes(query.toLowerCase())) && <p className="screenplay-list-empty">没有匹配的剧本</p>}
         </div>
+        <button type="button" className={`screenplay-dropzone${dragging ? " dragging" : ""}`} disabled={busy}
+          aria-label="拖拽或选择剧本文件" onClick={() => importer.current?.click()}>
+          <Upload size={18} /><strong>{importProgress ? `正在导入 ${importProgress.done} / ${importProgress.total}` : "拖入文件，或点击导入"}</strong>
+          <span>MD / TXT / CSV · 单份 ≤ 10 MB</span>
+        </button>
       </aside>
       {draft ? <div className="screenplay-editor">
         <div className="screenplay-titlebar">
@@ -243,17 +244,18 @@ export default function ScreenplayManager({ data, reload }: { data: Snapshot; re
           </Space>
         </div>
         {draft.format === "csv" ? <>
-          <div className="screenplay-formatbar"><Button disabled={busy || !!csvError} onClick={() => { let number = 1; while (shots.some(s => s.number === String(number))) number++; editShots([...shots, newShot(String(number))]); }}>添加镜头</Button><span>CSV · 画面可选 · Ctrl / ⌘ + S 保存</span></div>
-          <div className="shot-script-table">{csvError ? <p role="alert">{csvError}</p> : <table><thead><tr>{["编号", "景别", "运镜", "画面（可选）", "描述", "操作"].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>
+          <div className="screenplay-formatbar"><Button disabled={busy || !!csvError} onClick={() => { let number = 1; while (shots.some(s => s.number === String(number))) number++; editShots([...shots, newShot(String(number))]); }}>添加镜头</Button><span>{shots.length} 个镜头 · CSV 分镜表 · ⌘ / Ctrl + S 保存</span></div>
+          <div className="shot-script-table">{csvError ? <p role="alert">{csvError}</p> : <table><colgroup><col className="shot-col-number" /><col className="shot-col-size" /><col className="shot-col-camera" /><col className="shot-col-picture" /><col /><col className="shot-col-actions" /></colgroup><thead><tr>{["编号", "景别", "运镜", "画面（可选）", "描述", "操作"].map(label => <th key={label}>{label}</th>)}</tr></thead><tbody>
             {shots.map((shot, index) => <tr key={index}>
               <td><Input aria-label={`镜头 ${index + 1} 编号`} value={shot.number} disabled={busy} onChange={number => editShot(index, { number })} /></td>
               <td><Select aria-label={`镜头 ${index + 1} 景别`} value={shot.size} disabled={busy} onChange={size => editShot(index, { size })}>{shotSizes.map(size => <Select.Option key={size} value={size}>{size}</Select.Option>)}</Select></td>
               <td><Select aria-label={`镜头 ${index + 1} 运镜`} value={shot.camera} disabled={busy} onChange={camera => editShot(index, { camera })}>{cameraMoves.map(camera => <Select.Option key={camera} value={camera}>{camera}</Select.Option>)}</Select></td>
               <td><ShotPictureField picture={shot.picture} index={index} data={data} busy={busy} onChange={picture => editShot(index, { picture })} onUpload={file => uploadPicture(index, file)} /></td>
-              <td><Input.TextArea aria-label={`镜头 ${index + 1} 描述`} value={shot.description} disabled={busy} onChange={description => editShot(index, { description })} /></td>
+              <td><Input.TextArea aria-label={`镜头 ${index + 1} 描述`} autoSize={{ minRows: 3 }} value={shot.description} disabled={busy} onChange={description => editShot(index, { description })} /></td>
               <td><Button aria-label={`删除镜头 ${index + 1}`} status="danger" disabled={busy} icon={<Trash2 size={14} />} onClick={() => editShots(shots.filter((_, i) => i !== index))} /></td>
             </tr>)}
           </tbody></table>}{!csvError && !shots.length && <Empty description="添加镜头，开始编写分镜头剧本" />}</div>
+          <footer className="screenplay-footer"><span>共 {shots.length} 个镜头 · {shots.filter(shot => shot.picture).length} 个已配画面</span><span>画面可从资产、角色或本地文件添加</span></footer>
         </> : <><div className="screenplay-formatbar">
           <Space size={4}>
             <Button size="small" disabled={busy} title="插入场景标题" onClick={() => insert("\n## ", "\n", "第一场 · 内景 / 房间 / 夜")}>标题</Button>

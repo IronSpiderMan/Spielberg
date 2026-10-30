@@ -11,7 +11,6 @@
 }
 
 .media-editor :is(button, select, input),
-.screenplay-page :is(button, textarea),
 .storyboard-columns :is(button, input),
 .pose-modal :is(button, select, input),
 .infinite-canvas :is(button, textarea) {
@@ -19,7 +18,6 @@
 }
 
 .media-editor :is(button, select, input):focus-visible,
-.screenplay-page button:focus-visible,
 .storyboard-columns :is(button, input):focus-visible,
 .pose-modal :is(button, select, input):focus-visible,
 .infinite-canvas :is(button, textarea):focus-visible {
@@ -105,36 +103,6 @@
 .media-editor .me-project-card:hover { transform: translateY(-3px); border-color: var(--ui-primary); box-shadow: 0 10px 26px var(--editor-focus); }
 .media-editor .me-project-card strong { font-size: 15px; }
 .media-editor .me-project-card span { line-height: 1.7; color: var(--ui-muted); }
-
-/* Screenplays keep the editor chrome quiet while making the document readable. */
-.screenplay-page .screenplay-workspace { border-radius: 14px; box-shadow: var(--editor-shadow); grid-template-columns: 240px minmax(0, 1fr); }
-.screenplay-page .screenplay-library { gap: 18px; padding: 22px 16px; background: var(--ui-bg); }
-.screenplay-page .screenplay-library-head { align-items: center; font-size: 12px; }
-.screenplay-page .screenplay-library-head > span { padding: 3px 7px; border-radius: 5px; background: var(--ui-surface); border: 1px solid var(--ui-border); font-variant-numeric: tabular-nums; }
-.screenplay-page .screenplay-list { scrollbar-width: thin; scrollbar-color: var(--ui-border) transparent; }
-.screenplay-page .screenplay-item { padding: 14px 12px; margin-bottom: 8px; gap: 12px; border-radius: 9px; transition: background-color 160ms, border-color 160ms; }
-.screenplay-page .screenplay-item.selected { border-color: color-mix(in srgb, var(--ui-primary) 36%, var(--ui-border)); box-shadow: inset 3px 0 var(--ui-primary); }
-.screenplay-page .screenplay-item small { line-height: 1.6; margin-top: 5px; }
-.screenplay-page .screenplay-titlebar { padding: 18px 24px; gap: 20px; }
-.screenplay-page .screenplay-titlebar > .arco-input-wrapper:not(:focus-within):not(:hover) { border-color: transparent; background: transparent; }
-.screenplay-page .screenplay-titlebar .arco-input { font-size: 17px; line-height: 1.6; letter-spacing: -.2px; }
-.screenplay-page .screenplay-formatbar { padding: 12px 24px; background: var(--ui-surface); }
-.screenplay-page .screenplay-formatbar .arco-space { flex-wrap: wrap; gap: 6px !important; }
-.screenplay-page .screenplay-formatbar .arco-btn { height: 30px; font-size: 12px; }
-.screenplay-page .screenplay-panel-label { padding: 12px 24px; background: var(--ui-bg); color: var(--ui-secondary-text); font-size: 11px; letter-spacing: .3px; }
-.screenplay-page .screenplay-source textarea { padding: 28px; font-size: 13px; line-height: 2; scrollbar-width: thin; }
-.screenplay-page .screenplay-source textarea:focus { box-shadow: inset 3px 0 var(--ui-primary); }
-.screenplay-page .screenplay-markdown { padding: 28px 32px; scrollbar-width: thin; font-size: 13px; line-height: 1.95; }
-.screenplay-page .screenplay-markdown blockquote { padding: 8px 16px; border-radius: 0 6px 6px 0; }
-.screenplay-page .screenplay-markdown blockquote p { margin: 8px 0; }
-.screenplay-page .screenplay-footer { padding: 12px 24px; background: var(--ui-bg); font-variant-numeric: tabular-nums; }
-.screenplay-page .shot-script-table { padding: 20px 24px; scrollbar-width: thin; }
-.screenplay-page .shot-script-table th { position: sticky; top: -1px; z-index: 1; padding: 13px 12px; color: var(--ui-secondary-text); }
-.screenplay-page .shot-script-table td { padding: 12px; transition: background-color 160ms; }
-.screenplay-page .shot-script-table tr:hover td { background: var(--ui-bg); }
-.screenplay-page .shot-script-table :is(th, td) { border-color: var(--ui-border); }
-.screenplay-page .shot-picture-preview { border-radius: 8px; transition: border-color 160ms; }
-.screenplay-page .shot-picture-preview:hover { border-color: var(--ui-primary); }
 
 /* The storyboard reads from source to scene plan, with compact shot metadata. */
 .storyboard-columns { gap: 24px; }
@@ -243,7 +211,6 @@ html[data-theme="dark"] .infinite-canvas .ic-node header small { color: color-mi
   .media-editor .me-inspector .me-panel-title { grid-column: 1 / -1; margin: 0; }
   .media-editor .me-inspector label { margin: 0; }
   .media-editor .me-inspector > .me-hint { grid-column: span 2; margin: 0; }
-  .screenplay-page .screenplay-workspace { grid-template-columns: 200px minmax(0, 1fr); }
   .storyboard-columns .storyboard-shot-meta { grid-template-columns: auto minmax(0, 1fr); }
   .storyboard-columns .storyboard-shot-meta > .arco-input-wrapper:last-child { grid-column: 1 / -1; }
 }
@@ -264,15 +231,6 @@ html[data-theme="dark"] .infinite-canvas .ic-node header small { color: color-mi
   .media-editor .me-timeline { padding: 16px; }
   .media-editor .me-toolbar > span { width: 100%; margin: 4px 0 0; }
   .media-editor .me-notice { flex-wrap: wrap; }
-  .screenplay-page .screenplay-workspace { display: flex; flex-direction: column; }
-  .screenplay-page .screenplay-library { padding: 18px; gap: 14px; }
-  .screenplay-page .screenplay-titlebar { padding: 16px; }
-  .screenplay-page .screenplay-formatbar { padding: 12px 16px; }
-  .screenplay-page .screenplay-titlebar > .arco-space { flex-wrap: wrap; }
-  .screenplay-page .screenplay-source textarea { padding: 22px; }
-  .screenplay-page .screenplay-markdown { padding: 24px; }
-  .screenplay-page .screenplay-panel-label { padding: 12px 20px; }
-  .screenplay-page .shot-script-table { padding: 16px; }
   .pose-modal .pose-layout { grid-template-columns: 1fr; gap: 20px; }
   .pose-modal .pose-settings { padding-right: 0; }
   .pose-modal .pose-control-group { padding: 18px 16px 0; border: 1px solid var(--ui-border); border-radius: 10px; }
@@ -315,7 +273,6 @@ html[data-theme="dark"] .infinite-canvas .ic-node header small { color: color-mi
 }
 @media (prefers-reduced-motion: reduce) {
   .media-editor *,
-  .screenplay-page *,
   .storyboard-columns *,
   .pose-modal *,
   .infinite-canvas * { animation: none !important; transition: none !important; }
