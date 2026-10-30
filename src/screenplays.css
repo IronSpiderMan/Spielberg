@@ -5,6 +5,12 @@
 .screenplay-panels { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); flex: 1; min-height: 0; }
 .screenplay-source, .screenplay-preview { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .screenplay-source { border-right: 1px solid var(--ui-border); }
+.screenplay-input { position: relative; display: flex; flex: 1; min-height: 0; min-width: 0; }
+.screenplay-suggestions { position: absolute; z-index: 5; width: min(340px, calc(100% - 16px)); box-sizing: border-box; overflow: auto; overscroll-behavior: contain; padding: 4px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--ui-surface); box-shadow: 0 8px 24px #0002; }
+.screenplay-suggestions button { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 9px 10px; border: 0; border-radius: 4px; background: transparent; color: var(--ui-text); text-align: left; cursor: pointer; }
+.screenplay-suggestions button:hover, .screenplay-suggestions button[aria-selected="true"] { background: var(--ui-accent-soft); }
+.screenplay-suggestions b { color: var(--ui-primary); font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.screenplay-suggestions small { color: var(--ui-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .screenplay-panel-label { padding: 12px 20px; background: var(--ui-bg); color: var(--ui-muted); font-size: 11px; border-bottom: 1px solid var(--ui-border); }
 .screenplay-source textarea { resize: none; flex: 1; min-height: 0; width: 100%; box-sizing: border-box; border: 0; outline: none; padding: 24px; background: var(--ui-surface); color: var(--ui-text); font: 13px/1.9 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; tab-size: 2; }
 .screenplay-source textarea:focus { box-shadow: inset 0 0 0 2px var(--ui-accent-soft); }
@@ -72,7 +78,7 @@
   .screenplay-markdown { overflow: visible; }
   .shot-script-table { flex: none; overflow-x: auto; }
   .screenplay-footer { padding: 10px 12px; }
-  .screenplay-footer span:last-child { display: none; }
+  .screenplay-footer span + span { display: none; }
 }
 
 /* Keep episode navigation compact above the document. */

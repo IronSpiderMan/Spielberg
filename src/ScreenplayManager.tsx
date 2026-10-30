@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import { post, type Media, type Screenplay, type Snapshot } from "./core";
 import { newShot, parseShotCsv, serializeShotCsv, shotSizes, cameraMoves, type ScriptShot } from "./shot-script";
 import { ShotPictureField } from "./components/ShotPictureField";
+import { ScreenplayInput } from "./components/ScreenplayInput";
 import { uploadAsset } from "./api";
 import { isSupportedImage } from "./hooks/useImageUpload";
 import { promptMentions, savedPromptMentions } from "./prompt-mentions";
@@ -78,13 +79,6 @@ const ScreenplayManager = forwardRef<ScreenplayEditorHandle, Props>(function Scr
     const text = draft.content.slice(start, end) || fallback;
     editContent("markdown", draft.content.slice(0, start) + prefix + text + suffix + draft.content.slice(end));
     requestAnimationFrame(() => { editor.current?.focus(); editor.current?.setSelectionRange(start + prefix.length, start + prefix.length + text.length); });
-  };
-  const insertMention = (name: string) => {
-    if (!editor.current || busy) return;
-    const { selectionStart: start, selectionEnd: end } = editor.current;
-    const token = `@${name} `;
-    editContent("markdown", draft.content.slice(0, start) + token + draft.content.slice(end));
-    requestAnimationFrame(() => { editor.current?.focus(); editor.current?.setSelectionRange(start + token.length, start + token.length); });
   };
   const editShots = (next: ScriptShot[]) => editContent("csv", serializeShotCsv(next));
   const editShot = (index: number, change: Partial<ScriptShot>) => editShots(shots.map((shot, i) => i === index ? { ...shot, ...change } : shot));
@@ -173,28 +167,25 @@ const ScreenplayManager = forwardRef<ScreenplayEditorHandle, Props>(function Scr
           <footer className="screenplay-footer"><span>共 {shots.length} 个镜头 · {shots.filter(shot => shot.picture).length} 个已配画面</span><span>画面可从资产、角色或本地文件添加</span></footer>
         </> : <><div className="screenplay-formatbar">
           <Space size={4} wrap>
-            <Select aria-label="插入剧本引用" placeholder="引用 @" value={undefined} showSearch disabled={busy || !mentions.length} style={{ width: 130 }} onChange={insertMention} options={mentions.map(item => ({ value: item.name, label: `@${item.name}` }))} />
             <Button size="small" disabled={busy} title="插入场景标题" onClick={() => insert("\n## ", "\n", "第一场 · 内景 / 房间 / 夜")}>标题</Button>
             <Button size="small" disabled={busy} title="加粗角色名" onClick={() => insert("**", "**", "角色名")}>粗体</Button>
             <Button size="small" disabled={busy} title="插入对白" onClick={() => insert("\n> ", "\n", "角色对白")}>对白</Button>
             <Button size="small" disabled={busy} onClick={() => insert("\n- ", "\n", "场景说明")}>列表</Button>
             {!draft.content && <Button size="small" disabled={busy} onClick={() => editContent(format, template)}>使用剧本模板</Button>}
-          </Space><Button icon={<Download size={15}/>} aria-label="导出 Markdown" onClick={exportDocument}>导出 Markdown</Button>
+          </Space><Button icon={<Download size={15}/>} aria-label="导出 Markdown" onClick={exportDocument}>导出</Button>
         </div>
         <div className="screenplay-panels">
-          <div className="screenplay-source"><div className="screenplay-panel-label">Markdown 编辑</div>
-            <textarea ref={editor} aria-label="Markdown 剧本内容" value={draft.content} disabled={busy} spellCheck={false}
-              placeholder={"# 故事标题\n\n## 第一场 · 内景 / 夜\n\n场景描述…\n\n**角色名**\n> 角色对白…"}
-              onChange={event => editContent(format, event.target.value)} />
+          <div className="screenplay-source"><div className="screenplay-panel-label">编辑</div>
+            <ScreenplayInput inputRef={editor} value={draft.content} disabled={busy} mentions={mentions} onChange={content => editContent("markdown", content)} />
           </div>
-          <div className="screenplay-preview"><div className="screenplay-panel-label">实时预览</div>
+          <div className="screenplay-preview"><div className="screenplay-panel-label">预览</div>
             <article className="screenplay-markdown" aria-label="剧本实时预览">
               {draft.content ? <StoryPreview content={draft.content} />
                 : <div className="screenplay-preview-empty"><FileText size={32} /><p>在左侧开始编写，预览会实时更新</p></div>}
             </article>
           </div>
         </div>
-        <footer className="screenplay-footer"><span>{textStats.characters} 字符 · {textStats.lines} 行</span><span>支持标题、粗体、对白引用、列表和表格</span></footer></>}
+        <footer className="screenplay-footer"><span>{textStats.characters} 字符 · {textStats.lines} 行</span></footer></>}
     </div></div>
   </section>;
 });

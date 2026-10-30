@@ -29,6 +29,8 @@ npm run desktop:dmg
 npm run desktop:exe
 ```
 
+macOS 的 `npm run desktop:dmg` 在构建和校验成功后自动打开 DMG 安装窗口，将应用拖入 Applications 即可安装。使用 `OPEN_DMG=0 npm run desktop:dmg` 可跳过自动打开；CI 环境默认跳过。
+
 Windows 构建需要 Node.js、Rust MSVC 工具链及 Visual Studio C++ Build Tools；首次运行脚本会自动安装前端依赖。默认输出为 `src-tauri/target/x86_64-pc-windows-msvc/release/spielberg-studio.exe` 和其下 `bundle/nsis/*-setup.exe`，脚本结束会打印实际路径。可通过 `npm run desktop:exe -- -Target aarch64-pc-windows-msvc` 指定目标架构（需先安装对应 Rust target 和编译工具）。
 
 发布版桌面 EXE 使用 Windows GUI 子系统，启动时不弹出控制台；FFmpeg/FFprobe 子进程也隐藏控制台。开发模式和独立服务器仍保留终端日志。
@@ -154,7 +156,7 @@ node scripts/qa/role-assets.cjs
 
 ## 剧本与分镜
 
-进入「剧集 → 编辑」，每集固定一份剧本和一份分镜头剧本。打开即编辑，无需新建或导入；剧本标题沿用剧集名称。Markdown 编辑器支持实时预览、模板、格式按钮和「引用 @」插入角色、素材或 Prompt，可导出 Markdown。分镜表支持添加和删除镜头、选择景别及运镜、从资产或角色选择画面、上传图片并导出 CSV。
+进入「剧集 → 编辑」，每集固定一份剧本和一份分镜头剧本。打开即编辑，无需新建或导入；剧本标题沿用剧集名称。Markdown 编辑器支持实时预览、模板和格式按钮，输入 `@` 即可搜索引用角色、场景、素材或 Prompt；用方向键选择、回车或 Tab 插入，Esc 关闭提示，可导出 Markdown。分镜表支持添加和删除镜头、选择景别及运镜、从资产或角色选择画面、上传图片并导出 CSV。
 
 页面顶部只有一个「保存」入口，`Ctrl / ⌘ + S` 与该按钮行为一致，同时保存剧本、分镜头剧本、剧集信息和 AI 分镜规划。切换三个标签保留全部草稿；离开页面或项目时提醒未保存修改。
 

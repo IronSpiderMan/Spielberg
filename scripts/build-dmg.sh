@@ -3,6 +3,7 @@
 # Usage: npm run desktop:dmg
 # Optional: TARGET=universal-apple-darwin npm run desktop:dmg
 # Optional: VERBOSE=1 npm run desktop:dmg
+# Optional: OPEN_DMG=0 npm run desktop:dmg (skip the installation window)
 
 set -euo pipefail
 
@@ -57,3 +58,13 @@ for dmg in "${created[@]}"; do
   hdiutil verify "$dmg"
   echo "DMG created: $dmg"
 done
+
+# Open only after every package has passed verification. CI builds stay headless.
+if [[ "${OPEN_DMG:-1}" == "1" && -z "${CI:-}" ]]; then
+  for dmg in "${created[@]}"; do
+    echo "Opening installation window: $dmg"
+    if ! open "$dmg"; then
+      echo "Warning: could not open the installation window. Open the DMG above manually." >&2
+    fi
+  done
+fi
