@@ -15,7 +15,7 @@ export type Role = {
 };
 export type FrameKey = "first" | "last" | "reference";
 export type GenerationOptions = {
-  video_mode?: "fl2v" | "i2v";
+  video_mode?: "fl2v" | "i2v" | "ref2v";
   custom?: boolean;
   first: boolean;
   last: boolean;

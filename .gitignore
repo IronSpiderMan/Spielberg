@@ -42,6 +42,7 @@ npm-debug.log*
 !/scripts/qa/skills.py
 !/scripts/qa/skills-ui.cjs
 !/scripts/qa/test_comfyui_video_api.py
+!/scripts/qa/scene-reference-mode.cjs
 
 # Tauri
 src-tauri/gen/

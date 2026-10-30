@@ -3,6 +3,7 @@ import { PreviewVideo, VideoPreviewModal } from "./components/VideoPreviewModal"
 import { sceneVideoPrompt } from "./core";
 import { ReferenceMediaPicker } from "./components/generation/ReferenceMediaPicker";
 import { buildVideoRequest } from "./generation-request";
+import { sceneGenerationOptions } from "./scene-generation";
 import { RoleImagePicker } from "./components/RoleImagePicker";
 import { ImagePreviewModal, PreviewImage } from "./components/ImagePreviewModal";
 import { usePromptOptimization } from "./hooks/usePromptOptimization";
@@ -70,13 +71,13 @@ const ImageStudio=lazy(()=>import("./creation").then(m=>({default:m.ImageStudio}
 
 function videoRequest(scene: Scene, settings: ModelSettings, roles: Role[], prompts: Snapshot["prompts"] = []) {
   if(scene.creation_mode === "canvas") throw new Error(`${scene.title}：请进入画布，使用视频节点生成；已有场景视频可直接合并`);
-  const options = scene.generation_options || defaultOptions;
-  const mode = options.video_mode || ((options.reference_media_ids?.length || scene.reference_media_id) ? "i2v" : "fl2v");
+  const options = sceneGenerationOptions(scene);
+  const mode = options.video_mode;
   const request=buildVideoRequest({mode,prompt:resolvePrompt(sceneVideoPrompt(scene),roles,prompts),label:scene.title,sceneId:scene.id,
     duration:options.duration,ratio:options.aspect_ratio,size:options.size,firstId:scene.first_media_id,lastId:scene.last_media_id,
     referenceIds:options.reference_media_ids??(scene.reference_media_id?[scene.reference_media_id]:[]),
     referenceVideoIds:options.reference_video_media_ids,referenceAudioIds:options.reference_audio_media_ids});
-  if (!(settings.video?.base_url || settings.video?.url || settings[mode]?.url)) throw new Error("请先配置视频生成 Base URL");
+  if (!(settings.video?.base_url || settings.video?.url || settings[mode]?.url || (mode === "i2v" && settings.ref2v?.url))) throw new Error("请先配置视频生成 Base URL");
   return request;
 }
 const sceneVideos = (scene: Scene) =>
@@ -957,8 +958,8 @@ function EpisodeEditor({
         <p className="subtle">调整后立即保存，并同步到工作台</p>
         <fieldset disabled={saving} className="episode-editor-fields">
           {currentEpisode?.scenes.map((scene, index) => {
-            const options = scene.generation_options;
-            const mode = options?.video_mode || ((options?.reference_media_ids?.length || scene.reference_media_id) ? "i2v" : "fl2v");
+            const options = sceneGenerationOptions(scene);
+            const mode = options.video_mode;
             const images = mode === "i2v"
               ? [...new Set(options?.reference_media_ids ?? (scene.reference_media_id ? [scene.reference_media_id] : []))].map((id, i) => ({
                 label: `参考图 ${i + 1}`,
@@ -1140,11 +1141,7 @@ export function SceneEditor({
     reference: scene.reference_media_id || null,
   });
   const [options, setOptions] = useState<GenerationOptions>(
-    { ...defaultOptions, ...scene.generation_options,
-      size: normalizeGenerationSize(scene.generation_options?.aspect_ratio || defaultOptions.aspect_ratio, scene.generation_options?.size),
-      video_mode: scene.generation_options?.video_mode || ((scene.generation_options?.reference_media_ids?.length || scene.reference_media_id) ? "i2v" : "fl2v"),
-      reference_media_ids: scene.generation_options?.reference_media_ids ?? (scene.reference_media_id ? [scene.reference_media_id] : []),
-    },
+    () => sceneGenerationOptions(scene),
   );
   const [ratio, setRatio] = useState(
     scene.generation_options?.aspect_ratio || defaultOptions.aspect_ratio,
@@ -1562,7 +1559,7 @@ export function SceneEditor({
                 type="primary"
                 icon={<Sparkles size={17} />}
                 loading={videoGenerating || persistedVideoGenerating}
-                disabled={!description.trim() || pastingImages || uploadingReferences}
+                disabled={!effectivePrompt.trim() || pastingImages || uploadingReferences}
                 onClick={generateVideo}
               >
                 {persistedVideoGenerating ? "后台生成中" : "生成新视频"}

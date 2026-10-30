@@ -3,7 +3,7 @@
 # Usage: npm run desktop:dmg
 # Optional: TARGET=universal-apple-darwin npm run desktop:dmg
 # Optional: VERBOSE=1 npm run desktop:dmg
-# Optional: OPEN_DMG=0 npm run desktop:dmg (skip the installation window)
+# Optional: OPEN_DMG=1 npm run desktop:dmg (open the finished DMG after verification)
 
 set -euo pipefail
 
@@ -59,8 +59,10 @@ for dmg in "${created[@]}"; do
   echo "DMG created: $dmg"
 done
 
+# Tauri already opens a temporary Finder window to configure the DMG layout.
+# Opening the finished DMG is opt-in to avoid another window during normal builds.
 # Open only after every package has passed verification. CI builds stay headless.
-if [[ "${OPEN_DMG:-1}" == "1" && -z "${CI:-}" ]]; then
+if [[ "${OPEN_DMG:-0}" == "1" && -z "${CI:-}" ]]; then
   for dmg in "${created[@]}"; do
     echo "Opening installation window: $dmg"
     if ! open "$dmg"; then

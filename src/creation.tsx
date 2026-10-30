@@ -5,6 +5,7 @@ import { ReferenceImagePicker } from "./components/generation/ReferenceImagePick
 import { useImageUpload } from "./hooks/useImageUpload";
 import { usePromptOptimization } from "./hooks/usePromptOptimization";
 import { VideoStudio } from "./VideoStudio";
+import { sceneGenerationOptions } from "./scene-generation";
 import { localId } from "./id";
 import { Button,Empty,Form,Input,Message,Popconfirm,Select,Space,Tabs,Tag } from "@arco-design/web-react";
 import { ArrowDown,ArrowUp,ImagePlus,Plus,Trash2,Undo2 } from "lucide-react";
@@ -122,7 +123,7 @@ type ScriptDraft={title:string;scenes:ScriptScene[]};
 const blankScene=():ScriptScene=>({id:localId(),mode:"fl2v",description:"",first:"",last:"",reference:"",references:[""]});
 const referenceDescriptions=(script?:{reference?:string;references?:string[]}):string[]=>script?.references??[script?.reference||""];
 const referenceLabel=(index:number)=>`图${["一","二","三","四","五","六","七","八","九","十"][index]||index+1}`;
-const episodeDraft=(episode:Snapshot["episodes"][number]):ScriptDraft=>({title:episode.title,scenes:episode.scenes.length?episode.scenes.map(scene=>({id:localId(),scene_id:scene.id,title:scene.title,mode:scene.generation_options?.video_mode||((scene.generation_options?.reference_media_ids?.length||scene.reference_media_id||scene.script?.reference)?"i2v":"fl2v"),description:scene.description,first:scene.script?.first||"",last:scene.script?.last||"",reference:scene.script?.reference||"",references:referenceDescriptions(scene.script)})):[blankScene()]});
+const episodeDraft=(episode:Snapshot["episodes"][number]):ScriptDraft=>({title:episode.title,scenes:episode.scenes.length?episode.scenes.map(scene=>({id:localId(),scene_id:scene.id,title:scene.title,mode:sceneGenerationOptions(scene).video_mode,description:scene.description,first:scene.script?.first||"",last:scene.script?.last||"",reference:scene.script?.reference||"",references:referenceDescriptions(scene.script)})):[blankScene()]});
 function ScriptStudio({data,reload,onCreated}: {data:Snapshot;reload:()=>void;onCreated:()=>void}) {
   const [draft,setDraft]=useState<ScriptDraft>({title:"",scenes:[blankScene()]}),[episodeId,setEpisodeId]=useState<number>(),[loaded,setLoaded]=useState(false),[busy,setBusy]=useState(false),[status,setStatus]=useState("正在读取草稿");
   const latest=useRef(draft);latest.current=draft;
