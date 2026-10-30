@@ -13,9 +13,10 @@
 | 资产 | `/projects/{pid}/assets` | `name`, `extension`, `data_base64`, `role_id?`；推荐二进制上传 | `name` |
 | 剧集 | `/projects/{pid}/episodes` | `title`, `description?`, `cover_media_id?` | 同创建字段 |
 | 场景 | `/projects/{pid}/episodes/{episode_id}/scenes` | `title`, `description?`, `prompt?`, `first_media_id?`, `last_media_id?`, `reference_media_id?`, `generation_options?` | `/projects/{pid}/scenes/{scene_id}`，不能改变所属剧集 |
+| 剧本 / 分镜头剧本 | `/projects/{pid}/episodes/{episode_id}/screenplays` | `title`, `content?`, `format?`（`markdown/csv`） | `/projects/{pid}/screenplays/{id}`；支持 `episode_id` 移至其他剧集 |
 | Prompt | `/projects/{pid}/prompts` | `name`, `content?`, `category?` | 同创建字段 |
 
-- `GET {集合}`：列表。项目、角色、剧集、场景、Prompt 返回数组；资产返回 `{items,total}`。
+- `GET {集合}`：列表。项目、角色、剧集、场景、剧本、Prompt 返回数组；资产返回 `{items,total}`。
 - `POST {集合}`：创建并返回完整资源。
 - `GET {集合}/{id}`：读取单个资源。
 - `PATCH {集合}/{id}`：仅更新请求中的字段，返回更新后的资源；可空引用字段传 `null` 清除。
@@ -23,9 +24,11 @@
 
 场景列表和创建通过剧集子资源路径访问：`GET/POST /projects/{pid}/episodes/{episode_id}/scenes`。单个场景的读取、更新和删除使用 `/projects/{pid}/scenes/{scene_id}`。
 
+每个剧集最多一份 Markdown 剧本和一份 CSV 分镜头剧本，重复创建或移动到已有同类型内容的剧集返回 409；请读取已有资源并 PATCH。剧本按剧集归属：`GET/POST /projects/{pid}/episodes/{episode_id}/screenplays` 列出或创建该集剧本，路径指定归属。兼容 `/projects/{pid}/screenplays`，创建时必须提交有效 `episode_id`，GET 可用 `?episode_id=...` 筛选；单个资源的 GET/PATCH/DELETE 使用 `/projects/{pid}/screenplays/{id}`。PATCH 省略字段保持原值，更新 `episode_id` 可移动到当前项目的其他剧集，不能脱离剧集。资源包含 `id,episode_id,title,content,format,created_at,updated_at`。
+
 角色返回 `images`，剧集返回排序后的 `scenes` 和 `cover_media`，场景返回引用图片、`videos`、`script` 和 `generation_options`。角色、图片、场景等 ID 为项目内整数，项目 ID 为 UUID。
 
-项目 DELETE 仅移除项目注册信息，返回额外的 `data_retained:true`，磁盘目录保留，可重新打开。资产 DELETE 使用回收站；使用中的资产拒绝删除。删除剧集会级联删除场景及其关联；删除角色不会删除资产文件。
+项目 DELETE 仅移除项目注册信息，返回额外的 `data_retained:true`，磁盘目录保留，可重新打开。资产 DELETE 使用回收站；使用中的资产拒绝删除。删除剧集会级联删除所属剧本、分镜头剧本、场景及其关联；删除角色不会删除资产文件。
 
 资产列表支持 `page`（默认 1）、`limit`（默认 24，上限 60）、`kind`（`all/image/video/audio`）、`query`、`usage`（`all/used/unused/trash`）。兼容首版平级资源路径，例如 `/roles?project_id={pid}` 和 `/scenes?project_id={pid}&episode_id={episode_id}`；前端使用上表的嵌套路径。
 

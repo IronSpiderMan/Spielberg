@@ -106,16 +106,16 @@ class Model(BaseHTTPRequestHandler):
             calls[0]["function"]["arguments"] = "invalid JSON"
         elif not tools and "CREATE" in prompt:
             calls = [
-                call("app_request", {"resource": "screenplays", "method": "POST", "data": {"title": "Agent 剧本", "content": "# 雨夜\n\n主角走进车站。"}}, "script"),
                 call("app_request", {"resource": "roles", "method": "POST", "data": {"name": "林晓", "description": "红色外套"}}, "role"),
                 call("app_request", {"resource": "episodes", "method": "POST", "data": {"title": "第一集"}}, "episode"),
             ]
-        elif len(tools) == 3 and "CREATE" in prompt:
-            episode = json.loads(tools[2]["content"])
+        elif len(tools) == 2 and "CREATE" in prompt:
+            episode = json.loads(tools[1]["content"])
             # Tool results are JSON objects, not sliced JSON text.
             if "data" in episode:
                 episode = episode["data"]
-            calls = [call("app_request", {"resource": "scenes", "method": "POST", "episode_id": episode["id"], "data": {"title": "车站", "description": "雨夜走进车站"}}, "scene")]
+            calls = [call("app_request", {"resource": "scenes", "method": "POST", "episode_id": episode["id"], "data": {"title": "车站", "description": "雨夜走进车站"}}, "scene"),
+                call("app_request", {"resource": "screenplays", "method": "POST", "episode_id": episode["id"], "data": {"title": "Agent 剧本", "content": "# 雨夜\n\n主角走进车站。"}}, "script")]
         elif not tools:
             calls = [call("get_project", {}, "overview")]
         reply = {"role": "assistant", "content": None, "tool_calls": calls} if calls else {"role": "assistant", "content": "已完成操作。"}

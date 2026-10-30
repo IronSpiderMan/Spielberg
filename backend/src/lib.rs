@@ -31,12 +31,14 @@ fn project(s:&AppState,id:&str)->Result<Value,String>{registry(s)?.into_iter().f
 fn migrate(c:&Connection)->Result<(),String>{
  c.execute_batch("PRAGMA foreign_keys=ON;").map_err(|e|e.to_string())?;
  let version:i64=c.query_row("PRAGMA user_version",[],|r|r.get(0)).map_err(|e|e.to_string())?;
- if version>=10{return Ok(())}
+ if version>=12{return Ok(())}
+ if version==11{screenplays::install_single_documents(c)?;return Ok(())}
+ if version==10{screenplays::install_episodes(c)?;return migrate(c)}
  if version==9{
    c.execute_batch("BEGIN IMMEDIATE").map_err(|e|e.to_string())?;
    let result=(||{canvas::install_scenes(c)?;c.execute_batch("PRAGMA user_version=10; COMMIT").map_err(|e|e.to_string())})();
    if result.is_err(){let _=c.execute_batch("ROLLBACK");}
-   return result;
+   result?;return migrate(c);
  }
  if version==8{
    c.execute_batch("BEGIN IMMEDIATE").map_err(|e|e.to_string())?;

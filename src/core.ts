@@ -78,7 +78,7 @@ export type ModelSettings = Record<
     description: string;
   }
 >;
-export type Screenplay = { format: "markdown" | "csv"; id: number; title: string; content: string; created_at: string; updated_at: string };
+export type Screenplay = { episode_id: number; format: "markdown" | "csv"; id: number; title: string; content: string; created_at: string; updated_at: string };
 export type Snapshot = {
   screenplays?: Screenplay[];
   revisions?: Record<string,number>;

@@ -69,7 +69,10 @@ def main():
             assert api("PATCH", scope + f'/prompts/{prompt["id"]}', {"name": "重命名"})["content"] == "水墨"
             # Screenplays persist Markdown, preserve content on rename, and refresh independently.
             markdown = "# 雨夜\n\n**林舟**\n> 你终于来了。"
-            screenplay = api("POST", scope + "/screenplays", {"title": "雨夜", "content": markdown}, 201)
+            screenplay = api("POST", scope + "/screenplays", {"title": "雨夜", "content": markdown, "episode_id": episode["id"]}, 201)
+            assert api("GET", scope + f'/episodes/{episode["id"]}/screenplays')[0]["id"] == screenplay["id"]
+            api("POST", scope + "/screenplays", {"title": "无归属"}, 400)
+            api("POST", scope + "/screenplays", {"title": "无效剧集", "episode_id": 999999}, 404)
             screenplay_path = scope + f'/screenplays/{screenplay["id"]}'
             assert api("PATCH", screenplay_path, {"title": "第一稿"})["content"] == markdown
             snapshot = api("POST", "/actions/project", {"id": pid})

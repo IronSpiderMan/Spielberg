@@ -203,9 +203,10 @@ mod tests {
         c.execute("INSERT INTO settings VALUES('agent',?)",[json!({"api_key":"agent-secret","search_api_key":"search-secret","search_provider":"brave"}).to_string()]).unwrap();
         c.execute("INSERT INTO background_jobs(operation,status,prompt,created_at,updated_at,result_json) VALUES('image','completed','','1','1',?)",[json!({"id":1,"path":file,"kind":"image"}).to_string()]).unwrap();
         let shot_csv=format!("编号,景别,运镜,画面,描述\r\n001,中景,固定,{},\"逗号,与\"\"引号\"\"\n换行\"",file.to_string_lossy());
-        c.execute("INSERT INTO screenplays(title,content,format,created_at,updated_at) VALUES('分镜',?,'csv','1','1')",[&shot_csv]).unwrap();
+
         let board=json!({"version":1,"nodes":[{"id":"image","kind":"media","ref_id":1,"x":30,"y":40}],"edges":[],"viewport":{"x":80,"y":80,"zoom":1}});
         c.execute_batch("INSERT INTO episodes(id,title,sort_order,created_at) VALUES(1,'画布剧集',0,'1'); INSERT INTO scenes(id,episode_id,title,sort_order,created_at,creation_mode) VALUES(1,1,'画布场景',0,'1','canvas');").unwrap();
+        c.execute("INSERT INTO screenplays(title,content,format,created_at,updated_at,episode_id) VALUES('分镜',?,'csv','1','1',1)",[&shot_csv]).unwrap();
         c.execute("INSERT INTO scene_canvases VALUES(1,?,3)",[board.to_string()]).unwrap();
         c.execute("INSERT INTO scene_canvas_sources VALUES(1,1)",[]).unwrap();
         let backup=base.join("portable.spielberg-backup");export(&c,&root,&backup,"Test",false).unwrap();

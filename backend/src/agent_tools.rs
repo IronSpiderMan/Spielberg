@@ -113,7 +113,7 @@ pub(super) fn execute(state: &AppState, pid: &str, name: &str, args: &Value, web
             } else if ["PATCH","DELETE"].contains(&method){return Err("更新或删除必须指定 id".into())}
             if let Some(id)=args.get("episode_id") {
                 let id=id.as_i64().filter(|n|*n>0).ok_or("episode_id 必须为正整数")?;
-                if resource!="scenes" {return Err("episode_id 仅用于 scenes".into())}
+                if !["scenes","screenplays"].contains(&resource) {return Err("episode_id 仅用于 scenes 或 screenplays".into())}
                 if data.get("episode_id").is_some_and(|v|v.as_i64()!=Some(id)){return Err("episode_id 不一致".into())}
                 data["episode_id"]=json!(id);
             }
@@ -227,7 +227,7 @@ fn describe(operation:Option<&str>)->Value {
             "episodes":{"create_required":["title"],"fields":{"title":"string","description":"string","cover_media_id":"image asset ID or null","storyboard":"storyboard JSON object or null"}},
             "scenes":{"create_required":["title","episode_id"],"fields":{"title":"string","episode_id":"existing episode ID; immutable after creation","description":"string","prompt":"string","creation_mode":"default/canvas; immutable after creation","first_media_id":"image asset ID or null","last_media_id":"image asset ID or null","reference_media_id":"image asset ID or null","generation_options":"object e.g duration,aspect_ratio,video_mode,first,last,reference,reference_media_ids"},"get_filters":{"episode_id":"episode ID"}},
             "prompts":{"create_required":["name"],"fields":{"name":"string","content":"string","category":"string"}},
-            "screenplays":{"create_required":["title"],"fields":{"title":"string","content":"string","format":"markdown/csv"}}
+            "screenplays":{"create_required":["title","episode_id"],"fields":{"title":"string","episode_id":"existing episode ID; may be changed to move a screenplay","content":"string","format":"markdown/csv; each episode has at most one of each, GET existing documents and PATCH instead of creating another"},"get_filters":{"episode_id":"episode ID"}}
         },
         "actions":{
             "project/rename":{"required":{"name":"nonempty string"}},

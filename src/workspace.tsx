@@ -9,7 +9,7 @@ import { supportedPastedImages, useImageUpload } from "./hooks/useImageUpload";
 import { AssetImagePicker } from "./components/AssetImagePicker";
 import { SkillsSettings } from "./SkillsSettings";
 import { MediaSizeFields, VideoDurationField } from "./components/generation/GenerationFields";
-import React,{ lazy,useEffect,useRef,useState } from "react";
+import React,{ lazy,useCallback,useEffect,useRef,useState } from "react";
 
 import {
 Button,
@@ -57,7 +57,8 @@ ZoomIn
 import { api,defaultOptions,normalizeGenerationSize,Episode,FrameKey,GenerationOptions,imageUrl,Media,ModelSettings,post,Project,Role,Scene,Snapshot } from "./core";
 import { confirmDiscard,useEditGuard } from "./edit-guard";
 import { resolvePrompt, resolveH3Prompt } from "./resolve-prompt";
-import { StoryboardEditor, type Storyboard } from "./StoryboardEditor";
+import { type Storyboard } from "./StoryboardEditor";
+import ScreenplayManager, { type ScreenplayEditorHandle } from "./ScreenplayManager";
 import { PromptInput } from "./PromptInput";
 import { findMentions, promptMentions, syncMentionReferences } from "./prompt-mentions";
 import { EmptyState } from "./ui";
@@ -635,7 +636,7 @@ export function Episodes({
                   编辑
                 </Button>
                 <Popconfirm
-                  title="确认删除这集及全部场景？"
+                  title="确认删除这集及全部剧本、分镜和场景？"
                   onOk={() =>
                     post("/episodes/delete", {
                       project_id: data.project.id,
@@ -856,6 +857,11 @@ function EpisodeEditor({
   onClose: () => void;
   reload: () => void;
 }) {
+  const [view, setView] = useState<"markdown" | "csv" | "details">("markdown");
+  const scriptEditor = useRef<ScreenplayEditorHandle>(null);
+  const [scriptStatus, setScriptStatus] = useState({ dirty: false, busy: false });
+  const onScriptStatus = useCallback((dirty: boolean, busy: boolean) => setScriptStatus(current => current.dirty === dirty && current.busy === busy ? current : { dirty, busy }), []);
+  const [baseline, setBaseline] = useState(episode);
   const [cover, setCover] = useState<Media | undefined>(episode?.cover_media);
   const uploadCover = async () => {
     const path = await open({multiple:false, filters:[{name:"图片",extensions:["png","jpg","jpeg","webp"]}]});
@@ -869,40 +875,71 @@ function EpisodeEditor({
   useEffect(() => {
     if(boardEpisode.current===episode?.id) return;
     boardEpisode.current=episode?.id;
+    setBaseline(episode);
+    setView("markdown");
     setBoard(episode?.storyboard || undefined);
     setCover(episode?.cover_media);
     setTitle(episode?.title || "");
     setDescription(episode?.description || "");
   }, [episode]);
   const [saving, setSaving] = useState(false);
-  const dirty = JSON.stringify(board || null) !== JSON.stringify(episode?.storyboard || null) || title !== (episode?.title || "") || description !== (episode?.description || "") || cover?.id !== episode?.cover_media?.id;
-  useEditGuard(dirty || saving || generatingBoard);
+  const dirty = JSON.stringify(board || null) !== JSON.stringify(baseline?.storyboard || null) || title !== (baseline?.title || "") || description !== (baseline?.description || "") || cover?.id !== baseline?.cover_media?.id || scriptStatus.dirty;
+  useEditGuard(dirty || saving || generatingBoard || scriptStatus.busy);
+  useEffect(() => {
+    if (!dirty && !saving && !generatingBoard && !scriptStatus.busy) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty, saving, generatingBoard, scriptStatus.busy]);
   const close = () => {
-    if (saving || generatingBoard) return;
+    if (saving || generatingBoard || scriptStatus.busy) return;
     if (dirty) confirmDiscard(onClose);
     else onClose();
   };
   const save = async () => {
-    if (saving || !episode) return;
+    if (saving || generatingBoard || scriptStatus.busy || !episode) return;
     if (!title.trim()) { Message.warning("请输入剧集标题"); return; }
     setSaving(true);
     try {
+      if (scriptEditor.current && !await scriptEditor.current.save()) return;
       await post("/episodes/update", {project_id: project.id, id: episode.id, cover_media_id: cover?.id || null, title: title.trim(), description, storyboard: board || null});
       await reload();
-      Message.success("剧集已保存");
-      onClose();
+      setBaseline({ ...episode, title: title.trim(), description, cover_media: cover, storyboard: board });
+      setTitle(title.trim());
+      Message.success("已保存");
     } catch (error) { Message.error(String(error)); }
     finally { setSaving(false); }
   };
+  useEffect(() => {
+    if (!episode) return;
+    const shortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault(); void save();
+      }
+    };
+    window.addEventListener("keydown", shortcut);
+    return () => window.removeEventListener("keydown", shortcut);
+  });
   const currentEpisode = data.episodes.find(ep => ep.id === episode?.id);
+  const editorLocked = saving || generatingBoard || scriptStatus.busy;
   if (!episode) return null;
   return (
     <section className="episode-editor-page">
-      <div className="section-title">
-        <div><Button icon={<ArrowLeft size={16}/>} disabled={saving || generatingBoard} onClick={close}>返回</Button></div>
-        <Space><Button disabled={saving || generatingBoard} onClick={close}>取消</Button><Button type="primary" icon={<Save size={16}/>} disabled={generatingBoard} loading={saving} onClick={save}>保存剧集</Button></Space>
+      <div className="section-title episode-editor-toolbar">
+        <div className="episode-editor-heading"><Button icon={<ArrowLeft size={16}/>} disabled={editorLocked} onClick={close}>返回</Button><h1 title={title}>{title || "未命名剧集"}</h1></div>
+        <Space><Tag color={dirty ? "orange" : "green"}>{dirty ? "未保存" : "已保存"}</Tag><Button type="primary" icon={<Save size={16}/>} disabled={generatingBoard || scriptStatus.busy} loading={saving} onClick={save}>保存</Button></Space>
       </div>
-      <div className="episode-editor-columns">
+      <div className="episode-editor-navigation">
+        <div className="episode-editor-tabs" role="tablist" aria-label="剧集工作区">
+          <button type="button" role="tab" aria-selected={view === "markdown"} disabled={editorLocked} onClick={() => scriptEditor.current?.chooseFormat("markdown")}>剧本</button>
+          <button type="button" role="tab" aria-selected={view === "csv"} disabled={editorLocked} onClick={() => scriptEditor.current?.chooseFormat("csv")}>分镜头剧本</button>
+          <button type="button" role="tab" aria-selected={view === "details"} disabled={editorLocked} onClick={() => setView("details")}>剧集信息与场景</button>
+        </div>
+      </div>
+      <div className="episode-writing-pane" hidden={view === "details"}>
+        <ScreenplayManager key={episode.id} ref={scriptEditor} data={data} episodeId={episode.id} reload={async () => { await reload(); }} disabled={saving || generatingBoard} board={board} onBoard={setBoard} onBoardBusy={setGeneratingBoard} onStatus={onScriptStatus} onFormatChange={setView} />
+      </div>
+      <div className="episode-editor-columns" hidden={view !== "details"}>
       <Card className="episode-editor-card episode-details-pane">
       <fieldset disabled={saving} className="episode-editor-fields">
       <Form layout="vertical">
@@ -917,9 +954,9 @@ function EpisodeEditor({
           </div>
         </Form.Item>
         <Form.Item label="剧集标题">
-          <Input value={title} onChange={setTitle} />
+          <Input aria-label="剧集标题" value={title} onChange={setTitle} />
         </Form.Item>
-        {episode && <StoryboardEditor data={data} episodeId={episode.id} script={description} onScript={setDescription} board={board} onChange={setBoard} onBusy={setGeneratingBoard} reload={reload} disabled={saving}/>}
+        <Form.Item label="剧集简介" extra="故事正文请在「剧本」中编辑。"><Input.TextArea aria-label="剧集简介" value={description} onChange={setDescription} autoSize={{ minRows: 4 }} /></Form.Item>
       </Form>
       </fieldset>
       </Card>

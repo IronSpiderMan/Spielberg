@@ -62,7 +62,6 @@ const CreationDesk=lazy(()=>import("./creation").then(m=>({default:m.CreationDes
 const InfiniteCanvas=lazy(()=>import("./InfiniteCanvas"));
 const MediaEditor=lazy(()=>import("./MediaEditor"));
 const AssetLibrary=lazy(()=>import("./AssetLibrary"));
-const ScreenplayManager=lazy(()=>import("./ScreenplayManager"));
 const ProjectTools=lazy(()=>import("./ProjectTools"));
 const AgentWorkspace=lazy(()=>import("./AgentWorkspace"));
 
@@ -314,7 +313,6 @@ function App() {
             <LayoutDashboard />
             工作台
           </Menu.Item>
-          <Menu.Item key="screenplays" title="剧本管理" aria-label="剧本管理"><FileText />剧本管理</Menu.Item>
           <Menu.Item key="episodes" title="剧集" aria-label="剧集">
             <Clapperboard />
             剧集
@@ -388,7 +386,6 @@ function App() {
                       studio: "工作台",
                       agent: "Agent 助手",
                       episodes: "剧集管理",
-                      screenplays: "剧本管理",
                       assets: "资产库",
                       editor: "音视频剪辑",
                       roles: "角色设定",
@@ -471,7 +468,6 @@ function App() {
                   }
                 />
               )}{" "}
-              {page === "screenplays" && <ScreenplayManager key={data.project.id} data={data} reload={refresh} />}
               {page === "agent" && <AgentWorkspace key={data.project.id} data={data} reload={refresh} onNavigate={navigate} />}
               {page === "episodes" && (
                 <Episodes

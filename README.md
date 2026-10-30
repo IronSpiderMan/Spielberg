@@ -74,7 +74,7 @@ VITE_API_BASE_URL=https://api.example.com npm run build
 
 ## API 与分层
 
-六类资源的 REST CRUD 路径：
+七类资源的 REST CRUD 路径：
 
 | 资源 | 集合路径 |
 |---|---|
@@ -83,6 +83,7 @@ VITE_API_BASE_URL=https://api.example.com npm run build
 | 资产 | `/api/v1/projects/{project_id}/assets` |
 | 剧集 | `/api/v1/projects/{project_id}/episodes` |
 | 场景集合 | `/api/v1/projects/{project_id}/episodes/{episode_id}/scenes` |
+| 剧本 / 分镜头剧本 | `/api/v1/projects/{project_id}/episodes/{episode_id}/screenplays` |
 | Prompt | `/api/v1/projects/{project_id}/prompts` |
 
 集合支持 `GET`、`POST`；场景集合位于剧集下。场景仍可通过 `/api/v1/projects/{project_id}/scenes/{scene_id}` 按 ID 读取、更新和删除。PATCH 只更新提交的字段。项目删除移除注册信息并保留目录；资产删除移入回收站，仍被引用时返回冲突。文件支持二进制上传、下载和 Range 请求；生成、脚本、任务、备份等操作也通过版本化 HTTP 接口执行。
@@ -151,19 +152,22 @@ node scripts/qa/role-assets.cjs
 
 可通过 `QA_URL` 指向生产预览地址，`PLAYWRIGHT_PATH` 指定已有 Playwright 安装。原生系统文件选择器使用模拟系统对话框，备份文件内容、恢复、引用保护和清理逻辑由 Rust 测试验证。
 
-## 剧本管理
+## 剧本与分镜
 
-打开项目后，点击侧栏「剧本管理」，可新建、搜索、重命名和删除多份剧本。左侧编写 Markdown，右侧实时预览，支持标题、粗体、引用对白、列表和表格。可使用剧本模板和格式快捷按钮。点击「保存」或按 `Ctrl / ⌘ + S` 保存到当前项目数据库；「导出 Markdown」下载当前编辑内容为 `.md` 文件。切换页面、项目或剧本时会提醒未保存的修改。
+进入「剧集 → 编辑」，每集固定一份剧本和一份分镜头剧本。打开即编辑，无需新建或导入；剧本标题沿用剧集名称。Markdown 编辑器支持实时预览、模板、格式按钮和「引用 @」插入角色、素材或 Prompt，可导出 Markdown。分镜表支持添加和删除镜头、选择景别及运镜、从资产或角色选择画面、上传图片并导出 CSV。
 
-分镜头剧本：点击「新建分镜头剧本」在表格中添加、编辑或删除镜头，也可「导入 CSV」。CSV 列固定为 `编号,景别,运镜,画面,描述`；编号不可为空或重复，描述必填，画面可留空，或从资产库、角色图片、本地文件选择图片；本地图片上传后成为项目资产，CSV 画面列记录图片路径，表格显示缩略图并支持点击放大预览及清除。景别枚举：大远景、远景、全景、中景、近景、特写、大特写。运镜枚举：固定、推近、拉远、横摇、俯仰、平移、跟随、升高、降低、环绕、手持、变焦。景别和运镜使用下拉选择，导入及保存时校验枚举值。支持带 BOM 的 UTF-8 CSV、带引号的逗号和多行内容；「导出 CSV」下载带 BOM 的 `.csv` 文件。
+页面顶部只有一个「保存」入口，`Ctrl / ⌘ + S` 与该按钮行为一致，同时保存剧本、分镜头剧本、剧集信息和 AI 分镜规划。切换三个标签保留全部草稿；离开页面或项目时提醒未保存修改。
 
-旧项目打开时会自动升级数据库，剧本随项目备份和恢复。浏览器流程验证使用隔离的临时项目：
+「分镜头剧本 → AI 分镜与场景制作」直接使用本集剧本，支持分镜生成、参考图补全、Prompt 和场景写入。「转为分镜表」写入本集唯一的分镜表；已有镜头时先确认替换。时长、声音和原始镜头说明保留在描述中。
+
+旧项目自动升级：原剧集正文保留为本集 Markdown 剧本；独立管理中的内容迁入「原项目剧本」剧集。如果同一集已有同类型的多份内容，最新一份保留在原集，其余完整保留到「原集名称 · 旧稿 N」剧集，保留原 ID、标题、内容和时间，避免覆盖。数据库约束和 API 同时保证每集每种格式最多一份。剧本、分镜随项目备份恢复，删除剧集会级联删除这些内容和场景。
+
+隔离数据回归：
 
 ```bash
 PLAYWRIGHT_PATH=/path/to/playwright node scripts/qa-screenplays.cjs
+PLAYWRIGHT_PATH=/path/to/playwright node scripts/qa-screenplay-layout.cjs
 ```
-
-可通过 `PLAYWRIGHT_EXECUTABLE_PATH` 指定已有 Chromium 可执行文件。
 
 ## Agent 助手
 

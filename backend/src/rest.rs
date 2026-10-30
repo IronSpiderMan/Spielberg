@@ -74,7 +74,7 @@ fn validate(c: &Connection, resource: &str, value: &Value, create: bool) -> ApiR
         "episodes"=>&["title","description","cover_media_id","storyboard"],
         "scenes"=>&["creation_mode","title","description","prompt","episode_id","first_media_id","last_media_id","reference_media_id","generation_options"],
         "prompts"=>&["name","content","category"],
-        "screenplays"=>&["title","content","format"],
+        "screenplays"=>&["title","content","format","episode_id"],
         "assets"=>&["name","extension","data_base64","role_id"],_=>return Err(missing()),
     };
     for (key,item) in value.as_object().ok_or_else(||bad("JSON 必须是对象"))? {
@@ -98,9 +98,16 @@ fn validate(c: &Connection, resource: &str, value: &Value, create: bool) -> ApiR
         let name=if resource=="scenes" || resource=="episodes" || resource=="screenplays" {"title"} else {"name"};
         if value[name].as_str().unwrap_or("").trim().is_empty(){return Err(bad(&format!("缺少 {name}")))}
     }
-    if resource=="scenes" && (create || value.get("episode_id").is_some()) {
+    if ["scenes","screenplays"].contains(&resource) && (create || value.get("episode_id").is_some()) {
         let id=value["episode_id"].as_i64().ok_or_else(||bad("缺少有效的 episode_id"))?;
         get(c,"episodes",id)?;
+    }
+    if resource=="screenplays" {
+        let current = if create { json!({}) } else { get(c,"screenplays",intv(value,"id")?)? };
+        let episode_id = value["episode_id"].as_i64().or(current["episode_id"].as_i64()).ok_or_else(||bad("缺少有效的 episode_id"))?;
+        let format = value["format"].as_str().or(current["format"].as_str()).unwrap_or("markdown");
+        let duplicate: bool = c.query_row("SELECT EXISTS(SELECT 1 FROM screenplays WHERE episode_id=? AND format=? AND id!=?)",params![episode_id,format,value["id"].as_i64().unwrap_or(0)],|r|r.get(0)).map_err(sql_error)?;
+        if duplicate { return Err(ApiError(StatusCode::CONFLICT,"本集已有同类型剧本，请直接编辑已有内容".into())); }
     }
     Ok(())
 }
@@ -129,11 +136,11 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
             _=>Err(ApiError(StatusCode::METHOD_NOT_ALLOWED,"不支持的方法".into())),
         }
     } else {
-        let (pid,resource,id)=if parts.first()==Some(&"projects") && parts.len()==5 && parts[2]=="episodes" && parts[4]=="scenes" {
+        let (pid,resource,id)=if parts.first()==Some(&"projects") && parts.len()==5 && parts[2]=="episodes" && ["scenes","screenplays"].contains(&parts[4]) {
             let episode_id=parts[3].parse::<i64>().ok().filter(|n|*n>0).ok_or_else(||bad("剧集 ID 无效"))?;
             if value.get("episode_id").is_some_and(|v|v.as_i64()!=Some(episode_id)) {return Err(bad("episode_id 与路径不一致"))}
             value["episode_id"]=json!(episode_id);
-            (parts[1].to_string(),"scenes",None)
+            (parts[1].to_string(),parts[4],None)
         } else if parts.first()==Some(&"projects") && (3..=4).contains(&parts.len()) {
             (parts[1].to_string(),parts[2],parts.get(3).copied())
         } else if parts.len()<=2 {
@@ -170,8 +177,9 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
             match method {
                 "GET"=>{
                     if resource=="assets" {return Ok(catalog::list(&c,&value)?)}
+                    if let Some(ep)=value.get("episode_id") { if ["scenes","screenplays"].contains(&resource) { get(&c,"episodes",ep.as_i64().ok_or_else(||bad("剧集 ID 无效"))?)?; } }
                     let mut all=rows(&c,table,None)?;
-                    if resource=="scenes" {if let Some(ep)=value.get("episode_id") {all.retain(|s|s["episode_id"]==*ep);}}
+                    if ["scenes","screenplays"].contains(&resource) {if let Some(ep)=value.get("episode_id") {all.retain(|s|s["episode_id"]==*ep);}}
                     if resource=="episodes" || resource=="scenes" {all.sort_by_key(|s|s["sort_order"].as_i64().unwrap_or(0));}
                     all.into_iter().map(|v|enrich(&c,resource,v)).collect::<ApiResult<Vec<_>>>().map(|v|json!(v))
                 },

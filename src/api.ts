@@ -4,7 +4,7 @@ const resourceFields: Record<string, string[]> = {
   roles: ["name", "description", "design_media_id"],
   episodes: ["title", "description", "cover_media_id", "storyboard"],
   scenes: ["creation_mode", "prompt", "title", "description", "episode_id", "first_media_id", "last_media_id", "reference_media_id", "generation_options"],
-  screenplays: ["title", "content", "format"],
+  screenplays: ["title", "content", "format", "episode_id"],
   prompts: ["name", "content", "category"],
   projects: ["name"], assets: ["name"],
 };
@@ -61,10 +61,10 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   const resource = parts[0] === "media" ? "assets" : parts[0];
   const operation = parts[1];
   if (resourceFields[resource] && (parts.length === 1 && method === "POST" || parts.length === 2 && ["update", "rename", "delete"].includes(operation))) {
-    if (resource === "scenes" && !operation && method === "POST") {
+    if (["scenes", "screenplays"].includes(resource) && !operation && method === "POST") {
       const { episode_id, ...scene } = fields(resource, data);
-      if (!episode_id) throw new Error("创建场景需要 episode_id");
-      return jsonRequest<T>(`${projectPath(data.project_id, `episodes/${encodeURIComponent(episode_id)}/scenes`)}`, "POST", scene);
+      if (!episode_id) throw new Error("创建场景或剧本需要 episode_id");
+      return jsonRequest<T>(`${projectPath(data.project_id, `episodes/${encodeURIComponent(episode_id)}/${resource}`)}`, "POST", scene);
     }
     const root = resource === "projects" ? "/api/v1/projects" : projectPath(data.project_id, resource);
     if (!operation) return jsonRequest<T>(root, "POST", fields(resource, data));

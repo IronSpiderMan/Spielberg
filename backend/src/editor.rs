@@ -231,9 +231,10 @@ pub(super) fn command(s: &AppState, v: &Value, export: bool) -> Result<Value,Str
             INSERT INTO prompts(name,content,created_at,updated_at) VALUES('原有提示词','保留内容','1','1');
             DROP VIEW asset_usage; DROP TABLE edit_outputs; DROP TABLE edit_sources; DROP TABLE edit_projects;
             CREATE VIEW asset_usage AS SELECT id AS media_id,'role' AS kind,id AS target_id,name AS title,NULL AS episode_id,NULL AS episode_title,'旧用途' AS purpose FROM roles;
+            DROP TABLE scene_canvas_sources; DROP TABLE scene_canvases; ALTER TABLE scenes DROP COLUMN prompt; ALTER TABLE scenes DROP COLUMN creation_mode;
             PRAGMA user_version=6;").unwrap();
         migrate(&c).unwrap();migrate(&c).unwrap();
-        assert_eq!(c.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),7);
+        assert_eq!(c.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),12);
         assert_eq!(c.query_row("SELECT content FROM prompts",[],|r|r.get::<_,String>(0)).unwrap(),"保留内容");
         c.execute("INSERT INTO edit_projects VALUES('cut','剪辑','{}','draft','1','1')",[]).unwrap();
         c.execute("INSERT INTO edit_sources VALUES('cut',1)",[]).unwrap();
