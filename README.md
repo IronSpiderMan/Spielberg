@@ -158,6 +158,8 @@ node scripts/qa/role-assets.cjs
 
 进入项目后，在侧栏选择「项目配置」，可修改项目名称、编写项目故事大纲，并管理世界观、人物关系、创作笔记等项目文档。文档支持直接新建、编辑、删除、导入 Markdown / TXT（单份不超过 2 MB）和导出 Markdown；修改后统一点击「保存配置」。未保存时离开页面会提醒。大纲与文档保存在各自项目的数据库中，随项目备份和恢复保留。
 
+Agent 可通过 `app_action` 的 `project/config/read`、`project/config/update` 读取或修改项目名称和大纲，通过 `project/document/read`、`project/document/save`、`project/document/delete` 读取、新建、修改或删除项目文档。创作前先读取大纲、文档目录及相关文档；长文本按 Unicode 字符分页，沿 `next_offset` 读取全文。文档按 ID 单独更新，保留其他文档；仅在用户要求时修改项目配置。可直接对 Agent 说「根据项目大纲完善第一集」或「新建一份人物关系文档」。
+
 ## 剧本与分镜
 
 进入「剧集 → 编辑」，每集固定一份剧本和一份分镜头剧本。打开即编辑，无需新建或导入；剧本标题沿用剧集名称。Markdown 编辑器支持实时预览、模板和格式按钮，输入 `@` 即可搜索引用角色、场景、素材或 Prompt；用方向键选择、回车或 Tab 插入，Esc 关闭提示，可导出 Markdown。分镜表支持添加和删除镜头、选择景别及运镜、从资产或角色选择画面、上传图片并导出 CSV。
