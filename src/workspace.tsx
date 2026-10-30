@@ -1,3 +1,4 @@
+import { PreviewVideo, VideoPreviewModal } from "./components/VideoPreviewModal";
 import { sceneVideoPrompt } from "./core";
 import { ReferenceMediaPicker } from "./components/generation/ReferenceMediaPicker";
 import { buildVideoRequest } from "./generation-request";
@@ -195,10 +196,10 @@ export function Studio({
       <div className="cut-workspace">
       <div className="cut-preview">
         {merged ? (
-          <video
+          <PreviewVideo
             key={merged.id}
-            src={imageUrl(merged)}
-            controls
+            media={merged}
+            projectId={data.project.id}
             autoPlay
             onError={() => Message.error("无法播放合并视频，请检查本地文件")}
           />
@@ -316,11 +317,9 @@ function VideoAsset({video, scene, projectId, reload}: {video:Media;scene?:Scene
   const [preview,setPreview] = useState(false);
   const [deleting,setDeleting] = useState(false);
   const [selecting,setSelecting] = useState(false);
-  const [resolution,setResolution] = useState("");
-  const onMetadata = (event: React.SyntheticEvent<HTMLVideoElement>) => {
-    const el = event.currentTarget;
-    if (el.videoWidth && el.videoHeight) setResolution(`${el.videoWidth} × ${el.videoHeight}`);
-  };
+  const inlinePlayer = useRef<HTMLVideoElement>(null);
+  const [previewTime,setPreviewTime] = useState(0);
+  const openPreview = () => {setPreviewTime(inlinePlayer.current?.currentTime || 0);inlinePlayer.current?.pause();setPreview(true);};
   const download = async () => {
     try {
       const path = await saveDialog({defaultPath:video.name,filters:[{name:"视频",extensions:[video.path.split('.').pop() || "mp4"]}]});
@@ -328,9 +327,9 @@ function VideoAsset({video, scene, projectId, reload}: {video:Media;scene?:Scene
     } catch(e){Message.error(String(e));}
   };
   return <div className="video-asset">
-    <video src={imageUrl(video)} controls muted playsInline preload="auto" onLoadedMetadata={onMetadata} onLoadedData={event=>{const el=event.currentTarget;if(el.duration>0)el.currentTime=Math.min(.1,el.duration/2);}} onDoubleClick={()=>setPreview(true)}/>
+    <video ref={inlinePlayer} src={imageUrl(video)} controls muted playsInline preload="metadata" onLoadedData={event=>{const el=event.currentTarget;if(el.duration>0)el.currentTime=Math.min(.1,el.duration/2);}} onDoubleClick={event=>{event.preventDefault();openPreview();}}/>
     <Space wrap>
-      <Button size="mini" icon={<ZoomIn size={14}/>} onClick={()=>setPreview(true)}>放大预览</Button>
+      <Button size="mini" icon={<ZoomIn size={14}/>} onClick={openPreview}>放大预览</Button>
       <Button size="mini" icon={<Download size={14}/>} onClick={download}>下载</Button>
       {scene && reload && <Button size="mini" type={scene.video_media_id === video.id ? "secondary" : "primary"}
         disabled={deleting || selecting || scene.video_media_id === video.id} loading={selecting}
@@ -348,10 +347,7 @@ function VideoAsset({video, scene, projectId, reload}: {video:Media;scene?:Scene
         try {await post("/scenes/delete-video",{project_id:projectId,scene_id:scene.id,media_id:video.id});await reload?.();Message.success("视频版本已删除");} catch(e){Message.error(String(e));} finally {setDeleting(false);}
       }}><Button size="mini" status="danger" disabled={selecting || deleting} loading={deleting} icon={<Trash2 size={14}/>}>删除</Button></Popconfirm>}
     </Space>
-    <Modal title={video.name} visible={preview} onCancel={()=>setPreview(false)} footer={null} style={{width:"min(1100px, 90vw)"}} unmountOnExit>
-      <div className="video-resolution">{resolution ? `分辨率 ${resolution}` : "正在读取分辨率…"}</div>
-      <video style={{width:"100%",maxHeight:"75vh",background:"#000"}} src={imageUrl(video)} controls autoPlay onLoadedMetadata={onMetadata}/>
-    </Modal>
+    <VideoPreviewModal media={preview?video:null} projectId={projectId} initialTime={previewTime} onClose={()=>setPreview(false)} />
   </div>;
 }
 type BackgroundJob = {id:number;project_id:string;project_name:string;scene_id?:number;operation:string;status:string;prompt:string;created_at:string;updated_at:string;error?:string;result?:Media};
@@ -751,7 +747,7 @@ export function Episodes({
             </Select>
           </Form.Item>
         </Form>
-        {batchResult && <video className="asset-preview" controls src={imageUrl(batchResult)}/>}
+        {batchResult && <PreviewVideo media={batchResult} projectId={data.project.id}/>}
         {progress && <p role="status">{progress}</p>}
         {failures.map((error, i) => (
           <p className="generation-error" key={i}>
@@ -759,33 +755,30 @@ export function Episodes({
           </p>
         ))}
       </Modal>
-      <Modal
-        className="scene-video-preview-modal"
+      <VideoPreviewModal
+        media={previewScene ? previewVideo || null : null}
+        playbackKey={previewScene?.id}
+        autoPlay={continuousPreview}
         title={`视频预览 · ${previewScene?.title || ""}`}
-        visible={!!previewScene}
-        footer={null}
-        unmountOnExit
-        onCancel={() => {setPreviewSceneId(null); setPreviewVideoId(null);}}
-      >
-        {previewVideo && <>
-          <div className="scene-video-preview-toolbar">
-            <div className="scene-video-preview-info">
-              <b>{previewVideo.name}</b>
-              <span>{previewVideo.id === previewScene?.video_media_id ? "主视频" : "其他版本"}</span>
-            </div>
-            {previewVideos.length > 1 && <Select aria-label="选择视频版本" value={previewVideo.id} onChange={setPreviewVideoId}>
-              {previewVideos.map((video, index) => <Select.Option key={video.id} value={video.id}>版本 {index + 1}{video.id === previewScene?.video_media_id ? " · 主视频" : ""}</Select.Option>)}
-            </Select>}
-            <Button size="small" type={continuousPreview ? "primary" : "secondary"} onClick={()=>setContinuousPreview(value=>!value)} disabled={previewPlaylist.length<2}>{continuousPreview ? "连续播放中" : "连续播放"}</Button>
-          </div>
-          <video key={`${previewScene?.id}-${previewVideo.id}`} className="scene-video-preview" controls autoPlay preload="metadata" src={imageUrl(previewVideo)} onEnded={()=>{
-            if(!continuousPreview || !previewScene)return;
-            const index=previewPlaylist.findIndex(scene=>scene.id===previewScene.id), next=previewPlaylist[index+1];
-            if(next){setPreviewSceneId(next.id);const videos=sceneVideos(next);setPreviewVideoId(next.video_media_id || videos[0].id);}
-            else setContinuousPreview(false);
-          }} onError={() => Message.error("视频无法播放，请检查文件或更换版本")} />
+        videos={previewVideos}
+        projectId={data.project.id}
+        onMediaChange={video=>setPreviewVideoId(video.id)}
+        onClose={()=>{setPreviewSceneId(null);setPreviewVideoId(null);}}
+        allowLoop={!continuousPreview}
+        toolbar={<>
+          <Tag>{previewVideo?.id === previewScene?.video_media_id ? "主视频" : "其他版本"}</Tag>
+          {previewVideos.length > 1 && <Select style={{width:180}} aria-label="选择视频版本" value={previewVideo?.id} onChange={setPreviewVideoId}>
+            {previewVideos.map((video,index)=><Select.Option key={video.id} value={video.id}>版本 {index+1}{video.id === previewScene?.video_media_id ? " · 主视频" : ""}</Select.Option>)}
+          </Select>}
+          <Button type={continuousPreview ? "primary" : "secondary"} onClick={()=>setContinuousPreview(value=>!value)} disabled={previewPlaylist.length<2}>{continuousPreview ? "连续播放中" : "连续播放"}</Button>
         </>}
-      </Modal>
+        onEnded={()=>{
+          if(!continuousPreview || !previewScene)return;
+          const index=previewPlaylist.findIndex(scene=>scene.id===previewScene.id), next=previewPlaylist[index+1];
+          if(next){setPreviewSceneId(next.id);const videos=sceneVideos(next);setPreviewVideoId(next.video_media_id || videos[0].id);}
+          else setContinuousPreview(false);
+        }}
+      />
       <EpisodeEditor
         episode={episode}
         project={data.project}

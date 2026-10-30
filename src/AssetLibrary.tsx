@@ -1,3 +1,4 @@
+import { VideoPreviewModal } from "./components/VideoPreviewModal";
 import { ImagePreviewModal } from "./components/ImagePreviewModal";
 import { AssetAssignmentModal } from "./components/AssetAssignmentModal";
 import { Button,Drawer,Dropdown,Empty,Input,Menu,Message,Modal,Pagination,Select,Space,Spin,Tag } from "@arco-design/web-react";
@@ -113,7 +114,8 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
       </Spin>
     </Drawer>
     <ImagePreviewModal media={preview?.kind==="image"?preview:null} onClose={()=>setPreview(null)} footer={filter==="trash"?null:<Button type="primary" onClick={()=>preview&&beginAssignment(preview)}>设置用途</Button>}/>
-    <Modal visible={!!preview && preview.kind!=="image"} title={preview?.name} footer={filter==="trash"||preview?.kind==="file"||preview?.kind==="audio"?null:<Button type="primary" onClick={()=>preview&&beginAssignment(preview)}>设置用途</Button>} unmountOnExit onCancel={()=>setPreview(null)}>{preview?.kind==="video"?<video className="asset-preview" controls src={imageUrl(preview)}/>:preview?.kind==="audio"?<audio controls src={imageUrl(preview)} style={{width:"100%"}}/>:preview?.kind==="file"?<Empty description="此文件不支持预览，可通过更多操作导出查看"/>:<img className="asset-preview" src={imageUrl(preview||undefined)} alt={preview?.name}/>}</Modal>
+    <VideoPreviewModal media={preview?.kind==="video"?preview:null} videos={items.filter(item=>item.kind==="video")} projectId={pid} onMediaChange={setPreview} onClose={()=>setPreview(null)} footer={filter==="trash"?null:<Button type="primary" onClick={()=>preview&&beginAssignment(preview)}>设置用途</Button>}/>
+    <Modal visible={!!preview && (preview.kind==="audio"||preview.kind==="file")} title={preview?.name} footer={null} unmountOnExit onCancel={()=>setPreview(null)}>{preview?.kind==="audio"?<audio controls src={imageUrl(preview)} style={{width:"100%"}}/>:<Empty description="此文件不支持预览，可通过更多操作导出查看"/>}</Modal>
     <Modal visible={!!rename} title="重命名资产" onCancel={()=>setRename(null)} onOk={async()=>{if(!rename?.name.trim())throw Error("请输入资产名称");await post("/media/rename",{project_id:pid,id:rename.id,name:rename.name.trim()});setRename(null);await refresh();}}><Input aria-label="资产名称" value={rename?.name||""} onChange={name=>setRename(m=>m?{...m,name}:null)}/></Modal>
     <Modal visible={!!scan} title="磁盘清理" okText="执行清理" confirmLoading={busy} onCancel={()=>{if(!busy)setScan(null);}} onOk={async()=>{
       if(!scan)return;setBusy(true);try{await post("/storage/cleanup",{project_id:pid,files:scan.files.map(f=>f.path),clear_cache:true});setScan(null);await refresh();Message.success("缓存已清理，未登记文件已移入回收站");}catch(e){Message.error(String(e));throw e;}finally{setBusy(false);}

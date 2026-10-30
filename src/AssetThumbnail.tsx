@@ -12,6 +12,17 @@ function enqueue<T>(work: () => Promise<T>): Promise<T> {
     if (running < 2) start(); else pending.push(start);
   });
 }
+const thumbnailUrls = new Map<string, string>();
+const thumbnailKey = (media: Media, projectId: string) => JSON.stringify([projectId, media.id, media.path]);
+export function cachedThumbnailUrl(media: Media, projectId: string) {
+  return thumbnailUrls.get(thumbnailKey(media, projectId)) || "";
+}
+export async function loadThumbnailUrl(media: Media, projectId: string) {
+  const result = await post<{path:string}>("/media/thumbnail", {project_id:projectId, id:media.id});
+  const url = fileUrl(result.path);
+  thumbnailUrls.set(thumbnailKey(media, projectId), url);
+  return url;
+}
 export default function AssetThumbnail({media, projectId}: {media: Media; projectId: string}) {
   const holder = useRef<HTMLSpanElement>(null);
   const [source, setSource] = useState("");
@@ -26,8 +37,8 @@ export default function AssetThumbnail({media, projectId}: {media: Media; projec
       void enqueue(async () => {
         if (disposed) return;
         try {
-          const result = await post<{path:string}>("/media/thumbnail", {project_id:projectId, id:media.id});
-          if (!disposed) setSource(fileUrl(result.path));
+          const url = await loadThumbnailUrl(media, projectId);
+          if (!disposed) setSource(url);
         } catch {
           if (!disposed) {if (media.kind === "image") setSource(imageUrl(media)); else setFailed(true);}
         }

@@ -1,0 +1,27 @@
+.video-preview-modal.is-fullscreen .arco-modal-header { display: none; }
+.video-preview-header { flex-shrink: 0; min-height: 72px; padding: 0 24px; border-bottom: 1px solid var(--ui-border); }
+.video-preview-header > div { flex: 1; }
+.video-preview-header div > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.video-preview-close { flex-shrink: 0; }
+.video-preview-speed { width: 88px; }
+.video-preview-stage { isolation: isolate; }
+.video-preview-viewport { display: flex; flex: 1; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.video-preview-viewport video { display: block; width: 100%; height: 100%; min-width: 0; object-fit: contain; }
+.video-preview-viewport.is-actual-size video { flex: none; max-width: none; max-height: none; margin: auto; }
+.video-preview-placeholder { pointer-events: none; background: #151615cc; }
+.video-preview-placeholder.is-error { pointer-events: auto; }
+.video-preview-filmstrip button { position: relative; width: 80px; height: 52px; color: var(--ui-muted); overflow: hidden; }
+.video-preview-filmstrip .cached-thumbnail { display: block; width: 100%; height: 100%; }
+.video-preview-filmstrip .thumbnail-placeholder { display: grid; place-items: center; height: 100%; }
+.video-preview-filmstrip .thumbnail-placeholder svg { width: 20px; height: 20px; }
+.video-preview-filmstrip .thumbnail-placeholder small { display: none; }
+.video-preview-filmstrip button > span:last-child { position: absolute; bottom: 3px; right: 4px; padding: 1px 4px; border-radius: 3px; background: #151615cc; color: white; font-size: 10px; }
+.video-result-preview { position: relative; width: 100%; min-width: 0; }
+.video-result-preview > video { display: block; width: 100%; max-height: 440px; background: #151615; object-fit: contain; }
+.video-result-expand { position: absolute; top: 8px; right: 8px; }
+@media (max-width: 640px) {
+  .video-preview-header { min-height: 60px; padding: 0 12px; }
+  .video-preview-modal .image-preview-toolbar { gap: 8px; }
+  .video-preview-modal .image-preview-status > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+  .video-preview-filmstrip { gap: 8px; }
+}

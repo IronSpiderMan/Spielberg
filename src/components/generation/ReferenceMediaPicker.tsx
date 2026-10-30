@@ -1,3 +1,4 @@
+import { PreviewVideo } from "../VideoPreviewModal";
 import { Button, Form, Message, Select } from "@arco-design/web-react";
 import { useRef, useState } from "react";
 import { uploadAsset } from "../../api";
@@ -51,7 +52,7 @@ export function ReferenceMediaPicker({ projectId, media, videoIds = [], audioIds
         </div>
         {ids.map(id => { const item = available.find(m => m.id === id); return item && <div key={id} style={{ marginTop: 8 }}>
           <span className="helper">{item.name}</span>
-          {kind === "video" ? <video src={imageUrl(item)} controls preload="metadata" style={{ display: "block", maxWidth: "100%", maxHeight: 160 }} /> : <audio src={imageUrl(item)} controls preload="metadata" style={{ maxWidth: "100%" }} />}
+          {kind === "video" ? <PreviewVideo media={item} projectId={projectId} style={{ maxHeight: 160 }} /> : <audio src={imageUrl(item)} controls preload="metadata" style={{ maxWidth: "100%" }} />}
         </div>; })}
       </Form.Item>;
     })}

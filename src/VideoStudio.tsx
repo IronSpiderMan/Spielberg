@@ -1,3 +1,4 @@
+import { PreviewVideo } from "./components/VideoPreviewModal";
 import { ReferenceMediaPicker } from "./components/generation/ReferenceMediaPicker";
 import { buildVideoRequest, type VideoMode } from "./generation-request";
 import { GenerationModeTabs, MediaSizeFields, VideoDurationField } from "./components/generation/GenerationFields";
@@ -7,7 +8,7 @@ import { Film, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import { isSupportedImage, useImageUpload } from "./hooks/useImageUpload";
 import { usePromptOptimization } from "./hooks/usePromptOptimization";
-import { defaultGenerationSize, Media, Snapshot, imageUrl, post } from "./core";
+import { defaultGenerationSize, Media, Snapshot, post } from "./core";
 import { PromptInput } from "./PromptInput";
 import { findMentions, promptMentions, resolvePromptReferences } from "./prompt-mentions";
 import { STYLE_PRESETS } from "./prompt-presets";
@@ -110,7 +111,7 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
     <div className="creation-panel image-result video-result" aria-busy={busy}>
       <div className="generation-preview-heading"><h2>生成预览</h2><span className={`generation-state${busy ? " is-busy" : result ? " is-ready" : ""}`}>{busy ? "生成中" : result ? "已完成" : "等待创作"}</span></div>
       <div className="generation-preview-body">
-      {result ? <><video key={result.id} src={imageUrl(result)} controls preload="metadata" /><p className="helper">{result.name} · 已保存到资产库</p></> : <Empty icon={<Film size={28} />} description={<><b>{busy ? "视频正在生成" : "下一个精彩镜头，从这里开始"}</b><p>{busy ? "稍候片刻，完成后将自动展示" : "在左侧描述画面，生成的视频将自动存入资产库"}</p></>} />}
+      {result ? <><PreviewVideo key={result.id} media={result} projectId={data.project.id} /><p className="helper">{result.name} · 已保存到资产库</p></> : <Empty icon={<Film size={28} />} description={<><b>{busy ? "视频正在生成" : "下一个精彩镜头，从这里开始"}</b><p>{busy ? "稍候片刻，完成后将自动展示" : "在左侧描述画面，生成的视频将自动存入资产库"}</p></>} />}
       {error && <p className="image-generation-errors" role="alert">{error}</p>}
       </div>
       <p className="helper generation-result-note">生成任务可在「后台任务」中查看进度与错误信息。</p>

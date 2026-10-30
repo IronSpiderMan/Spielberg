@@ -27,10 +27,44 @@ pub fn initialize_root(root: &Path) -> io::Result<()> {
 
 pub fn is_project(path:&Path)->bool {path.join("spielberg.sqlite").is_file() || path.join(LEGACY_DATABASE).is_file()}
 
+// Opening a cloud placeholder can block inside SQLite's first pread, before its
+// busy timeout applies. Inspect metadata without triggering a cloud download.
+fn ensure_downloaded(database: &Path) -> rusqlite::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::macos::fs::MetadataExt;
+        for suffix in ["", "-wal", "-journal", "-shm"] {
+            let mut name = database.as_os_str().to_os_string();
+            name.push(suffix);
+            let path = std::path::PathBuf::from(name);
+            if let Ok(metadata) = fs::metadata(&path) {
+                check_downloaded_flags(&path, metadata.st_flags())
+                    .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = database;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn check_downloaded_flags(path: &Path, flags: u32) -> io::Result<()> {
+    const SF_DATALESS: u32 = 0x4000_0000;
+    if flags & SF_DATALESS != 0 {
+        return Err(io::Error::other(format!(
+            "项目数据库尚未下载到本机：{}。请在 Finder 中对项目文件夹选择「立即下载」，完成后重试。", path.display()
+        )));
+    }
+    Ok(())
+}
+
 pub fn open_database(project: &Path) -> rusqlite::Result<Connection> {
     let destination = project.join("spielberg.sqlite");
     let legacy = project.join(LEGACY_DATABASE);
+    ensure_downloaded(&destination)?;
     if !destination.exists() && legacy.is_file() {
+        ensure_downloaded(&legacy)?;
         let source = Connection::open(&legacy)?;
         source.busy_timeout(std::time::Duration::from_secs(10))?;
         // SQLite creates a consistent snapshot, including committed WAL data.
@@ -49,6 +83,20 @@ pub fn open_database(project: &Path) -> rusqlite::Result<Connection> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn rejects_cloud_placeholders_before_sqlite_reads_them() {
+        for name in ["spielberg.sqlite", "manju.sqlite", "spielberg.sqlite-wal"] {
+            let path = Path::new(name);
+            let error = check_downloaded_flags(path, 0x4000_0020).unwrap_err().to_string();
+            assert!(error.contains(name));
+            assert!(error.contains("立即下载"));
+            // Ordinary and locally compressed files remain usable.
+            assert!(check_downloaded_flags(path, 0).is_ok());
+            assert!(check_downloaded_flags(path, 0x20).is_ok());
+        }
+    }
 
     #[test]
     fn preserves_registry_paths_and_does_not_overwrite_new_registry() {
