@@ -128,6 +128,12 @@ fn compact_json(raw: &str) -> String {
     value.to_string()
 }
 
+fn asset_note(message:&Value)->String {
+ match message["image_media_ids"].as_array().filter(|ids|!ids.is_empty()) {
+  Some(ids)=>format!("\n[粘贴图片已加入当前项目资产，按图片顺序 image_media_ids={}；图生图请使用 operation=i2i 和这些素材 ID。]",json!(ids)),
+  None=>String::new()
+ }
+}
 fn image_note(message: &Value) -> String {
     let count = message["images"].as_array().map_or(0, Vec::len);
     if count == 0 { String::new() } else {
@@ -146,7 +152,7 @@ fn wire_message(message: &Value, historical: bool) -> Option<Value> {
     if role == "user" {
         // This conservative placeholder is used for the text budget. Real images
         // are attached afterwards and their base64 never consumes that budget.
-        wire["content"] = json!(format!("{text}{}", image_note(message)));
+        wire["content"] = json!(format!("{text}{}{}", image_note(message),asset_note(message)));
     } else if role == "assistant" {
         if let Some(calls) = message["tool_calls"].as_array().filter(|calls| !calls.is_empty()) {
             let mut calls = calls.clone();
@@ -256,7 +262,7 @@ fn project(session: &Value) -> View {
             if let Some(images) = message["images"].as_array().filter(|images|!images.is_empty()) {
                 let kept: Vec<_> = images.iter().enumerate().filter(|(i,_)|retained.contains(&(index,*i))).collect();
                 let text = message["content"].as_str().filter(|text|!text.is_empty()).unwrap_or("请根据图片完成分析。");
-                let note = if kept.len() < images.len() { image_note(message) } else { String::new() };
+                let note = format!("{}{}",if kept.len() < images.len() { image_note(message) } else { String::new() },asset_note(message));
                 if kept.is_empty() { wire["content"] = json!(format!("{text}{note}")); }
                 else {
                     let mut parts = vec![json!({"type":"text","text":format!("{text}{note}")})];
