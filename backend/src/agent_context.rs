@@ -173,9 +173,10 @@ fn wire_message(message: &Value, historical: bool) -> Option<Value> {
 
 fn note_row(messages: &[Value], turn: usize, start: usize, end: usize, bytes: usize) -> Value {
     let user = messages[start]["content"].as_str().unwrap_or("");
-    let assistant = messages[start+1..end].iter().rev()
-        .find(|m| m["role"]=="assistant" && m["tool_calls"].as_array().is_none_or(Vec::is_empty))
-        .and_then(|m| m["content"].as_str()).unwrap_or("");
+    let assistant = messages[start+1..end].iter()
+        .filter(|m| m["role"]=="assistant")
+        .filter_map(|m| m["content"].as_str()).filter(|text| !text.is_empty())
+        .collect::<Vec<_>>().join("\n");
     let mut row = json!({"turn":turn+1,"message_index":start+1,"user":""});
     // Rows are quoted JSON inside an assistant message, so count the second
     // escaping layer too (especially important for pasted code/control chars).
@@ -183,7 +184,7 @@ fn note_row(messages: &[Value], turn: usize, start: usize, end: usize, bytes: us
     let available = bytes.saturating_sub(overhead);
     let user_bytes = if bytes > 600 && !assistant.is_empty() { available * 3 / 4 } else { available };
     row["user"] = json!(excerpt(user,user_bytes));
-    if bytes > 600 && !assistant.is_empty() { row["assistant"] = json!(excerpt(assistant,available/4)); }
+    if bytes > 600 && !assistant.is_empty() { row["assistant"] = json!(excerpt(&assistant,available/4)); }
     let images = messages[start]["images"].as_array().map_or(0,Vec::len);
     if images > 0 { row["images_not_shown"] = json!(images); }
     if bytes > 1_600 {
@@ -280,6 +281,21 @@ fn project(session: &Value) -> View {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interrupted_turn_notes_keep_corrections_before_the_error() {
+        let messages=vec![
+            json!({"role":"user","content":"写故事大纲"}),
+            json!({"role":"assistant","content":"更正：获奖年份为2024年。下一步保存大纲。"}),
+            json!({"role":"assistant","content":"模型请求超时"}),
+            json!({"role":"user","content":"继续"})
+        ];
+        let row=note_row(&messages,0,0,3,4000);
+        let text=row.to_string();
+        assert!(text.contains("获奖年份为2024年"));
+        assert!(text.contains("下一步保存大纲"));
+        assert!(text.contains("模型请求超时"));
+    }
 
     fn image(size: usize) -> String { format!("data:image/png;base64,{}","a".repeat(size)) }
     fn text_size(messages: &[Value]) -> usize {
