@@ -1,4 +1,32 @@
 /* Media and project management. Keep these rules scoped away from the canvas. */
+html .app .content:has(> .asset-library) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 16px;
+}
+
+.asset-library {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.asset-library > .section-title,
+.asset-library > .asset-toolbar,
+.asset-library > .helper {
+  flex-shrink: 0;
+}
+
+.asset-library > .arco-spin,
+.asset-library > .library-status {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
 .asset-library .section-title.page-actions {
   margin-bottom: 20px;
 }
@@ -173,8 +201,9 @@
 }
 
 .asset-library .asset-pagination {
-  margin-top: 28px;
-  padding-top: 20px;
+  flex-shrink: 0;
+  margin-top: 16px;
+  padding-top: 12px;
 }
 
 .asset-empty {
