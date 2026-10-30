@@ -151,3 +151,8 @@
   .episode-editor-toolbar > .arco-space { gap: 6px !important; }
   .episode-editor-toolbar > .arco-space .arco-btn { padding: 0 10px; }
 }
+
+.episode-scene-browser-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.episode-scene-item { display: flex; flex-direction: column; min-width: 0; gap: 8px; }
+.episode-scene-item > .episode-scene-card { flex: 1; width: 100%; }
+.episode-scene-item-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }

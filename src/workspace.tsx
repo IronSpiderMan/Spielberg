@@ -479,7 +479,7 @@ export function Episodes({
   editScene: (scene: Scene, isNew: boolean) => void;
   initialEpisodeId?:number;
 }) {
-  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+
   const [episode, setEpisode] = useState<{
     id: number;
     title: string;
@@ -497,19 +497,7 @@ export function Episodes({
   const [reorderingEpisodes,setReorderingEpisodes]=useState(false);
   const moveEpisode=async(index:number,offset:number)=>{const ids=data.episodes.map(item=>item.id);[ids[index],ids[index+offset]]=[ids[index+offset],ids[index]];setReorderingEpisodes(true);try{await post("/episodes/reorder",{project_id:data.project.id,episode_ids:ids});reload();}catch(e){Message.error(String(e));}finally{setReorderingEpisodes(false);}};
   const [failures, setFailures] = useState<string[]>([]);
-  const [previewSceneId, setPreviewSceneId] = useState<number | null>(null);
-  const [previewVideoId, setPreviewVideoId] = useState<number | null>(null);
-  const [continuousPreview, setContinuousPreview] = useState(false);
-  const previewScene = data.episodes.flatMap((item) => item.scenes).find((scene) => scene.id === previewSceneId);
-  const previewVideos = previewScene ? sceneVideos(previewScene) : [];
-  const previewVideo = previewVideos.find((video) => video.id === previewVideoId) || previewVideos[0];
-  const previewPlaylist = previewScene ? [...(data.episodes.find(item => item.scenes.some(scene => scene.id === previewScene.id))?.scenes || [])].sort((a,b)=>a.sort_order-b.sort_order || a.id-b.id).filter(scene=>sceneVideos(scene).length) : [];
-  const openScenePreview = (scene: Scene) => {
-    const videos = sceneVideos(scene);
-    if (!videos.length) return;
-    setPreviewSceneId(scene.id);
-    setPreviewVideoId(scene.video_media_id || videos[0].id);
-  };
+
   const generateBatch = async () => {
     if (!batch) return;
     if (batchMode === "existing") {
@@ -565,36 +553,7 @@ export function Episodes({
     await reload();
     setEpisode(x as typeof episode);
   };
-  const [inserting, setInserting] = useState<number | null>(null);
-  const [copyingScene, setCopyingScene] = useState<number | null>(null);
-  const copyScene = async (scene: Scene) => {
-    setCopyingScene(scene.id);
-    try {
-      await post("/scenes/duplicate", { project_id: data.project.id, id: scene.id });
-      await reload();
-      Message.success("场景已复制");
-    } catch (e) { Message.error(String(e)); }
-    finally { setCopyingScene(null); }
-  };
-  const [sceneCreation,setSceneCreation]=useState<number|null>(null);
-  const [creationMode,setCreationMode]=useState<"default"|"canvas">("default");
-  const [newSceneTitle,setNewSceneTitle]=useState("");
-  const makeScene = async (id: number) => {
-    setInserting(id);
-    try {
-    const x = await post<Scene>("/scenes", {
-      project_id: data.project.id,
-      episode_id: id,
-      title: newSceneTitle.trim() || `场景 ${(data.episodes.find(ep => ep.id === id)?.scenes.length ?? 0) + 1}`,
-      creation_mode: creationMode,
-      description: "",
-    });
-    await reload();
-    setSceneCreation(null);
-    editScene(x, true);
-    } finally { setInserting(null); }
-  };
-  if (episode) return <EpisodeEditor episode={episode} project={data.project} data={data} editScene={scene => editScene(scene, false)} onClose={() => setEpisode(null)} reload={reload}/>;
+  if (episode) return <EpisodeEditor episode={episode} project={data.project} data={data} editScene={(scene, isNew = false) => editScene(scene, isNew)} onClose={() => setEpisode(null)} reload={reload}/>;
   return (
     <section>
       <div className="section-title page-actions">
@@ -621,7 +580,7 @@ export function Episodes({
                   <p>{ep.description || "点击编辑剧集简介"}</p>
                 </div>
                 <Space size={2}><Button size="mini" aria-label="上移剧集" title="上移剧集" disabled={reorderingEpisodes||n===0} icon={<ArrowUp size={14}/>} onClick={()=>void moveEpisode(n,-1)}/><Button size="mini" aria-label="下移剧集" title="下移剧集" disabled={reorderingEpisodes||n===data.episodes.length-1} icon={<ArrowDown size={14}/>} onClick={()=>void moveEpisode(n,1)}/></Space>
-                <Button type="text" aria-expanded={!collapsed.has(ep.id)} icon={collapsed.has(ep.id) ? <ChevronRight size={16}/> : <ChevronDown size={16}/>} onClick={() => setCollapsed(current => {const next = new Set(current); next.has(ep.id) ? next.delete(ep.id) : next.add(ep.id); return next;})}>{ep.scenes.length} 个场景</Button>
+                <span className="subtle">{ep.scenes.length} 个场景</span>
                 <Button
                   type="primary"
                   disabled={!ep.scenes.length || running}
@@ -653,45 +612,7 @@ export function Episodes({
                   />
                 </Popconfirm>
               </div>
-              <div className="scene-list" hidden={collapsed.has(ep.id)}>
-                {ep.scenes.map((s, i) => (
-                  <div className="scene-row" key={s.id}>
-                    <span>{String(i + 1).padStart(2, "0")}</span>
-                    <SceneThumb scene={s} media={data.media} onPreview={sceneVideos(s).length ? () => openScenePreview(s) : undefined} />
-                    <div className="scene-copy">
-                      <div className="scene-title-line">
-                        <b>{s.title}</b>
-                        {s.creation_mode === "canvas" && <Tag className="scene-mode">画布</Tag>}
-                        <Tag className="scene-state" color={s.video_media_id ? "green" : "gray"}>
-                          {s.video_media_id ? "视频已就绪" : (s.first_media_id || s.last_media_id || s.reference_media_id || s.generation_options?.reference_media_ids?.length) ? "已设画面" : "待制作"}
-                        </Tag>
-                      </div>
-                      <p>{s.description || "尚未填写镜头描述"}</p>
-                    </div>
-                    <div className="scene-actions">
-                    <SceneOrderControls episode={ep} index={i} project={data.project} reload={reload}/>
-                    <Button size="mini" disabled={!sceneVideos(s).length} icon={<Play size={13}/>} onClick={() => openScenePreview(s)}>预览</Button>
-                    <Button size="mini" onClick={() => editScene(s, false)}>编辑</Button>
-                    <Button size="mini" loading={copyingScene === s.id} disabled={copyingScene !== null || inserting !== null} onClick={() => void copyScene(s)}>复制</Button>
-                    <Popconfirm title="确认删除这个场景？场景中的视频版本关联也会移除。" onOk={async()=>{
-                      try {await post("/scenes/delete",{project_id:data.project.id,id:s.id});await reload();Message.success("场景已删除");} catch(e){Message.error(String(e));}
-                    }}><Button size="mini" status="danger" icon={<Trash2 size={14}/>}>删除</Button></Popconfirm>
-                    </div>
-                  </div>
-                ))}
-                <Button
-                  loading={inserting === ep.id}
-                  disabled={inserting !== null}
-                  className={`empty-scene${ep.scenes.length ? " scene-create-button" : ""}`}
-                  type="text"
-                  icon={<Plus size={14} />}
-                  onClick={() =>
-                    { setSceneCreation(ep.id); setCreationMode("default"); setNewSceneTitle(`场景 ${ep.scenes.length+1}`); }
-                  }
-                >
-                  新建场景
-                </Button>
-              </div>
+
             </Card>
           ))
         ) : (
@@ -702,13 +623,7 @@ export function Episodes({
           />
         )}
       </div>
-      <Modal title="新建场景" visible={sceneCreation!==null} confirmLoading={inserting!==null} onCancel={()=>{if(inserting===null)setSceneCreation(null);}} onOk={()=>sceneCreation!==null?makeScene(sceneCreation).catch(e=>{Message.error(String(e));throw e;}):undefined}>
-        <Form layout="vertical"><Form.Item label="场景名称"><Input aria-label="新场景名称" value={newSceneTitle} onChange={setNewSceneTitle}/></Form.Item>
-        <Form.Item label="创建方式"><div className="scene-creation-options">
-          <button type="button" className={creationMode==="default"?"selected":""} aria-pressed={creationMode==="default"} onClick={()=>setCreationMode("default")}><b>默认方式</b><span>使用场景表单设置画面、描述和生成参数</span></button>
-          <button type="button" className={creationMode==="canvas"?"selected":""} aria-pressed={creationMode==="canvas"} onClick={()=>setCreationMode("canvas")}><b>画布方式</b><span>在画布中连接图片、音频与视频节点创作</span></button>
-        </div></Form.Item></Form>
-      </Modal>
+
       <Modal
         className="batch-generation-modal"
         title={`生成剧集 · ${batch?.title || ""}`}
@@ -758,35 +673,12 @@ export function Episodes({
           </p>
         ))}
       </Modal>
-      <VideoPreviewModal
-        media={previewScene ? previewVideo || null : null}
-        playbackKey={previewScene?.id}
-        autoPlay={continuousPreview}
-        title={`视频预览 · ${previewScene?.title || ""}`}
-        videos={previewVideos}
-        projectId={data.project.id}
-        onMediaChange={video=>setPreviewVideoId(video.id)}
-        onClose={()=>{setPreviewSceneId(null);setPreviewVideoId(null);}}
-        allowLoop={!continuousPreview}
-        toolbar={<>
-          <Tag>{previewVideo?.id === previewScene?.video_media_id ? "主视频" : "其他版本"}</Tag>
-          {previewVideos.length > 1 && <Select style={{width:180}} aria-label="选择视频版本" value={previewVideo?.id} onChange={setPreviewVideoId}>
-            {previewVideos.map((video,index)=><Select.Option key={video.id} value={video.id}>版本 {index+1}{video.id === previewScene?.video_media_id ? " · 主视频" : ""}</Select.Option>)}
-          </Select>}
-          <Button type={continuousPreview ? "primary" : "secondary"} onClick={()=>setContinuousPreview(value=>!value)} disabled={previewPlaylist.length<2}>{continuousPreview ? "连续播放中" : "连续播放"}</Button>
-        </>}
-        onEnded={()=>{
-          if(!continuousPreview || !previewScene)return;
-          const index=previewPlaylist.findIndex(scene=>scene.id===previewScene.id), next=previewPlaylist[index+1];
-          if(next){setPreviewSceneId(next.id);const videos=sceneVideos(next);setPreviewVideoId(next.video_media_id || videos[0].id);}
-          else setContinuousPreview(false);
-        }}
-      />
+
       <EpisodeEditor
         episode={episode}
         project={data.project}
         data={data}
-        editScene={scene => editScene(scene, false)}
+        editScene={(scene, isNew = false) => editScene(scene, isNew)}
         onClose={() => setEpisode(null)}
         reload={reload}
       />
@@ -860,7 +752,7 @@ function EpisodeEditor({
   project: Project;
   onClose: () => void;
   reload: () => void;
-  editScene: (scene: Scene) => void;
+  editScene: (scene: Scene, isNew?: boolean) => void;
 }) {
   const [view, setView] = useState<"markdown" | "csv" | "details" | "scenes">("markdown");
   const scriptEditor = useRef<ScreenplayEditorHandle>(null);
@@ -932,6 +824,48 @@ function EpisodeEditor({
     if (dirty) confirmDiscard(() => editScene(scene));
     else editScene(scene);
   };
+  const [inserting, setInserting] = useState<number | null>(null);
+  const [copyingScene, setCopyingScene] = useState<number | null>(null);
+  const copyScene = async (scene: Scene) => {
+    setCopyingScene(scene.id);
+    try {
+      await post("/scenes/duplicate", { project_id: data.project.id, id: scene.id });
+      await reload();
+      Message.success("场景已复制");
+    } catch (e) { Message.error(String(e)); }
+    finally { setCopyingScene(null); }
+  };
+  const [sceneCreation,setSceneCreation]=useState<number|null>(null);
+  const [creationMode,setCreationMode]=useState<"default"|"canvas">("default");
+  const [newSceneTitle,setNewSceneTitle]=useState("");
+  const makeScene = async (id: number) => {
+    setInserting(id);
+    try {
+    const x = await post<Scene>("/scenes", {
+      project_id: data.project.id,
+      episode_id: id,
+      title: newSceneTitle.trim() || `场景 ${(data.episodes.find(ep => ep.id === id)?.scenes.length ?? 0) + 1}`,
+      creation_mode: creationMode,
+      description: "",
+    });
+    await reload();
+    setSceneCreation(null);
+    editScene(x, true);
+    } finally { setInserting(null); }
+  };
+  const [previewSceneId, setPreviewSceneId] = useState<number | null>(null);
+  const [previewVideoId, setPreviewVideoId] = useState<number | null>(null);
+  const [continuousPreview, setContinuousPreview] = useState(false);
+  const previewScene = data.episodes.flatMap((item) => item.scenes).find((scene) => scene.id === previewSceneId);
+  const previewVideos = previewScene ? sceneVideos(previewScene) : [];
+  const previewVideo = previewVideos.find((video) => video.id === previewVideoId) || previewVideos[0];
+  const previewPlaylist = previewScene ? [...(data.episodes.find(item => item.scenes.some(scene => scene.id === previewScene.id))?.scenes || [])].sort((a,b)=>a.sort_order-b.sort_order || a.id-b.id).filter(scene=>sceneVideos(scene).length) : [];
+  const openScenePreview = (scene: Scene) => {
+    const videos = sceneVideos(scene);
+    if (!videos.length) return;
+    setPreviewSceneId(scene.id);
+    setPreviewVideoId(scene.video_media_id || videos[0].id);
+  };
   if (!episode) return null;
   return (
     <section className="episode-editor-page">
@@ -951,9 +885,9 @@ function EpisodeEditor({
         <ScreenplayManager key={episode.id} ref={scriptEditor} data={data} episodeId={episode.id} reload={async () => { await reload(); }} disabled={saving || generatingBoard} board={board} onBoard={setBoard} onBoardBusy={setGeneratingBoard} onStatus={onScriptStatus} onFormatChange={setView} />
       </div>
       <div className="episode-scene-browser" hidden={view !== "scenes"}>
-        <div className="episode-scene-browser-heading"><h2>全部场景 <span className="subtle">{currentEpisode?.scenes.length || 0} 个场景</span></h2><p className="subtle">按剧集顺序查看场景，点击进入编辑。</p></div>
+        <div className="episode-scene-browser-heading"><div><h2>全部场景 <span className="subtle">{currentEpisode?.scenes.length || 0} 个场景</span></h2><p className="subtle">按剧集顺序查看场景，点击进入编辑。</p></div><Button type="primary" icon={<Plus size={16}/>} disabled={editorLocked || inserting !== null} onClick={() => {setSceneCreation(episode.id);setCreationMode("default");setNewSceneTitle(`场景 ${(currentEpisode?.scenes.length || 0) + 1}`);}}>新建场景</Button></div>
         {currentEpisode?.scenes.length ? <div className="episode-scene-grid">
-          {currentEpisode.scenes.map((scene, index) => <button type="button" className="episode-scene-card" key={scene.id} disabled={editorLocked} aria-label={`编辑场景：${scene.title}`} onClick={() => openScene(scene)}>
+          {currentEpisode.scenes.map((scene, index) => <div key={scene.id} className="episode-scene-item"><button type="button" className="episode-scene-card" key={scene.id} disabled={editorLocked} aria-label={`编辑场景：${scene.title}`} onClick={() => openScene(scene)}>
             <SceneThumb scene={scene} media={data.media}/>
             <div className="episode-scene-card-body">
               <div className="episode-scene-card-title"><span className="subtle">{String(index + 1).padStart(2, "0")}</span><b>{scene.title}</b></div>
@@ -963,9 +897,40 @@ function EpisodeEditor({
                 {scene.creation_mode === "canvas" && <Tag>画布</Tag>}
               </Space><span className="episode-scene-edit-link">编辑场景 <ChevronRight size={14}/></span></div>
             </div>
-          </button>)}
-        </div> : <Empty description="本集暂无场景，可返回剧集列表新建场景"/>}
+          </button><div className="episode-scene-item-actions"><Button size="mini" disabled={editorLocked || !sceneVideos(scene).length} icon={<Play size={13}/>} onClick={() => openScenePreview(scene)}>预览</Button><SceneOrderControls episode={currentEpisode} index={index} project={project} reload={reload}/><Button size="mini" disabled={editorLocked || copyingScene !== null || inserting !== null} loading={copyingScene === scene.id} onClick={() => void copyScene(scene)}>复制</Button><Popconfirm title="确认删除这个场景？" onOk={async () => {try {await post("/scenes/delete", {project_id:project.id,id:scene.id});await reload();Message.success("场景已删除");}catch(error){Message.error(String(error));}}}><Button size="mini" status="danger" disabled={editorLocked} icon={<Trash2 size={14}/>}>删除</Button></Popconfirm></div></div>)}
+        </div> : <Empty description="本集暂无场景，点击右上角“新建场景”开始创作"/>}
       </div>
+      <Modal title="新建场景" visible={sceneCreation!==null} confirmLoading={inserting!==null} onCancel={()=>{if(inserting===null)setSceneCreation(null);}} onOk={()=>sceneCreation!==null?makeScene(sceneCreation).catch(e=>{Message.error(String(e));throw e;}):undefined}>
+        <Form layout="vertical"><Form.Item label="场景名称"><Input aria-label="新场景名称" value={newSceneTitle} onChange={setNewSceneTitle}/></Form.Item>
+        <Form.Item label="创建方式"><div className="scene-creation-options">
+          <button type="button" className={creationMode==="default"?"selected":""} aria-pressed={creationMode==="default"} onClick={()=>setCreationMode("default")}><b>默认方式</b><span>使用场景表单设置画面、描述和生成参数</span></button>
+          <button type="button" className={creationMode==="canvas"?"selected":""} aria-pressed={creationMode==="canvas"} onClick={()=>setCreationMode("canvas")}><b>画布方式</b><span>在画布中连接图片、音频与视频节点创作</span></button>
+        </div></Form.Item></Form>
+      </Modal>
+      <VideoPreviewModal
+        media={previewScene ? previewVideo || null : null}
+        playbackKey={previewScene?.id}
+        autoPlay={continuousPreview}
+        title={`视频预览 · ${previewScene?.title || ""}`}
+        videos={previewVideos}
+        projectId={data.project.id}
+        onMediaChange={video=>setPreviewVideoId(video.id)}
+        onClose={()=>{setPreviewSceneId(null);setPreviewVideoId(null);}}
+        allowLoop={!continuousPreview}
+        toolbar={<>
+          <Tag>{previewVideo?.id === previewScene?.video_media_id ? "主视频" : "其他版本"}</Tag>
+          {previewVideos.length > 1 && <Select style={{width:180}} aria-label="选择视频版本" value={previewVideo?.id} onChange={setPreviewVideoId}>
+            {previewVideos.map((video,index)=><Select.Option key={video.id} value={video.id}>版本 {index+1}{video.id === previewScene?.video_media_id ? " · 主视频" : ""}</Select.Option>)}
+          </Select>}
+          <Button type={continuousPreview ? "primary" : "secondary"} onClick={()=>setContinuousPreview(value=>!value)} disabled={previewPlaylist.length<2}>{continuousPreview ? "连续播放中" : "连续播放"}</Button>
+        </>}
+        onEnded={()=>{
+          if(!continuousPreview || !previewScene)return;
+          const index=previewPlaylist.findIndex(scene=>scene.id===previewScene.id), next=previewPlaylist[index+1];
+          if(next){setPreviewSceneId(next.id);const videos=sceneVideos(next);setPreviewVideoId(next.video_media_id || videos[0].id);}
+          else setContinuousPreview(false);
+        }}
+      />
       <div className="episode-editor-columns" hidden={view !== "details"}>
       <Card className="episode-editor-card episode-details-pane">
       <fieldset disabled={saving} className="episode-editor-fields">
