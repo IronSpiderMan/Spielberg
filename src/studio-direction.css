@@ -1,5 +1,5 @@
-/* Framed sheet: a warm neutral frame holds the shared writing surface.
-   Desktop: viewport = 216px navigation + (sheet width + 8px inset).
+/* Continuous workspace: navigation and toolbar meet the shared writing surface.
+   Desktop: viewport = navigation + full-width workspace, without an outer inset.
    Workbench: inner width = minmax(300px, 360px) + 24px + remaining preview. */
 :root, body {
   --ui-radius-control: 8px;
@@ -8,7 +8,7 @@
   font-variant-numeric: tabular-nums;
 }
 html .app, html .app .app-main { background: var(--studio-frame) !important; }
-html .app .side { background: var(--studio-frame) !important; border-right: 0; padding-top: 28px; box-shadow: none; }
+html .app .side { background: var(--studio-frame) !important; border-right: 1px solid var(--ui-border); padding-top: 28px; box-shadow: none; }
 .side .logo { padding-bottom: 28px; }
 .side .logo b { font-family: "Segoe UI", sans-serif; font-weight: 650; letter-spacing: -.7px; }
 .side .logo small { font-size: 11px; letter-spacing: .4px; margin-top: 5px; }
@@ -28,9 +28,9 @@ html[data-theme="dark"] .arco-btn-primary.arco-btn-disabled { background: var(--
 .studio-local-note { display: flex; align-items: center; gap: 8px; padding: 0 12px 20px; color: var(--ui-muted); font-size: 11px; white-space: nowrap; }
 .studio-local-note .project-dot { width: 5px; height: 5px; border-radius: 50%; }
 .side-collapsed .studio-local-note { display: none; }
-html .app .topbar { min-height: 56px; height: 56px !important; padding: 0 24px !important; background: var(--studio-frame) !important; border-bottom: 0; }
+html .app .topbar { min-height: 56px; height: 56px !important; padding: 0 28px !important; background: var(--studio-frame) !important; border-bottom: 1px solid var(--ui-border); }
 .topbar .arco-btn, .topbar b, .topbar .crumb { font-size: 12px; }
-html .app .content { margin: 0 8px 8px 0; border: 1px solid var(--ui-border); border-radius: 16px; background: var(--ui-bg) !important; padding: 28px 28px 32px; }
+html .app .content { margin: 0; border: 0; border-radius: 0; box-shadow: none; background: var(--ui-bg) !important; padding: 28px 28px 32px; }
 .app .content.scene-page-content { padding: 24px; }
 .content h1 { font-size: 24px; font-weight: 600; letter-spacing: -.5px; }
 .section-title, .page-heading { margin-bottom: 24px; }
