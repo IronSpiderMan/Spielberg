@@ -1,5 +1,5 @@
 import { Button, Message, Modal } from "@arco-design/web-react";
-import { ChevronLeft, ChevronRight, Download, Image as ImageIcon, Maximize, Minus, Mouse, Plus, RotateCw, WandSparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, Download, FolderOpen, Image as ImageIcon, Info, Maximize, Minus, Mouse, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, RotateCw, Undo2, WandSparkles } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { imageUrl, type Media } from "../core";
 import "./image-preview.css";
@@ -32,6 +32,45 @@ export function ImagePreviewModal({ media, onClose, title = "参考图片预览"
     document.addEventListener("keydown", keydown);
     return () => document.removeEventListener("keydown", keydown);
   }, [visible, canNavigate, currentIndex, images, onMediaChange]);
+  const [showThumbnails, setShowThumbnails] = useState(true);
+  const [showInfo, setShowInfo] = useState(true);
+  const [fileSize, setFileSize] = useState<number | null>(null);
+  const thumbnails = images.length ? images : media ? [media] : [];
+  const format = media?.path.split(".").pop()?.toUpperCase() || "—";
+  const createdDate = media?.created_at ? new Date(/^\d+(\.\d+)?$/.test(media.created_at) ? Number(media.created_at) * 1000 : media.created_at) : null;
+  const createdLabel = createdDate && !Number.isNaN(createdDate.getTime()) ? createdDate.toLocaleString("zh-CN", { hour12: false }) : "—";
+  const sizeLabel = fileSize === null ? "—" : fileSize < 1024 * 1024 ? `${(fileSize / 1024).toFixed(1)} KB` : `${(fileSize / 1024 / 1024).toFixed(2)} MB`;
+  useEffect(() => {
+    setFileSize(null);
+    if (!visible || !media) return;
+    const controller = new AbortController();
+    fetch(imageUrl(media), { method: "HEAD", signal: controller.signal }).then(response => {
+      const length = response.headers.get("content-length");
+      if (response.ok && length && Number.isFinite(Number(length))) setFileSize(Number(length));
+    }).catch(() => {});
+    return () => controller.abort();
+  }, [visible, media?.path]);
+  const copyPath = async () => {
+    if (!media) return;
+    try { await navigator.clipboard.writeText(media.path); Message.success("已复制文件路径"); }
+    catch { Message.error("复制失败，请检查剪贴板权限"); }
+  };
+  const copyImage = async () => {
+    if (!media) return;
+    try {
+      const response = await fetch(imageUrl(media));
+      if (!response.ok) throw new Error("图片读取失败");
+      const bitmap = await createImageBitmap(await response.blob());
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width; canvas.height = bitmap.height;
+      const context = canvas.getContext("2d");
+      if (!context) { bitmap.close(); throw new Error("图片转换失败"); }
+      context.drawImage(bitmap, 0, 0); bitmap.close();
+      const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error("图片转换失败")), "image/png"));
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      Message.success("已复制图片");
+    } catch { Message.error("复制图片失败，请使用下载功能保存图片"); }
+  };
   const [rotation, setRotation] = useState(0);
   const [downloading, setDownloading] = useState(false);
   const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
@@ -116,9 +155,10 @@ export function ImagePreviewModal({ media, onClose, title = "参考图片预览"
     document.addEventListener("keydown", keydown);
     return () => document.removeEventListener("keydown", keydown);
   }, [visible, zoom, reset, actualSize]);
-  return <Modal className={`image-preview-modal is-fullscreen ${className}`} wrapClassName="image-preview-wrapper" alignCenter={false} title={<div className="image-preview-heading"><span className="image-preview-file-icon"><ImageIcon size={20} /></span><div><strong title={media?.name || title}>{media?.name || title}</strong><span>{ready ? `${imageSize.width} × ${imageSize.height} px` : "图片预览"}</span></div></div>} visible={visible} footer={footer} onCancel={onClose}>
+  return <Modal className={`image-preview-modal is-fullscreen ${className}`} wrapClassName="image-preview-wrapper" alignCenter={false} title={<div className="image-preview-heading"><span className="image-preview-file-icon"><ImageIcon size={20} /></span><div><strong title={media?.name || title}>{media?.name || title}</strong><span>{ready ? `${imageSize.width} × ${imageSize.height}` : "图片预览"} · {sizeLabel} · {format}</span></div></div>} visible={visible} footer={footer} onCancel={onClose}>
     <div className="image-preview-toolbar" role="toolbar" aria-label="图片预览工具">
       <div className="image-preview-tools">
+      <Button aria-label="切换缩略图" aria-pressed={showThumbnails} title="切换缩略图" onClick={() => setShowThumbnails(value => !value)} icon={showThumbnails ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />} />
       <div className="image-preview-zoom-controls">
       <Button aria-label="缩小" title="缩小 (-)" disabled={!ready || view.scale <= minScale} onClick={() => zoom(1 / 1.25)} icon={<Minus size={16} />} />
       <span className="image-preview-scale" aria-live="polite">{ready ? `${Math.round(view.scale * 100)}%` : "—"}</span>
@@ -127,9 +167,11 @@ export function ImagePreviewModal({ media, onClose, title = "参考图片预览"
       <Button disabled={!ready} className={fit ? "is-active" : ""} onClick={reset} title="适应窗口 (0)" icon={<Maximize size={16} />}>适应窗口</Button>
       <Button disabled={!ready} onClick={actualSize} title="原始尺寸 (1)">1:1</Button>
       <span className="image-preview-divider" />
+      <Button aria-label="重置图片" title="重置图片" disabled={!ready} onClick={() => { setRotation(0); reset(); }} icon={<Undo2 size={18} />} />
       <Button aria-label="旋转图片" disabled={!ready} onClick={() => { setFit(true); setRotation(value => (value + 90) % 360); }} icon={<RotateCw size={16} />}>旋转</Button>
       </div>
       <div className="image-preview-tools image-preview-actions">
+      <Button aria-label="切换图片信息" aria-pressed={showInfo} title="切换图片信息" onClick={() => setShowInfo(value => !value)} icon={showInfo ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />} />
       <Button loading={downloading} disabled={!media} icon={<Download size={16} />} onClick={async () => {
         if (!media) return;
         setDownloading(true);
@@ -152,6 +194,13 @@ export function ImagePreviewModal({ media, onClose, title = "参考图片预览"
       }}>图生图</Button>
       </div>
     </div>
+    <div className="image-preview-workspace">
+    {showThumbnails && <aside className="image-preview-sidebar" aria-label="缩略图列表">
+      <div className="image-preview-sidebar-heading"><span>缩略图 ({thumbnails.length})</span><ImageIcon size={17} /></div>
+      <div className="image-preview-thumbnails">{thumbnails.map((item, index) => <button type="button" key={item.id} title={item.name} aria-label={`查看第 ${index + 1} 张：${item.name}`} aria-pressed={item.id === media?.id} disabled={!onMediaChange && item.id !== media?.id} onClick={() => onMediaChange?.(item)} ref={element => { if (item.id === media?.id) element?.scrollIntoView({ block: "nearest" }); }}><img src={imageUrl(item)} alt={item.name} /><span>{String(index + 1).padStart(2, "0")}</span></button>)}</div>
+      <div className="image-preview-sidebar-foot">{canNavigate ? "← → 切换图片" : "图片预览"}</div>
+    </aside>}
+    <div className="image-preview-canvas-column">
     <div className="image-preview-stage">
     {canNavigate && <button type="button" className="image-preview-nav is-previous" aria-label="上一张图片" onClick={() => move(-1)}><ChevronLeft size={24} /></button>}
     <div ref={setViewport} className={`image-preview-full${canDrag ? " is-zoomed" : ""}`} aria-label="图片画布"
@@ -181,11 +230,31 @@ export function ImagePreviewModal({ media, onClose, title = "参考图片预览"
     {canNavigate && <button type="button" className="image-preview-nav is-next" aria-label="下一张图片" onClick={() => move(1)}><ChevronRight size={24} /></button>}
     </div>
     <div className="image-preview-status"><span><Mouse size={14} />滚轮缩放 · 放大后拖动 · 双击适应窗口</span><span>{fit ? "适应窗口" : "自由缩放"}<i />Esc 关闭</span></div>
-    {canNavigate && <div className="image-preview-filmstrip" aria-label="角色图片列表">
-      <span className="image-preview-position" aria-live="polite">{currentIndex + 1} / {images.length}</span>
-      <div>{images.map((item, index) => <button type="button" key={item.id} aria-label={`查看第 ${index + 1} 张：${item.name}`} aria-pressed={item.id === media?.id} onClick={() => onMediaChange?.(item)} ref={element => { if (item.id === media?.id) element?.scrollIntoView({ block: "nearest", inline: "nearest" }); }}><img src={imageUrl(item)} alt={item.name} /></button>)}</div>
-      <span className="image-preview-key-hint">← → 切换图片</span>
-    </div>}
+    </div>
+    {showInfo && <aside className="image-preview-info" aria-label="图片信息">
+      <div className="image-preview-info-tabs"><Info size={16} />图片信息</div>
+      <div className="image-preview-info-body">
+        <h3 title={media?.name}>{media?.name || title}</h3>
+        <dl>
+          <dt>尺寸</dt><dd>{ready ? `${imageSize.width} × ${imageSize.height} 像素` : "—"}</dd>
+          <dt>文件大小</dt><dd>{sizeLabel}</dd>
+          <dt>格式</dt><dd>{format}</dd>
+          <dt>创建时间</dt><dd>{createdLabel}</dd>
+          <dt>文件路径</dt><dd className="image-preview-path" title={media?.path}><span>{media?.path || "—"}</span><button type="button" aria-label="复制文件路径" disabled={!media} onClick={copyPath}><Copy size={15} /></button></dd>
+        </dl>
+        <section><h4>快速操作</h4><div className="image-preview-quick-actions">
+          <Button disabled={!ready || failed} icon={<Copy size={16} />} onClick={copyImage}>复制图片</Button>
+          <Button disabled={!media} icon={<FolderOpen size={16} />} onClick={copyPath}>复制路径</Button>
+        </div></section>
+        <section><h4>查看工具</h4><div className="image-preview-tool-grid">
+          <Button disabled={!ready} onClick={() => { setFit(true); setRotation(value => (value + 90) % 360); }}><RotateCw size={22} /><span>旋转</span></Button>
+          <Button disabled={!ready} onClick={reset}><Maximize size={22} /><span>适应窗口</span></Button>
+          <Button disabled={!ready} onClick={actualSize}><span className="image-preview-original-icon">1:1</span><span>原始尺寸</span></Button>
+        </div></section>
+        <p className="image-preview-info-tip">滚轮缩放查看细节，放大后拖动图片。双击画布可恢复适应窗口。</p>
+      </div>
+    </aside>}
+    </div>
   </Modal>;
 }
 
