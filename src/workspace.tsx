@@ -742,7 +742,7 @@ function SceneFramePicker({data, reload, onSelect, disabled}: {data: Snapshot; r
 function EpisodeEditor({
   data,
   episode,
-  initialView = "markdown",
+  initialView = "scenes",
   project,
   onClose,
   reload,
@@ -877,10 +877,10 @@ function EpisodeEditor({
       </div>
       <div className="episode-editor-navigation">
         <div className="episode-editor-tabs" role="tablist" aria-label="剧集工作区">
+          <button type="button" role="tab" aria-selected={view === "scenes"} disabled={editorLocked} onClick={() => setView("scenes")}>场景</button>
           <button type="button" role="tab" aria-selected={view === "markdown"} disabled={editorLocked} onClick={() => scriptEditor.current?.chooseFormat("markdown")}>剧本</button>
           <button type="button" role="tab" aria-selected={view === "csv"} disabled={editorLocked} onClick={() => scriptEditor.current?.chooseFormat("csv")}>分镜头剧本</button>
           <button type="button" role="tab" aria-selected={view === "details"} disabled={editorLocked} onClick={() => setView("details")}>剧集信息与场景</button>
-          <button type="button" role="tab" aria-selected={view === "scenes"} disabled={editorLocked} onClick={() => setView("scenes")}>场景</button>
         </div>
       </div>
       <div className="episode-writing-pane" hidden={view !== "markdown" && view !== "csv"}>
