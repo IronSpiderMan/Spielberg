@@ -471,14 +471,16 @@ function SceneThumb({ scene, media, onPreview }: { scene: Scene; media: Media[];
 
 export function Episodes({
   initialEpisodeId,
+  initialView,
   data,
   reload,
   editScene,
 }: {
   data: Snapshot;
   reload: () => void;
-  editScene: (scene: Scene, isNew: boolean) => void;
+  editScene: (scene: Scene, isNew: boolean, episodeId: number) => void;
   initialEpisodeId?:number;
+  initialView?: "markdown" | "scenes";
 }) {
 
   const [episode, setEpisode] = useState<{
@@ -487,7 +489,7 @@ export function Episodes({
     description: string;
     cover_media?: Media;
     scenes?: Scene[];
-  } | null>(null);
+  } | null>(() => data.episodes.find(item => item.id === initialEpisodeId) || null);
   useEffect(()=>{if(initialEpisodeId)setEpisode(data.episodes.find(e=>e.id===initialEpisodeId)||null);},[initialEpisodeId]);
   const [batch, setBatch] = useState<Episode | null>(null);
   const [count, setCount] = useState(1);
@@ -554,7 +556,7 @@ export function Episodes({
     await reload();
     setEpisode(x as typeof episode);
   };
-  if (episode) return <EpisodeEditor episode={episode} project={data.project} data={data} editScene={(scene, isNew = false) => editScene(scene, isNew)} onClose={() => setEpisode(null)} reload={reload}/>;
+  if (episode) return <EpisodeEditor episode={episode} initialView={episode.id === initialEpisodeId ? initialView : undefined} project={data.project} data={data} editScene={(scene, isNew = false) => editScene(scene, isNew, episode.id)} onClose={() => setEpisode(null)} reload={reload}/>;
   return (
     <section>
       <div className="section-title page-actions">
@@ -576,7 +578,12 @@ export function Episodes({
                 <div className="episode-number">
                   EP {String(n + 1).padStart(2, "0")}
                 </div>
-                <div className="episode-info">
+                <div className="episode-info episode-edit-trigger" role="button" tabIndex={0} aria-label={`编辑剧集：${ep.title}`} onClick={() => setEpisode(ep)} onKeyDown={event => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setEpisode(ep);
+                  }
+                }}>
                   <h3>{ep.title}</h3>
                   <p>{ep.description || "点击编辑剧集简介"}</p>
                 </div>
@@ -675,14 +682,6 @@ export function Episodes({
         ))}
       </Modal>
 
-      <EpisodeEditor
-        episode={episode}
-        project={data.project}
-        data={data}
-        editScene={(scene, isNew = false) => editScene(scene, isNew)}
-        onClose={() => setEpisode(null)}
-        reload={reload}
-      />
     </section>
   );
 }
@@ -743,6 +742,7 @@ function SceneFramePicker({data, reload, onSelect, disabled}: {data: Snapshot; r
 function EpisodeEditor({
   data,
   episode,
+  initialView = "markdown",
   project,
   onClose,
   reload,
@@ -750,12 +750,13 @@ function EpisodeEditor({
 }: {
   data: Snapshot;
   episode: { id: number; title: string; description: string; cover_media?: Media; scenes?: Scene[]; storyboard?: Storyboard } | null;
+  initialView?: "markdown" | "scenes";
   project: Project;
   onClose: () => void;
   reload: () => void;
   editScene: (scene: Scene, isNew?: boolean) => void;
 }) {
-  const [view, setView] = useState<"markdown" | "csv" | "details" | "scenes">("markdown");
+  const [view, setView] = useState<"markdown" | "csv" | "details" | "scenes">(initialView);
   const scriptEditor = useRef<ScreenplayEditorHandle>(null);
   const [scriptStatus, setScriptStatus] = useState({ dirty: false, busy: false });
   const onScriptStatus = useCallback((dirty: boolean, busy: boolean) => setScriptStatus(current => current.dirty === dirty && current.busy === busy ? current : { dirty, busy }), []);
@@ -774,12 +775,12 @@ function EpisodeEditor({
     if(boardEpisode.current===episode?.id) return;
     boardEpisode.current=episode?.id;
     setBaseline(episode);
-    setView("markdown");
+    setView(initialView);
     setBoard(episode?.storyboard || undefined);
     setCover(episode?.cover_media);
     setTitle(episode?.title || "");
     setDescription(episode?.description || "");
-  }, [episode]);
+  }, [episode, initialView]);
   const [saving, setSaving] = useState(false);
   const dirty = JSON.stringify(board || null) !== JSON.stringify(baseline?.storyboard || null) || title !== (baseline?.title || "") || description !== (baseline?.description || "") || cover?.id !== baseline?.cover_media?.id || scriptStatus.dirty;
   useEditGuard(dirty || saving || generatingBoard || scriptStatus.busy);

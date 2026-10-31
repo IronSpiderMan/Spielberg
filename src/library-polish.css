@@ -348,6 +348,20 @@ html .app .content:has(> .asset-library) {
   padding-right: 8px;
 }
 
+.content .episode-edit-trigger {
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.content .episode-edit-trigger:hover h3 {
+  color: var(--ui-primary);
+}
+
+.content .episode-edit-trigger:focus-visible {
+  outline: 2px solid var(--ui-primary);
+  outline-offset: 4px;
+}
+
 .content .episode-info h3 {
   margin-bottom: 5px;
   font-size: 15px;

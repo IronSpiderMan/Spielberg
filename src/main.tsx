@@ -114,6 +114,7 @@ function App() {
     scene: Scene;
     isNew: boolean;
   } | null>(null);
+  const [episodeSceneReturnId, setEpisodeSceneReturnId] = useState<number | null>(null);
   const [sceneImageFlow, setSceneImageFlow] = useState<{ key: "first" | "last"; media?: Media } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   useEffect(() => { contentRef.current?.scrollTo({top: 0}); }, [page, sceneEditing, active?.id]);
@@ -140,6 +141,7 @@ function App() {
       if (version !== loadVersion.current) return;
       if (activeRef.current !== s.project.id) {
         setSceneEditing(null);
+        setEpisodeSceneReturnId(null);
         setStudioTab("images");
         setPage("studio");
       }
@@ -270,6 +272,7 @@ function App() {
       </>
     );
   const locateAsset=(usage:AssetUsage)=>leaveEditor(()=>{
+    setEpisodeSceneReturnId(null);
     setLocate(usage);
     if(usage.kind==="canvas"){
       const scene=data.episodes.flatMap(e=>e.scenes).find(item=>item.id===usage.target_id);
@@ -284,7 +287,7 @@ function App() {
   const navigate = (next: string) => {
     setMobileNavOpen(false);
     if (next === page && !sceneEditing) return;
-    leaveEditor(() => { setLocate(null);setImageSource(undefined);setSceneEditing(null);setSceneImageFlow(null); setPage(next); });
+    leaveEditor(() => { setLocate(null);setEpisodeSceneReturnId(null);setImageSource(undefined);setSceneEditing(null);setSceneImageFlow(null); setPage(next); });
   };
   return (
     <EditGuardContext.Provider value={registerDirty}>
@@ -474,12 +477,14 @@ function App() {
               {page === "agent" && <AgentWorkspace key={data.project.id} data={data} reload={refresh} onNavigate={navigate} />}
               {page === "episodes" && (
                 <Episodes
-                  initialEpisodeId={locate?.kind==="episode"?locate.target_id:undefined}
+                  initialEpisodeId={episodeSceneReturnId ?? (locate?.kind==="episode"?locate.target_id:undefined)}
+                  initialView={episodeSceneReturnId !== null ? "scenes" : undefined}
                   data={data}
                   reload={refresh}
-                  editScene={(scene, isNew) =>
-                    setSceneEditing({ scene, isNew })
-                  }
+                  editScene={(scene, isNew, episodeId) => {
+                    setEpisodeSceneReturnId(episodeId);
+                    setSceneEditing({ scene, isNew });
+                  }}
                 />
               )}{" "}
               {page === "editor" && <MediaEditor key={data.project.id} data={data} reload={refresh} />}
