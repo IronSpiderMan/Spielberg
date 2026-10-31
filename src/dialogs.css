@@ -1,0 +1,82 @@
+/* Arco's simple dialogs share markup with full form modals. Keep their
+   layout separate so form footer backgrounds and padding cannot leak in. */
+html .arco-modal.arco-modal-simple {
+  width: 440px;
+  max-width: calc(100vw - 32px);
+  padding: 28px;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: 16px;
+  box-shadow: var(--ui-shadow), 0 24px 80px #00000018;
+}
+
+html .arco-modal-simple .arco-modal-header {
+  height: auto;
+  padding: 0;
+  margin: 0 0 12px;
+  border: 0;
+}
+
+html .arco-modal-simple .arco-modal-title {
+  text-align: left;
+  font-size: 17px;
+  line-height: 1.5;
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+html .arco-modal-simple .arco-modal-title > span {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+html .arco-modal-simple .arco-modal-title .arco-icon {
+  flex: none;
+  margin: 0;
+  font-size: 20px;
+}
+
+html .arco-modal-simple .arco-modal-content {
+  padding: 0;
+  color: var(--ui-secondary-text);
+  font-size: 14px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+  scrollbar-gutter: auto;
+  white-space: normal;
+}
+
+html .arco-modal-simple .arco-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin: 24px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent !important;
+}
+
+html .arco-modal-simple .arco-modal-footer > .arco-btn {
+  min-width: 80px;
+  height: 36px;
+  margin: 0;
+  padding-inline: 16px;
+  border-radius: 8px;
+}
+
+/* Preserve destructive intent over the global brand-primary override. */
+html .arco-modal .arco-btn-primary.arco-btn-status-danger:not(.arco-btn-disabled) {
+  color: #fff;
+  background: #b55248;
+  border-color: #b55248;
+}
+
+html .arco-modal .arco-btn-primary.arco-btn-status-danger:not(.arco-btn-disabled):hover {
+  background: #a4473e;
+  border-color: #a4473e;
+}
+
+@media (max-width: 480px) {
+  html .arco-modal.arco-modal-simple { padding: 22px; }
+}

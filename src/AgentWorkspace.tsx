@@ -207,7 +207,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
     try { const result = await call<Session>("cancel", { session_id: id }); if (mounted.current && selectedRef.current?.id === id) accept(result); }
     catch (e) { if (mounted.current) setError(String(e)); } finally { if (mounted.current) setStopping(false); }
   };
-  const remove = (session: Session) => Modal.confirm({ title: "删除此会话？", content: "删除对话和执行记录，已完成的项目操作会保留。", okText: "删除", cancelText: "取消", onOk: async () => {
+  const remove = (session: Session) => Modal.confirm({ title: "删除此会话？", content: "删除对话和执行记录，已完成的项目操作会保留。", okText: "删除会话", cancelText: "取消", okButtonProps: { status: "danger" }, onOk: async () => {
     try { await call("delete", { session_id: session.id }); if (!mounted.current) return; setSessions(items => items.filter(item => item.id !== session.id)); if (selectedRef.current?.id === session.id) { selectionVersion.current++; selectedRef.current = null; setSelected(null); localStorage.removeItem(`spielberg-agent-session-${pid}`); } }
     catch (e) { Message.error(String(e)); }
   } });
