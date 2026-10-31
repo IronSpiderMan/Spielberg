@@ -291,7 +291,7 @@ fn describe(operation:Option<&str>)->Value {
     let creative_assets=json!({"description":"Creative assets: characters, locations, objects, creatures, vehicles and other reusable subjects. UI label: 资产库. Use assets for these subjects; media manages media files (素材库).","create_required":["name"],"fields":{"name":"string","description":"string","category":"person=人物/location=地点/object=物品/creature=生物/vehicle=载具/other=其他; defaults to person for compatibility; set explicitly when creating a non-person asset","enabled":"boolean; defaults to true; false disables subject and named-image @ mentions","design_media_id":"image media ID from resource=media, or null"},"get_filters":{"category":"one of person/location/object/creature/vehicle/other; omit for all","enabled":"boolean; true for assets usable in @ references, false for disabled assets; omit for both","query":"case-insensitive substring in name or description"},"delete":"Removes only this creative asset and its image/audio associations; retains media files. For hiding/disabling use PATCH enabled=false instead. Images and audios are read-only lists; manage associations with assets/media/* and assets/audio/*."});
     let media_files=json!({"description":"素材库: image, video and audio media files; does not store creative subjects or their categories.","create_required":["name","extension","data_base64"],"fields":{"name":"string","extension":"png/jpg/jpeg/webp/gif/svg/mp4/mov/webm/mkv/mp3/wav/m4a/aac/ogg/flac","data_base64":"base64 file content; use only actual supplied data","asset_id":"optional creative asset ID for linking an uploaded image; not for audio/video"},"update":"PATCH supports name only","get_filters":{"usage":"all/used/unused/trash","kind":"all/image/video/audio","query":"name substring","page":"positive integer","limit":"1..60"},"delete":"Moves unused media files to recycle bin; referenced files cannot be deleted, including files linked to disabled creative assets."});
     let audio_actions=json!({
-        "assets/audio/save":{"required":{"asset_id":"creative asset ID of any category","media_id":"audio media ID from resource=media","name":"nonempty reference name"},"effect":"Adds or renames this asset's audio reference (voice, ambient sound or sound effect). Name is local to the association; the source media filename and other associations are unchanged."},
+        "assets/audio/save":{"required":{"asset_id":"creative asset ID with category person or creature","media_id":"audio media ID from resource=media","name":"nonempty reference name"},"effect":"Adds or renames a person or creature asset's audio reference (voice or creature call). Other categories do not support saving audio references. Name is local to the association; the source media filename and other associations are unchanged."},
         "assets/audio/delete":{"required":{"asset_id":"creative asset ID","media_id":"audio media ID"},"effect":"Unlinks only this asset's audio reference; retains the audio file and its other uses."},
     });
     let mut catalog=json!({
@@ -316,7 +316,7 @@ fn describe(operation:Option<&str>)->Value {
             "scenes/delete-video":{"required":{"scene_id":"scene ID","media_id":"video media ID"},"effect":"Removes candidate video from scene; leaves media file intact."},
             "episodes/reorder":{"required":{"episode_ids":"complete ordered list of all project episode IDs"}},
             "episodes/merge":{"required":{"episode_id":"episode ID"},"effect":"Every scene must have a selected video. Produces merged video media file."},
-            "assets/media/add":{"required":{"asset_id":"creative asset ID of any category","media_id":"image media ID from resource=media"},"optional":{"name":"nonempty image name; renames the shared media file, including its other uses"},"effect":"Links a reference image. For the primary image, also PATCH assets.design_media_id. For @subject.image-name references, keep the existing filename unless renaming was requested."},
+            "assets/media/add":{"required":{"asset_id":"creative asset ID with category person or creature","media_id":"image media ID from resource=media"},"optional":{"name":"nonempty image name; renames the shared media file, including its other uses"},"effect":"Links a reference image. For the primary image, also PATCH assets.design_media_id. For @subject.image-name references, keep the existing filename unless renaming was requested."},
             "assets/media/delete":{"required":{"asset_id":"creative asset ID","media_id":"image media ID"},"effect":"Unlinks this reference image and clears the primary image if selected; retains the media file."},
             "canvas/load":{"required":{"scene_id":"scene with creation_mode=canvas"}},
             "canvas/save":{"required":{"scene_id":"canvas scene ID","revision":"revision from canvas/load","draft":"CanvasDraft"},"effect":"Optimistic concurrency; reload before editing on revision mismatch."},
@@ -633,6 +633,7 @@ mod tests {
     fn image_and_audio_associations_keep_media_and_subjects_distinct() {
         let f=Fixture::new();
         let person=f.call("app_request",json!({"resource":"assets","method":"POST","data":{"name":"林秋月","category":"person"}})).unwrap();
+        let creature=f.call("app_request",json!({"resource":"assets","method":"POST","data":{"name":"小狐狸","category":"creature"}})).unwrap();
         let location=f.call("app_request",json!({"resource":"assets","method":"POST","data":{"name":"旧车站","category":"location"}})).unwrap();
         let png="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
         let image=f.call("app_request",json!({"resource":"media","method":"POST","data":{"name":"车站.png","extension":"png","data_base64":png}})).unwrap();
@@ -643,13 +644,15 @@ mod tests {
         action("assets/media/add",json!({"asset_id":location["id"],"media_id":image["id"]})).unwrap();
         f.call("app_request",json!({"resource":"assets","method":"PATCH","id":location["id"],"data":{"design_media_id":image["id"]}})).unwrap();
         action("assets/audio/save",json!({"asset_id":person["id"],"media_id":audio["id"],"name":"说话参考"})).unwrap();
-        action("assets/audio/save",json!({"asset_id":location["id"],"media_id":audio["id"],"name":"站台环境"})).unwrap();
-        action("assets/audio/save",json!({"asset_id":location["id"],"media_id":audio["id"],"name":"夜间环境"})).unwrap();
+        action("assets/audio/save",json!({"asset_id":creature["id"],"media_id":audio["id"],"name":"叫声"})).unwrap();
+        action("assets/audio/save",json!({"asset_id":creature["id"],"media_id":audio["id"],"name":"低鸣"})).unwrap();
         let saved=read("assets",&location["id"]);
-        assert_eq!(saved["category"],"location");assert_eq!(saved["images"][0]["id"],image["id"]);assert_eq!(saved["audios"][0]["name"],"夜间环境");
-        assert_eq!(saved["audios"].as_array().unwrap().len(),1);
+        assert_eq!(saved["category"],"location");assert_eq!(saved["images"][0]["id"],image["id"]);assert_eq!(read("assets",&creature["id"])["audios"][0]["name"],"低鸣");
+        assert_eq!(saved["audios"],json!([]));
+        assert_eq!(read("assets",&creature["id"])["audios"].as_array().unwrap().len(),1);
+        assert!(action("assets/audio/save",json!({"asset_id":location["id"],"media_id":audio["id"],"name":"环境"})).unwrap_err().contains("仅人物和生物"));
         assert_eq!(read("assets",&person["id"])["audios"][0]["name"],"说话参考");assert_eq!(read("media",&audio["id"])["name"],"环境.wav");
-        assert!(action("assets/audio/save",json!({"asset_id":location["id"],"media_id":image["id"],"name":"wrong type"})).is_err());
+        assert!(action("assets/audio/save",json!({"asset_id":creature["id"],"media_id":image["id"],"name":"wrong type"})).is_err());
         assert!(action("assets/audio/save",json!({"asset_id":location["id"],"media_id":audio["id"],"name":" "})).is_err());
         assert!(action("assets/media/add",json!({"asset_id":location["id"],"media_id":audio["id"]})).is_err());
         for operation in ["assets/audio/save","assets/audio/delete"] {
@@ -658,8 +661,8 @@ mod tests {
         f.call("app_request",json!({"resource":"assets","method":"PATCH","id":location["id"],"data":{"enabled":false}})).unwrap();
         assert!(f.call("app_request",json!({"resource":"media","method":"DELETE","id":image["id"]})).is_err());
         assert!(f.call("app_request",json!({"resource":"media","method":"DELETE","id":audio["id"]})).is_err());
-        action("assets/audio/delete",json!({"asset_id":location["id"],"media_id":audio["id"]})).unwrap();
-        assert_eq!(read("assets",&location["id"])["audios"],json!([]));
+        action("assets/audio/delete",json!({"asset_id":creature["id"],"media_id":audio["id"]})).unwrap();
+        assert_eq!(read("assets",&creature["id"])["audios"],json!([]));
         assert_eq!(read("assets",&person["id"])["audios"][0]["name"],"说话参考");
         action("assets/media/delete",json!({"asset_id":location["id"],"media_id":image["id"]})).unwrap();
         assert!(read("assets",&location["id"])["design_media_id"].is_null());assert_eq!(read("media",&image["id"])["id"],image["id"]);

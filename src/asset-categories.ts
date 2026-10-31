@@ -8,6 +8,9 @@ export const ASSET_CATEGORIES = [
 ] as const;
 
 export type AssetCategory = typeof ASSET_CATEGORIES[number]["value"];
+export function supportsAudioReferences(category?: string): boolean {
+  return (category || "person") === "person" || category === "creature";
+}
 export function assetCategoryLabel(category?: string): string {
   return ASSET_CATEGORIES.find(item => item.value === category)?.label || "人物";
 }

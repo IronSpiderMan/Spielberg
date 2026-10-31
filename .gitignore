@@ -48,6 +48,7 @@ npm-debug.log*
 !/scripts/qa/role-enabled.cjs
 !/scripts/qa/prompt-mentions.cjs
 !/scripts/qa/asset-categories.cjs
+!/scripts/qa/asset-references.cjs
 
 # Tauri
 src-tauri/gen/

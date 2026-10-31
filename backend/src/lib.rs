@@ -221,7 +221,8 @@ fn manage_role_audio(s:&AppState,v:&Value,delete:bool)->Result<Value,String>{
  let pid=project_id(v)?;let c=db(s,&pid)?;let rid=intv(v,"asset_id")?;let mid=intv(v,"media_id")?;
  if delete {c.execute("DELETE FROM role_audio WHERE role_id=? AND media_id=?",params![rid,mid]).map_err(|e|e.to_string())?;}
  else {let name=strv(v,"name")?;if name.trim().is_empty(){return Err("请输入音频名称".into())}
- if !c.query_row("SELECT EXISTS(SELECT 1 FROM roles WHERE id=?)",[rid],|r|r.get::<_,bool>(0)).map_err(|e|e.to_string())?{return Err("资产不存在".into())}
+ let category=c.query_row("SELECT category FROM roles WHERE id=?",[rid],|r|r.get::<_,String>(0)).optional().map_err(|e|e.to_string())?.ok_or("资产不存在")?;
+ if !matches!(category.as_str(),"person"|"creature"){return Err("仅人物和生物资产支持音频参考".into())}
  if media(&c,Some(mid)).map(|m|m["kind"]!="audio").unwrap_or(true){return Err("请选择有效的音频素材".into())}
  c.execute("INSERT INTO role_audio(role_id,media_id,name) VALUES(?,?,?) ON CONFLICT(role_id,media_id) DO UPDATE SET name=excluded.name",params![rid,mid,name.trim()]).map_err(|e|e.to_string())?;}
  touch(s,&pid);Ok(json!({"ok":true}))
@@ -932,6 +933,31 @@ fn background_command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Com
 #[cfg(test)]
 mod role_audio_tests {
  use super::*;
+ #[test]
+ fn audio_references_are_limited_to_people_and_creatures_without_deleting_legacy_data(){
+  let root=std::env::temp_dir().join(format!("spielberg-audio-categories-{}",Uuid::new_v4()));
+  storage::initialize_root(&root).unwrap();
+  let state=AppState{root:root.clone(),guard:std::sync::Arc::new(Mutex::new(()))};
+  let project=create_project(&state,&json!({"name":"Audio categories"})).unwrap();let pid=project["id"].as_str().unwrap();
+  let c=db(&state,pid).unwrap();
+  c.execute("INSERT INTO media(id,name,path,kind,created_at) VALUES(1,'voice.wav','/voice.wav','audio','1')",[]).unwrap();
+  for category in ["person","creature","location","object","vehicle","other"] {
+   let role=insert_role(&state,&json!({"project_id":pid,"name":category,"category":category})).unwrap();let rid=role["id"].as_i64().unwrap();
+   let request=json!({"project_id":pid,"asset_id":rid,"media_id":1,"name":"Reference"});
+   if matches!(category,"person"|"creature") {manage_role_audio(&state,&request,false).unwrap();}
+   else {
+    assert!(manage_role_audio(&state,&request,false).unwrap_err().contains("仅人物和生物"));
+    // Older references survive a category change and can still be unlinked.
+    c.execute("INSERT INTO role_audio(role_id,media_id,name) VALUES(?,1,'Legacy')",[rid]).unwrap();
+    update_role(&state,&json!({"project_id":pid,"id":rid,"name":category,"description":"Updated"})).unwrap();
+    assert_eq!(role_audios(&c,rid).unwrap().len(),1);
+    manage_role_audio(&state,&request,true).unwrap();
+    assert!(role_audios(&c,rid).unwrap().is_empty());
+   }
+   assert!(media(&c,Some(1)).is_some());
+  }
+  drop(c);fs::remove_dir_all(root).unwrap();
+ }
  #[test]
  fn multiple_named_audio_references_survive_reload_and_migration(){
   let root=std::env::temp_dir().join(format!("spielberg-role-audio-{}",Uuid::new_v4()));

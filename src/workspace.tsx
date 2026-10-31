@@ -1,5 +1,5 @@
 import { RoleAudioReferences } from "./components/RoleAudioReferences";
-import { ASSET_CATEGORIES, assetCategoryLabel, type AssetCategory } from "./asset-categories";
+import { ASSET_CATEGORIES, assetCategoryLabel, supportsAudioReferences, type AssetCategory } from "./asset-categories";
 import { PreviewVideo, VideoPreviewModal } from "./components/VideoPreviewModal";
 import { sceneVideoPrompt } from "./core";
 import { ReferenceMediaPicker } from "./components/generation/ReferenceMediaPicker";
@@ -46,6 +46,7 @@ Pencil,
 Download,
 Film,
 ImagePlus,
+Link2Off,
 Play,
 Plus,
 Save,
@@ -1745,6 +1746,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
   const [showDisabled, setShowDisabled] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<AssetCategory | "all">("all");
   const [updatingRoleId, setUpdatingRoleId] = useState<number | null>(null);
+  const [unlinkingImageId, setUnlinkingImageId] = useState<number | null>(null);
   const visibleRoles = data.assets.filter(role => (showDisabled || role.enabled !== false) && (categoryFilter === "all" || (role.category || "person") === categoryFilter));
   const [roleImagePreview, setRoleImagePreview] = useState<Media | null>(null);
   const [previewRoleId, setPreviewRoleId] = useState<number | null>(null);
@@ -1756,6 +1758,17 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
   const previewRole = data.assets.find(role => role.id === previewRoleId);
   const previewImages = [...(previewRole?.images || [])].sort((a, b) => Number(b.id === previewRole?.design_media_id) - Number(a.id === previewRole?.design_media_id));
   useEffect(() => { if (initialRoleId != null) setDetailId(initialRoleId); }, [initialRoleId]);
+  const unlinkImage = async (role: Asset, media: Media) => {
+    if (unlinkingImageId !== null) return;
+    setUnlinkingImageId(media.id);
+    try {
+      await post("/assets/media/delete", {project_id: data.project.id, asset_id: role.id, media_id: media.id});
+      if (previewRoleId === role.id && roleImagePreview?.id === media.id) setRoleImagePreview(null);
+      await reload();
+      Message.success("已取消图片关联，素材文件已保留");
+    } catch (e) { Message.error(String(e)); }
+    finally { setUnlinkingImageId(null); }
+  };
   const changeRoleEnabled = async (role: Asset, enabled: boolean) => {
     if (updatingRoleId !== null) return;
     setUpdatingRoleId(role.id);
@@ -1783,7 +1796,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
         <div className="role-detail-topbar">
           <Button type="text" icon={<ArrowLeft size={16} />} onClick={() => setDetailId(null)}>资产列表</Button>
           <span>资产档案</span>
-          <Button icon={<Pencil size={15} />} onClick={() => setEditing(detail)}>编辑设定</Button>
+          <Button icon={<Pencil size={15} />} disabled={unlinkingImageId !== null} onClick={() => setEditing(detail)}>编辑设定</Button>
         </div>
         <div className="role-detail-hero">
           <div className="role-detail-portrait">
@@ -1802,10 +1815,13 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
         </div>
         <RoleAudioReferences key={detail.id} role={detail} data={data} reload={reload}/>
         <section className="role-detail-gallery" aria-label="资产图片">
-          <div className="role-detail-gallery-heading"><div><h2>形象参考 <span>{detail.images.length.toString().padStart(2, "0")}</span></h2><p>记录资产的不同外观与细节</p></div><span>点击图片放大查看</span></div>
+          <div className="role-detail-gallery-heading"><div><h2>图片参考 <span>{detail.images.length.toString().padStart(2, "0")}</span></h2><p>记录资产的外观、空间布局与细节</p></div><span>点击图片放大查看</span></div>
           {detailImages.length ? <div className="role-detail-images">{detailImages.map((media, index) => <figure key={media.id}>
-            <button type="button" onClick={() => openRoleImage(detail, media)} aria-label={`预览 ${media.name}`}><img src={imageUrl(media)} alt={media.name} /><span className="role-detail-image-number">{String(index + 1).padStart(2, "0")}</span>{media.id === detail.design_media_id && <span className="role-detail-main-badge">主图</span>}</button>
+            <button type="button" className="role-detail-image-preview" onClick={() => openRoleImage(detail, media)} aria-label={`预览 ${media.name}`}><img src={imageUrl(media)} alt={media.name} /><span className="role-detail-image-number">{String(index + 1).padStart(2, "0")}</span>{media.id === detail.design_media_id && <span className="role-detail-main-badge">主图</span>}</button>
             <figcaption title={media.name}>{media.name}</figcaption>
+            <Popconfirm title="取消这张图片与资产的关联？" content={media.id === detail.design_media_id ? "素材库中的原文件会保留，同时清除该资产的主图设置。" : "素材库中的原文件会保留。"} okText="取消关联" onOk={() => unlinkImage(detail, media)}>
+              <Button className="role-detail-image-unlink" type="text" size="mini" icon={<Link2Off size={13}/>} loading={unlinkingImageId === media.id} disabled={unlinkingImageId !== null} aria-label={`取消关联 ${media.name}`}>取消关联</Button>
+            </Popconfirm>
           </figure>)}</div> : <Empty description="添加参考图片，记录资产的外观与细节" />}
         </section>
       </div> : <>
@@ -1845,7 +1861,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
               <p>{r.description || "添加资产描述，保持生成的一致性。"}</p>
             </button>
             <div className="role-foot">
-              <span className="role-asset-count">{r.images.length} 张资产图 · {r.audios?.length || 0} 段音频参考</span>
+              <span className="role-asset-count">{r.images.length} 张资产图{supportsAudioReferences(r.category) && ` · ${r.audios?.length || 0} 段音频参考`}</span>
               <div className="role-card-actions">
               <Button type="text" size="mini" onClick={() => setEditing(r)}>
                 设定
@@ -1979,7 +1995,7 @@ function RoleEditor({
     if (design === id) setDesign(currentRole?.images.find((image) => image.id !== id)?.id ?? null);
     if (imagePreview?.id === id) setImagePreview(null);
     await reload();
-    Message.success("资产图片已删除");
+    Message.success("已取消图片关联，素材文件已保留");
   };
   const renameImage = async () => {
     if (!renamingImage || !renamingImage.name.trim()) return Message.warning("请输入图片名称");
@@ -2051,8 +2067,8 @@ function RoleEditor({
           />
         </Form.Item>
         <Form.Item
-          label="资产设计图"
-          extra="一个资产可以关联多张图片。点击图片放大预览，点击“设为主图”选择主图，再点底部“保存资产”生效。"
+          label="图片参考"
+          extra="一个资产可以关联多张图片，取消关联会保留素材文件。点击图片放大预览，点击“设为主图”选择主图，再点底部“保存资产”生效。"
         >
           <Space direction="vertical" style={{ width: "100%" }}>
             <Space wrap>
@@ -2092,17 +2108,19 @@ function RoleEditor({
                     {design !== m.id && <button type="button" className="role-image-primary" onClick={(e) => { e.stopPropagation(); setDesign(m.id); }}>设为主图</button>}
                     <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                     <Popconfirm
-                      title="从该资产中删除这张图片？"
+                      title="取消这张图片与资产的关联？"
+                      content="素材库中的原文件会保留。取消关联立即生效。"
+                      okText="取消关联"
                       onOk={() => removeImage(m.id).catch((e) => Message.error(String(e)))}
                     >
                       <button
                         type="button"
                         className="role-image-delete"
-                        aria-label={`删除 ${m.name}`}
-                        title="从资产中删除图片"
+                        aria-label={`取消关联 ${m.name}`}
+                        title="取消图片关联，保留素材文件"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <Trash2 size={13} /> 删除
+                        <Link2Off size={13} /> 取消关联
                       </button>
                     </Popconfirm>
                     </div>
@@ -2112,7 +2130,9 @@ function RoleEditor({
             </div>
       </Space>
         </Form.Item>
-        {currentRole&&<RoleAudioReferences key={currentRole.id} role={currentRole} data={data} reload={reload} editable/>}
+        {currentRole && supportsAudioReferences(category) && (supportsAudioReferences(currentRole.category)
+          ? <RoleAudioReferences key={currentRole.id} role={currentRole} data={data} reload={reload} editable/>
+          : <p className="helper">保存资产类别后可添加音频参考。</p>)}
         <Form.Item label="生成方式">
           <Space>
             <Button icon={<Sparkles size={15} />} type="primary" loading={generating} onClick={() => generateRoleImage("t2i")}>
