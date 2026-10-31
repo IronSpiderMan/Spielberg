@@ -46,7 +46,6 @@ Pencil,
 Download,
 Film,
 ImagePlus,
-Link2Off,
 Play,
 Plus,
 Save,
@@ -1747,6 +1746,8 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
   const [categoryFilter, setCategoryFilter] = useState<AssetCategory | "all">("all");
   const [updatingRoleId, setUpdatingRoleId] = useState<number | null>(null);
   const [unlinkingImageId, setUnlinkingImageId] = useState<number | null>(null);
+  const [settingPrimaryImageId, setSettingPrimaryImageId] = useState<number | null>(null);
+  const imageActionBusy = unlinkingImageId !== null || settingPrimaryImageId !== null;
   const [renamingMedia, setRenamingMedia] = useState<{id:number;name:string} | null>(null);
   const [renamingMediaBusy, setRenamingMediaBusy] = useState(false);
   const visibleRoles = data.assets.filter(role => (showDisabled || role.enabled !== false) && (categoryFilter === "all" || (role.category || "person") === categoryFilter));
@@ -1772,15 +1773,25 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
     finally { setRenamingMediaBusy(false); }
   };
   const unlinkImage = async (role: Asset, media: Media) => {
-    if (unlinkingImageId !== null) return;
+    if (imageActionBusy) return;
     setUnlinkingImageId(media.id);
     try {
       await post("/assets/media/delete", {project_id: data.project.id, asset_id: role.id, media_id: media.id});
       if (previewRoleId === role.id && roleImagePreview?.id === media.id) setRoleImagePreview(null);
       await reload();
-      Message.success("已取消图片关联，素材文件已保留");
+      Message.success("已从资产中删除图片，素材文件已保留");
     } catch (e) { Message.error(String(e)); }
     finally { setUnlinkingImageId(null); }
+  };
+  const setPrimaryImage = async (role: Asset, media: Media) => {
+    if (imageActionBusy || role.design_media_id === media.id) return;
+    setSettingPrimaryImageId(media.id);
+    try {
+      await post("/assets/update", {project_id: data.project.id, id: role.id, design_media_id: media.id});
+      await reload();
+      Message.success("资产主图已更新");
+    } catch (e) { Message.error(String(e)); }
+    finally { setSettingPrimaryImageId(null); }
   };
   const changeRoleEnabled = async (role: Asset, enabled: boolean) => {
     if (updatingRoleId !== null) return;
@@ -1809,7 +1820,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
         <div className="role-detail-topbar">
           <Button type="text" icon={<ArrowLeft size={16} />} onClick={() => setDetailId(null)}>资产列表</Button>
           <span>资产档案</span>
-          <Button icon={<Pencil size={15} />} disabled={unlinkingImageId !== null} onClick={() => setEditing(detail)}>编辑设定</Button>
+          <Button icon={<Pencil size={15} />} disabled={imageActionBusy} onClick={() => setEditing(detail)}>编辑设定</Button>
         </div>
         <div className="role-detail-hero">
           <div className="role-detail-portrait">
@@ -1830,13 +1841,16 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
         <section className="role-detail-gallery" aria-label="资产图片">
           <div className="role-detail-gallery-heading"><div><h2>图片参考 <span>{detail.images.length.toString().padStart(2, "0")}</span></h2><p>记录资产的外观、空间布局与细节</p></div><span>点击图片放大查看</span></div>
           {detailImages.length ? <div className="role-detail-images">{detailImages.map((media, index) => <figure key={media.id}>
+            <div className="role-detail-image-frame">
             <button type="button" className="role-detail-image-preview" onClick={() => openRoleImage(detail, media)} aria-label={`预览 ${media.name}`}><img src={imageUrl(media)} alt={media.name} /><span className="role-detail-image-number">{String(index + 1).padStart(2, "0")}</span>{media.id === detail.design_media_id && <span className="role-detail-main-badge">主图</span>}</button>
+            {media.id !== detail.design_media_id && <button type="button" className="role-detail-set-primary" disabled={imageActionBusy} aria-label={`设为主图 ${media.name}`} onClick={() => void setPrimaryImage(detail, media)}>{settingPrimaryImageId === media.id ? "设置中…" : "设为主图"}</button>}
+            </div>
             <figcaption title={media.name}>{media.name}</figcaption>
             <div className="role-detail-image-actions">
-            <Button type="text" size="mini" icon={<Pencil size={13}/>} disabled={unlinkingImageId !== null} aria-label={`重命名 ${media.name}`} onClick={() => setRenamingMedia({id:media.id,name:media.name})}>重命名</Button>
-            <Popconfirm title="取消这张图片与资产的关联？" content={media.id === detail.design_media_id ? "素材库中的原文件会保留，同时清除该资产的主图设置。" : "素材库中的原文件会保留。"} okText="取消关联" onOk={() => unlinkImage(detail, media)}>
-              <Button className="role-detail-image-unlink" type="text" size="mini" icon={<Link2Off size={13}/>} loading={unlinkingImageId === media.id} disabled={unlinkingImageId !== null} aria-label={`取消关联 ${media.name}`}>取消关联</Button>
-            </Popconfirm>
+              <Button className="role-detail-image-rename" type="text" size="mini" icon={<Pencil size={13}/>} disabled={imageActionBusy} aria-label={`重命名 ${media.name}`} onClick={() => setRenamingMedia({id:media.id,name:media.name})}>重命名</Button>
+              <Popconfirm title="从资产中删除这张图片？" content={media.id === detail.design_media_id ? "素材库中的原文件会保留，同时清除该资产的主图设置。" : "素材库中的原文件会保留。"} okText="删除" okButtonProps={{status:"danger"}} onOk={() => unlinkImage(detail, media)}>
+                <Button type="text" size="mini" status="danger" icon={<Trash2 size={13}/>} loading={unlinkingImageId === media.id} disabled={imageActionBusy} aria-label={`删除 ${media.name}`}>删除</Button>
+              </Popconfirm>
             </div>
           </figure>)}</div> : <Empty description="添加参考图片，记录资产的外观与细节" />}
         </section>
@@ -2020,7 +2034,7 @@ function RoleEditor({
     if (design === id) setDesign(currentRole?.images.find((image) => image.id !== id)?.id ?? null);
     if (imagePreview?.id === id) setImagePreview(null);
     await reload();
-    Message.success("已取消图片关联，素材文件已保留");
+    Message.success("已从资产中删除图片，素材文件已保留");
   };
   const renameImage = async () => {
     if (!renamingImage || !renamingImage.name.trim()) return Message.warning("请输入图片名称");
@@ -2093,7 +2107,7 @@ function RoleEditor({
         </Form.Item>
         <Form.Item
           label="图片参考"
-          extra="一个资产可以关联多张图片，取消关联会保留素材文件。点击图片放大预览，点击“设为主图”选择主图，再点底部“保存资产”生效。"
+          extra="一个资产可以关联多张图片，删除参考图会保留素材文件。点击图片放大预览，点击“设为主图”选择主图，再点底部“保存资产”生效。"
         >
           <Space direction="vertical" style={{ width: "100%" }}>
             <Space wrap>
@@ -2133,19 +2147,20 @@ function RoleEditor({
                     {design !== m.id && <button type="button" className="role-image-primary" onClick={(e) => { e.stopPropagation(); setDesign(m.id); }}>设为主图</button>}
                     <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                     <Popconfirm
-                      title="取消这张图片与资产的关联？"
-                      content="素材库中的原文件会保留。取消关联立即生效。"
-                      okText="取消关联"
+                      title="从资产中删除这张图片？"
+                      content="素材库中的原文件会保留。删除立即生效。"
+                      okText="删除"
+                      okButtonProps={{status:"danger"}}
                       onOk={() => removeImage(m.id).catch((e) => Message.error(String(e)))}
                     >
                       <button
                         type="button"
                         className="role-image-delete"
-                        aria-label={`取消关联 ${m.name}`}
-                        title="取消图片关联，保留素材文件"
+                        aria-label={`删除 ${m.name}`}
+                        title="从资产中删除图片，保留素材文件"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <Link2Off size={13} /> 取消关联
+                        <Trash2 size={13} /> 删除
                       </button>
                     </Popconfirm>
                     </div>
