@@ -1,6 +1,6 @@
 // Real browser + real HTTP backend + local model fixture; no real projects or model charges.
 const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const http = require('node:http');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -74,9 +74,36 @@ const tool = (name, args, id) => ({id,type:'function',function:{name,arguments:J
   const roles=await api(`/projects/${project.id}/roles`,undefined,'GET');assert.equal(roles.length,1);assert.equal(roles[0].name,'Agent 主角');
   const scripts=await api(`/projects/${project.id}/screenplays`,undefined,'GET');assert.equal(scripts.length,1);
   await page.screenshot({path:path.join(screenshots,'desktop.png'),fullPage:true});
+  // Reproduce an already migrated history: the asset exists on this machine,
+  // while its original generation result still contains a Windows path.
+  const upload=await fetch(`${base}/api/v1/projects/${project.id}/assets/upload?name=migrated.png`,{
+   method:'POST',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aV1cAAAAASUVORK5CYII=','base64')
+  });
+  assert(upload.ok);const migrated=(await upload.json()).data;
+  const seed=spawnSync('python3',['-c',`
+import json,sqlite3,sys
+c=sqlite3.connect(sys.argv[1])
+messages=json.loads(c.execute('SELECT messages FROM agent_sessions WHERE id=?',(sys.argv[2],)).fetchone()[0])
+media=json.loads(sys.argv[3]);media['path']=r'C:\\Users\\Administrator\\old-project\\assets\\migrated.png'
+arguments={'operation':'generations/image','data':{'prompt':'test'}}
+messages.extend([
+ {'role':'assistant','content':'','tool_calls':[{'id':'migrated-output','type':'function','function':{'name':'app_action','arguments':json.dumps(arguments)}}]},
+ {'role':'tool','tool_call_id':'migrated-output','tool_name':'app_action','status':'completed','arguments':arguments,'content':json.dumps({'data':{'media':media}})}
+])
+c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages),sys.argv[2]));c.commit()
+`,path.join(project.path,'spielberg.sqlite'),originalSession.id,JSON.stringify(migrated)],{encoding:'utf8'});
+  assert.equal(seed.status,0,seed.stderr);
   await page.reload();await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
   await page.getByRole('link',{name:'参考资料',exact:true}).waitFor();
   await page.getByTestId('agent-plan').getByText('2/2',{exact:true}).waitFor();
+  const thumbnail=page.locator('.agent-generated-images img');
+  await thumbnail.waitFor();
+  await page.waitForFunction(()=>document.querySelector('.agent-generated-images img')?.naturalWidth>0);
+  assert.equal(new URL(await thumbnail.getAttribute('src'),base).searchParams.get('path'),migrated.path);
+  await page.getByRole('button',{name:'预览 migrated.png',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('.image-preview-full img')?.naturalWidth>0);
+  await page.screenshot({path:path.join(screenshots,'migrated-image.png'),fullPage:true});
+  await page.keyboard.press('Escape');
   await page.getByTestId('agent-settings').click();
   await page.getByRole('dialog').getByText('Agent 设置',{exact:true}).waitFor();
   await page.getByRole('switch',{name:'沿用项目 LLM 配置',exact:true}).click();
@@ -99,8 +126,15 @@ const tool = (name, args, id) => ({id,type:'function',function:{name,arguments:J
   await page.getByTestId('agent-send').click();
   await page.locator('.agent-limit-notice').waitFor();
   assert.equal(await page.locator('.agent-tool-status.skipped').textContent(),'未执行');
+  const sessionOrder=()=>page.locator('.agent-session-select').evaluateAll(items=>items.map(item=>item.dataset.testid));
+  const beforeSelection=await sessionOrder();
+  assert.notEqual(beforeSelection[0],`agent-session-${originalSession.id}`);
   await page.getByTestId(`agent-session-${originalSession.id}`).click();
   await page.getByTestId('agent-plan').waitFor();
+  assert.deepEqual(await sessionOrder(),beforeSelection,'Selecting an older session moved it');
+  await page.reload();await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
+  await page.getByTestId('agent-plan').waitFor();
+  assert.deepEqual(await sessionOrder(),beforeSelection,'Reload changed session order');
   // Narrow and dark themes must retain usable controls without horizontal overflow.
   for(const width of [1024,768,390]) {
    await page.setViewportSize({width,height:900});
@@ -118,7 +152,7 @@ const tool = (name, args, id) => ({id,type:'function',function:{name,arguments:J
   await page.getByTestId('agent-plan').waitFor();
   await page.screenshot({path:path.join(screenshots,'dark.png'),fullPage:true,animations:'disabled'});
   assert.deepEqual(failures,[]);
-  console.log('PASS: real browser Agent tools, durable plans, limited/skipped states, Markdown/source links, credential hiding, editor refresh, cancellation and desktop/mobile/dark themes');
+  console.log('PASS: migrated image thumbnail/preview; fixed session order after selection/reload; Agent tools, durable plans, limited/skipped states, Markdown/source links, credential hiding, editor refresh, cancellation and desktop/mobile/dark themes');
   console.log('Screenshots: '+screenshots);
  } finally {
   if(browser)await browser.close();

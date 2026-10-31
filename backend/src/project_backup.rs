@@ -55,19 +55,46 @@ fn rewrite_database(c:&Connection,paths:&HashMap<String,String>,strip_secrets:bo
         ("settings","key",vec!["value"]),("scene_scripts","scene_id",vec!["value"]),
         ("scene_options","scene_id",vec!["value"]),("generations","id",vec!["request_json","result_json"]),
         ("background_jobs","id",vec!["request_json","result_json","resume_json"]),
+        ("agent_sessions","id",vec!["messages"]),
     ] {
+        // Agent history is installed lazily; older projects may not have it yet.
+        let exists:bool=c.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?)",[table],|r|r.get(0)).map_err(|e|e.to_string())?;
+        if !exists {continue}
         for column in columns {
             let mut q=c.prepare(&format!("SELECT CAST({key} AS TEXT),{column} FROM {table} WHERE {column} IS NOT NULL")).map_err(|e|e.to_string())?;
             let rows=q.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
             for (id,raw) in rows {
                 if let Ok(mut value)=serde_json::from_str::<Value>(&raw) {
                     rewrite(&mut value,paths,strip_secrets);
+                    if table=="agent_sessions" {
+                        if let Some(messages)=value.as_array_mut() {
+                            for message in messages {
+                                // Tool results and model arguments are JSON encoded inside
+                                // the message JSON. Preserve ordinary conversation text.
+                                if message["role"]=="tool" {
+                                    if let Some(content)=message.get_mut("content") {rewrite_encoded_json(content,paths,strip_secrets);}
+                                }
+                                if let Some(calls)=message.get_mut("tool_calls").and_then(Value::as_array_mut) {
+                                    for call in calls {
+                                        if let Some(arguments)=call.get_mut("function").and_then(|f|f.get_mut("arguments")) {rewrite_encoded_json(arguments,paths,strip_secrets);}
+                                    }
+                                }
+                            }
+                        }
+                    }
                     c.execute(&format!("UPDATE {table} SET {column}=? WHERE {key}=?"),params![value.to_string(),id]).map_err(|e|e.to_string())?;
                 }
             }
         }
     }
     Ok(())
+}
+
+fn rewrite_encoded_json(value:&mut Value,paths:&HashMap<String,String>,strip_secrets:bool) {
+    if let Some(mut data)=value.as_str().and_then(|raw|serde_json::from_str::<Value>(raw).ok()) {
+        rewrite(&mut data,paths,strip_secrets);
+        *value=json!(data.to_string());
+    }
 }
 
 pub fn export(c:&Connection,root:&Path,destination:&Path,name:&str,include_secrets:bool)->Result<Value,String> {
@@ -202,6 +229,14 @@ mod tests {
         c.execute("INSERT INTO settings VALUES('models',?)",[json!({"t2i":{"api_key":"secret-value","url":"http://model.local"}}).to_string()]).unwrap();
         c.execute("INSERT INTO settings VALUES('agent',?)",[json!({"api_key":"agent-secret","search_api_key":"search-secret","search_provider":"brave"}).to_string()]).unwrap();
         c.execute("INSERT INTO background_jobs(operation,status,prompt,created_at,updated_at,result_json) VALUES('image','completed','','1','1',?)",[json!({"id":1,"path":file,"kind":"image"}).to_string()]).unwrap();
+        c.execute_batch("CREATE TABLE agent_sessions(id TEXT PRIMARY KEY,messages TEXT NOT NULL)").unwrap();
+        let result=json!({"media":{"id":1,"path":file,"kind":"image"}}).to_string();
+        let messages=json!([
+            {"role":"user","content":"保留原始对话文字","images":["data:image/png;base64,aGVsbG8="],"image_media_ids":[1]},
+            {"role":"assistant","content":"","tool_calls":[{"function":{"arguments":result}}]},
+            {"role":"tool","tool_name":"app_action","arguments":{"operation":"generations/image"},"content":result}
+        ]);
+        c.execute("INSERT INTO agent_sessions VALUES('history',?)",[messages.to_string()]).unwrap();
         let shot_csv=format!("编号,景别,运镜,画面,描述\r\n001,中景,固定,{},\"逗号,与\"\"引号\"\"\n换行\"",file.to_string_lossy());
 
         let board=json!({"version":1,"nodes":[{"id":"image","kind":"media","ref_id":1,"x":30,"y":40}],"edges":[],"viewport":{"x":80,"y":80,"zoom":1}});
@@ -212,6 +247,10 @@ mod tests {
         let backup=base.join("portable.spielberg-backup");export(&c,&root,&backup,"Test",false).unwrap();
         let extracted=base.join("extracted");unpack_archive(&backup,&extracted).unwrap();
         let copy=Connection::open(extracted.join("spielberg.sqlite")).unwrap();
+        let portable:String=copy.query_row("SELECT messages FROM agent_sessions",[],|r|r.get(0)).unwrap();
+        let portable:Value=serde_json::from_str(&portable).unwrap();
+        let output:Value=serde_json::from_str(portable[2]["content"].as_str().unwrap()).unwrap();
+        assert_eq!(output["media"]["path"],"assets/portrait.png");
         let raw:String=copy.query_row("SELECT value FROM settings WHERE key='models'",[],|r|r.get(0)).unwrap();assert!(!raw.contains("secret-value"));
         let agent_config:String=copy.query_row("SELECT value FROM settings WHERE key='agent'",[],|r|r.get(0)).unwrap();
         assert!(!agent_config.contains("agent-secret") && !agent_config.contains("search-secret"));
@@ -220,6 +259,14 @@ mod tests {
         assert!(!fs::read(extracted.join("spielberg.sqlite")).unwrap().windows(12).any(|bytes|bytes==b"secret-value"));
         let restored=base.join("restored");assert_eq!(restore(&backup,&restored).unwrap(),"Test");
         let restored_db=Connection::open(restored.join("spielberg.sqlite")).unwrap();
+        let history:String=restored_db.query_row("SELECT messages FROM agent_sessions",[],|r|r.get(0)).unwrap();
+        let history:Value=serde_json::from_str(&history).unwrap();
+        assert_eq!(history[0],messages[0]);
+        for encoded in [&history[1]["tool_calls"][0]["function"]["arguments"],&history[2]["content"]] {
+            let output:Value=serde_json::from_str(encoded.as_str().unwrap()).unwrap();
+            assert_eq!(output["media"]["path"],json!(restored.join("assets/portrait.png")));
+        }
+        assert_eq!(c.query_row("SELECT messages FROM agent_sessions",[],|r|r.get::<_,String>(0)).unwrap(),messages.to_string());
         assert_eq!(catalog::usages(&restored_db,1).unwrap().len(),2);
         assert!(catalog::usages(&restored_db,1).unwrap().iter().any(|u|u["kind"]=="canvas"));
         assert_eq!(restored_db.query_row("SELECT draft FROM scene_canvases",[],|r|r.get::<_,String>(0)).unwrap(),board.to_string());

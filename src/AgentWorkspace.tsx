@@ -1,6 +1,6 @@
 import { Button, Input, Message, Modal, Select, Spin, Switch } from "@arco-design/web-react";
 import { ArrowUp, ArrowUpRight, Clapperboard, Folder, PencilLine, Search, Bot, Check, ChevronDown, Globe, MessageSquare, Plus, Settings2, Sparkles, Square, Trash2, Wrench, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { imageUrl, post, type Media, type Snapshot } from "./core";
@@ -24,7 +24,7 @@ function displayJson(value: unknown) { if (typeof value === "string") { try { re
 
 // Only generation output is eligible: reference images in arguments must never
 // be presented as successful output. Bounded tool results may wrap data.
-function generatedImages(message: AgentMessage): Media[] {
+function generatedImages(message: AgentMessage, currentMedia: Map<number, Media>): Media[] {
   if (message.status === "running" || message.status === "failed" || message.tool_name !== "app_action" ||
       !message.arguments || typeof message.arguments !== "object" ||
       (message.arguments as Record<string, unknown>).operation !== "generations/image") return [];
@@ -36,7 +36,9 @@ function generatedImages(message: AgentMessage): Media[] {
       if (Array.isArray(value)) { value.forEach(visit); return; }
       const item = value as Record<string, unknown>;
       if (typeof item.id === "number" && item.kind === "image" && typeof item.path === "string" && item.path) {
-        found.set(item.id, { id: item.id, kind: "image", path: item.path,
+        // Tool history can still contain paths from the machine before migration.
+        // Asset IDs survive backup/restore, so use the project's current asset.
+        found.set(item.id, currentMedia.get(item.id) || { id: item.id, kind: "image", path: item.path,
           name: typeof item.name === "string" ? item.name : "生成图片", created_at: typeof item.created_at === "string" ? item.created_at : "" });
         return;
       }
@@ -47,8 +49,15 @@ function generatedImages(message: AgentMessage): Media[] {
   } catch { return []; }
 }
 
+function updateSession(items: Session[], session: Session): Session[] {
+  return items.some(item => item.id === session.id)
+    ? items.map(item => item.id === session.id ? session : item)
+    : [session, ...items];
+}
+
 export default function AgentWorkspace({ data, reload, onNavigate }: { data: Snapshot; reload: () => Promise<void>; onNavigate?: (page: string) => void }) {
   const pid = data.project.id;
+  const currentMedia = useMemo(() => new Map(data.media.map(media => [media.id, media])), [data.media]);
   const [preview, setPreview] = useState<Media | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selected, setSelected] = useState<Session | null>(null);
@@ -109,7 +118,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
     if (!mounted.current) return;
     if (selectedRef.current?.id === session.id && selectedRef.current.status === "running" && session.status !== "running") void reload().catch(() => {});
     selectedRef.current = session; setSelected(session);
-    setSessions(items => [session, ...items.filter(item => item.id !== session.id)]);
+    setSessions(items => updateSession(items, session));
     localStorage.setItem(`spielberg-agent-session-${pid}`, session.id);
   }, [pid, reload]);
   const choose = async (summary: Session) => {
@@ -189,7 +198,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
       setImageDrafts(items => ({ ...items, [key]: [] }));
       setDrafts(items => ({ ...items, [key]: items[key] === text || items[key]?.trim() === text ? "" : items[key] }));
       if (version === selectionVersion.current) { followBottom.current = true; accept(result); }
-      else setSessions(items => [result, ...items.filter(item => item.id !== result.id)]);
+      else setSessions(items => updateSession(items, result));
     } catch (e) { if (mounted.current) setError(String(e)); }
     finally { busy.current = false; if (mounted.current) setSending(false); }
   };
@@ -240,7 +249,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
             <summary><Wrench size={14} /><span>{toolText[message.tool_name || ""] || message.tool_name || "执行工具"}</span><small>{message.arguments && typeof message.arguments === "object" ? String((message.arguments as Record<string, unknown>).operation || (message.arguments as Record<string, unknown>).resource || "") : ""}</small><span className={`agent-tool-status ${message.status}`}>{message.status === "running" ? "执行中" : message.status === "failed" ? "失败" : message.status === "skipped" ? "未执行" : <><Check size={12} />完成</>}</span><ChevronDown size={14} /></summary>
             {message.arguments != null && <div><b>参数</b><pre>{displayJson(message.arguments)}</pre></div>}<div><b>结果</b><pre>{message.content ? displayJson(message.content) : "等待执行结果…"}</pre></div>
           </details>
-          {generatedImages(message).length > 0 && <div className="agent-generated-images">{generatedImages(message).map(media => <button type="button" key={media.id} onClick={() => setPreview(media)} aria-label={`预览 ${media.name}`}><img src={imageUrl(media)} alt={media.name} onLoad={() => { if (followBottom.current && log.current) log.current.scrollTop = log.current.scrollHeight; }} /><span>{media.name}</span></button>)}</div>}
+          {generatedImages(message, currentMedia).length > 0 && <div className="agent-generated-images">{generatedImages(message, currentMedia).map(media => <button type="button" key={media.id} onClick={() => setPreview(media)} aria-label={`预览 ${media.name}`}><img src={imageUrl(media)} alt={media.name} onLoad={() => { if (followBottom.current && log.current) log.current.scrollTop = log.current.scrollHeight; }} /><span>{media.name}</span></button>)}</div>}
           </div> : message.content || message.images?.length ? <article className={`agent-message is-${message.role}`} key={index}>
             <div className="agent-message-label">{message.role === "user" ? "你" : <><Bot size={15} />Agent</>}</div><div className="agent-message-content">{message.role === "user" ? <>{message.images?.map((image, i) => <a key={i} href={image} target="_blank" rel="noopener noreferrer"><img className="agent-message-image" src={image} alt={`附件图片 ${i + 1}`} /></a>)}{message.content && <p>{message.content}</p>}</> : <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ children, href, ...props }) => <a {...props} href={href?.startsWith("/api/v1/") ? backendUrl(href) : href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{message.content}</ReactMarkdown>}</div>
           </article> : null)}

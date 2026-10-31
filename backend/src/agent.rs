@@ -94,7 +94,7 @@ pub(super) fn command(s:&AppState,path:&str,v:&Value)->Result<Value,String>{
  let pid=project_id(v)?;let _lock=s.guard.lock().map_err(|_|"项目数据锁不可用")?;let c=db(s,&pid)?;install(&c)?;recover(s,&pid,&c)?;
  match path{
   "/agent/config"=>public_config(&c),"/agent/config/save"=>save_config(&c,v),
-  "/agent/sessions"=>{let mut q=c.prepare("SELECT id,title,status,error,updated_at FROM agent_sessions ORDER BY CAST(updated_at AS INTEGER) DESC,rowid DESC LIMIT 100").map_err(|e|e.to_string())?;let items=q.query_map([],|r|Ok(json!({"id":r.get::<_,String>(0)?,"title":r.get::<_,String>(1)?,"status":r.get::<_,String>(2)?,"error":r.get::<_,Option<String>>(3)?,"updated_at":r.get::<_,String>(4)?,"messages":[]}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;Ok(json!({"items":items}))},
+  "/agent/sessions"=>{let mut q=c.prepare("SELECT id,title,status,error,updated_at FROM agent_sessions ORDER BY CAST(created_at AS INTEGER) DESC,rowid DESC LIMIT 100").map_err(|e|e.to_string())?;let items=q.query_map([],|r|Ok(json!({"id":r.get::<_,String>(0)?,"title":r.get::<_,String>(1)?,"status":r.get::<_,String>(2)?,"error":r.get::<_,Option<String>>(3)?,"updated_at":r.get::<_,String>(4)?,"messages":[]}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;Ok(json!({"items":items}))},
   "/agent/create"=>{let id=Uuid::new_v4().to_string();let title=clipped(v["title"].as_str().filter(|s|!s.trim().is_empty()).unwrap_or("新对话").trim(),80);let date=now();c.execute("INSERT INTO agent_sessions(id,title,status,messages,created_at,updated_at) VALUES(?,?,'idle','[]',?,?)",params![id,title,date,date]).map_err(|e|e.to_string())?;read_session(&c,&id)},
   "/agent/session"=>read_session(&c,&strv(v,"session_id")?),
   "/agent/delete"=>{let id=strv(v,"session_id")?;read_session(&c,&id)?;if runs().lock().map_err(|_|"Agent 运行锁不可用")?.contains_key(&run_key(s,&pid,&id)){return Err("Agent 仍在执行或停止中，请稍后删除会话".into())}c.execute("DELETE FROM agent_sessions WHERE id=?",[id]).map_err(|e|e.to_string())?;Ok(json!({"ok":true}))},
@@ -242,6 +242,24 @@ fn run_loop(s:&AppState,pid:&str,mut session:Value,cfg:&Value,web:bool,cancel:&A
 #[cfg(test)]
 mod tests{
  use super::*;
+ #[test]
+ fn session_order_is_fixed_by_creation_even_after_activity_and_reload(){
+  let f=Fixture::new();
+  let first=f.command("/agent/create",json!({"title":"first"})).unwrap();
+  let second=f.command("/agent/create",json!({"title":"second"})).unwrap();
+  let third=f.command("/agent/create",json!({"title":"third"})).unwrap();
+  let c=db(&f.state,&f.pid).unwrap();
+  // Exercise same-second ties as well as an older conversation being updated.
+  c.execute("UPDATE agent_sessions SET created_at='100',updated_at='100'",[]).unwrap();
+  let order=||f.command("/agent/sessions",json!({})).unwrap()["items"].as_array().unwrap().iter().map(|s|s["id"].clone()).collect::<Vec<_>>();
+  let expected=vec![third["id"].clone(),second["id"].clone(),first["id"].clone()];
+  assert_eq!(order(),expected);
+  let mut old=read_session(&c,first["id"].as_str().unwrap()).unwrap();
+  old["status"]=json!("completed");save_session(&c,&mut old).unwrap();
+  f.command("/agent/session",json!({"session_id":second["id"]})).unwrap();
+  drop(c);
+  assert_eq!(order(),expected);
+ }
  #[test]
  fn old_sessions_migrate_without_losing_history_and_execution_state_survives_reload(){
   let f=Fixture::new();let c=db(&f.state,&f.pid).unwrap();
