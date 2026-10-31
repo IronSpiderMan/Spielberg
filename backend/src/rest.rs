@@ -72,7 +72,7 @@ fn get(c: &Connection, resource: &str, id: i64) -> ApiResult<Value> {
 }
 fn validate(c: &Connection, resource: &str, value: &Value, create: bool) -> ApiResult<()> {
     let fields: &[&str]=match resource {
-        "roles"=>&["name","description","enabled","design_media_id"],
+        "roles"=>&["name","description","enabled","category","design_media_id"],
         "episodes"=>&["title","description","cover_media_id","storyboard"],
         "scenes"=>&["creation_mode","title","description","prompt","episode_id","first_media_id","last_media_id","reference_media_id","generation_options"],
         "prompts"=>&["name","content","category"],
@@ -81,15 +81,18 @@ fn validate(c: &Connection, resource: &str, value: &Value, create: bool) -> ApiR
     };
     for (key,item) in value.as_object().ok_or_else(||bad("JSON 必须是对象"))? {
         if ["project_id","id"].contains(&key.as_str()) {continue}
-        if resource=="assets" && !create && key!="name" {return Err(bad("资产更新仅支持 name"))}
+        if resource=="assets" && !create && key!="name" {return Err(bad("素材更新仅支持 name"))}
         if !fields.contains(&key.as_str()) {return Err(bad(&format!("不支持的字段：{key}")))}
         if ["name","title","description","content","format","category","extension","data_base64"].contains(&key.as_str()) && !item.is_string(){return Err(bad(&format!("{key} 必须是字符串")))}
         if ["name","title"].contains(&key.as_str()) && item.as_str().unwrap_or("").trim().is_empty(){return Err(bad("名称不能为空"))}
         if key=="enabled" && !item.is_boolean(){return Err(bad("enabled 必须是布尔值"))}
+        if resource=="roles" && key=="category" && !["person","location","object","creature","vehicle","other"].contains(&item.as_str().unwrap_or("")) {
+            return Err(bad("资产类别必须为 person/location/object/creature/vehicle/other"));
+        }
         if key.ends_with("_media_id") && !item.is_null() {
-            let mid=item.as_i64().filter(|n|*n>0).ok_or_else(||bad("资产 ID 无效"))?;
-            let m=media(c,Some(mid)).ok_or_else(||bad("引用的资产不存在或已删除"))?;
-            if m["kind"]!="image" {return Err(bad("该字段必须引用图片资产"))}
+            let mid=item.as_i64().filter(|n|*n>0).ok_or_else(||bad("素材 ID 无效"))?;
+            let m=media(c,Some(mid)).ok_or_else(||bad("引用的素材不存在或已删除"))?;
+            if m["kind"]!="image" {return Err(bad("该字段必须引用图片素材"))}
         }
         if ["role_id","episode_id"].contains(&key.as_str()) && !item.as_i64().is_some_and(|n|n>0) {return Err(bad(&format!("{key} 必须是正整数")))}
         if key=="creation_mode" && !["default","canvas"].contains(&item.as_str().unwrap_or("")){return Err(bad("创建方式必须为 default 或 canvas"))}
@@ -202,6 +205,20 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
                     if resource=="assets" {return Ok(catalog::list(&c,&value)?)}
                     if let Some(ep)=value.get("episode_id") { if ["scenes","screenplays"].contains(&resource) { get(&c,"episodes",ep.as_i64().ok_or_else(||bad("剧集 ID 无效"))?)?; } }
                     let mut all=rows(&c,table,None)?;
+                    if resource=="roles" {
+                        if let Some(category)=value.get("category") {
+                            if !["person","location","object","creature","vehicle","other"].contains(&category.as_str().unwrap_or("")) {return Err(bad("资产类别无效"));}
+                            all.retain(|role|role["category"]==*category);
+                        }
+                        if let Some(enabled)=value.get("enabled") {
+                            let enabled=enabled.as_bool().ok_or_else(||bad("enabled 必须是布尔值"))?;
+                            all.retain(|role|role["enabled"].as_i64().map(|n|n!=0)==Some(enabled));
+                        }
+                        if let Some(query)=value.get("query") {
+                            let query=query.as_str().ok_or_else(||bad("query 必须是字符串"))?.trim().to_lowercase();
+                            all.retain(|role|["name","description"].iter().any(|key|role[key].as_str().unwrap_or("").to_lowercase().contains(&query)));
+                        }
+                    }
                     if ["scenes","screenplays"].contains(&resource) {if let Some(ep)=value.get("episode_id") {all.retain(|s|s["episode_id"]==*ep);}}
                     if resource=="episodes" || resource=="scenes" {all.sort_by_key(|s|s["sort_order"].as_i64().unwrap_or(0));}
                     all.into_iter().map(|v|enrich(&c,resource,v)).collect::<ApiResult<Vec<_>>>().map(|v|json!(v))
@@ -210,7 +227,7 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
                     validate(&c,resource,&value,true)?;
                     let item=match resource {"screenplays"=>screenplays::insert(state,&value)?,"roles"=>insert_role(state,&value)?,"episodes"=>insert_episode(state,&value)?,"scenes"=>insert_scene(state,&value)?,"prompts"=>insert_prompt(state,&value)?,"assets"=>{
                         let bytes=base64::engine::general_purpose::STANDARD.decode(strv(&value,"data_base64")?).map_err(|_|bad("Base64 数据无效"))?;
-                        if bytes.len()>100*1024*1024{return Err(ApiError(StatusCode::PAYLOAD_TOO_LARGE,"资产不能超过 100 MB".into()))}
+                        if bytes.len()>100*1024*1024{return Err(ApiError(StatusCode::PAYLOAD_TOO_LARGE,"素材不能超过 100 MB".into()))}
                         let ext=strv(&value,"extension")?;
                         let temp=state.root.join(format!(".upload-{}.{}",Uuid::new_v4(),safe_extension(&ext)?));
                         fs::write(&temp,bytes).map_err(|e|ApiError(StatusCode::INTERNAL_SERVER_ERROR,e.to_string()))?;
@@ -230,10 +247,10 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
 }
 pub(crate) fn safe_extension(ext: &str)->ApiResult<String>{
     let ext=ext.trim_start_matches('.').to_ascii_lowercase();
-    if !["png","jpg","jpeg","webp","gif","mp4","mov","webm","mkv","mp3","wav","m4a","aac","ogg","flac"].contains(&ext.as_str()){return Err(bad("不支持的资产格式"))}Ok(ext)
+    if !["png","jpg","jpeg","webp","gif","mp4","mov","webm","mkv","mp3","wav","m4a","aac","ogg","flac"].contains(&ext.as_str()){return Err(bad("不支持的素材格式"))}Ok(ext)
 }
 pub(crate) fn import_uploaded(state:&AppState,pid:&str,path:&Path,name:&str,role:Option<i64>)->ApiResult<Value>{
-    if name.trim().is_empty(){return Err(bad("资产名称不能为空"))}
+    if name.trim().is_empty(){return Err(bad("素材名称不能为空"))}
     let c=db(state,pid)?;
     if let Some(role)=role {get(&c,"roles",role)?;}
     let item=import_media(state,&json!({"project_id":pid,"source_path":path,"role_id":role}))?;
@@ -248,7 +265,7 @@ pub(crate) fn action(state:&AppState,path:&str,value:Value)->ApiResult<Value>{
     if ["/agent/config", "/agent/config/save", "/agent/sessions", "/agent/create", "/agent/session", "/agent/run", "/agent/cancel", "/agent/delete"].contains(&path) {
         return Ok(agent::command(state, path, &value)?);
     }
-    const ALLOWED:&[&str]=&["/canvas/load","/canvas/save","/editor/projects","/editor/save","/editor/probe","/editor/export","/app/settings/load","/app/settings/save","/project","/project/changes","/projects/open","/projects/migrate","/projects/backup","/projects/restore","/media/import","/media/export","/media/pose-reference","/media/thumbnail","/media/usage","/media/restore","/media/purge","/media/video-frame","/storage/scan","/storage/cleanup","/roles/media/add","/roles/media/delete","/scripts/load","/scripts/save","/scripts/publish","/tasks","/generations/image","/generations/video","/prompts/optimize","/storyboard/generate","/storyboard/plan","/storyboard/validate","/scenes/reorder","/scenes/duplicate","/scenes/select-video","/scenes/delete-video","/episodes/reorder","/episodes/merge","/settings"];
+    const ALLOWED:&[&str]=&["/canvas/load","/canvas/save","/editor/projects","/editor/save","/editor/probe","/editor/export","/app/settings/load","/app/settings/save","/project","/project/changes","/projects/open","/projects/migrate","/projects/backup","/projects/restore","/media/import","/media/export","/media/pose-reference","/media/thumbnail","/media/usage","/media/restore","/media/purge","/media/video-frame","/storage/scan","/storage/cleanup","/roles/media/add","/roles/media/delete","/roles/audio/save","/roles/audio/delete","/scripts/load","/scripts/save","/scripts/publish","/tasks","/generations/image","/generations/video","/prompts/optimize","/storyboard/generate","/storyboard/plan","/storyboard/validate","/scenes/reorder","/scenes/duplicate","/scenes/select-video","/scenes/delete-video","/episodes/reorder","/episodes/merge","/settings"];
     if !ALLOWED.contains(&path){return Err(missing())}
     Ok(dispatch(state,"POST".into(),path.into(),Some(value))?)
 }

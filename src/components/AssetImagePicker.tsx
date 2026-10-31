@@ -31,7 +31,7 @@ export function AssetImagePicker({ visible, label, value, data, onSelect, onClos
   return <>
       <Modal
         className="asset-picker-modal"
-        title={`为${label}从资产库选择图片`}
+        title={`为${label}从素材库选择图片`}
         visible={visible}
         footer={multiple ? <Button type="primary" onClick={onClose}>完成选择</Button> : null}
         onCancel={onClose}
@@ -43,7 +43,7 @@ export function AssetImagePicker({ visible, label, value, data, onSelect, onClos
           value={assetQuery}
           onChange={setAssetQuery}
           allowClear
-          placeholder="搜索资产名称"
+          placeholder="搜索素材名称"
         />
         {libraryImages.length ? (
           <div className="media-picker asset-image-picker">
@@ -59,7 +59,7 @@ export function AssetImagePicker({ visible, label, value, data, onSelect, onClos
                   onClick={() => {
                     setAssetPreview(media);
                   }}
-                  aria-label={`选择资产 ${media.name}`}
+                  aria-label={`选择素材 ${media.name}`}
                 >
                   <img src={imageUrl(media)} alt="" />
                   <span>{media.name}</span>
@@ -77,7 +77,7 @@ export function AssetImagePicker({ visible, label, value, data, onSelect, onClos
             ))}
           </div>
         ) : (
-          <Empty description={assetQuery ? "没有匹配的图片资产" : "资产库中暂无图片"} />
+          <Empty description={assetQuery ? "没有匹配的图片素材" : "素材库中暂无图片"} />
         )}
       </Modal>
       <ImagePreviewModal className="asset-picker-preview-modal" media={assetPreview} title="图片预览" onClose={()=>setAssetPreview(null)}

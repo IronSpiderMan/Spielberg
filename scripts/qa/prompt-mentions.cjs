@@ -12,7 +12,7 @@ compiled._compile(bundled.outputFiles[0].text, __filename);
 const {promptMentions, findMentions, resolveReferencePrompt, resolvePrompt, resolveH3Prompt, syncMentionReferences} = compiled.exports;
 const main = {id: 1, name: '主图.png', kind: 'image'};
 const detail = {id: 2, name: 'xx.png', kind: 'image'};
-const roles = [{id: 1, name: '角色', description: '角色设定', design_media_id: 1, images: [main, detail]}];
+const roles = [{id: 1, name: '角色', description: '资产描述', design_media_id: 1, images: [main, detail]}];
 const data = {roles, media: [main, detail], episodes: []};
 const items = promptMentions(roles, data);
 const ids = value => findMentions(value, items).map(item => item.media.id);
@@ -52,7 +52,7 @@ assert.equal(resolveH3Prompt('@角色 @角色.xx', disabledData, [1,2]), '@角�
 assert(findMentions('@xx', disabledItems).some(item => item.media.id === 2));
 const enabledRoles = [{...roles[0], enabled: true}];
 assert.equal(findMentions('@角色 @角色.xx', promptMentions(enabledRoles, data)).length, 2);
-assert.equal(resolvePrompt('@角色', enabledRoles), '角色（角色设定）');
+assert.equal(resolvePrompt('@角色', enabledRoles), '角色（资产描述）');
 const mixedRoles = [...disabledRoles, {id: 2, name: '配角', description: '', images: [], enabled: true}];
 assert.deepEqual(promptMentions(mixedRoles).map(item => item.name), ['配角']);
 console.log('Prompt mention regression checks passed.');

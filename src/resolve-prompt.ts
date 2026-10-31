@@ -5,7 +5,7 @@ export function resolvePrompt(prompt: string, roles: Role[], prompts: SavedPromp
   prompt = resolvePromptReferences(prompt, prompts);
   roles = roles.filter(role => role.enabled !== false);
   const pattern=mentionPattern(roles);
-  return pattern ? prompt.replace(pattern,(_,name:string)=>{const role=roles.find(role=>role.name===name)!;return `${name}（${role.description || "保持角色设定"}）`;}) : prompt;
+  return pattern ? prompt.replace(pattern,(_,name:string)=>{const role=roles.find(role=>role.name===name)!;return `${name}（${role.description || "保持资产设定"}）`;}) : prompt;
 }
 
 export function resolveReferencePrompt(prompt: string, data: Snapshot) {

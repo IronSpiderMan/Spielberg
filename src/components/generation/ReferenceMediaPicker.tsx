@@ -33,7 +33,7 @@ export function ReferenceMediaPicker({ projectId, media, videoIds = [], audioIds
       }
     } catch (error) { Message.error(`参考素材上传失败：${String(error)}`); }
     finally {
-      try { await reload(); } catch (error) { Message.error(`刷新资产失败：${String(error)}`); }
+      try { await reload(); } catch (error) { Message.error(`刷新素材失败：${String(error)}`); }
       inProgress.current = false; setUploading(false); onUploading?.(false);
     }
   };

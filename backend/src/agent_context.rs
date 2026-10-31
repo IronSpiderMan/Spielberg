@@ -133,7 +133,7 @@ fn compact_json(raw: &str) -> String {
 
 fn asset_note(message:&Value)->String {
  match message["image_media_ids"].as_array().filter(|ids|!ids.is_empty()) {
-  Some(ids)=>format!("\n[粘贴图片已加入当前项目资产，按图片顺序 image_media_ids={}；图生图请使用 operation=i2i 和这些素材 ID。]",json!(ids)),
+  Some(ids)=>format!("\n[粘贴图片已加入当前项目素材库，按图片顺序 image_media_ids={}；图生图请使用 operation=i2i 和这些素材 ID。]",json!(ids)),
   None=>String::new()
  }
 }

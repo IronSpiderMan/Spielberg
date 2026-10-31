@@ -31,8 +31,8 @@ export function ShotPictureField({ picture, index, data, busy, onChange, onUploa
       <Input aria-label={`${label} 画面路径`} value={picture} readOnly title={picture} />
     </>}
     <Space wrap size={4}>
-      <Button size="mini" disabled={busy} aria-label={`${label} 从资产选择画面`} onClick={() => setPicker("asset")}>资产</Button>
-      <Button size="mini" disabled={busy} aria-label={`${label} 从角色选择画面`} onClick={() => setPicker("role")}>角色</Button>
+      <Button size="mini" disabled={busy} aria-label={`${label} 从素材选择画面`} onClick={() => setPicker("asset")}>素材</Button>
+      <Button size="mini" disabled={busy} aria-label={`${label} 从资产选择画面`} onClick={() => setPicker("role")}>资产</Button>
       <Button size="mini" disabled={busy} aria-label={`${label} 上传本地画面`} onClick={() => input.current?.click()}>本地上传</Button>
       {picture && <Button size="mini" disabled={busy} aria-label={`${label} 清除画面`} onClick={() => onChange("")}>清除</Button>}
     </Space>
@@ -40,7 +40,7 @@ export function ShotPictureField({ picture, index, data, busy, onChange, onUploa
       onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void onUpload(file); }} />
     <AssetImagePicker visible={picker === "asset"} label={`${label}画面`} value={media?.id || null} data={data} busy={busy}
       onSelect={id => { const item = data.media.find(item => item.id === id); if (item) select(item); }} onClose={() => setPicker(null)} />
-    <RoleImagePicker visible={picker === "role"} title={`为${label}选择角色画面`} roles={data.roles} selectedIds={media ? [media.id] : []}
+    <RoleImagePicker visible={picker === "role"} title={`为${label}选择资产画面`} roles={data.roles} selectedIds={media ? [media.id] : []}
       disabled={busy} onSelect={select} onClose={() => setPicker(null)} />
     <ImagePreviewModal media={preview} onClose={() => setPreview(null)} title="分镜画面预览" />
   </div>;

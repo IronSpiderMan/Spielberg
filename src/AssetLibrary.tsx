@@ -69,7 +69,7 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
   const action=async(path:string,m:Media)=>{setBusy(true);try{await post(path,{project_id:pid,id:m.id});await refresh();}catch(e){Message.error(String(e));}finally{setBusy(false);}};
   const confirmDelete=(m:Asset)=>Modal.confirm({
     title:filter==="trash"?"永久删除这个文件？":"移入回收站？",
-    content:filter==="trash"?`${m.name} 将从磁盘删除，无法撤销。`:`${m.name} 可以随时从回收站恢复。被使用的资产不能移入回收站。`,
+    content:filter==="trash"?`${m.name} 将从磁盘删除，无法撤销。`:`${m.name} 可以随时从回收站恢复。被使用的素材不能移入回收站。`,
     okText:filter==="trash"?"永久删除":"移入回收站",okButtonProps:{status:"danger"},
     onOk:()=>action(filter==="trash"?"/media/purge":"/media/delete",m),
   });
@@ -78,50 +78,50 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
   const filtered=kind!=="all"||filter!=="all"||!!query.trim();
   const clearFilters=()=>{setQuery("");setSearch("");setKind("all");setFilter("all");setPage(1);};
   return <section className="asset-library" aria-busy={loading}>
-    <div className="section-title page-actions"><div className="page-intro"><h1>资产库</h1><p>管理项目中的图片、视频与音频。</p></div><Space wrap>
+    <div className="section-title page-actions"><div className="page-intro"><h1>素材库</h1><p>管理项目中的图片、视频与音频。</p></div><Space wrap>
       <Button loading={scanning} icon={<HardDrive size={16}/>} onClick={inspectDisk}>磁盘清理</Button>
-      <Button type="primary" loading={busy} icon={<Plus size={16}/>} onClick={importFiles}>导入资产</Button>
+      <Button type="primary" loading={busy} icon={<Plus size={16}/>} onClick={importFiles}>导入素材</Button>
     </Space></div>
     <div className="asset-toolbar">
-      <Select aria-label="资产类型" value={kind} onChange={value=>{setKind(value);setPage(1);}} options={[{label:"全部类型",value:"all"},{label:"图片",value:"image"},{label:"视频",value:"video"},{label:"音频",value:"audio"}]}/>
-      <Select aria-label="使用状态" value={filter} onChange={value=>{setFilter(value);setPage(1);}} options={[{label:"全部资产",value:"all"},{label:"使用中",value:"used"},{label:"未使用",value:"unused"},{label:"回收站",value:"trash"}]}/>
-      <Input.Search value={query} onChange={setQuery} placeholder="搜索资产名称" allowClear/>
-      <span className="helper asset-total" role="status">共 <b>{total}</b> 项资产</span>
+      <Select aria-label="素材类型" value={kind} onChange={value=>{setKind(value);setPage(1);}} options={[{label:"全部类型",value:"all"},{label:"图片",value:"image"},{label:"视频",value:"video"},{label:"音频",value:"audio"}]}/>
+      <Select aria-label="使用状态" value={filter} onChange={value=>{setFilter(value);setPage(1);}} options={[{label:"全部素材",value:"all"},{label:"使用中",value:"used"},{label:"未使用",value:"unused"},{label:"回收站",value:"trash"}]}/>
+      <Input.Search value={query} onChange={setQuery} placeholder="搜索素材名称" allowClear/>
+      <span className="helper asset-total" role="status">共 <b>{total}</b> 项素材</span>
     </div>
     {filter==="trash"&&<p className="helper">回收站保留原文件；永久删除才会释放磁盘空间。</p>}
-    {error?<div className="library-status" role="alert"><div><b>资产暂时未能加载</b><p>{error}</p></div><Button onClick={()=>setVersion(v=>v+1)}>重新加载</Button></div>:<Spin loading={loading} style={{display:"block"}}>
+    {error?<div className="library-status" role="alert"><div><b>素材暂时未能加载</b><p>{error}</p></div><Button onClick={()=>setVersion(v=>v+1)}>重新加载</Button></div>:<Spin loading={loading} style={{display:"block"}}>
       <div className="library-grid">{items.map(m=><article className="library-card" key={m.id}>
         <button type="button" className="library-thumbnail" onClick={()=>setPreview(m)} aria-label={`预览 ${m.name}`}><AssetThumbnail media={m} projectId={pid}/><span className="library-preview-hint"><Eye size={15}/>预览</span><Tag>{m.kind==="video"?"视频":m.kind==="image"?"图片":m.kind==="audio"?"音频":"文件"}</Tag></button>
         <div className="library-card-copy"><b title={m.name}>{m.name}</b>{(m.kind==="image"||m.kind==="video")&&<MediaDimensions media={m}/>}<small>{new Date(Number(m.created_at)*1000).toLocaleString()}</small></div>
         {filter!=="trash"&&m.kind!=="file"&&<button type="button" className="asset-usage-link" data-used={m.usage_count>0} onClick={()=>setTracking(m)}>{m.usage_count?`使用中 · ${m.usage_count} 处用途`:"未使用 · 查看用途"}</button>}
         <div className="asset-card-actions">
-          {filter==="trash"?<Button size="small" disabled={busy} icon={<RotateCcw size={14}/>} onClick={()=>action("/media/restore",m)}>恢复资产</Button>:m.kind==="image"?<><Button size="small" icon={<WandSparkles size={14}/>} onClick={()=>onImageToImage(m)}>图生图</Button><Button size="small" onClick={()=>beginAssignment(m)}>设置用途</Button></>:m.kind==="video"?<Button size="small" onClick={()=>beginAssignment(m)}>设置用途</Button>:<Button size="small" onClick={()=>exportAsset(m)}>导出文件</Button>}
+          {filter==="trash"?<Button size="small" disabled={busy} icon={<RotateCcw size={14}/>} onClick={()=>action("/media/restore",m)}>恢复素材</Button>:m.kind==="image"?<><Button size="small" icon={<WandSparkles size={14}/>} onClick={()=>onImageToImage(m)}>图生图</Button><Button size="small" onClick={()=>beginAssignment(m)}>设置用途</Button></>:m.kind==="video"?<Button size="small" onClick={()=>beginAssignment(m)}>设置用途</Button>:<Button size="small" onClick={()=>exportAsset(m)}>导出文件</Button>}
           <Dropdown trigger="click" droplist={<Menu onClickMenuItem={key=>{if(key==="rename")setRename({...m});if(key==="export")void exportAsset(m);if(key==="delete")confirmDelete(m);if(key==="usage")setTracking(m);}}>
             {filter!=="trash"&&<Menu.Item key="usage">查看用途</Menu.Item>}{filter!=="trash"&&<Menu.Item key="rename">重命名</Menu.Item>}<Menu.Item key="export">导出</Menu.Item><Menu.Item key="delete" disabled={busy || (filter!=="trash"&&m.usage_count>0)}>{filter==="trash"?"永久删除":"移入回收站"}</Menu.Item>
           </Menu>}><Button size="small" aria-label={`更多操作 ${m.name}`} icon={<MoreHorizontal size={16}/>}/></Dropdown>
         </div>
       </article>)}</div>
       {!items.length&&!loading&&<div className="asset-empty"><EmptyState
-        title={filter==="trash"?"回收站为空":filtered?"没有符合条件的资产":"素材库还是空的"}
-        description={filter==="trash"?"删除的资产会先进入回收站，可随时恢复。":filtered?"调整类型、用途或搜索词，再试一次。":"导入图片、视频或音频，在角色、场景与剪辑中重复使用。"}
-        action={<Button type={filtered?"secondary":"primary"} icon={filtered?undefined:<Plus size={16}/>} onClick={filtered?clearFilters:importFiles}>{filtered?"清除筛选":"导入资产"}</Button>}
+        title={filter==="trash"?"回收站为空":filtered?"没有符合条件的素材":"素材库还是空的"}
+        description={filter==="trash"?"删除的素材会先进入回收站，可随时恢复。":filtered?"调整类型、用途或搜索词，再试一次。":"导入图片、视频或音频，在资产、场景与剪辑中重复使用。"}
+        action={<Button type={filtered?"secondary":"primary"} icon={filtered?undefined:<Plus size={16}/>} onClick={filtered?clearFilters:importFiles}>{filtered?"清除筛选":"导入素材"}</Button>}
       /></div>}
     </Spin>}
     {total>0&&<Pagination className="asset-pagination" current={page} pageSize={24} total={total} onChange={setPage} showTotal/>}
-    <Drawer width={460} visible={!!tracking} title="资产用途" footer={null} onCancel={()=>setTracking(null)}>
+    <Drawer width={460} visible={!!tracking} title="素材用途" footer={null} onCancel={()=>setTracking(null)}>
       <h3>{tracking?.name}</h3><Spin loading={usageLoading} style={{display:"block"}}>
-        {usageError?<p role="alert">{usageError}</p>:uses.length?uses.map((use,index)=><div className="usage-record" key={index}><Tag>{use.purpose}</Tag><b>{use.episode_title&&use.kind==="scene"?`${use.episode_title} / `:""}{use.title}</b><Button size="small" onClick={()=>{setTracking(null);onLocate(use);}}>前往{use.kind==="role"?"角色":use.kind==="episode"?"剧集":use.kind==="canvas"?"画布":"场景"}</Button></div>):!usageLoading&&<Empty description="尚未被角色、剧集或场景使用"/>}
+        {usageError?<p role="alert">{usageError}</p>:uses.length?uses.map((use,index)=><div className="usage-record" key={index}><Tag>{use.purpose}</Tag><b>{use.episode_title&&use.kind==="scene"?`${use.episode_title} / `:""}{use.title}</b><Button size="small" onClick={()=>{setTracking(null);onLocate(use);}}>前往{use.kind==="role"?"资产":use.kind==="episode"?"剧集":use.kind==="canvas"?"画布":"场景"}</Button></div>):!usageLoading&&<Empty description="尚未被资产、剧集或场景使用"/>}
       </Spin>
     </Drawer>
     <ImagePreviewModal media={preview?.kind==="image"?preview:null} images={items.filter(item=>item.kind==="image")} onMediaChange={setPreview} onClose={()=>setPreview(null)} footer={filter==="trash"?null:<Button type="primary" onClick={()=>preview&&beginAssignment(preview)}>设置用途</Button>}/>
     <VideoPreviewModal media={preview?.kind==="video"?preview:null} videos={items.filter(item=>item.kind==="video")} projectId={pid} onMediaChange={setPreview} onClose={()=>setPreview(null)} footer={filter==="trash"?null:<Button type="primary" onClick={()=>preview&&beginAssignment(preview)}>设置用途</Button>}/>
     <Modal visible={!!preview && (preview.kind==="audio"||preview.kind==="file")} title={preview?.name} footer={null} unmountOnExit onCancel={()=>setPreview(null)}>{preview?.kind==="audio"?<audio controls src={imageUrl(preview)} style={{width:"100%"}}/>:<Empty description="此文件不支持预览，可通过更多操作导出查看"/>}</Modal>
-    <Modal visible={!!rename} title="重命名资产" onCancel={()=>setRename(null)} onOk={async()=>{if(!rename?.name.trim())throw Error("请输入资产名称");await post("/media/rename",{project_id:pid,id:rename.id,name:rename.name.trim()});setRename(null);await refresh();}}><Input aria-label="资产名称" value={rename?.name||""} onChange={name=>setRename(m=>m?{...m,name}:null)}/></Modal>
+    <Modal visible={!!rename} title="重命名素材" onCancel={()=>setRename(null)} onOk={async()=>{if(!rename?.name.trim())throw Error("请输入素材名称");await post("/media/rename",{project_id:pid,id:rename.id,name:rename.name.trim()});setRename(null);await refresh();}}><Input aria-label="素材名称" value={rename?.name||""} onChange={name=>setRename(m=>m?{...m,name}:null)}/></Modal>
     <Modal visible={!!scan} title="磁盘清理" okText="执行清理" confirmLoading={busy} onCancel={()=>{if(!busy)setScan(null);}} onOk={async()=>{
       if(!scan)return;setBusy(true);try{await post("/storage/cleanup",{project_id:pid,files:scan.files.map(f=>f.path),clear_cache:true});setScan(null);await refresh();Message.success("缓存已清理，未登记文件已移入回收站");}catch(e){Message.error(String(e));throw e;}finally{setBusy(false);}
     }}>
       <p>可重建的缩略图缓存：{bytes(scan?.cache_bytes||0)}</p><p>未登记文件：{scan?.files.length||0} 个，共 {bytes(scan?.files.reduce((sum,f)=>sum+f.size,0)||0)}</p>
-      <p>未登记文件将进入回收站，可检查后恢复或永久删除。正在使用的资产不会被清理。</p>
+      <p>未登记文件将进入回收站，可检查后恢复或永久删除。正在使用的素材不会被清理。</p>
       <div className="cleanup-files">{scan?.files.map(file=><p key={file.path}>{file.path.split(/[\\/]/).pop()} · {bytes(file.size)}</p>)}</div>
     </Modal>
 {assignment&&<AssetAssignmentModal key={assignment.id} media={assignment} data={data} reload={refresh} onClose={()=>setAssignment(null)}/>}  </section>;

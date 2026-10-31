@@ -278,6 +278,6 @@ mod tests {
         let changes = snapshot_database(&mut c, json!({"id":"test"}), &before).unwrap();
         assert_eq!(changes["screenplays"][0]["content"], "# 标题");
         assert!(changes.get("prompts").is_none());
-        assert_eq!(c.query_row("PRAGMA user_version", [], |r| r.get::<_,i64>(0)).unwrap(), 14);
+        assert_eq!(c.query_row("PRAGMA user_version", [], |r| r.get::<_,i64>(0)).unwrap(), 15);
     }
 }

@@ -13,9 +13,9 @@ pub fn install(c: &Connection) -> Result<(), String> {
     c.execute_batch("CREATE INDEX IF NOT EXISTS media_active ON media(deleted_at,id);
     CREATE TABLE IF NOT EXISTS revisions(section TEXT PRIMARY KEY, version INTEGER NOT NULL DEFAULT 0);
     CREATE VIEW IF NOT EXISTS asset_usage AS
-    SELECT design_media_id AS media_id,'role' AS kind,id AS target_id,name AS title,NULL AS episode_id,NULL AS episode_title,'角色主图' AS purpose FROM roles WHERE design_media_id IS NOT NULL
-    UNION ALL SELECT rm.media_id,'role',r.id,r.name,NULL,NULL,'角色图片' FROM role_media rm JOIN roles r ON r.id=rm.role_id WHERE rm.media_id IS NOT r.design_media_id
-    UNION ALL SELECT a.media_id,'role',r.id,r.name,NULL,NULL,'角色音色参考' FROM role_audio a JOIN roles r ON r.id=a.role_id
+    SELECT design_media_id AS media_id,'role' AS kind,id AS target_id,name AS title,NULL AS episode_id,NULL AS episode_title,'资产主图' AS purpose FROM roles WHERE design_media_id IS NOT NULL
+    UNION ALL SELECT rm.media_id,'role',r.id,r.name,NULL,NULL,'资产图片' FROM role_media rm JOIN roles r ON r.id=rm.role_id WHERE rm.media_id IS NOT r.design_media_id
+    UNION ALL SELECT a.media_id,'role',r.id,r.name,NULL,NULL,'资产音频参考' FROM role_audio a JOIN roles r ON r.id=a.role_id
     UNION ALL SELECT cover_media_id,'episode',id,title,id,title,'剧集封面' FROM episodes WHERE cover_media_id IS NOT NULL
     UNION ALL SELECT s.first_media_id,'scene',s.id,s.title,e.id,e.title,'场景首帧' FROM scenes s JOIN episodes e ON e.id=s.episode_id WHERE s.first_media_id IS NOT NULL
     UNION ALL SELECT s.last_media_id,'scene',s.id,s.title,e.id,e.title,'场景尾帧' FROM scenes s JOIN episodes e ON e.id=s.episode_id WHERE s.last_media_id IS NOT NULL
@@ -43,7 +43,7 @@ pub fn install(c: &Connection) -> Result<(), String> {
     for (table, columns) in [("roles",vec!["design_media_id"]),("role_audio",vec!["media_id"]),("role_media",vec!["media_id"]),("episodes",vec!["cover_media_id"]),("scenes",vec!["first_media_id","last_media_id","reference_media_id","video_media_id"]),("scene_videos",vec!["media_id"])] {
         for event in ["INSERT","UPDATE"] {
             for column in &columns {
-                c.execute_batch(&format!("CREATE TRIGGER IF NOT EXISTS active_{table}_{column}_{event} BEFORE {event} ON {table} WHEN EXISTS(SELECT 1 FROM media WHERE id=NEW.{column} AND deleted_at IS NOT NULL) BEGIN SELECT RAISE(ABORT,'资产已在回收站，请先恢复'); END;")).map_err(|e|e.to_string())?;
+                c.execute_batch(&format!("CREATE TRIGGER IF NOT EXISTS active_{table}_{column}_{event} BEFORE {event} ON {table} WHEN EXISTS(SELECT 1 FROM media WHERE id=NEW.{column} AND deleted_at IS NOT NULL) BEGIN SELECT RAISE(ABORT,'素材已在回收站，请先恢复'); END;")).map_err(|e|e.to_string())?;
             }
         }
     }
@@ -60,7 +60,7 @@ pub fn revisions(c: &Connection) -> Result<Value,String> {
 
 pub fn usages(c:&Connection, id:i64)->Result<Vec<Value>,String> {
     let mut q=c.prepare("SELECT kind,target_id,title,episode_id,episode_title,purpose FROM asset_usage WHERE media_id=? ORDER BY kind,target_id,purpose").map_err(|e|e.to_string())?;
-    let rows=q.query_map([id],|r|Ok(json!({"kind":r.get::<_,String>(0)?,"target_id":r.get::<_,i64>(1)?,"title":r.get::<_,String>(2)?,"episode_id":r.get::<_,Option<i64>>(3)?,"episode_title":r.get::<_,Option<String>>(4)?,"purpose":r.get::<_,String>(5)?}))).map_err(|e|e.to_string())?;
+    let rows=q.query_map([id],|r|Ok(json!({"kind":r.get::<_,String>(0)?,"target_id":r.get::<_,i64>(1)?,"title":r.get::<_,String>(2)?,"episode_id":r.get::<_,Option<i64>>(3)?,"episode_title":r.get::<_,Option<String>>(4)?,"purpose":r.get::<_,String>(5)?.replace("角色","资产").replace("音色参考","音频参考")}))).map_err(|e|e.to_string())?;
     rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
 }
 
@@ -86,8 +86,8 @@ pub fn no_running_jobs(c:&Connection)->Result<(),String> {
 pub fn trash(c:&Connection,id:i64)->Result<(),String> {
     // A generating task may be reading an unassigned input asset.
     no_running_jobs(c)?;
-    if !usages(c,id)?.is_empty() { return Err("资产仍被使用，请在用途明细中查看并解除引用".into()); }
-    if c.execute("UPDATE media SET deleted_at=? WHERE id=? AND deleted_at IS NULL",params![now(),id]).map_err(|e|e.to_string())? != 1 { return Err("资产不存在或已在回收站".into()); }
+    if !usages(c,id)?.is_empty() { return Err("素材仍被使用，请在用途明细中查看并解除引用".into()); }
+    if c.execute("UPDATE media SET deleted_at=? WHERE id=? AND deleted_at IS NULL",params![now(),id]).map_err(|e|e.to_string())? != 1 { return Err("素材不存在或已在回收站".into()); }
     Ok(())
 }
 
@@ -102,8 +102,8 @@ pub fn owned_file(root:&Path,path:&Path)->Result<PathBuf,String> {
 
 pub fn purge(c:&Connection,root:&Path,id:i64)->Result<(),String> {
     no_running_jobs(c)?;
-    let path:String=c.query_row("SELECT path FROM media WHERE id=? AND deleted_at IS NOT NULL AND purged_at IS NULL",[id],|r|r.get(0)).map_err(|_|"仅允许永久删除回收站资产".to_string())?;
-    if !usages(c,id)?.is_empty() { return Err("资产仍被引用".into()); }
+    let path:String=c.query_row("SELECT path FROM media WHERE id=? AND deleted_at IS NOT NULL AND purged_at IS NULL",[id],|r|r.get(0)).map_err(|_|"仅允许永久删除回收站素材".to_string())?;
+    if !usages(c,id)?.is_empty() { return Err("素材仍被引用".into()); }
     if Path::new(&path).exists() {
         let owned=owned_file(root,Path::new(&path))?;
         let mut q=c.prepare("SELECT path FROM media WHERE id!=? AND purged_at IS NULL").map_err(|e|e.to_string())?;

@@ -119,6 +119,8 @@ fn query_value(q:&HashMap<String,String>)->Value{
     for (key,value) in q {
         result[key]=if ["id","episode_id","role_id","limit","page","before","through"].contains(&key.as_str()) {
             value.parse::<i64>().map(Value::from).unwrap_or_else(|_|json!(value))
+        } else if key=="enabled" {
+            value.parse::<bool>().map(Value::from).unwrap_or_else(|_|json!(value))
         } else {json!(value)};
     }
     result

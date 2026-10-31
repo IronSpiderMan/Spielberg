@@ -21,7 +21,7 @@ export function ProjectSummary({data}: {data:Snapshot}) {
   return <dl className="project-summary" aria-label="项目制作概况">
     <div><dt>剧集</dt><dd>{data.episodes.length}<span>集</span></dd></div>
     <div><dt>场景</dt><dd>{scenes.length}<span>个镜头</span></dd></div>
-    <div><dt>角色</dt><dd>{data.roles.length}<span>份设定</span></dd></div>
+    <div><dt>资产</dt><dd>{data.roles.length}<span>份设定</span></dd></div>
     <div className="summary-progress"><dt>已选视频</dt><dd>{ready}<span>/ {scenes.length} 个场景</span></dd><progress aria-label="已选视频的场景比例" max={Math.max(scenes.length,1)} value={ready}/></div>
   </dl>;
 }

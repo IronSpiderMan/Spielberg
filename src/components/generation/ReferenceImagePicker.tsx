@@ -15,7 +15,7 @@ export function ImageAssetSelect({ media, value, onChange, label, disabled = fal
   return <>
     <Select aria-label={label} showSearch allowClear value={value} onChange={onChange} disabled={disabled}
       options={media.filter(item => item.kind === "image").map(item => ({ label: item.name, value: item.id }))}
-      placeholder={`从资产库选择${label}`} />
+      placeholder={`从素材库选择${label}`} />
     {selected && <img className="video-frame-preview" src={imageUrl(selected)} alt={label} />}
   </>;
 }
@@ -49,7 +49,7 @@ export function ReferenceImagePicker({ media, value, onChange, mentionedIds = []
     {presentation === "select" ? <>
       <Select aria-label={ariaLabel} mode="multiple" showSearch value={value} disabled={disabled} onChange={onChange}
         options={media.filter(item => item.kind === "image").map(item => ({ label: item.name, value: item.id }))}
-        placeholder="从资产库选择参考图片" />
+        placeholder="从素材库选择参考图片" />
       <div className="video-reference-previews">{shownIds.map((id, index) => {
         const item = images.find(image => image.id === id);
         return item && <figure key={id}>
@@ -79,7 +79,7 @@ export function ReferenceImagePicker({ media, value, onChange, mentionedIds = []
           </button>
           <button type="button" className="creation-asset-zoom" aria-label={`放大查看 ${item.name || `图片 ${item.id}`}`} title="放大查看" onClick={() => showPreview(item)}><ZoomIn size={16} /></button>
         </div>)}
-        {!images.length && <p className="helper">资产库中还没有图片</p>}
+        {!images.length && <p className="helper">素材库中还没有图片</p>}
         {!!images.length && !filtered.length && <p className="helper">没有匹配的图片</p>}
         {limit < filtered.length && <p className="helper creation-load-more">继续滚动加载更多 · 已显示 {Math.min(limit, filtered.length)} / {filtered.length}</p>}
       </div>

@@ -33,7 +33,7 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
   const [result, setResult] = useState<Media>();
   const [error, setError] = useState("");
   const generating = useRef(false);
-  const { uploading, inProgress: importing, uploadImages } = useImageUpload({ projectId:data.project.id,reload,refreshError:"刷新资产失败" });
+  const { uploading, inProgress: importing, uploadImages } = useImageUpload({ projectId:data.project.id,reload,refreshError:"刷新素材失败" });
   const { optimizing, optimize: optimizePrompt } = usePromptOptimization();
   const fileInput = useRef<HTMLInputElement>(null);
   const images = [...uploaded.filter(m => !data.media.some(item => item.id === m.id)), ...data.media].filter(m => m.kind === "image");
@@ -66,7 +66,7 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
 
   const generate = async () => {
     if (generating.current || importing.current || optimizing || uploadingReferences) return;
-    if (mode === "i2v" && mentions.some(item => !item.media)) return void Message.warning("引用的角色或场景尚无图片");
+    if (mode === "i2v" && mentions.some(item => !item.media)) return void Message.warning("引用的资产或场景尚无图片");
     let request: ReturnType<typeof buildVideoRequest>;
     try {
       request=buildVideoRequest({mode,prompt:mode==="i2v"?resolveReferencePrompt(expanded,data):resolvePrompt(expanded,data.roles),
@@ -75,8 +75,8 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
     generating.current = true; setBusy(true); setError("");
     try {
       const media = await post<Media>("/generations/video", {project_id:data.project.id,...request});
-      setResult(media); Message.success("视频已保存到资产库");
-      try { await reload(); } catch (e) { Message.error(`视频已入库，但刷新资产失败：${String(e)}`); }
+      setResult(media); Message.success("视频已保存到素材库");
+      try { await reload(); } catch (e) { Message.error(`视频已入库，但刷新素材失败：${String(e)}`); }
     } catch (e) { setError(String(e)); Message.error(String(e)); }
     finally { generating.current = false; setBusy(false); }
   };
@@ -89,8 +89,8 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
           { value: "t2v", label: "文生视频" }, { value: "fl2v", label: "首尾帧" }, { value: "i2v", label: "全能参考" },
         ]} />
         <Form.Item label="视频描述" required>
-          <PromptInput value={prompt} onChange={setPrompt} roles={data.roles} data={mode === "i2v" ? data : undefined} prompts={prompts} templates={[...PROMPT_TEMPLATES, ...data.prompts]} placeholder="描述画面、动作和镜头运动，输入 @ 引用角色或提示词" disabled={disabled} onOptimize={optimize} optimizing={optimizing} onPasteImages={files => void importImages(files)} />
-          <p className="helper">{uploading ? "正在上传图片…" : "可粘贴图片作为参考，生成的视频会自动存入资产库"}</p>
+          <PromptInput value={prompt} onChange={setPrompt} roles={data.roles} data={mode === "i2v" ? data : undefined} prompts={prompts} templates={[...PROMPT_TEMPLATES, ...data.prompts]} placeholder="描述画面、动作和镜头运动，输入 @ 引用资产或提示词" disabled={disabled} onOptimize={optimize} optimizing={optimizing} onPasteImages={files => void importImages(files)} />
+          <p className="helper">{uploading ? "正在上传图片…" : "可粘贴图片作为参考，生成的视频会自动存入素材库"}</p>
         </Form.Item>
         {mode === "fl2v" && <>
           <Form.Item label="首帧" required><ImageAssetSelect media={images} value={first} onChange={setFirst} label="首帧" disabled={disabled} /></Form.Item>
@@ -111,7 +111,7 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
     <div className="creation-panel image-result video-result" aria-busy={busy}>
       <div className="generation-preview-heading"><h2>生成预览</h2><span className={`generation-state${busy ? " is-busy" : result ? " is-ready" : ""}`}>{busy ? "生成中" : result ? "已完成" : "等待创作"}</span></div>
       <div className="generation-preview-body">
-      {result ? <><PreviewVideo key={result.id} media={result} projectId={data.project.id} /><p className="helper">{result.name} · 已保存到资产库</p></> : <Empty icon={<Film size={28} />} description={<><b>{busy ? "视频正在生成" : "下一个精彩镜头，从这里开始"}</b><p>{busy ? "稍候片刻，完成后将自动展示" : "在左侧描述画面，生成的视频将自动存入资产库"}</p></>} />}
+      {result ? <><PreviewVideo key={result.id} media={result} projectId={data.project.id} /><p className="helper">{result.name} · 已保存到素材库</p></> : <Empty icon={<Film size={28} />} description={<><b>{busy ? "视频正在生成" : "下一个精彩镜头，从这里开始"}</b><p>{busy ? "稍候片刻，完成后将自动展示" : "在左侧描述画面，生成的视频将自动存入素材库"}</p></>} />}
       {error && <p className="image-generation-errors" role="alert">{error}</p>}
       </div>
       <p className="helper generation-result-note">生成任务可在「后台任务」中查看进度与错误信息。</p>

@@ -118,6 +118,34 @@ class Model(BaseHTTPRequestHandler):
             assert not body.get("tools"), "Finalization still advertises side effects"
             if "BUDGET_IGNORED" in prompt:
                 calls = [call("app_request", {"resource": "roles", "method": "POST", "data": {"name": "Forbidden during finalization"}}, "forbidden-final-write")]
+        elif "LIBRARY_ADAPT:" in prompt:
+            refs = json.loads(prompt.split("LIBRARY_ADAPT:", 1)[1])
+            instruction = message_text(messages[0])
+            assert "resource=roles" in instruction and "resource=assets" in instruction
+            assert "用户粘贴图片会自动加入项目素材库" in instruction
+            action_schema = next(tool["function"] for tool in body["tools"] if tool["function"]["name"] == "app_action")
+            assert "roles/audio/save" in action_schema["parameters"]["properties"]["operation"]["enum"]
+            assert "roles/audio/delete" in action_schema["parameters"]["properties"]["operation"]["enum"]
+            if not tools:
+                calls = [call("app_describe", {"operation": name}, "library-describe-" + str(index))
+                         for index, name in enumerate(["roles", "assets", "roles/audio/save"])]
+            elif len(tools) == 3:
+                calls = [call("app_request", {"resource": "roles", "method": "POST", "data": {
+                    "name": "Agent category " + category, "category": category, "description": "Library integration fixture"
+                }}, "library-create-" + category) for category in ["person", "location", "object", "creature", "vehicle", "other"]]
+            elif len(tools) == 9:
+                location = json.loads(tools[4]["content"])
+                calls = [
+                    call("app_action", {"operation": "roles/media/add", "data": {"role_id": location["id"], "media_id": refs["image_id"]}}, "library-image"),
+                    call("app_action", {"operation": "roles/audio/save", "data": {"role_id": location["id"], "media_id": refs["audio_id"], "name": "车站环境音"}}, "library-audio"),
+                    call("app_request", {"resource": "roles", "method": "PATCH", "id": location["id"], "data": {"enabled": False}}, "library-disable"),
+                ]
+            elif len(tools) == 12:
+                calls = [
+                    call("app_request", {"resource": "roles", "method": "GET", "data": {"category": "location", "enabled": False, "query": "Agent category"}}, "library-filter"),
+                    call("app_request", {"resource": "assets", "method": "GET", "data": {"kind": "audio"}}, "library-media"),
+                    call("get_project", {}, "library-verify"),
+                ]
         elif "PLAN_RESUME" in prompt:
             assert "核对当前角色后继续" in json.dumps(messages, ensure_ascii=False), "Unfinished plan lost on resume"
             if not tools:
@@ -282,6 +310,31 @@ def main():
             time.sleep(1.8)
             assert wait(session)["status"] == "cancelled"
             assert len(api(f"/projects/{pid}/roles", method="GET")) == 1
+            # Drive the actual Agent loop through both libraries, categories and associations.
+            png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
+            image_media = api(f"/projects/{pid}/assets", {"name": "station.png", "extension": "png", "data_base64": png}, 201)
+            wav = b"RIFF" + struct.pack("<I", 38) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, 8000, 16000, 2, 16) + b"data" + struct.pack("<I", 2) + b"\x00\x00"
+            audio_media = api(f"/projects/{pid}/assets", {"name": "station.wav", "extension": "wav", "data_base64": base64.b64encode(wav).decode()}, 201)
+            libraries = agent("create", title="六类资产与素材适配")
+            agent("run", session_id=libraries["id"], message="LIBRARY_ADAPT:" + json.dumps({"image_id": image_media["id"], "audio_id": audio_media["id"]}))
+            adapted = wait(libraries)
+            assert adapted["status"] == "completed", adapted.get("error")
+            traces = [message for message in adapted["messages"] if message["role"] == "tool"]
+            assert len(traces) == 15 and all(message["status"] == "completed" for message in traces), traces
+            subjects = api(f"/projects/{pid}/roles?query=Agent%20category", method="GET")
+            assert {subject["category"] for subject in subjects} == {"person", "location", "object", "creature", "vehicle", "other"}
+            location = next(subject for subject in subjects if subject["category"] == "location")
+            assert location["enabled"] is False and location["images"][0]["id"] == image_media["id"]
+            assert location["audios"][0]["name"] == "车站环境音"
+            assert api(f"/projects/{pid}/assets/{audio_media['id']}", method="GET")["name"] == "station.wav"
+            assert api(f"/projects/{pid}/roles?category=location&enabled=false&query=Agent%20category", method="GET") == [location]
+            assert api(f"/projects/{pid}/roles?category=location&enabled=true&query=Agent%20category", method="GET") == []
+            api(f"/projects/{pid}/roles?enabled=invalid", expected=400, method="GET")
+            # Audio unlinking via the public action also retains the source media file.
+            api("/actions/roles/audio/delete", {"project_id": pid, "role_id": location["id"], "media_id": audio_media["id"]})
+            assert api(f"/projects/{pid}/roles/{location['id']}", method="GET")["audios"] == []
+            assert api(f"/projects/{pid}/assets/{audio_media['id']}", method="GET")["id"] == audio_media["id"]
+            print("PASS: Agent model loop uses six-category assets, image/audio media associations, disabled filtering and HTTP query booleans")
             # A prior image must not evict the user's brief on the next short follow-up.
             vision = agent("create", title="图片连续对话")
             image = fixture_image()

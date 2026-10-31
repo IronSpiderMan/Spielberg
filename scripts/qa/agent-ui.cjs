@@ -111,7 +111,7 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
   await page.screenshot({path:path.join(screenshots,'settings.png'),fullPage:true});
   await page.keyboard.press('Escape');
   // A saved conversation remains usable after visiting the app's normal editors.
-  await page.getByRole('menuitem',{name:'角色设定',exact:true}).click();
+  await page.getByRole('menuitem',{name:'资产库',exact:true}).click();
   await page.locator('.role-card').getByText('Agent 主角',{exact:true}).waitFor();
   await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
   await page.getByTestId('agent-new-session').click();
@@ -146,7 +146,7 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
    await page.screenshot({path:path.join(screenshots,`width-${width}.png`),fullPage:true});
   }
   await page.setViewportSize({width:1440,height:1000});
-  await page.getByRole('menuitem',{name:'角色设定',exact:true}).click();
+  await page.getByRole('menuitem',{name:'资产库',exact:true}).click();
   await page.getByRole('button',{name:'切换到暗夜模式',exact:true}).click();
   await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
   await page.getByTestId('agent-plan').waitFor();

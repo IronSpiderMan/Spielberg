@@ -30,19 +30,19 @@ if(path==='/projects')return [project];if(path==='/project')return structuredClo
   });
   await require('./http-fixture.cjs')(page);
  await page.goto(process.env.QA_URL || 'http://127.0.0.1:1420');
-  await page.getByRole('menuitem',{name:'资产库',exact:true}).click();
+  await page.getByRole('menuitem',{name:'素材库',exact:true}).click();
   const modal=page.locator('.asset-assignment-modal:visible');
   async function select(label,text){await modal.getByLabel(label,{exact:true}).click();await page.locator('.arco-select-option:visible').filter({hasText:text}).click();}
-  for(const [usage,field] of [['角色图','role'],['场景首帧','first'],['场景尾帧','last'],['场景参考图','reference'],['场景视频','video']]){
+  for(const [usage,field] of [['资产图','role'],['场景首帧','first'],['场景尾帧','last'],['场景参考图','reference'],['场景视频','video']]){
    await page.locator('.library-card').filter({hasText:field==='video'?'测试视频.mp4':field==='role'?'测试图片.png':'正面'}).getByRole('button',{name:'设置用途'}).click();
    assert(await modal.getByRole('button',{name:'确定设置'}).isDisabled());
-   if(field!=='video')await select('资产用途',usage);
-   await select(field==='role'?'选择角色':'选择场景',field==='role'?'测试角色':'测试剧集 / 测试场景');
+   if(field!=='video')await select('素材用途',usage);
+   await select(field==='role'?'选择资产':'选择场景',field==='role'?'测试角色':'测试剧集 / 测试场景');
    if(field==='role'){
     assert(await modal.getByRole('button',{name:'确定设置'}).isDisabled());
-    await modal.getByLabel('角色图片名称',{exact:true}).fill('   ');
+    await modal.getByLabel('资产图片名称',{exact:true}).fill('   ');
     assert(await modal.getByRole('button',{name:'确定设置'}).isDisabled());
-    await modal.getByLabel('角色图片名称',{exact:true}).fill('正面');
+    await modal.getByLabel('资产图片名称',{exact:true}).fill('正面');
    }
    if(field==='first'){
     await page.evaluate(()=>window.__qaFail=true);await modal.getByRole('button',{name:'确定设置'}).click();await page.getByText('Error: 测试保存失败',{exact:true}).waitFor();assert(await modal.isVisible());await page.evaluate(()=>window.__qaFail=false);
@@ -53,6 +53,6 @@ if(path==='/projects')return [project];if(path==='/project')return structuredClo
    else{assert.equal(data.episodes[0].scenes[0][field+'_media_id'],field==='video'?2:1);assert.equal(data.episodes[0].scenes[0].description,'保留描述');}
    if(field==='first'){assert.equal(data.episodes[0].scenes[0].last_media_id,8);assert.equal(data.episodes[0].scenes[0].reference_media_id,7);}
   }
-  assert.deepEqual(errors,[]);console.log('PASS: 五种资产用途、目标必选、失败重试、保留其他场景帧与描述');
+  assert.deepEqual(errors,[]);console.log('PASS: 五种素材用途、目标必选、失败重试、保留其他场景帧与描述');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1)});

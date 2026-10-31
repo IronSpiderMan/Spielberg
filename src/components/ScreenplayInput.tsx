@@ -1,3 +1,4 @@
+import {assetCategoryLabel} from "../asset-categories";
 import { useId, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import type { PromptMention } from "../prompt-mentions";
 
@@ -21,7 +22,7 @@ function caretPosition(input: HTMLTextAreaElement) {
   return position;
 }
 
-export function ScreenplayInput({ inputRef, value, onChange, mentions, disabled, label = "Markdown 剧本内容", placeholder = "输入剧本，使用 @ 引用角色、场景或提示词…" }: {
+export function ScreenplayInput({ inputRef, value, onChange, mentions, disabled, label = "Markdown 剧本内容", placeholder = "输入剧本，使用 @ 引用资产、场景或提示词…" }: {
   inputRef: RefObject<HTMLTextAreaElement>; value: string; onChange: (value: string) => void;
   mentions: PromptMention[]; disabled: boolean; label?: string; placeholder?: string;
 }) {
@@ -102,7 +103,7 @@ export function ScreenplayInput({ inputRef, value, onChange, mentions, disabled,
     {show && <div ref={list} id={listId} className="screenplay-suggestions" role="listbox" aria-label="剧本引用" style={position}>
       {options.map((item, index) => <button key={item.id} type="button" role="option" id={`${listId}-${index}`} aria-selected={index === selected}
         onMouseDown={event => event.preventDefault()} onClick={() => choose(index)}>
-        <b>@{item.name}</b><small>{item.kind === "role" ? "角色" : item.kind === "prompt" ? "提示词" : "场景 / 图片"}{item.description ? ` · ${item.description}` : ""}</small>
+        <b>@{item.name}</b><small>{item.kind === "role" ? assetCategoryLabel(item.category) : item.kind === "prompt" ? "提示词" : "场景 / 图片"}{item.description ? ` · ${item.description}` : ""}</small>
       </button>)}
     </div>}
   </div>;

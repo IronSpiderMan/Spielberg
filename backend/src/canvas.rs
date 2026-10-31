@@ -126,7 +126,7 @@ mod tests {
         assert_eq!(load(&c,id).unwrap(),json!({"draft":draft,"revision":7}));
         let uses=catalog::usages(&c,1).unwrap();assert_eq!(uses.len(),1);assert_eq!(uses[0]["target_id"],id);
         assert_eq!(c.query_row("SELECT COUNT(*) FROM canvas_board",[],|r|r.get::<_,i64>(0)).unwrap(),0);
-        assert_eq!(c.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),14);
+        assert_eq!(c.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),15);
     }
     #[test]
     fn only_media_to_video_and_acyclic_connections_are_valid() {

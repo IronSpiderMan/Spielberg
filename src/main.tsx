@@ -15,6 +15,7 @@ import "@arco-design/web-react/dist/css/arco.css";
 import { open } from "./platform";
 import {
 Bot,
+Boxes,
 ChevronRight,
 Clapperboard,
 Film,
@@ -323,10 +324,10 @@ function App() {
             剧集
           </Menu.Item>
           <Menu.Item key="editor" title="音视频剪辑" aria-label="音视频剪辑"><Film />音视频剪辑</Menu.Item>
-          <Menu.Item key="assets" title="资产库" aria-label="资产库"><ImagePlus />资产库</Menu.Item>
-          <Menu.Item key="roles" title="角色设定" aria-label="角色设定">
-            <Users />
-            角色设定
+          <Menu.Item key="assets" title="素材库" aria-label="素材库"><ImagePlus />素材库</Menu.Item>
+          <Menu.Item key="roles" title="资产库" aria-label="资产库">
+            <Boxes />
+            资产库
           </Menu.Item>
           <Menu.Item key="project-config" title="项目配置" aria-label="项目配置"><Settings />项目配置</Menu.Item>
           <Menu.Item key="tasks" title="后台任务" aria-label="后台任务"><Film />后台任务</Menu.Item>
@@ -392,9 +393,9 @@ function App() {
                       studio: "工作台",
                       agent: "Agent 助手",
                       episodes: "剧集管理",
-                      assets: "资产库",
+                      assets: "素材库",
                       editor: "音视频剪辑",
-                      roles: "角色设定",
+                      roles: "资产库",
                       prompts: "Prompt 库",
                       tasks: "后台任务",
                       settings: "设置",
@@ -542,7 +543,7 @@ function Welcome({
       <div className="welcome-card">
         <div className="welcome-brand"><img className="hero-logo" src={logoSrc} alt="" /><div><b>Spielberg</b><span>AI COMIC STUDIO</span></div></div>
         <h1>把灵感，剪成一部漫剧</h1>
-        <p>角色、分镜、视觉资产与生成模型都归于一个本地项目。</p>
+        <p>资产、分镜、视觉素材与生成模型都归于一个本地项目。</p>
         <div className="welcome-actions">
           <Button
             type="primary"
@@ -559,7 +560,7 @@ function Welcome({
         </div>
         <div className="welcome-features">
           <div><FileText size={20}/><b>故事与分镜</b><span>从一个想法，到完整镜头脚本</span></div>
-          <div><Users size={20}/><b>角色与素材</b><span>为每个故事建立自己的视觉世界</span></div>
+          <div><Users size={20}/><b>创作资产与素材</b><span>为每个故事建立自己的视觉世界</span></div>
           <div><Clapperboard size={20}/><b>生成与剪辑</b><span>让画面动起来，串联成你的作品</span></div>
         </div>
         <div className="welcome-slate" aria-hidden="true"><Clapperboard size={48} strokeWidth={1}/><span>Spielberg</span><p>每一个镜头<br/>都从一个想法开始。</p><div><span>故事</span><ChevronRight size={14}/><span>分镜</span><ChevronRight size={14}/><span>成片</span></div></div>
@@ -608,7 +609,7 @@ function ProjectPage({
         onOk={async()=>{if(!name.trim()){Message.warning("请输入项目名称");return;}await run(()=>post("/projects/update",{id:editing!.id,name:name.trim()}));setEditing(null);}}>
         <Input autoFocus value={name} onChange={setName} maxLength={100} placeholder="项目名称" disabled={pending}/>
       </Modal>
-      <PageHeading title="最近项目" description="每个故事拥有独立的剧集、角色与素材空间。" />
+      <PageHeading title="最近项目" description="每个故事拥有独立的剧集、资产与素材空间。" />
       <div className="project-grid">
         {projects.map((p) => (
           <Card

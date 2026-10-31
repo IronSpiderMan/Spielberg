@@ -1,7 +1,8 @@
 import type {Media, Role, Snapshot} from "./core";
+import type {AssetCategory} from "./asset-categories";
 
 export type SavedPrompt = {id:number|string; name:string; content:string; category:string};
-export type PromptMention = {id:string; name:string; description:string; media?:Media; content?:string; kind:"role"|"scene"|"prompt"|"template"};
+export type PromptMention = {id:string; name:string; description:string; media?:Media; content?:string; category?:AssetCategory; kind:"role"|"scene"|"prompt"|"template"};
 export function templateMentions(templates:{id:string|number;name:string;content:string}[]):PromptMention[] {
   return templates.map(template=>({id:`template-${template.id}`,name:`template.${template.name}`,description:`模板 · ${template.name}`,content:template.content,kind:"template"}));
 }
@@ -23,10 +24,10 @@ export function promptMentions(roles:Role[], data?:Snapshot):PromptMention[] {
   const disabledRoleNames=new Set(roles.filter(role=>role.enabled===false).flatMap(role=>[role.name,...(role.images||[])
     .map(media=>imageAlias(media.name)).filter(alias=>alias&&alias!==role.name).map(alias=>`${role.name}.${alias}`)]));
   const enabledRoles=roles.filter(role=>role.enabled!==false);
-  const result:PromptMention[]=enabledRoles.map(role=>({id:`role-${role.id}`,name:role.name,description:role.description || "保持角色设定",kind:"role",media:data?.media.find(m=>m.id===role.design_media_id)||role.images[0]}));
+  const result:PromptMention[]=enabledRoles.map(role=>({id:`role-${role.id}`,name:role.name,description:role.description || "保持资产设定",kind:"role",category:role.category,media:data?.media.find(m=>m.id===role.design_media_id)||role.images[0]}));
   for(const role of enabledRoles) for(const media of role.images||[]) {
     const alias=imageAlias(media.name);
-    if(alias && alias!==role.name) result.push({id:`role-${role.id}-media-${media.id}`,name:`${role.name}.${alias}`,description:`${role.name} · ${media.name}`,kind:"role",media});
+    if(alias && alias!==role.name) result.push({id:`role-${role.id}-media-${media.id}`,name:`${role.name}.${alias}`,description:`${role.name} · ${media.name}`,kind:"role",category:role.category,media});
   }
   for(const episode of data?.episodes || []) {
     const title=data!.episodes.filter(e=>e.title===episode.title).length>1 ? `${episode.title}#${episode.id}` : episode.title;

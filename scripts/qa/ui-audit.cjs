@@ -97,7 +97,7 @@ const fs = require('node:fs');
  await nav(3); await page.locator('.role-card').first().getByRole('button',{name:'设定',exact:true}).click();
  await page.locator('.arco-drawer').getByRole('button',{name:'文生图',exact:true}).click();
  await page.waitForFunction(()=>window.__qaCalls.some(c=>c.path==='/media/import'&&c.payload.role_id===1));
- await page.locator('.arco-drawer').getByRole('button',{name:'保存角色',exact:true}).click();
+ await page.locator('.arco-drawer').getByRole('button',{name:'保存资产',exact:true}).click();
  await page.waitForFunction(()=>window.__qaCalls.some(c=>c.path==='/roles/update'&&c.payload.design_media_id===3));
  await page.locator('.side-bottom button').click();
  await page.locator('.settings-fields input').first().fill('https://changed.example.com');

@@ -23,7 +23,7 @@ export default function ProjectTools({project,onRestored}: {project?:Project;onR
   return <>
     {project?<Dropdown trigger="click" droplist={<Menu onClickMenuItem={key=>{if(key==="backup"){setIncludeKeys(false);setConfirm(true);}else void restore(key==="legacy");}}><Menu.Item key="backup">备份当前项目</Menu.Item><Menu.Item key="restore">从备份恢复</Menu.Item><Menu.Item key="legacy">从旧版备份文件夹恢复</Menu.Item></Menu>}><Button loading={busy} icon={<Archive size={16}/>}>项目备份</Button></Dropdown>:<Dropdown trigger="click" droplist={<Menu onClickMenuItem={key=>void restore(key==="legacy")}><Menu.Item key="restore">选择备份压缩包</Menu.Item><Menu.Item key="legacy">选择旧版备份文件夹</Menu.Item></Menu>}><Button loading={busy} icon={<Archive size={16}/>}>从备份恢复</Button></Dropdown>}
     <Modal className="project-tools" visible={confirm} title="备份当前项目" okText="选择位置并备份" confirmLoading={busy} maskClosable={!busy} closable={!busy} onCancel={()=>{if(!busy)setConfirm(false);}} onOk={backup}>
-      <p>保存剧本、角色、所有素材（含回收站）、生成记录和模型配置，生成可复制到其他电脑的单个压缩包。</p>
+      <p>保存剧本、资产、所有素材（含回收站）、生成记录和模型配置，生成可复制到其他电脑的单个压缩包。</p>
       <p>恢复时会创建独立项目，不覆盖现有内容。备份期间需等待生成任务结束。</p>
       <Checkbox checked={includeKeys} onChange={setIncludeKeys}>包含模型 API Key（仅在个人设备间迁移时勾选）</Checkbox>
     </Modal>

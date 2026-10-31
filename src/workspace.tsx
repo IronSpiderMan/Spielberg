@@ -1,4 +1,5 @@
 import { RoleAudioReferences } from "./components/RoleAudioReferences";
+import { ASSET_CATEGORIES, assetCategoryLabel, type AssetCategory } from "./asset-categories";
 import { PreviewVideo, VideoPreviewModal } from "./components/VideoPreviewModal";
 import { sceneVideoPrompt } from "./core";
 import { ReferenceMediaPicker } from "./components/generation/ReferenceMediaPicker";
@@ -153,7 +154,7 @@ export function Studio({
         }),
       );
       await reload();
-      Message.success("剧集已合并并保存到资产库");
+      Message.success("剧集已合并并保存到素材库");
     } catch (e) {
       Message.error(String(e));
     } finally {
@@ -506,7 +507,7 @@ export function Episodes({
     if (!batch) return;
     if (batchMode === "existing") {
       setRunning(true); setBatchResult(null);
-      try {setBatchResult(await post<Media>("/episodes/merge", {project_id: data.project.id, episode_id: batch.id})); await reload(); Message.success("合并完成，已保存到资产库");}
+      try {setBatchResult(await post<Media>("/episodes/merge", {project_id: data.project.id, episode_id: batch.id})); await reload(); Message.success("合并完成，已保存到素材库");}
       catch(e) {Message.error(String(e));} finally {setRunning(false);} return;
     }
     let requests: ReturnType<typeof videoRequest>[];
@@ -1057,8 +1058,8 @@ function SceneImageField({
         <div className="scene-image-actions">
           <Dropdown trigger="click" popupVisible={sourcesOpen} onVisibleChange={setSourcesOpen} unmountOnExit={false}
             droplist={<div className="scene-source-menu" onClick={() => setSourcesOpen(false)}>
-              <Button type="text" icon={<ImagePlus size={15} />} onClick={() => setAssetsOpen(true)}>从资产库选择</Button>
-              <Button type="text" icon={<Users size={15} />} onClick={() => setRolesOpen(true)}>从角色中选择</Button>
+              <Button type="text" icon={<ImagePlus size={15} />} onClick={() => setAssetsOpen(true)}>从素材库选择</Button>
+              <Button type="text" icon={<Users size={15} />} onClick={() => setRolesOpen(true)}>从资产中选择</Button>
               <SceneFramePicker data={data} reload={reload} onSelect={media => onChange(media.id)}/>
               <Button type="text" icon={<Upload size={15} />} onClick={onUpload}>上传图片</Button>
             </div>}
@@ -1104,7 +1105,7 @@ function SceneImageField({
           }}
         />}
       </Modal>
-      <RoleImagePicker title={`为${label}选择角色图片`} visible={rolesOpen} roles={data.roles} selectedIds={value===null?[]:[value]}
+      <RoleImagePicker title={`为${label}选择资产图片`} visible={rolesOpen} roles={data.roles} selectedIds={value===null?[]:[value]}
         onSelect={media=>{onChange(media.id);setRolesOpen(false);}} onClose={()=>setRolesOpen(false)} />
     </div>
   );
@@ -1132,7 +1133,7 @@ export function SceneEditor({
   const [description, setDescription] = useState(scene.description || "");
   const [prompt, setPrompt] = useState(scene.prompt || "");
   const effectivePrompt = prompt.trim() ? prompt : description;
-  const { uploading:pastingImages, inProgress:pasteInProgress, uploadImages } = useImageUpload({projectId:data.project.id,reload,refreshError:"图片已上传，但刷新资产失败"});
+  const { uploading:pastingImages, inProgress:pasteInProgress, uploadImages } = useImageUpload({projectId:data.project.id,reload,refreshError:"图片已上传，但刷新素材失败"});
   const [uploadingReferences, setUploadingReferences] = useState(false);
   const [pastedMedia, setPastedMedia] = useState<Media[]>([]);
   const draggedReference = useRef<number | null>(null);
@@ -1467,7 +1468,7 @@ export function SceneEditor({
                 <Input value={title} onChange={setTitle} />
               </Form.Item>
               <Form.Item label={<span className="scene-description-label"><span>场景描述</span><Space size={2}><Button type="text" size="mini" onClick={()=>setOptimizationInstructionOpen(true)}>优化指令</Button><Button type="text" size="mini" icon={<WandSparkles size={14}/>} disabled={videoGenerating||optimizingPrompt||!description.trim()} onClick={optimizeVideoPrompt}>{optimizingPrompt?"正在优化…":"优化描述"}</Button></Space></span>}>
-                <PromptInput value={description} onChange={setDescription} roles={data.roles} data={data} prompts={data.prompts} templates={[...PROMPT_TEMPLATES,...data.prompts]} disabled={optimizingPrompt || pastingImages || savingScene || videoGenerating || persistedVideoGenerating} onPasteImages={files => void pasteReferenceImages(files)} placeholder="描述镜头、人物动作、台词与画面情绪… 输入 @template 选择模板，或引用角色、场景素材与 Prompt" />
+                <PromptInput value={description} onChange={setDescription} roles={data.roles} data={data} prompts={data.prompts} templates={[...PROMPT_TEMPLATES,...data.prompts]} disabled={optimizingPrompt || pastingImages || savingScene || videoGenerating || persistedVideoGenerating} onPasteImages={files => void pasteReferenceImages(files)} placeholder="描述镜头、人物动作、台词与画面情绪… 输入 @template 选择模板，或引用资产、场景素材与 Prompt" />
                 <p className="helper" role="status">{pastingImages ? "正在上传粘贴的图片…" : "可在此粘贴图片，自动添加到全能参考（最多 9 张）"}</p>
               </Form.Item>
               <Form.Item label="视频 Prompt">
@@ -1476,7 +1477,7 @@ export function SceneEditor({
               </Form.Item>
               <Modal title="自定义提示词优化指令" visible={optimizationInstructionOpen} onCancel={()=>setOptimizationInstructionOpen(false)} onOk={()=>setOptimizationInstructionOpen(false)} okText="完成">
                 <p className="helper">按当前素材转换为 MiniMax-H3 官方格式，英文描述、原语言对白。可补充镜头、节奏或风格要求。</p>
-                <Input.TextArea value={optimizationInstruction} onChange={setOptimizationInstruction} autoSize={{minRows:3,maxRows:7}} placeholder="例如：保留六个分镜，强调角色表情，不添加背景音乐。" />
+                <Input.TextArea value={optimizationInstruction} onChange={setOptimizationInstruction} autoSize={{minRows:3,maxRows:7}} placeholder="例如：保留六个分镜，强调人物表情，不添加背景音乐。" />
               </Modal>
             </Form>
           </div>
@@ -1510,12 +1511,12 @@ export function SceneEditor({
           </Tabs.TabPane>
           <Tabs.TabPane key="i2v" title="全能参考">
           <div className="scene-multi-reference">
-            <div className="scene-section-heading"><h2>多张参考图</h2><span>最多 9 张 · 拖拽调整顺序 · 可从资产库选择或上传</span></div>
+            <div className="scene-section-heading"><h2>多张参考图</h2><span>最多 9 张 · 拖拽调整顺序 · 可从素材库选择或上传</span></div>
             <Space wrap>
               <Dropdown trigger="click" popupVisible={referenceSourcesOpen} onVisibleChange={setReferenceSourcesOpen} unmountOnExit={false}
                 droplist={<div className="scene-source-menu" onClick={() => setReferenceSourcesOpen(false)}>
-                  <Button type="text" icon={<ImagePlus size={15}/>} onClick={() => setMultiReferencePickerOpen(true)}>从资产库选择</Button>
-                  <Button type="text" icon={<Users size={15}/>} onClick={() => setReferenceRolePickerOpen(true)}>从角色中选择</Button>
+                  <Button type="text" icon={<ImagePlus size={15}/>} onClick={() => setMultiReferencePickerOpen(true)}>从素材库选择</Button>
+                  <Button type="text" icon={<Users size={15}/>} onClick={() => setReferenceRolePickerOpen(true)}>从资产中选择</Button>
                   <SceneFramePicker data={data} reload={reload} onSelect={media => setOptions(o => ({...o, reference_media_ids: [...new Set([...(o.reference_media_ids || []), media.id])].slice(0, 9)}))}/>
                   <Button type="text" icon={<Upload size={15}/>} onClick={() => void addReferenceImages().catch(e => Message.error(String(e)))}>上传图片</Button>
                 </div>}>
@@ -1555,7 +1556,7 @@ export function SceneEditor({
                 {options.video_mode === "i2v" ? "全能参考生成" : "首尾帧生成"}
                 </span>
               <Space wrap>
-              <Button icon={<Film size={15}/>} disabled={attachingVideo||videoGenerating||persistedVideoGenerating} onClick={()=>void openVideoAssetPicker()}>从资产库选择</Button>
+              <Button icon={<Film size={15}/>} disabled={attachingVideo||videoGenerating||persistedVideoGenerating} onClick={()=>void openVideoAssetPicker()}>从素材库选择</Button>
               <Button icon={<Upload size={15}/>} loading={attachingVideo} disabled={videoGenerating||persistedVideoGenerating} onClick={()=>void uploadSceneVideo()}>上传视频</Button>
               <Button
                 type="primary"
@@ -1616,7 +1617,7 @@ export function SceneEditor({
         })}
         onClose={() => setMultiReferencePickerOpen(false)}
       />
-      <RoleImagePicker title="从角色中选择参考图" visible={referenceRolePickerOpen} roles={data.roles} multiple showPrimary={false}
+      <RoleImagePicker title="从资产中选择参考图" visible={referenceRolePickerOpen} roles={data.roles} multiple showPrimary={false}
         selectedIds={options.reference_media_ids||[]} onClose={()=>setReferenceRolePickerOpen(false)} onSelect={media=>setOptions(o=>{
           const ids=o.reference_media_ids||[];
           if(ids.includes(media.id))return {...o,reference_media_ids:ids.filter(id=>id!==media.id)};
@@ -1625,7 +1626,7 @@ export function SceneEditor({
         })} />
       <ImagePreviewModal media={referencePreview} title="参考图预览" onClose={()=>setReferencePreview(null)} />
       <Modal
-        title="选择视频资产"
+        title="选择视频素材"
         visible={videoAssetPickerOpen}
         onCancel={()=>setVideoAssetPickerOpen(false)}
         onOk={()=>{const media=videoAssets.find(item=>item.id===selectedVideoAsset);if(media)void attachVideo(media);}}
@@ -1635,7 +1636,7 @@ export function SceneEditor({
       >
         {videoAssets.length ? <><Select showSearch placeholder="搜索并选择视频" value={selectedVideoAsset} onChange={setSelectedVideoAsset} style={{width:'100%'}}>
           {videoAssets.map(media=><Select.Option key={media.id} value={media.id}>{media.name}</Select.Option>)}
-        </Select>{videoAssetTotal>60&&<Pagination sizeCanChange={false} size="small" current={videoAssetPage} total={videoAssetTotal} pageSize={60} onChange={page=>void loadVideoAssetPage(page)} style={{marginTop:16,textAlign:'right'}}/>}</> : <Empty description="资产库中还没有视频"/>}
+        </Select>{videoAssetTotal>60&&<Pagination sizeCanChange={false} size="small" current={videoAssetPage} total={videoAssetTotal} pageSize={60} onChange={page=>void loadVideoAssetPage(page)} style={{marginTop:16,textAlign:'right'}}/>}</> : <Empty description="素材库中还没有视频"/>}
       </Modal>
       <Modal
         title={`生成${imageTarget === "first" ? "首帧" : imageTarget === "last" ? "尾帧" : "参考图"}`}
@@ -1669,14 +1670,14 @@ export function SceneEditor({
           {imageMode === "i2i" && (
             <Form.Item
               label="参考图片"
-              extra="支持多选，可混合使用角色图片、场景视频帧与本地图片"
+              extra="支持多选，可混合使用资产图片、场景视频帧与本地图片"
             >
               <div className="image-reference-toolbar">
                 <Button
                   icon={<Users size={15} />}
                   onClick={() => setRolePickerOpen(true)}
                 >
-                  从角色中选择
+                  从资产中选择
                 </Button>
                 <Button
                   icon={<Upload size={15} />}
@@ -1725,15 +1726,15 @@ export function SceneEditor({
           </Form.Item>
         </Form>
       </Modal>
-      <RoleImagePicker title="从角色中选择参考图" visible={rolePickerOpen} roles={data.roles} multiple
+      <RoleImagePicker title="从资产中选择参考图" visible={rolePickerOpen} roles={data.roles} multiple
         selectedIds={imageRefs.map(media=>media.id)} onSelect={toggleRef} onClose={()=>setRolePickerOpen(false)} />
     </section>
   );
 }
 function confirmDisableRole(name: string): Promise<boolean> {
   return new Promise(resolve => Modal.confirm({
-    title: `禁用角色“${name}”？`,
-    content: "禁用后，该角色及其命名图片无法被 @ 引用，并从默认角色列表中隐藏。可勾选“显示已禁用角色”后重新启用。",
+    title: `禁用资产“${name}”？`,
+    content: "禁用后，该资产及其命名图片无法被 @ 引用，并从默认资产列表中隐藏。可勾选“显示已禁用资产”后重新启用。",
     okText: "确认禁用",
     cancelText: "取消",
     onOk: () => { resolve(true); },
@@ -1742,8 +1743,9 @@ function confirmDisableRole(name: string): Promise<boolean> {
 }
 export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload: () => void; initialRoleId?:number }) {
   const [showDisabled, setShowDisabled] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<AssetCategory | "all">("all");
   const [updatingRoleId, setUpdatingRoleId] = useState<number | null>(null);
-  const visibleRoles = data.roles.filter(role => showDisabled || role.enabled !== false);
+  const visibleRoles = data.roles.filter(role => (showDisabled || role.enabled !== false) && (categoryFilter === "all" || (role.category || "person") === categoryFilter));
   const [roleImagePreview, setRoleImagePreview] = useState<Media | null>(null);
   const [previewRoleId, setPreviewRoleId] = useState<number | null>(null);
   const openRoleImage = (role: Role, media: Media) => { setPreviewRoleId(role.id); setRoleImagePreview(media); };
@@ -1761,14 +1763,15 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
       if (!enabled && !await confirmDisableRole(role.name)) return;
       await post("/roles/update", {project_id: data.project.id, id: role.id, enabled});
       await reload();
-      Message.success(enabled ? "角色已启用" : "角色已禁用");
+      Message.success(enabled ? "资产已启用" : "资产已禁用");
     } catch (e) { Message.error(String(e)); }
     finally { setUpdatingRoleId(null); }
   };
   const make = async () => {
     const x = await post<Role>("/roles", {
       project_id: data.project.id,
-      name: "新角色",
+      name: `新${assetCategoryLabel(categoryFilter === "all" ? "person" : categoryFilter)}`,
+      category: categoryFilter === "all" ? "person" : categoryFilter,
       description: "",
     });
     await reload();
@@ -1778,69 +1781,71 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
     <section>
       {detail ? <div className="role-detail-page">
         <div className="role-detail-topbar">
-          <Button type="text" icon={<ArrowLeft size={16} />} onClick={() => setDetailId(null)}>角色列表</Button>
-          <span>角色档案</span>
+          <Button type="text" icon={<ArrowLeft size={16} />} onClick={() => setDetailId(null)}>资产列表</Button>
+          <span>资产档案</span>
           <Button icon={<Pencil size={15} />} onClick={() => setEditing(detail)}>编辑设定</Button>
         </div>
         <div className="role-detail-hero">
           <div className="role-detail-portrait">
-            {detailImages[0] ? <button type="button" onClick={() => openRoleImage(detail, detailImages[0])} aria-label={`放大查看${detail.name}的角色图`}>
-              <img src={imageUrl(detailImages[0])} alt={`${detail.name}的角色主图`} />
+            {detailImages[0] ? <button type="button" onClick={() => openRoleImage(detail, detailImages[0])} aria-label={`放大查看${detail.name}的资产图`}>
+              <img src={imageUrl(detailImages[0])} alt={`${detail.name}的资产主图`} />
               <span className="role-detail-zoom"><ZoomIn size={16} /> 放大查看</span>
-            </button> : <div className="role-detail-no-image"><Users size={48} strokeWidth={1} /><span>暂无角色图片</span></div>}
-            <span className="role-detail-portrait-label">角色主图</span>
+            </button> : <div className="role-detail-no-image"><Users size={48} strokeWidth={1} /><span>暂无资产图片</span></div>}
+            <span className="role-detail-portrait-label">资产主图</span>
           </div>
-          <section className="role-detail-profile" aria-label="角色描述">
-            <div className="role-detail-eyebrow"><span /> 人物档案</div>
+          <section className="role-detail-profile" aria-label="资产描述">
+            <div className="role-detail-eyebrow"><span /> {assetCategoryLabel(detail.category)}档案</div>
             <h1>{detail.name}</h1>
-            <div className="role-detail-meta"><span>角色设定</span><i />{detail.images.length} 张形象参考<Tag color={detail.enabled === false ? "gray" : "green"}>{detail.enabled === false ? "已禁用" : "已启用"}</Tag></div>
-            <div className="role-detail-description"><h2>人物描述</h2><p>{detail.description || "还没有人物描述。点击编辑设定，记录这个角色的故事与形象。"}</p></div>
+            <div className="role-detail-meta"><span>{assetCategoryLabel(detail.category)}</span><i />{detail.images.length} 张参考图片<Tag color={detail.enabled === false ? "gray" : "green"}>{detail.enabled === false ? "已禁用" : "已启用"}</Tag></div>
+            <div className="role-detail-description"><h2>资产描述</h2><p>{detail.description || "还没有资产描述。点击编辑设定，记录外观、特征与故事背景。"}</p></div>
           </section>
         </div>
         <RoleAudioReferences key={detail.id} role={detail} data={data} reload={reload}/>
-        <section className="role-detail-gallery" aria-label="角色图片">
-          <div className="role-detail-gallery-heading"><div><h2>形象参考 <span>{detail.images.length.toString().padStart(2, "0")}</span></h2><p>记录角色的每一种样子</p></div><span>点击图片放大查看</span></div>
+        <section className="role-detail-gallery" aria-label="资产图片">
+          <div className="role-detail-gallery-heading"><div><h2>形象参考 <span>{detail.images.length.toString().padStart(2, "0")}</span></h2><p>记录资产的不同外观与细节</p></div><span>点击图片放大查看</span></div>
           {detailImages.length ? <div className="role-detail-images">{detailImages.map((media, index) => <figure key={media.id}>
             <button type="button" onClick={() => openRoleImage(detail, media)} aria-label={`预览 ${media.name}`}><img src={imageUrl(media)} alt={media.name} /><span className="role-detail-image-number">{String(index + 1).padStart(2, "0")}</span>{media.id === detail.design_media_id && <span className="role-detail-main-badge">主图</span>}</button>
             <figcaption title={media.name}>{media.name}</figcaption>
-          </figure>)}</div> : <Empty description="添加角色图片，让人物形象更清晰" />}
+          </figure>)}</div> : <Empty description="添加参考图片，记录资产的外观与细节" />}
         </section>
       </div> : <>
       <div className="section-title page-actions">
-        <div className="page-intro"><h1>角色设定</h1><p>记录人物特征，保持故事中的角色形象一致。</p></div>
+        <div className="page-intro"><h1>资产库</h1><p>管理人物、地点、物品、生物、载具等创作资产，保持故事中的视觉与设定一致。</p></div>
         <Space wrap>
-          <Checkbox checked={showDisabled} onChange={setShowDisabled}>显示已禁用角色</Checkbox>
+          <Select aria-label="资产类别筛选" value={categoryFilter} onChange={setCategoryFilter} style={{width: 132}}
+            options={[{value: "all", label: "全部类别"}, ...ASSET_CATEGORIES]} />
+          <Checkbox checked={showDisabled} onChange={setShowDisabled}>显示已禁用资产</Checkbox>
           <Button
             className="role-create-button"
             type="primary"
             icon={<Plus size={18} />}
             onClick={() => make().catch((e) => Message.error(String(e)))}
           >
-            创建角色
+            创建资产
           </Button>
         </Space>
       </div>
-      {!showDisabled && data.roles.length > 0 && !visibleRoles.length && <p className="helper">当前没有启用的角色，可勾选“显示已禁用角色”查看并重新启用。</p>}
+      {data.roles.length > 0 && !visibleRoles.length && <p className="helper">{categoryFilter !== "all" ? "当前类别下没有符合条件的资产，可切换类别、显示已禁用资产或创建新资产。" : "当前没有启用的资产，可勾选“显示已禁用资产”查看并重新启用。"}</p>}
       <div className="role-grid">
         {visibleRoles.map((r) => (
           <Card key={r.id} className={`role-card${r.enabled === false ? " role-card-disabled" : ""}`} bodyStyle={{ padding: 16 }}>
             <div className="role-pic">
               {(r.images.find((image) => image.id === r.design_media_id) || r.images[0]) ? (
-                <button type="button" className="role-image-zoom" onClick={() => openRoleImage(r, r.images.find((image) => image.id === r.design_media_id) || r.images[0])} aria-label={`放大查看${r.name}的角色图`} title="放大查看">
-                  <img src={imageUrl(r.images.find((image) => image.id === r.design_media_id) || r.images[0])} alt={`${r.name}的角色图片`} />
+                <button type="button" className="role-image-zoom" onClick={() => openRoleImage(r, r.images.find((image) => image.id === r.design_media_id) || r.images[0])} aria-label={`放大查看${r.name}的资产图`} title="放大查看">
+                  <img src={imageUrl(r.images.find((image) => image.id === r.design_media_id) || r.images[0])} alt={`${r.name}的资产图片`} />
                   <span><ZoomIn size={16} /> 放大查看</span>
                 </button>
               ) : (
                 r.name.slice(0, 1)
               )}
-              <Tag className="role-kind">{r.enabled === false ? "已禁用" : "角色"}</Tag>
+              <Tag className="role-kind">{assetCategoryLabel(r.category)}{r.enabled === false ? " · 已禁用" : ""}</Tag>
             </div>
-            <button type="button" className="role-details-trigger" aria-label={`查看${r.name}的角色详情`} onClick={() => setDetailId(r.id)}>
+            <button type="button" className="role-details-trigger" aria-label={`查看${r.name}的资产详情`} onClick={() => setDetailId(r.id)}>
               <h3>{r.name}</h3>
-              <p>{r.description || "添加角色形象描述，保持生成的一致性。"}</p>
+              <p>{r.description || "添加资产描述，保持生成的一致性。"}</p>
             </button>
             <div className="role-foot">
-              <span className="role-asset-count">{r.images.length} 张角色图 · {r.audios?.length || 0} 段音色参考</span>
+              <span className="role-asset-count">{r.images.length} 张资产图 · {r.audios?.length || 0} 段音频参考</span>
               <div className="role-card-actions">
               <Button type="text" size="mini" onClick={() => setEditing(r)}>
                 设定
@@ -1850,7 +1855,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
                 {r.enabled === false ? "启用" : "禁用"}
               </Button>
               <Popconfirm
-                title="删除角色？"
+                title="删除资产？"
                 onOk={() =>
                   post("/roles/delete", {
                     project_id: data.project.id,
@@ -1871,7 +1876,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
           bodyStyle={{ padding: 16 }}
           role="button"
           tabIndex={0}
-          aria-label="创建角色"
+          aria-label="创建资产"
           onClick={() => void make().catch((e) => Message.error(String(e)))}
           onKeyDown={(event) => {
             if (event.key === "Enter" || event.key === " ") {
@@ -1881,12 +1886,12 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
           }}
         >
           <div className="role-pic"><Plus size={28} strokeWidth={1.4} /></div>
-          <h3>创建角色</h3>
-          <p>{data.roles.length ? "继续添加人物设定" : "记录第一个角色，让镜头保持形象一致。"}</p>
+          <h3>创建资产</h3>
+          <p>{data.roles.length ? "继续添加人物、地点或物品等资产" : "记录第一个资产，让镜头保持视觉一致。"}</p>
         </Card>
       </div>
       </>}
-      <ImagePreviewModal media={roleImagePreview} images={previewImages} onMediaChange={setRoleImagePreview} title="角色图预览" onClose={()=>setRoleImagePreview(null)} />
+      <ImagePreviewModal media={roleImagePreview} images={previewImages} onMediaChange={setRoleImagePreview} title="资产图预览" onClose={()=>setRoleImagePreview(null)} />
       <RoleEditor
         role={editing}
         data={data}
@@ -1910,6 +1915,7 @@ function RoleEditor({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [enabled, setEnabled] = useState(true);
+  const [category, setCategory] = useState<AssetCategory>("person");
   const [design, setDesign] = useState<number | null>(null);
   const [generating, setGenerating] = useState(false);
   const [savingRole, setSavingRole] = useState(false);
@@ -1923,6 +1929,7 @@ function RoleEditor({
     setName(role?.name || "");
     setDescription(role?.description || "");
     setEnabled(role?.enabled !== false);
+    setCategory(role?.category || "person");
     setDesign(role?.design_media_id || null);
     setAssetsOpen(false);
     setImagePreview(null);
@@ -1948,7 +1955,7 @@ function RoleEditor({
   };
   const confirmRoleImage = async () => {
     if (!role || !pendingImage || importingAsset) return;
-    if (!pendingImage.name.trim()) return Message.warning("请输入角色图片名称");
+    if (!pendingImage.name.trim()) return Message.warning("请输入资产图片名称");
     setImportingAsset(true);
     try {
       await post("/roles/media/add", {
@@ -1958,7 +1965,7 @@ function RoleEditor({
       setDesign(pendingImage.id);
       setPendingImage(null);
       await reload();
-      Message.success("角色图片已添加，保存角色后设为主图");
+      Message.success("资产图片已添加，保存资产后设为主图");
     } catch (e) { Message.error(String(e)); }
     finally { setImportingAsset(false); }
   };
@@ -1972,7 +1979,7 @@ function RoleEditor({
     if (design === id) setDesign(currentRole?.images.find((image) => image.id !== id)?.id ?? null);
     if (imagePreview?.id === id) setImagePreview(null);
     await reload();
-    Message.success("角色图片已删除");
+    Message.success("资产图片已删除");
   };
   const renameImage = async () => {
     if (!renamingImage || !renamingImage.name.trim()) return Message.warning("请输入图片名称");
@@ -1980,13 +1987,13 @@ function RoleEditor({
       await post("/media/rename", { project_id:data.project.id, id:renamingImage.id, name:renamingImage.name.trim() });
       await reload();
       setRenamingImage(null);
-      Message.success("角色图片名称已更新，可用 @角色.图片名 引用");
+      Message.success("资产图片名称已更新，可用 @资产.图片名 引用");
     } catch(error) { Message.error(String(error)); }
   };
   const generateRoleImage = async (operation: "t2i" | "i2i") => {
     if (!role || generating) return;
-    if (!description.trim()) return Message.warning("请先填写角色形象描述");
-    if (operation === "i2i" && !design) return Message.warning("请先选择一张角色设计图作为参考");
+    if (!description.trim()) return Message.warning("请先填写资产描述");
+    if (operation === "i2i" && !design) return Message.warning("请先选择一张资产设计图作为参考");
     setGenerating(true);
     try {
       const result = await post<Media>("/generations/image", {project_id:data.project.id, operation,
@@ -1998,11 +2005,11 @@ function RoleEditor({
   };
   const saveRole = async () => {
     if (!role || savingRole || importingAsset) return;
-    if (!name.trim()) return Message.warning("请输入角色名称");
+    if (!name.trim()) return Message.warning("请输入资产名称");
     setSavingRole(true);
     try {
       if (currentRole?.enabled !== false && !enabled && !await confirmDisableRole(name.trim())) return;
-      await post("/roles/update", {project_id:data.project.id,id:role.id,name:name.trim(),description,enabled,design_media_id:design});
+      await post("/roles/update", {project_id:data.project.id,id:role.id,name:name.trim(),description,enabled,category,design_media_id:design});
       await reload(); onClose();
     } catch(e) { Message.error(String(e)); }
     finally { setSavingRole(false); }
@@ -2010,7 +2017,7 @@ function RoleEditor({
   return (
     <Drawer
       width="min(620px, 100vw)"
-      title="角色设定"
+      title="资产设定"
       visible={!!role}
       onCancel={() => { if (!generating && !savingRole && !importingAsset) onClose(); }}
       footer={
@@ -2020,28 +2027,32 @@ function RoleEditor({
           disabled={generating || importingAsset}
           onClick={saveRole}
         >
-          保存角色
+          保存资产
         </Button>
       }
     >
       <Form layout="vertical">
-        <Form.Item label="角色名称">
-          <Input value={name} onChange={setName} />
+        <Form.Item label="资产名称">
+          <Input aria-label="资产名称" value={name} onChange={setName} />
         </Form.Item>
-        <Form.Item label="启用角色" extra="禁用后，无法通过 @ 引用该角色及其命名图片。保存角色后生效。">
-          <Switch aria-label="启用角色" checked={enabled} onChange={setEnabled} checkedText="启用" uncheckedText="禁用" disabled={savingRole || generating || importingAsset} />
+        <Form.Item label="资产类别">
+          <Select aria-label="资产类别" value={category} onChange={setCategory} options={[...ASSET_CATEGORIES]} disabled={savingRole || generating || importingAsset} />
         </Form.Item>
-        <Form.Item label="角色形象描述">
+        <Form.Item label="启用资产" extra="禁用后，无法通过 @ 引用该资产及其命名图片。保存资产后生效。">
+          <Switch aria-label="启用资产" checked={enabled} onChange={setEnabled} checkedText="启用" uncheckedText="禁用" disabled={savingRole || generating || importingAsset} />
+        </Form.Item>
+        <Form.Item label="资产描述">
           <Input.TextArea
+            aria-label="资产描述"
             value={description}
             onChange={setDescription}
-            placeholder="年龄、发型、服装、表情、画风等。此描述可直接进入生成 Prompt。"
+            placeholder="外观、材质、空间布局、标志性特征、画风或故事背景等。此描述可直接进入生成 Prompt。"
             autoSize={{ minRows: 5 }}
           />
         </Form.Item>
         <Form.Item
-          label="角色设计图"
-          extra="一个角色可以关联多张图片。点击图片放大预览，点击“设为主图”选择主图，再点底部“保存角色”生效。"
+          label="资产设计图"
+          extra="一个资产可以关联多张图片。点击图片放大预览，点击“设为主图”选择主图，再点底部“保存资产”生效。"
         >
           <Space direction="vertical" style={{ width: "100%" }}>
             <Space wrap>
@@ -2050,13 +2061,13 @@ function RoleEditor({
                 disabled={generating || savingRole || importingAsset}
                 onClick={() => setAssetsOpen(true)}
               >
-                从资产库选择
+                从素材库选择
               </Button>
               <Button
                 icon={<Upload size={15} />}
                 onClick={() => upload().catch((e) => Message.error(String(e)))}
               >
-                导入角色图片
+                导入资产图片
               </Button>
             </Space>
             <div className="role-image-library">
@@ -2081,14 +2092,14 @@ function RoleEditor({
                     {design !== m.id && <button type="button" className="role-image-primary" onClick={(e) => { e.stopPropagation(); setDesign(m.id); }}>设为主图</button>}
                     <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                     <Popconfirm
-                      title="从该角色中删除这张图片？"
+                      title="从该资产中删除这张图片？"
                       onOk={() => removeImage(m.id).catch((e) => Message.error(String(e)))}
                     >
                       <button
                         type="button"
                         className="role-image-delete"
                         aria-label={`删除 ${m.name}`}
-                        title="从角色中删除图片"
+                        title="从资产中删除图片"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <Trash2 size={13} /> 删除
@@ -2097,7 +2108,7 @@ function RoleEditor({
                     </div>
                   </div>
                 ))}
-              </div> : <p className="subtle role-image-empty">还没有关联图片。可从资产库添加多张，或导入本地图片。</p>}
+              </div> : <p className="subtle role-image-empty">还没有关联图片。可从素材库添加多张，或导入本地图片。</p>}
             </div>
       </Space>
         </Form.Item>
@@ -2116,28 +2127,28 @@ function RoleEditor({
       </Form>
       <AssetImagePicker
         visible={!!role && assetsOpen}
-        label="角色设计图"
+        label="资产设计图"
         value={design}
         data={data}
         busy={importingAsset}
         onSelect={importAsset}
         onClose={() => { if (!importingAsset) setAssetsOpen(false); }}
       />
-      <Modal visible={!!pendingImage} title="设置角色图片名称" okText="确认添加" confirmLoading={importingAsset}
+      <Modal visible={!!pendingImage} title="设置资产图片名称" okText="确认添加" confirmLoading={importingAsset}
         okButtonProps={{disabled:!pendingImage?.name.trim()}} cancelButtonProps={{disabled:importingAsset}}
         maskClosable={!importingAsset} closable={!importingAsset}
         onCancel={() => { if (!importingAsset) setPendingImage(null); }} onOk={confirmRoleImage}>
-        <Form layout="vertical" disabled={importingAsset}><Form.Item label="角色图片名称" required extra="填写名称后才会关联到角色，可用 @角色.图片名称 引用。">
-          <Input autoFocus aria-label="角色图片名称" value={pendingImage?.name || ""} placeholder="请输入名称，例如：正面、侧面、校服"
+        <Form layout="vertical" disabled={importingAsset}><Form.Item label="资产图片名称" required extra="填写名称后才会关联到资产，可用 @资产.图片名称 引用。">
+          <Input autoFocus aria-label="资产图片名称" value={pendingImage?.name || ""} placeholder="请输入名称，例如：正面、侧面、校服"
             onChange={name => setPendingImage(current => current ? {...current,name} : null)} onPressEnter={confirmRoleImage}/>
         </Form.Item></Form>
       </Modal>
-      <Modal visible={!!renamingImage} title="编辑角色图片名称" okText="保存名称" onCancel={() => setRenamingImage(null)} onOk={renameImage}>
-        <Form layout="vertical"><Form.Item label="图片名称" extra="图生图时可用 @角色.图片名称 引用这张图片。">
+      <Modal visible={!!renamingImage} title="编辑资产图片名称" okText="保存名称" onCancel={() => setRenamingImage(null)} onOk={renameImage}>
+        <Form layout="vertical"><Form.Item label="图片名称" extra="图生图时可用 @资产.图片名称 引用这张图片。">
           <Input autoFocus value={renamingImage?.name || ""} onChange={name => setRenamingImage(current => current ? {...current,name} : null)} onPressEnter={renameImage}/>
         </Form.Item></Form>
       </Modal>
-      <ImagePreviewModal media={imagePreview} images={currentRole?.images || []} onMediaChange={setImagePreview} title="角色图预览" onClose={()=>setImagePreview(null)} />
+      <ImagePreviewModal media={imagePreview} images={currentRole?.images || []} onMediaChange={setImagePreview} title="资产图预览" onClose={()=>setImagePreview(null)} />
     </Drawer>
   );
 }
@@ -2161,7 +2172,7 @@ export function Prompts({ data, reload }: { data: Snapshot; reload: () => void }
   return (
     <section>
       <div className="section-title page-actions">
-        <div className="page-intro"><h1>Prompt 库</h1><p>管理常用提示词，在角色与场景生成时复用。</p></div>
+        <div className="page-intro"><h1>Prompt 库</h1><p>管理常用提示词，在资产与场景生成时复用。</p></div>
         <Button
           type="primary"
           className="prompt-create-button"
@@ -2227,7 +2238,7 @@ export function Prompts({ data, reload }: { data: Snapshot; reload: () => void }
               }
             >
               <Select.Option value="通用">通用</Select.Option>
-              <Select.Option value="角色">角色</Select.Option>
+              <Select.Option value="资产">资产</Select.Option>
               <Select.Option value="场景">场景</Select.Option>
               <Select.Option value="风格">风格</Select.Option>
             </Select>

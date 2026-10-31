@@ -82,8 +82,8 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
         count++;
         if (mounted.current) setImageDrafts(items => ({ ...items, [key]: [...(items[key] || []), { url, mediaId: media.id }].slice(0, 4) }));
       }
-      if (count) Message.success(`已将 ${count} 张图片加入资产`);
-    } catch (e) { Message.error(String(e)); } finally { if (count) { try { await reload(); } catch { Message.error("图片已加入资产，但列表刷新失败，请刷新页面"); } } pasting.current = false; if (mounted.current) setReadingImages(false); }
+      if (count) Message.success(`已将 ${count} 张图片加入素材`);
+    } catch (e) { Message.error(String(e)); } finally { if (count) { try { await reload(); } catch { Message.error("图片已加入素材，但列表刷新失败，请刷新页面"); } } pasting.current = false; if (mounted.current) setReadingImages(false); }
   };
   const running = selected?.status === "running";
   const execution = selected?.execution;
@@ -241,15 +241,15 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
         <div className="agent-composer-wrap">
           <div className="agent-composer">
             <div className="agent-composer-context"><Folder size={12} /><span>{data.project.name}</span><span className="agent-context-label">项目上下文</span></div>
-            {!!images.length && <div className="agent-image-previews">{images.map((image, i) => <div key={i}><img src={image.url} alt={`待发送图片 ${i + 1}（已加入资产）`} /><button type="button" aria-label={`移除图片 ${i + 1}`} disabled={sending} onClick={() => setImageDrafts(items => ({ ...items, [draftKey]: images.filter((_, index) => index !== i) }))}><X size={14} /></button></div>)}</div>}
+            {!!images.length && <div className="agent-image-previews">{images.map((image, i) => <div key={i}><img src={image.url} alt={`待发送图片 ${i + 1}（已加入素材）`} /><button type="button" aria-label={`移除图片 ${i + 1}`} disabled={sending} onClick={() => setImageDrafts(items => ({ ...items, [draftKey]: images.filter((_, index) => index !== i) }))}><X size={14} /></button></div>)}</div>}
             <textarea ref={composer} data-testid="agent-composer" aria-label="向 Agent 发送消息" value={draft} maxLength={16000} disabled={loading || sending || creating} placeholder="写下一个灵感，或粘贴图片告诉我你想完成什么…" onPaste={event => { if (readingImages) return; const files = Array.from(event.clipboardData.items).filter(item => item.type.startsWith("image/")).map(item => item.getAsFile()).filter((file): file is File => !!file); if (files.length) { event.preventDefault(); void pasteImages(files); } }} onChange={event => updateDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} />
             <div className="agent-composer-actions"><label className={`agent-web-toggle${online ? " is-online" : ""}`}><Globe size={14} /><span>联网搜索</span><Switch size="small" checked={online} onChange={setOnline} disabled={running || sending} aria-label="联网搜索" /></label><Button className="agent-model-button" title={config.model || "配置模型"} onClick={openSettings}><span>{config.model || "配置模型"}</span><ChevronDown size={13} /></Button>{running ? <Button data-testid="agent-stop" aria-label="停止执行" status="danger" icon={<Square size={14} />} loading={stopping} onClick={() => void stop()}>停止</Button> : <Button type="primary" data-testid="agent-send" aria-label="发送消息" icon={<ArrowUp size={19} />} loading={sending} disabled={(!draft.trim() && !images.length) || readingImages || loading || creating} onClick={() => void send()} />}</div>
           </div>
           {empty && <>
             <div className="agent-starters-heading">也可以从这里开始</div>
             <div className="agent-starters">{[
-              ["整理项目", "梳理进度，找到下一步", "查看当前项目，整理剧本、角色、剧集和场景的制作进度，并提出下一步建议。"],
-              ["开始一个故事", "让一个灵感，长成剧本", "写一个雨夜车站重逢的短片剧本，创建主要角色，并建立第一集和三个场景。"],
+              ["整理项目", "梳理进度，找到下一步", "查看当前项目，整理剧本、资产、剧集和场景的制作进度，并提出下一步建议。"],
+              ["开始一个故事", "让一个灵感，长成剧本", "写一个雨夜车站重逢的短片剧本，创建主要资产，并建立第一集和三个场景。"],
               ["搜索创作参考", "发现镜头、光影与灵感", "联网搜索电影雨夜车站场景的灯光和镜头参考，注明来源，并把可用的创作提示词保存到 Prompt 库。"],
             ].map(([label, description, text]) => <button key={label} onClick={() => { updateDraft(text); composer.current?.focus(); }}><span className="agent-starter-icon">{label === "搜索创作参考" ? <Search size={17} /> : label === "整理项目" ? <Folder size={17} /> : <PencilLine size={17} />}</span><span className="agent-starter-copy"><strong>{label}</strong><small>{description}</small></span><ArrowUpRight className="agent-starter-arrow" size={15} /></button>)}</div>
           <p className="agent-keyboard-hint"><kbd>Enter</kbd> 发送<span>·</span><kbd>Shift + Enter</kbd> 换行</p></>}

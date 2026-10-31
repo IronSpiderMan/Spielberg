@@ -1,7 +1,7 @@
 import { jsonRequest, request, download } from "./transport";
 import { downloadName, releaseFile, selectedFile } from "./platform";
 const resourceFields: Record<string, string[]> = {
-  roles: ["name", "description", "enabled", "design_media_id"],
+  roles: ["name", "description", "enabled", "category", "design_media_id"],
   episodes: ["title", "description", "cover_media_id", "storyboard"],
   scenes: ["creation_mode", "prompt", "title", "description", "episode_id", "first_media_id", "last_media_id", "reference_media_id", "generation_options"],
   screenplays: ["title", "content", "format", "episode_id"],

@@ -1,3 +1,5 @@
+import type {AssetCategory} from "./asset-categories";
+
 export type Media = {
   preview_url?: string;
   id: number;
@@ -11,6 +13,7 @@ export type Role = {
   name: string;
   description: string;
   enabled: boolean;
+  category: AssetCategory;
   design_media_id: number | null;
   images: Media[];
   audios?: Media[];

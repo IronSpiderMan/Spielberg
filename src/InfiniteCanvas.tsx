@@ -26,7 +26,7 @@ function normalizeDraftSizes(draft: Draft): Draft {
     return { ...node, ratio, size: normalizeGenerationSize(ratio, node.size) };
   }) };
 }
-const labels: Record<Kind, string> = { image: "图片", audio: "音频", video: "视频", scene: "场景", role: "角色", media: "素材", prompt: "Prompt", note: "便签" };
+const labels: Record<Kind, string> = { image: "图片", audio: "音频", video: "视频", scene: "场景", role: "资产", media: "素材", prompt: "Prompt", note: "便签" };
 const mediaKind = (kind: Kind): kind is MediaKind => ["image", "video", "audio"].includes(kind);
 const uid = () => crypto.randomUUID();
 const clamp = (n: number) => Math.max(.2, Math.min(2, n));
