@@ -488,7 +488,8 @@ async def validation_error(request: Request, exc: RequestValidationError):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "provider": "runninghub_cookie",
+            "require_free": os.environ.get("RUNNINGHUB_REQUIRE_FREE", "0") == "1"}
 
 
 @app.get("/v1/models", dependencies=[Depends(authorize)])

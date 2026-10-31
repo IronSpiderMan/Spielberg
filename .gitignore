@@ -42,6 +42,8 @@ npm-debug.log*
 !/scripts/qa/skills.py
 !/scripts/qa/skills-ui.cjs
 !/scripts/qa/test_comfyui_video_api.py
+!/scripts/qa/test_runninghub_project_batch.py
+!/scripts/qa/test_h3_prompt_workflow.py
 !/scripts/qa/scene-reference-mode.cjs
 
 # Tauri

@@ -4,6 +4,7 @@ mod canvas;
 mod rest;
 mod storyboard;
 mod h3_prompt;
+mod generation_http;
 mod screenplays;
 pub use http::{Backend, default_data_dir, run};
 mod storage;
@@ -239,19 +240,20 @@ fn select_asset_video(tx:&Connection,id:i64,mid:i64)->Result<(),String>{
  if tx.execute("UPDATE scenes SET video_media_id=? WHERE id=?",params![mid,id]).map_err(|e|e.to_string())?!=1{return Err("场景不存在".into())}
  Ok(())
 }
-fn merge_video_files(paths:&[String],out:&Path)->Result<(),String>{
+fn merge_video_files(paths:&[String],out:&Path,width:i64,height:i64)->Result<(),String>{
+ if width<64||height<64||width>8192||height>8192||width%2!=0||height%2!=0{return Err("合并尺寸必须为64–8192范围内的偶数".into())}
  if paths.is_empty(){return Err("没有可合并的视频".into())}
  let binary=if Path::new("/opt/homebrew/bin/ffmpeg").exists(){"/opt/homebrew/bin/ffmpeg"}else{"ffmpeg"};
  let probe=if Path::new("/opt/homebrew/bin/ffprobe").exists(){"/opt/homebrew/bin/ffprobe"}else{"ffprobe"};
  let mut cmd=crate::background_command(binary);cmd.args(["-nostdin","-v","error"]);
  let mut metadata=Vec::new();
  for path in paths{let output=crate::background_command(probe).args(["-v","error","-show_streams","-show_format","-of","json",path]).output().map_err(|e|format!("读取视频需要 FFprobe：{e}"))?;if !output.status.success(){return Err(format!("无法读取视频：{path}"))}let info:Value=serde_json::from_slice(&output.stdout).map_err(|e|e.to_string())?;let duration=info["format"]["duration"].as_str().and_then(|v|v.parse::<f64>().ok()).filter(|v|v.is_finite()&&*v>0.0).ok_or("无法读取视频时长")?;let audio=info["streams"].as_array().map(|xs|xs.iter().any(|x|x["codec_type"]=="audio")).unwrap_or(false);metadata.push((duration,audio));cmd.arg("-i").arg(path);}
- let mut filters=Vec::new();for (i,(duration,audio)) in metadata.iter().enumerate(){filters.push(format!("[{i}:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,setpts=PTS-STARTPTS[v{i}]"));filters.push(if *audio{format!("[{i}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,apad,atrim=duration={duration},asetpts=PTS-STARTPTS[a{i}]")}else{format!("anullsrc=r=48000:cl=stereo,atrim=duration={duration},asetpts=PTS-STARTPTS[a{i}]")});}
+ let mut filters=Vec::new();for (i,(duration,audio)) in metadata.iter().enumerate(){filters.push(format!("[{i}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,setpts=PTS-STARTPTS[v{i}]"));filters.push(if *audio{format!("[{i}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,apad,atrim=duration={duration},asetpts=PTS-STARTPTS[a{i}]")}else{format!("anullsrc=r=48000:cl=stereo,atrim=duration={duration},asetpts=PTS-STARTPTS[a{i}]")});}
  filters.push(format!("{}concat=n={}:v=1:a=1[outv][outa]",(0..paths.len()).map(|i|format!("[v{i}][a{i}]")).collect::<String>(),paths.len()));
  let result=cmd.args(["-filter_complex",&filters.join(";"),"-map","[outv]","-map","[outa]","-c:v","libx264","-preset","fast","-c:a","aac","-pix_fmt","yuv420p","-movflags","+faststart"]).arg(out).output().map_err(|e|format!("合并需要 FFmpeg：{e}"))?;
  if !result.status.success(){let _=fs::remove_file(out);return Err(format!("视频合并失败：{}",String::from_utf8_lossy(&result.stderr)))}Ok(())
 }
-fn merge_episode(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let c=db(s,&pid)?;let ep=intv(v,"episode_id")?;let mut q=c.prepare("SELECT m.path FROM scenes sc LEFT JOIN scene_videos sv ON sv.scene_id=sc.id AND sv.media_id=sc.video_media_id LEFT JOIN media m ON m.id=sv.media_id WHERE sc.episode_id=? ORDER BY sc.sort_order,sc.id").map_err(|e|e.to_string())?;let paths=q.query_map([ep],|r|r.get::<_,Option<String>>(0)).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;if paths.is_empty()||paths.iter().any(Option::is_none){return Err("请为每个场景选择一个视频后合并".into())}let root=PathBuf::from(strv(&project(s,&pid)?,"path")?);let dir=root.join("assets/videos");fs::create_dir_all(&dir).map_err(|e|e.to_string())?;let out=dir.join(format!("episode-{}-{}.mp4",ep,Uuid::new_v4()));merge_video_files(&paths.into_iter().flatten().collect::<Vec<_>>(),&out)?;let name=format!("剧集{}-合并.mp4",ep);c.execute("INSERT INTO media(name,path,kind,created_at) VALUES(?,?,?,?)",params![name,out.to_string_lossy(),"video",now()]).map_err(|e|e.to_string())?;Ok(media(&c,Some(c.last_insert_rowid())).unwrap())}
+fn merge_episode(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let c=db(s,&pid)?;let ep=intv(v,"episode_id")?;let mut q=c.prepare("SELECT m.path FROM scenes sc LEFT JOIN scene_videos sv ON sv.scene_id=sc.id AND sv.media_id=sc.video_media_id LEFT JOIN media m ON m.id=sv.media_id WHERE sc.episode_id=? ORDER BY sc.sort_order,sc.id").map_err(|e|e.to_string())?;let paths=q.query_map([ep],|r|r.get::<_,Option<String>>(0)).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;if paths.is_empty()||paths.iter().any(Option::is_none){return Err("请为每个场景选择一个视频后合并".into())}let root=PathBuf::from(strv(&project(s,&pid)?,"path")?);let dir=root.join("assets/videos");fs::create_dir_all(&dir).map_err(|e|e.to_string())?;let out=dir.join(format!("episode-{}-{}.mp4",ep,Uuid::new_v4()));merge_video_files(&paths.into_iter().flatten().collect::<Vec<_>>(),&out,v["width"].as_i64().unwrap_or(1280),v["height"].as_i64().unwrap_or(720))?;let name=format!("剧集{}-合并.mp4",ep);c.execute("INSERT INTO media(name,path,kind,created_at) VALUES(?,?,?,?)",params![name,out.to_string_lossy(),"video",now()]).map_err(|e|e.to_string())?;Ok(media(&c,Some(c.last_insert_rowid())).unwrap())}
 fn insert_prompt(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let c=db(s,&pid)?;let name=strv(v,"name")?;let content=v.get("content").and_then(Value::as_str).unwrap_or("");let cat=v.get("category").and_then(Value::as_str).unwrap_or("通用");let t=now();c.execute("INSERT INTO prompts(name,content,category,created_at,updated_at) VALUES(?,?,?,?,?)",params![name,content,cat,t,t]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"id":c.last_insert_rowid(),"name":name,"content":content,"category":cat}))}
 fn update_prompt(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;db(s,&pid)?.execute("UPDATE prompts SET name=?,content=?,category=?,updated_at=? WHERE id=?",params![strv(v,"name")?,v.get("content").and_then(Value::as_str).unwrap_or(""),v.get("category").and_then(Value::as_str).unwrap_or("通用"),now(),intv(v,"id")?]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
 fn save_settings(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;db(s,&pid)?.execute("INSERT INTO settings(key,value) VALUES('models',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[v.get("settings").unwrap_or(&json!({})).to_string()]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
@@ -374,7 +376,7 @@ fn generate_comfy_video(s:&AppState,c:&Connection,pid:&str,v:&Value,operation:&s
  if operation=="fl2v"{if let Some(id)=opti(v,"first_media_id"){body["start_image"]=Value::String(media_base64(c,Some(id),"首帧")?)}if let Some(id)=opti(v,"last_media_id"){body["end_image"]=Value::String(media_base64(c,Some(id),"尾帧")?)}}
  body
  };
- let client=reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(60)).build().map_err(|e|e.to_string())?;
+ let client=generation_http::client_builder(url).timeout(std::time::Duration::from_secs(60)).build().map_err(|e|e.to_string())?;
  // Native H3 and RunningHub adapters share routes but have different image contracts.
  let health=if v.get("_resume").is_none(){
   let endpoint=format!("{}/health",url.split("/v1/generations/").next().unwrap_or(url));
@@ -391,7 +393,7 @@ fn generate_comfy_video(s:&AppState,c:&Connection,pid:&str,v:&Value,operation:&s
   (intv(resume,"generation_row_id")?,json!({"generation_id":strv(resume,"generation_id")?}))
  } else {
  let created=now();c.execute("INSERT INTO generations(operation,status,prompt,request_json,created_at,updated_at) VALUES(?,?,?,?,?,?)",params![operation,"running",prompt,body.to_string(),created,created]).map_err(|e|e.to_string())?;let gid=c.last_insert_rowid();
-let mut request=client.post(url).json(&body);if !api_key.is_empty(){request=request.bearer_auth(api_key)}let response=request.send().map_err(|e|format!("视频生成请求失败（{}）：{e}",url))?;let status=response.status();let headers:Vec<String>=response.headers().iter().map(|(k,v)|format!("{}: {}",k,v.to_str().unwrap_or("?"))).collect();let response_body=response.text().map_err(|e|format!("无法读取生成服务响应：{e}"))?;eprintln!("[video-gen] status={} headers={:?} body_len={}",status,headers,response_body.len());if !status.is_success(){let detail=response_body.chars().take(1200).collect::<String>();let _=c.execute("UPDATE generations SET status='failed',error=?,updated_at=? WHERE id=?",params![format!("POST {}\n{}\n{}",url,status,detail),now(),gid]);return Err(format!("生成服务返回 {status}（{url}）：\n{}",detail))}let submission:Value=serde_json::from_str(&response_body).map_err(|_|format!("生成服务返回的不是 JSON（地址：{url}）：{}",response_body.chars().take(300).collect::<String>()))?;
+let submission_client=generation_http::submission_client_builder(url).build().map_err(|e|e.to_string())?;let mut request=submission_client.post(url).json(&body);if !api_key.is_empty(){request=request.bearer_auth(api_key)}let response=request.send().map_err(|e|{let error=generation_http::request_error(&e,url);let _=c.execute("UPDATE generations SET status='failed',error=?,updated_at=? WHERE id=?",params![error,now(),gid]);error})?;let status=response.status();let headers:Vec<String>=response.headers().iter().map(|(k,v)|format!("{}: {}",k,v.to_str().unwrap_or("?"))).collect();let response_body=response.text().map_err(|e|format!("无法读取生成服务响应：{e}"))?;eprintln!("[video-gen] status={} headers={:?} body_len={}",status,headers,response_body.len());if !status.is_success(){let detail=response_body.chars().take(1200).collect::<String>();let _=c.execute("UPDATE generations SET status='failed',error=?,updated_at=? WHERE id=?",params![format!("POST {}\n{}\n{}",url,status,detail),now(),gid]);return Err(format!("生成服务返回 {status}（{url}）：\n{}",detail))}let submission:Value=serde_json::from_str(&response_body).map_err(|_|format!("生成服务返回的不是 JSON（地址：{url}）：{}",response_body.chars().take(300).collect::<String>()))?;
  (gid,submission)
  };
  let generation_id=submission.get("generation_id").and_then(Value::as_str).ok_or("生成服务未返回 generation_id；请确认地址是 /v1/generations/t2v、i2v、ref2v 或 fl2v")?;if let Some(job)=opti(v,"_job_id") {
@@ -400,7 +402,7 @@ let mut request=client.post(url).json(&body);if !api_key.is_empty(){request=requ
  }
  let base=url.split("/v1/generations/").next().unwrap_or(url).trim_end_matches('/');
  let result=loop {std::thread::sleep(std::time::Duration::from_secs(2));let item:Value=client.get(format!("{base}/v1/generations/{generation_id}")).bearer_auth(api_key).send().and_then(|r|r.error_for_status()).and_then(|r|r.json()).map_err(|e|format!("查询生成进度失败：{e}"))?;match item.get("status").and_then(Value::as_str){Some("completed")=>{break item},Some("failed")|Some("cancelled")=>{let err=item.get("error").map(Value::to_string).unwrap_or_else(||"任务失败".into());let _=c.execute("UPDATE generations SET status='failed',error=?,updated_at=? WHERE id=?",params![err,now(),gid]);return Err(format!("视频生成失败：{err}"))},_=>{}}}
- ;let output_url=result.get("result").and_then(Value::as_array).and_then(|x|x.first()).and_then(|x|x.get("url")).and_then(Value::as_str).ok_or("视频任务已完成，但未返回可下载的视频地址")?;let output_url=remote_comfy_url(url,output_url);let video=client.get(&output_url).send().and_then(|r|r.error_for_status()).and_then(|r|r.bytes()).map_err(|e|format!("下载生成视频失败：{e}"))?;
+ ;let output_url=result.get("result").and_then(Value::as_array).and_then(|x|x.first()).and_then(|x|x.get("url")).and_then(Value::as_str).ok_or("视频任务已完成，但未返回可下载的视频地址")?;let output_url=remote_comfy_url(url,output_url);let download_client=generation_http::submission_client_builder(&output_url).build().map_err(|e|e.to_string())?;let video=download_client.get(&output_url).send().and_then(|r|r.error_for_status()).and_then(|r|r.bytes()).map_err(|e|format!("下载生成视频失败：{e}"))?;
  let root=PathBuf::from(project(s,pid)?["path"].as_str().ok_or("无效项目路径")?);let dir=root.join("assets").join("videos");fs::create_dir_all(&dir).map_err(|e|e.to_string())?;let out=dir.join(format!("{}.mp4",Uuid::new_v4()));fs::write(&out,&video).map_err(|e|e.to_string())?;let tx=c.unchecked_transaction().map_err(|e|e.to_string())?;let name=format!("{}-{}.mp4",operation,gid);tx.execute("INSERT INTO media(name,path,kind,created_at) VALUES(?,?,?,?)",params![name,out.to_string_lossy(),"video",now()]).map_err(|e|e.to_string())?;let mid=tx.last_insert_rowid();if let Some(scene)=opti(v,"scene_id"){attach_video(&tx,scene,mid)?;}tx.execute("UPDATE generations SET status='completed',result_json=?,updated_at=? WHERE id=?",params![result.to_string(),now(),gid]).map_err(|e|e.to_string())?;let saved=json!({"id":mid,"name":name,"path":out,"kind":"video","created_at":now()});
  if let Some(job)=opti(v,"_job_id"){tx.execute("UPDATE background_jobs SET status='completed',result_json=?,error=NULL,updated_at=? WHERE id=?",params![saved.to_string(),now(),job]).map_err(|e|e.to_string())?;}
  tx.commit().map_err(|e|e.to_string())?;
@@ -420,7 +422,7 @@ fn generate_video(s:&AppState,v:&Value)->Result<Value,String>{
  let mut body=json!({"prompt":prompt,"duration":v.get("duration").and_then(Value::as_i64).unwrap_or(5),"aspect_ratio":v.get("aspect_ratio").and_then(Value::as_str).unwrap_or("16:9")});
  if operation=="i2v"{let ids=if image_ids.is_empty(){opti(v,"image_media_id").into_iter().collect::<Vec<_>>()}else{image_ids};let images=ids.into_iter().filter_map(|id|media(&c,Some(id))).map(|m|m["path"].as_str().unwrap_or("").to_string()).collect::<Vec<_>>();body["reference_images"]=json!(images)}else{for (field,key) in [("first_image","first_media_id"),("last_image","last_media_id")] {if let Some(id)=opti(v,key){if let Some(m)=media(&c,Some(id)){body[field]=Value::String(m["path"].as_str().unwrap_or("").to_string());}}}}
  let t=now();c.execute("INSERT INTO generations(operation,status,prompt,request_json,created_at,updated_at) VALUES(?,?,?,?,?,?)",params![operation,"running",prompt,body.to_string(),t,t]).map_err(|e|e.to_string())?;let gid=c.last_insert_rowid();
- let client=reqwest::blocking::Client::builder().connect_timeout(std::time::Duration::from_secs(15)).timeout(None).build().map_err(|e|e.to_string())?;let mut req=client.post(url).json(&body);if let Some(key)=model["api_key"].as_str().filter(|x|!x.is_empty()){req=req.bearer_auth(key)}let response=req.send().map_err(|e|format!("视频生成请求失败：{e}"))?;let status=response.status();let content_type=response.headers().get(reqwest::header::CONTENT_TYPE).and_then(|x|x.to_str().ok()).unwrap_or("").to_string();let bytes=response.bytes().map_err(|e|e.to_string())?;if !status.is_success(){let err=String::from_utf8_lossy(&bytes).to_string();let _=c.execute("UPDATE generations SET status='failed',error=?,updated_at=? WHERE id=?",params![err,now(),gid]);return Err(format!("生成服务返回 {}：{}",status,err))}
+ let client=generation_http::client_builder(&url).connect_timeout(std::time::Duration::from_secs(15)).timeout(None).build().map_err(|e|e.to_string())?;let mut req=client.post(url).json(&body);if let Some(key)=model["api_key"].as_str().filter(|x|!x.is_empty()){req=req.bearer_auth(key)}let response=req.send().map_err(|e|format!("视频生成请求失败：{e}"))?;let status=response.status();let content_type=response.headers().get(reqwest::header::CONTENT_TYPE).and_then(|x|x.to_str().ok()).unwrap_or("").to_string();let bytes=response.bytes().map_err(|e|e.to_string())?;if !status.is_success(){let err=String::from_utf8_lossy(&bytes).to_string();let _=c.execute("UPDATE generations SET status='failed',error=?,updated_at=? WHERE id=?",params![err,now(),gid]);return Err(format!("生成服务返回 {}：{}",status,err))}
  let (video,ext,result):(Vec<u8>,String,Value)=if bytes.starts_with(b"{"){let result:Value=serde_json::from_slice(&bytes).map_err(|e|format!("无法解析生成结果：{e}"))?;let encoded=result.pointer("/data/0/b64_json").or_else(||result.pointer("/data/0/base64")).or_else(||result.get("b64_json")).or_else(||result.get("base64")).and_then(Value::as_str).map(str::to_string);if let Some(encoded)=encoded{(base64::engine::general_purpose::STANDARD.decode(encoded).map_err(|e|format!("视频数据解码失败：{e}"))?,"mp4".into(),result)}else if let Some(remote)=result.pointer("/data/0/url").or_else(||result.get("url")).and_then(Value::as_str).map(str::to_string){let ext=Path::new(&remote).extension().and_then(|x|x.to_str()).unwrap_or("mp4").to_string();let downloaded=client.get(&remote).send().and_then(|r|r.error_for_status()).and_then(|r|r.bytes()).map_err(|e|format!("下载生成视频失败：{e}"))?;(downloaded.to_vec(),ext,result)}else{return Err("生成服务未返回视频 URL 或 base64 数据".into())}}else{(bytes.to_vec(),if content_type.contains("webm"){"webm".into()}else{"mp4".into()},json!({"binary":true}))};
  let root=PathBuf::from(project(s,&pid)?["path"].as_str().ok_or("无效项目路径")?);let dir=root.join("assets").join("videos");fs::create_dir_all(&dir).map_err(|e|e.to_string())?;let out=dir.join(format!("{}.{}",Uuid::new_v4(),ext));fs::write(&out,video).map_err(|e|e.to_string())?;let name=format!("{}-{}.{}",operation,gid,ext);c.execute("INSERT INTO media(name,path,kind,created_at) VALUES(?,?,?,?)",params![name,out.to_string_lossy(),"video",now()]).map_err(|e|e.to_string())?;let mid=c.last_insert_rowid();if let Some(scene)=opti(v,"scene_id"){attach_video(&c,scene,mid)?;}c.execute("UPDATE generations SET status='completed',result_json=?,updated_at=? WHERE id=?",params![result.to_string(),now(),gid]).map_err(|e|e.to_string())?;{let _guard=s.guard.lock().map_err(|_|"本地数据锁不可用")?;touch(s,&pid);}Ok(json!({"id":mid,"name":name,"path":out,"kind":"video","created_at":now()}))
 }
@@ -624,6 +626,26 @@ mod task_project_tests {
 }
 
 #[cfg(test)]
+mod merge_output_size_tests {
+ use super::*;
+ #[test]
+ fn merging_keeps_the_requested_768p_output_and_audio() {
+  let root=std::env::temp_dir().join(format!("spielberg-merge-size-{}",Uuid::new_v4()));fs::create_dir_all(&root).unwrap();
+  let input=root.join("input.mp4");let output=root.join("merged.mp4");
+  let result=crate::background_command("/opt/homebrew/bin/ffmpeg").args(["-nostdin","-v","error","-f","lavfi","-i","color=c=red:s=64x64:r=24","-f","lavfi","-i","anullsrc=r=48000:cl=stereo","-t","0.25","-c:v","libx264","-c:a","aac","-pix_fmt","yuv420p"]).arg(&input).output().unwrap();
+  assert!(result.status.success(),"{}",String::from_utf8_lossy(&result.stderr));
+  let paths=vec![input.to_string_lossy().into_owned();2];
+  merge_video_files(&paths,&output,1344,768).unwrap();
+  let probe=crate::background_command("/opt/homebrew/bin/ffprobe").args(["-v","error","-show_streams","-of","json"]).arg(&output).output().unwrap();
+  let info:Value=serde_json::from_slice(&probe.stdout).unwrap();let streams=info["streams"].as_array().unwrap();
+  let video=streams.iter().find(|s|s["codec_type"]=="video").unwrap();assert_eq!(video["width"],1344);assert_eq!(video["height"],768);
+  assert!(streams.iter().any(|s|s["codec_type"]=="audio"));
+  assert!(merge_video_files(&paths,&root.join("invalid.mp4"),1343,768).is_err());
+  fs::remove_dir_all(root).unwrap();
+ }
+}
+
+#[cfg(test)]
 mod standalone_video_tests {
  use super::*;
  #[test]
@@ -673,6 +695,30 @@ mod pose_reference_tests {
 #[cfg(test)]
 mod native_video_tests {
  use super::*;
+ #[test]
+ fn failed_submission_records_transport_error_in_generation_history(){
+  use std::io::{Read,Write};
+  let root=std::env::temp_dir().join(format!("spielberg-transport-test-{}",Uuid::new_v4()));
+  storage::initialize_root(&root).unwrap();
+  let state=AppState{root:root.clone(),guard:std::sync::Arc::new(Mutex::new(()))};
+  let project=create_project(&state,&json!({"name":"Transport fixture"})).unwrap();let pid=project["id"].as_str().unwrap();
+  let listener=std::net::TcpListener::bind("127.0.0.1:0").unwrap();let address=listener.local_addr().unwrap();
+  let server=std::thread::spawn(move||{
+   let (mut stream,_)=listener.accept().unwrap();stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+   let mut buffer=[0u8;4096];let n=stream.read(&mut buffer).unwrap();assert!(String::from_utf8_lossy(&buffer[..n]).starts_with("GET /health "));
+   // Close the listener before submission so no generation can be accepted.
+   drop(listener);
+   let body=r#"{"native_video":{}}"#;
+   write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();
+  });
+  let c=db(&state,pid).unwrap();let url=format!("http://{address}/v1/generations/t2v");
+  let error=generate_comfy_video(&state,&c,pid,&json!({}),"t2v","test",&url,"").unwrap_err();
+  server.join().unwrap();
+  assert!(error.contains("；"),"underlying cause missing: {error}");
+  let (status,saved):(String,String)=c.query_row("SELECT status,error FROM generations ORDER BY id DESC LIMIT 1",[],|r|Ok((r.get(0)?,r.get(1)?))).unwrap();
+  assert_eq!(status,"failed");assert_eq!(saved,error);
+  drop(c);fs::remove_dir_all(root).unwrap();
+ }
  #[test]
  fn ref2v_posts_optional_base64_media_and_reuses_legacy_settings(){
   use std::io::{Read,Write};
