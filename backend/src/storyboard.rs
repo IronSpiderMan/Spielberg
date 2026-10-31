@@ -1,14 +1,17 @@
 use super::*;
 pub(super) fn load(c:&Connection,id:i64)->Result<Value,String>{let raw:String=c.query_row("SELECT storyboard FROM episodes WHERE id=?",[id],|r|r.get(0)).map_err(|e|e.to_string())?;serde_json::from_str(&raw).map_err(|e|e.to_string())}
 fn assets(s:&AppState,pid:&str)->Result<Value,String>{
- let snap=snapshot(s,pid)?;let mut refs=Vec::new();
+ let snap=snapshot(s,pid)?;let mut refs=Vec::new();let mut role_names=std::collections::HashSet::new();
  for role in snap["roles"].as_array().unwrap(){
+  let mut role_refs=Vec::new();
   let name=role["name"].as_str().unwrap();let images=role["images"].as_array().unwrap();
-  refs.push(json!({"name":name,"description":role["description"],"media_id":images.iter().find(|m|m["kind"]=="image").map(|m|m["id"].clone())}));
-  for m in images.iter().filter(|m|m["kind"]=="image"){let stem=m["name"].as_str().unwrap().rsplit_once('.').map(|x|x.0).unwrap_or(m["name"].as_str().unwrap());let alias=stem.split_whitespace().collect::<Vec<_>>().join("_");if alias!=name{refs.push(json!({"name":format!("{name}.{alias}"),"media_id":m["id"]}));}}
+  role_refs.push(json!({"name":name,"description":role["description"],"media_id":images.iter().find(|m|m["kind"]=="image").map(|m|m["id"].clone())}));
+  for m in images.iter().filter(|m|m["kind"]=="image"){let stem=m["name"].as_str().unwrap().rsplit_once('.').map(|x|x.0).unwrap_or(m["name"].as_str().unwrap());let alias=stem.split_whitespace().collect::<Vec<_>>().join("_");if alias!=name{role_refs.push(json!({"name":format!("{name}.{alias}"),"media_id":m["id"]}));}}
+  if role["enabled"]!=false{refs.extend(role_refs);}
+  else{role_names.extend(role_refs.iter().map(|r|r["name"].as_str().unwrap().to_string()));}
  }
  for ep in snap["episodes"].as_array().unwrap(){let title=ep["title"].as_str().unwrap();let title=if snap["episodes"].as_array().unwrap().iter().filter(|e|e["title"]==ep["title"]).count()>1{format!("{title}#{}",ep["id"])}else{title.into()};for (i,scene) in ep["scenes"].as_array().unwrap().iter().enumerate(){for (suffix,key) in [("first","first_media_id"),("last","last_media_id"),("ref","reference_media_id")]{refs.push(json!({"name":format!("{title}.scene{:03}.{suffix}",i+1),"media_id":scene[key]}));}}}
- for m in snap["media"].as_array().unwrap().iter().filter(|m|m["kind"]=="image"){let name=m["name"].as_str().unwrap();let stem=name.rsplit_once('.').map(|x|x.0).unwrap_or(name);if !refs.iter().any(|r|r["name"]==stem){refs.push(json!({"name":stem,"media_id":m["id"]}));}}
+ for m in snap["media"].as_array().unwrap().iter().filter(|m|m["kind"]=="image"){let name=m["name"].as_str().unwrap();let stem=name.rsplit_once('.').map(|x|x.0).unwrap_or(name);if !role_names.contains(stem)&&!refs.iter().any(|r|r["name"]==stem){refs.push(json!({"name":stem,"media_id":m["id"]}));}}
  Ok(json!(unique_resources(refs)))
 }
 // Match the mention picker: keep the first resource in snapshot order.
@@ -76,3 +79,30 @@ fn validate_plan(s:&AppState,v:&Value,scene:&Value,result:&Value)->Result<(),Str
  let resolved=unique_resources(refs.as_array().unwrap().clone());
  assert_eq!(resolved.len(),1);assert_eq!(resolved[0]["media_id"],8);
  }#[test]fn duration_limit(){assert!(validate_scene(&json!({"duration":16,"shots":[{"duration":16,"description":"走路"}]})).is_err());assert!(validate_scene(&json!({"duration":3,"shots":[{"duration":3,"description":"走路"}]})).is_ok());}}
+
+#[cfg(test)]
+mod role_enablement_tests {
+ use super::*;
+ #[test]
+ fn disabled_role_mentions_are_rejected_until_reenabled() {
+  let root=std::env::temp_dir().join(format!("spielberg-storyboard-role-{}",Uuid::new_v4()));
+  storage::initialize_root(&root).unwrap();
+  let state=AppState{root:root.clone(),guard:std::sync::Arc::new(Mutex::new(()))};
+  let project=create_project(&state,&json!({"name":"References fixture"})).unwrap();let pid=project["id"].as_str().unwrap();
+  let role=insert_role(&state,&json!({"project_id":pid,"name":"主角"})).unwrap();
+  let c=db(&state,pid).unwrap();
+  for name in ["正面.png","主角.png","主角.正面.png"] {
+   c.execute("INSERT INTO media(name,path,kind,created_at) VALUES(?,?,'image','0')",params![name,name]).unwrap();
+  }
+  link_role_media(&c,role["id"].as_i64().unwrap(),1).unwrap();drop(c);
+  assert!(check("@主角 @主角.正面",&assets(&state,pid).unwrap()).is_ok());
+  let path=format!("projects/{pid}/roles/{}",role["id"]);
+  rest::crud(&state,"PATCH",&path,json!({"enabled":false})).unwrap();
+  let refs=assets(&state,pid).unwrap();
+  assert!(check("@主角",&refs).is_err());assert!(check("@主角.正面",&refs).is_err());
+  assert!(check("@正面",&refs).is_ok());
+  rest::crud(&state,"PATCH",&path,json!({"enabled":true})).unwrap();
+  assert!(check("@主角 @主角.正面",&assets(&state,pid).unwrap()).is_ok());
+  fs::remove_dir_all(root).unwrap();
+ }
+}

@@ -45,6 +45,8 @@ npm-debug.log*
 !/scripts/qa/test_runninghub_project_batch.py
 !/scripts/qa/test_h3_prompt_workflow.py
 !/scripts/qa/scene-reference-mode.cjs
+!/scripts/qa/role-enabled.cjs
+!/scripts/qa/prompt-mentions.cjs
 
 # Tauri
 src-tauri/gen/

@@ -32,8 +32,19 @@ fn project(s:&AppState,id:&str)->Result<Value,String>{registry(s)?.into_iter().f
 fn migrate(c:&Connection)->Result<(),String>{
  c.execute_batch("PRAGMA foreign_keys=ON;").map_err(|e|e.to_string())?;
  let version:i64=c.query_row("PRAGMA user_version",[],|r|r.get(0)).map_err(|e|e.to_string())?;
- if version>=13{return Ok(())}
- if version==12{c.execute_batch("BEGIN IMMEDIATE").map_err(|e|e.to_string())?;let result=(||{catalog::install(c)?;c.execute_batch("PRAGMA user_version=13; COMMIT").map_err(|e|e.to_string())})();if result.is_err(){let _=c.execute_batch("ROLLBACK");}return result}
+ if version>=14{return Ok(())}
+ if version==13{
+   c.execute_batch("BEGIN IMMEDIATE").map_err(|e|e.to_string())?;
+   let result=(||{
+     if c.prepare("SELECT enabled FROM roles LIMIT 0").is_err(){
+       c.execute_batch("ALTER TABLE roles ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1));").map_err(|e|e.to_string())?;
+     }
+     c.execute_batch("UPDATE revisions SET version=version+1 WHERE section='roles'; PRAGMA user_version=14; COMMIT").map_err(|e|e.to_string())
+   })();
+   if result.is_err(){let _=c.execute_batch("ROLLBACK");}
+   return result;
+ }
+ if version==12{c.execute_batch("BEGIN IMMEDIATE").map_err(|e|e.to_string())?;let result=(||{catalog::install(c)?;c.execute_batch("PRAGMA user_version=13; COMMIT").map_err(|e|e.to_string())})();if result.is_err(){let _=c.execute_batch("ROLLBACK");}result?;return migrate(c)}
  if version==11{screenplays::install_single_documents(c)?;return migrate(c)}
  if version==10{screenplays::install_episodes(c)?;return migrate(c)}
  if version==9{
@@ -106,7 +117,7 @@ fn snapshot_database(connection:&mut Connection,p:Value,known:&Value)->Result<Va
  let mut result=json!({"project":p,"revisions":versions});
  if known["media"]!=versions["media"] || known.is_null() { let media_items={let mut q=c.prepare("SELECT id,name,path,kind,created_at FROM media WHERE deleted_at IS NULL ORDER BY id DESC").map_err(|e|e.to_string())?;let rows=q.query_map([],|r|Ok(json!({"id":r.get::<_,i64>(0)?,"name":r.get::<_,String>(1)?,"path":r.get::<_,String>(2)?,"kind":r.get::<_,String>(3)?,"created_at":r.get::<_,String>(4)?}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;rows};
  result["media"]=json!(media_items); }
- if known["roles"]!=versions["roles"] || known.is_null() { let mut roles=Vec::new();let mut qr=c.prepare("SELECT id,name,description,design_media_id FROM roles ORDER BY id DESC").map_err(|e|e.to_string())?;for x in qr.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<i64>>(3)?))).map_err(|e|e.to_string())?{let(id,name,description,design)=x.map_err(|e|e.to_string())?;let mut qi=c.prepare("SELECT m.id,m.name,m.path,m.kind,m.created_at FROM media m WHERE m.deleted_at IS NULL AND (m.id=? OR EXISTS(SELECT 1 FROM role_media rm WHERE rm.role_id=? AND rm.media_id=m.id)) ORDER BY CASE WHEN m.id=? THEN 0 ELSE 1 END,m.id DESC").map_err(|e|e.to_string())?;let images=qi.query_map(params![design,id,design],|r|Ok(json!({"id":r.get::<_,i64>(0)?,"name":r.get::<_,String>(1)?,"path":r.get::<_,String>(2)?,"kind":r.get::<_,String>(3)?,"created_at":r.get::<_,String>(4)?}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;roles.push(json!({"id":id,"name":name,"description":description,"design_media_id":design,"images":images,"audios":role_audios(&c,id)?}));}
+ if known["roles"]!=versions["roles"] || known.is_null() { let mut roles=Vec::new();let mut qr=c.prepare("SELECT id,name,description,design_media_id,enabled FROM roles ORDER BY id DESC").map_err(|e|e.to_string())?;for x in qr.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<i64>>(3)?,r.get::<_,bool>(4)?))).map_err(|e|e.to_string())?{let(id,name,description,design,enabled)=x.map_err(|e|e.to_string())?;let mut qi=c.prepare("SELECT m.id,m.name,m.path,m.kind,m.created_at FROM media m WHERE m.deleted_at IS NULL AND (m.id=? OR EXISTS(SELECT 1 FROM role_media rm WHERE rm.role_id=? AND rm.media_id=m.id)) ORDER BY CASE WHEN m.id=? THEN 0 ELSE 1 END,m.id DESC").map_err(|e|e.to_string())?;let images=qi.query_map(params![design,id,design],|r|Ok(json!({"id":r.get::<_,i64>(0)?,"name":r.get::<_,String>(1)?,"path":r.get::<_,String>(2)?,"kind":r.get::<_,String>(3)?,"created_at":r.get::<_,String>(4)?}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;roles.push(json!({"id":id,"name":name,"description":description,"enabled":enabled,"design_media_id":design,"images":images,"audios":role_audios(&c,id)?}));}
  result["roles"]=json!(roles); }
  if known["episodes"]!=versions["episodes"] || known.is_null() { let mut episodes=Vec::new();let mut qe=c.prepare("SELECT id,title,description FROM episodes ORDER BY sort_order,id").map_err(|e|e.to_string())?;for x in qe.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(|e|e.to_string())?{let(eid,title,description)=x.map_err(|e|e.to_string())?;let mut qs=c.prepare("SELECT id,title,description,sort_order,first_media_id,last_media_id,reference_media_id,video_media_id,prompt,creation_mode FROM scenes WHERE episode_id=? ORDER BY sort_order,id").map_err(|e|e.to_string())?;let mut scenes=Vec::new();for z in qs.query_map([eid],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,i64>(3)?,r.get::<_,Option<i64>>(4)?,r.get::<_,Option<i64>>(5)?,r.get::<_,Option<i64>>(6)?,r.get::<_,Option<i64>>(7)?,r.get::<_,String>(8)?,r.get::<_,String>(9)?))).map_err(|e|e.to_string())?{let(id,t,d,o,f,l,rf,vid,prompt,mode)=z.map_err(|e|e.to_string())?;scenes.push(json!({"id":id,"title":t,"description":d,"prompt":prompt,"creation_mode":mode,"sort_order":o,"first_media_id":f,"last_media_id":l,"reference_media_id":rf,"video_media_id":vid,"first_media":media(&c,f),"last_media":media(&c,l),"reference_media":media(&c,rf),"video_media":media(&c,vid),"videos":scene_videos(&c,id)?,"generation_options":scene_options(&c,id)?,"script":scene_script(&c,id)?}));}episodes.push(json!({"id":eid,"title":title,"description":description,"scenes":scenes,"storyboard":storyboard::load(&c,eid)?,"cover_media":media(&c,c.query_row("SELECT cover_media_id FROM episodes WHERE id=?",[eid],|r|r.get::<_,Option<i64>>(0)).map_err(|e|e.to_string())?)}));}
  result["episodes"]=json!(episodes); }
@@ -158,8 +169,8 @@ fn video_frame(s: &AppState, v: &Value) -> Result<Value, String> {
 }
 
 fn project_id(v:&Value)->Result<String,String>{strv(v,"project_id")}
-fn insert_role(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let c=db(s,&pid)?;let name=strv(v,"name")?;let d=v.get("description").and_then(Value::as_str).unwrap_or("");c.execute("INSERT INTO roles(name,description,created_at) VALUES(?,?,?)",params![name,d,now()]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"id":c.last_insert_rowid(),"name":name,"description":d,"design_media_id":null,"images":[],"audios":[]}))}
-fn update_role(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;db(s,&pid)?.execute("UPDATE roles SET name=?,description=?,design_media_id=? WHERE id=?",params![strv(v,"name")?,v.get("description").and_then(Value::as_str).unwrap_or(""),opti(v,"design_media_id"),intv(v,"id")?]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
+fn insert_role(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let c=db(s,&pid)?;let name=strv(v,"name")?;let d=v.get("description").and_then(Value::as_str).unwrap_or("");let enabled=v.get("enabled").and_then(Value::as_bool).unwrap_or(true);c.execute("INSERT INTO roles(name,description,enabled,created_at) VALUES(?,?,?,?)",params![name,d,enabled,now()]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"id":c.last_insert_rowid(),"name":name,"description":d,"enabled":enabled,"design_media_id":null,"images":[],"audios":[]}))}
+fn update_role(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;db(s,&pid)?.execute("UPDATE roles SET name=?,description=?,design_media_id=?,enabled=COALESCE(?,enabled) WHERE id=?",params![strv(v,"name")?,v.get("description").and_then(Value::as_str).unwrap_or(""),opti(v,"design_media_id"),v.get("enabled").and_then(Value::as_bool),intv(v,"id")?]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
 fn delete_role(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;db(s,&pid)?.execute("DELETE FROM roles WHERE id=?",[intv(v,"id")?]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
 fn link_role_media(c: &Connection, role_id: i64, media_id: i64) -> Result<(), String> {
     let exists = c.query_row("SELECT EXISTS(SELECT 1 FROM roles WHERE id=?)", [role_id], |r| r.get::<_, bool>(0)).map_err(|e| e.to_string())?;
@@ -933,5 +944,46 @@ mod role_audio_tests {
   manage_role_audio(&state,&json!({"project_id":pid,"role_id":rid,"media_id":1}),true).unwrap();
   assert_eq!(role_audios(&c,rid).unwrap().len(),1);assert!(media(&c,Some(1)).is_some());
   drop(c);fs::remove_dir_all(root).unwrap();
+ }
+}
+
+#[cfg(test)]
+mod role_enablement_tests {
+ use super::*;
+ #[test]
+ fn legacy_roles_default_to_enabled() {
+  let c=Connection::open_in_memory().unwrap();
+  c.execute_batch("CREATE TABLE roles(id INTEGER PRIMARY KEY,name TEXT); INSERT INTO roles VALUES(1,'原角色'); CREATE TABLE revisions(section TEXT PRIMARY KEY,version INTEGER); INSERT INTO revisions VALUES('roles',3); PRAGMA user_version=13;").unwrap();
+  migrate(&c).unwrap();migrate(&c).unwrap();
+  assert!(c.query_row("SELECT enabled FROM roles WHERE id=1",[],|r|r.get::<_,bool>(0)).unwrap());
+  assert_eq!(catalog::revisions(&c).unwrap()["roles"],4);
+  assert_eq!(c.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),14);
+ }
+ #[test]
+ fn role_status_survives_partial_updates_reload_and_snapshot_changes() {
+  let root=std::env::temp_dir().join(format!("spielberg-role-enabled-{}",Uuid::new_v4()));
+  storage::initialize_root(&root).unwrap();
+  let state=AppState{root:root.clone(),guard:std::sync::Arc::new(Mutex::new(()))};
+  let project=create_project(&state,&json!({"name":"Role status fixture"})).unwrap();let pid=project["id"].as_str().unwrap();
+  let collection=format!("projects/{pid}/roles");
+  let role=rest::crud(&state,"POST",&collection,json!({"name":"主角"})).unwrap();
+  assert_eq!(role["enabled"],true);
+  let path=format!("{collection}/{}",role["id"]);
+  let before=snapshot(&state,pid).unwrap();
+  let disabled=rest::crud(&state,"PATCH",&path,json!({"enabled":false})).unwrap();
+  assert_eq!(disabled["enabled"],false);assert_eq!(disabled["name"],"主角");
+  let changes=snapshot_changes(&state,pid,&before["revisions"]).unwrap();
+  assert_eq!(changes["roles"][0]["enabled"],false);
+  assert_eq!(rest::crud(&state,"PATCH",&path,json!({"description":"新描述"})).unwrap()["enabled"],false);
+  let reopened=AppState{root:root.clone(),guard:std::sync::Arc::new(Mutex::new(()))};
+  assert_eq!(snapshot(&reopened,pid).unwrap()["roles"][0]["enabled"],false);
+  assert_eq!(rest::crud(&reopened,"GET",&collection,json!({})).unwrap()[0]["enabled"],false);
+  for invalid in [json!(0),json!("false"),Value::Null] {
+   assert!(rest::crud(&state,"PATCH",&path,json!({"enabled":invalid})).is_err());
+   assert!(rest::crud(&state,"POST",&collection,json!({"name":"无效角色","enabled":invalid})).is_err());
+  }
+  assert_eq!(rest::crud(&state,"PATCH",&path,json!({"enabled":true})).unwrap()["enabled"],true);
+  assert_eq!(rest::crud(&state,"POST",&collection,json!({"name":"配角","enabled":false})).unwrap()["enabled"],false);
+  fs::remove_dir_all(root).unwrap();
  }
 }

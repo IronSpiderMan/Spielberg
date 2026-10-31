@@ -9,7 +9,7 @@
 | 资源 | 集合 URL | 创建字段 | PATCH 字段 |
 |---|---|---|---|
 | 项目 | `/projects` | `name` | `name` |
-| 角色 | `/projects/{pid}/roles` | `name`, `description?`, `design_media_id?` | 同创建字段 |
+| 角色 | `/projects/{pid}/roles` | `name`, `description?`, `enabled?`, `design_media_id?` | 同创建字段 |
 | 资产 | `/projects/{pid}/assets` | `name`, `extension`, `data_base64`, `role_id?`；推荐二进制上传 | `name` |
 | 剧集 | `/projects/{pid}/episodes` | `title`, `description?`, `cover_media_id?` | 同创建字段 |
 | 场景 | `/projects/{pid}/episodes/{episode_id}/scenes` | `title`, `description?`, `prompt?`, `first_media_id?`, `last_media_id?`, `reference_media_id?`, `generation_options?` | `/projects/{pid}/scenes/{scene_id}`，不能改变所属剧集 |
@@ -26,7 +26,7 @@
 
 每个剧集最多一份 Markdown 剧本和一份 CSV 分镜头剧本，重复创建或移动到已有同类型内容的剧集返回 409；请读取已有资源并 PATCH。剧本按剧集归属：`GET/POST /projects/{pid}/episodes/{episode_id}/screenplays` 列出或创建该集剧本，路径指定归属。兼容 `/projects/{pid}/screenplays`，创建时必须提交有效 `episode_id`，GET 可用 `?episode_id=...` 筛选；单个资源的 GET/PATCH/DELETE 使用 `/projects/{pid}/screenplays/{id}`。PATCH 省略字段保持原值，更新 `episode_id` 可移动到当前项目的其他剧集，不能脱离剧集。资源包含 `id,episode_id,title,content,format,created_at,updated_at`。
 
-角色返回 `images`，剧集返回排序后的 `scenes` 和 `cover_media`，场景返回引用图片、`videos`、`script` 和 `generation_options`。角色、图片、场景等 ID 为项目内整数，项目 ID 为 UUID。
+角色的 `enabled` 为布尔值，默认 `true`（包含旧项目角色）。设为 `false` 后，角色及其命名图片不再支持 `@` 引用；省略该字段的更新保留原状态。角色返回 `enabled` 和 `images`，剧集返回排序后的 `scenes` 和 `cover_media`，场景返回引用图片、`videos`、`script` 和 `generation_options`。角色、图片、场景等 ID 为项目内整数，项目 ID 为 UUID。
 
 项目 DELETE 仅移除项目注册信息，返回额外的 `data_retained:true`，磁盘目录保留，可重新打开。资产 DELETE 使用回收站；使用中的资产拒绝删除。删除剧集会级联删除所属剧本、分镜头剧本、场景及其关联；删除角色不会删除资产文件。
 

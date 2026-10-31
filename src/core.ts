@@ -10,6 +10,7 @@ export type Role = {
   id: number;
   name: string;
   description: string;
+  enabled: boolean;
   design_media_id: number | null;
   images: Media[];
   audios?: Media[];

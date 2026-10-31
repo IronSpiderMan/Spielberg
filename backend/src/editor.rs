@@ -234,7 +234,7 @@ pub(super) fn command(s: &AppState, v: &Value, export: bool) -> Result<Value,Str
             DROP TABLE scene_canvas_sources; DROP TABLE scene_canvases; ALTER TABLE scenes DROP COLUMN prompt; ALTER TABLE scenes DROP COLUMN creation_mode;
             PRAGMA user_version=6;").unwrap();
         migrate(&c).unwrap();migrate(&c).unwrap();
-        assert_eq!(c.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),12);
+        assert_eq!(c.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),14);
         assert_eq!(c.query_row("SELECT content FROM prompts",[],|r|r.get::<_,String>(0)).unwrap(),"保留内容");
         c.execute("INSERT INTO edit_projects VALUES('cut','剪辑','{}','draft','1','1')",[]).unwrap();
         c.execute("INSERT INTO edit_sources VALUES('cut',1)",[]).unwrap();

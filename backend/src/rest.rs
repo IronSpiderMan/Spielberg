@@ -49,6 +49,7 @@ fn rows(c: &Connection, table: &str, id: Option<i64>) -> ApiResult<Vec<Value>> {
 fn enrich(c: &Connection, resource: &str, mut value: Value) -> ApiResult<Value> {
     let id=value["id"].as_i64().unwrap();
     if resource=="roles" {
+        value["enabled"]=json!(value["enabled"].as_i64().unwrap_or(1)!=0);
         value["audios"]=json!(role_audios(c,id)?);
         let mut q=c.prepare("SELECT m.id FROM media m WHERE m.deleted_at IS NULL AND (m.id=? OR EXISTS(SELECT 1 FROM role_media r WHERE r.role_id=? AND r.media_id=m.id)) ORDER BY CASE WHEN m.id=? THEN 0 ELSE 1 END,m.id DESC").map_err(sql_error)?;
         let ids=q.query_map(params![opti(&value,"design_media_id"),id,opti(&value,"design_media_id")],|r|r.get::<_,i64>(0)).map_err(sql_error)?.collect::<Result<Vec<_>,_>>().map_err(sql_error)?;
@@ -71,7 +72,7 @@ fn get(c: &Connection, resource: &str, id: i64) -> ApiResult<Value> {
 }
 fn validate(c: &Connection, resource: &str, value: &Value, create: bool) -> ApiResult<()> {
     let fields: &[&str]=match resource {
-        "roles"=>&["name","description","design_media_id"],
+        "roles"=>&["name","description","enabled","design_media_id"],
         "episodes"=>&["title","description","cover_media_id","storyboard"],
         "scenes"=>&["creation_mode","title","description","prompt","episode_id","first_media_id","last_media_id","reference_media_id","generation_options"],
         "prompts"=>&["name","content","category"],
@@ -84,6 +85,7 @@ fn validate(c: &Connection, resource: &str, value: &Value, create: bool) -> ApiR
         if !fields.contains(&key.as_str()) {return Err(bad(&format!("不支持的字段：{key}")))}
         if ["name","title","description","content","format","category","extension","data_base64"].contains(&key.as_str()) && !item.is_string(){return Err(bad(&format!("{key} 必须是字符串")))}
         if ["name","title"].contains(&key.as_str()) && item.as_str().unwrap_or("").trim().is_empty(){return Err(bad("名称不能为空"))}
+        if key=="enabled" && !item.is_boolean(){return Err(bad("enabled 必须是布尔值"))}
         if key.ends_with("_media_id") && !item.is_null() {
             let mid=item.as_i64().filter(|n|*n>0).ok_or_else(||bad("资产 ID 无效"))?;
             let m=media(c,Some(mid)).ok_or_else(||bad("引用的资产不存在或已删除"))?;

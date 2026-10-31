@@ -28,6 +28,7 @@ Popconfirm,
 Pagination,
 Select,
 Space,
+Switch,
 Tag,
 Tabs,
 Typography
@@ -1768,7 +1769,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
           <section className="role-detail-profile" aria-label="角色描述">
             <div className="role-detail-eyebrow"><span /> 人物档案</div>
             <h1>{detail.name}</h1>
-            <div className="role-detail-meta"><span>角色设定</span><i />{detail.images.length} 张形象参考</div>
+            <div className="role-detail-meta"><span>角色设定</span><i />{detail.images.length} 张形象参考<Tag color={detail.enabled === false ? "gray" : "green"}>{detail.enabled === false ? "已禁用" : "已启用"}</Tag></div>
             <div className="role-detail-description"><h2>人物描述</h2><p>{detail.description || "还没有人物描述。点击编辑设定，记录这个角色的故事与形象。"}</p></div>
           </section>
         </div>
@@ -1804,7 +1805,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
               ) : (
                 r.name.slice(0, 1)
               )}
-              <Tag className="role-kind">角色</Tag>
+              <Tag className="role-kind">{r.enabled === false ? "已禁用" : "角色"}</Tag>
             </div>
             <button type="button" className="role-details-trigger" aria-label={`查看${r.name}的角色详情`} onClick={() => setDetailId(r.id)}>
               <h3>{r.name}</h3>
@@ -1876,6 +1877,7 @@ function RoleEditor({
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [enabled, setEnabled] = useState(true);
   const [design, setDesign] = useState<number | null>(null);
   const [generating, setGenerating] = useState(false);
   const [savingRole, setSavingRole] = useState(false);
@@ -1888,6 +1890,7 @@ function RoleEditor({
   useEffect(() => {
     setName(role?.name || "");
     setDescription(role?.description || "");
+    setEnabled(role?.enabled !== false);
     setDesign(role?.design_media_id || null);
     setAssetsOpen(false);
     setImagePreview(null);
@@ -1966,7 +1969,7 @@ function RoleEditor({
     if (!name.trim()) return Message.warning("请输入角色名称");
     setSavingRole(true);
     try {
-      await post("/roles/update", {project_id:data.project.id,id:role.id,name:name.trim(),description,design_media_id:design});
+      await post("/roles/update", {project_id:data.project.id,id:role.id,name:name.trim(),description,enabled,design_media_id:design});
       await reload(); onClose();
     } catch(e) { Message.error(String(e)); }
     finally { setSavingRole(false); }
@@ -1991,6 +1994,9 @@ function RoleEditor({
       <Form layout="vertical">
         <Form.Item label="角色名称">
           <Input value={name} onChange={setName} />
+        </Form.Item>
+        <Form.Item label="启用角色" extra="禁用后，无法通过 @ 引用该角色及其命名图片。保存角色后生效。">
+          <Switch aria-label="启用角色" checked={enabled} onChange={setEnabled} checkedText="启用" uncheckedText="禁用" disabled={savingRole || generating || importingAsset} />
         </Form.Item>
         <Form.Item label="角色形象描述">
           <Input.TextArea
