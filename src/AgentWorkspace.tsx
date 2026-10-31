@@ -71,13 +71,13 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
     if (pasting.current || busy.current) return;
     const key = draftKey;
     if (files.length + images.length > 4) { Message.warning("每条消息最多 4 张图片"); return; }
-    if (files.some(file => !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type) || file.size > 2 * 1024 * 1024)) { Message.warning("支持 PNG、JPEG、WebP、GIF，每张不超过 2 MB"); return; }
+    if (files.some(file => !["image/png", "image/jpeg", "image/webp", "image/gif", "image/svg+xml"].includes(file.type) || file.size > 2 * 1024 * 1024)) { Message.warning("支持 PNG、JPEG、WebP、GIF、SVG，每张不超过 2 MB"); return; }
     pasting.current = true; setReadingImages(true);
     let count = 0;
     try {
       for (const file of files) {
         const url = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error("读取图片失败")); reader.readAsDataURL(file); });
-        const ext = ({ "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" } as Record<string, string>)[file.type];
+        const ext = ({ "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif", "image/svg+xml": "svg" } as Record<string, string>)[file.type];
         const media = await uploadAsset<Media>(pid, new File([file], `Agent粘贴图片-${localId()}.${ext}`, { type: file.type }));
         count++;
         if (mounted.current) setImageDrafts(items => ({ ...items, [key]: [...(items[key] || []), { url, mediaId: media.id }].slice(0, 4) }));

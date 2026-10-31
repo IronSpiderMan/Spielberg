@@ -61,7 +61,7 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
   const [assignment,setAssignment]=useState<Media|null>(null);
   const beginAssignment=(media:Media)=>{setPreview(null);setAssignment(media);};
   const importFiles=async()=>{try {
-    const files=await open({multiple:true,filters:[{name:"图片、视频和音频",extensions:["png","jpg","jpeg","webp","gif","mp4","mov","webm","mkv","mp3","wav","m4a","aac","ogg","flac"]}]});
+    const files=await open({multiple:true,filters:[{name:"图片、视频和音频",extensions:["png","jpg","jpeg","webp","gif","svg","mp4","mov","webm","mkv","mp3","wav","m4a","aac","ogg","flac"]}]});
     if(!files)return;setBusy(true);
     for(const source of typeof files==="string"?[files]:files)await post("/media/import",{project_id:pid,source_path:source});
     await refresh();

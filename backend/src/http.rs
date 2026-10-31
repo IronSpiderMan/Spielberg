@@ -200,7 +200,13 @@ async fn receive_file(state:&AppState,mut body:Body,extension:&str,limit:usize)-
     file.flush().await.map_err(|e|ApiError(StatusCode::INTERNAL_SERVER_ERROR,e.to_string()))?;drop(file);Ok(temp)
 }
 async fn serve_file(path:PathBuf,download:Option<&str>,request:Request<Body>)->ApiResult<Response>{
+    let svg=svg::is_svg(&path);
     let mut response=ServeFile::new(path).try_call(request).await.map_err(|e|ApiError(StatusCode::INTERNAL_SERVER_ERROR,e.to_string()))?.map(Body::new);
+    if svg {
+        response.headers_mut().insert(header::CONTENT_TYPE,"image/svg+xml".parse().unwrap());
+        response.headers_mut().insert(header::X_CONTENT_TYPE_OPTIONS,"nosniff".parse().unwrap());
+        response.headers_mut().insert(header::CONTENT_SECURITY_POLICY,"sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:".parse().unwrap());
+    }
     if let Some(name)=download {
         let encoded=name.as_bytes().iter().map(|b|format!("%{b:02X}")).collect::<String>();
         response.headers_mut().insert(header::CONTENT_DISPOSITION,format!("attachment; filename=\"download\"; filename*=UTF-8''{encoded}").parse().unwrap());

@@ -20,8 +20,15 @@ fn cached(path:&Path,dir:&Path)->Result<PathBuf,String> {
     let metadata=fs::metadata(path).map_err(|e|e.to_string())?;
     let mut hash=std::collections::hash_map::DefaultHasher::new();
     path.hash(&mut hash);metadata.len().hash(&mut hash);metadata.modified().ok().hash(&mut hash);
-    let output=dir.join(format!("{:x}.jpg",hash.finish()));
+    let output=dir.join(format!("{:x}.{}",hash.finish(),if svg::is_svg(path){"png"}else{"jpg"}));
     let _lock=GENERATION.lock().map_err(|_|"缩略图缓存不可用")?;
+    if !output.is_file() && svg::is_svg(path) {
+        let bytes=fs::read(path).map_err(|e|e.to_string())?;
+        let png=svg::render_png(&bytes,480)?;
+        let temporary=dir.join(format!("{}.png",Uuid::new_v4()));
+        fs::write(&temporary,png).map_err(|e|e.to_string())?;
+        fs::rename(temporary,&output).map_err(|e|e.to_string())?;
+    }
     if !output.is_file() {
         let temporary=dir.join(format!("{}.jpg",Uuid::new_v4()));
         let binary=if Path::new("/opt/homebrew/bin/ffmpeg").exists(){"/opt/homebrew/bin/ffmpeg"}else{"ffmpeg"};

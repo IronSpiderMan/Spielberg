@@ -142,9 +142,12 @@ pub fn disk_scan(c:&Connection,root:&Path)->Result<Value,String> {
             files.push(json!({"path":path,"size":size}));
         }
     }
-    let cache=root.join(".cache/thumbnails");
-    if cache.exists() && !cache.canonicalize().map_err(|e|e.to_string())?.starts_with(root.canonicalize().map_err(|e|e.to_string())?){return Err("缓存目录不能指向项目之外".into())}
-    let cache_bytes:u64=files_under(&cache)?.iter().filter_map(|p|fs::metadata(p).ok().map(|m|m.len())).sum();
+    let mut cache_bytes=0u64;
+    for name in ["thumbnails","svg"] {
+        let cache=root.join(".cache").join(name);
+        if cache.exists() && !cache.canonicalize().map_err(|e|e.to_string())?.starts_with(root.canonicalize().map_err(|e|e.to_string())?){return Err("缓存目录不能指向项目之外".into())}
+        cache_bytes+=files_under(&cache)?.iter().filter_map(|p|fs::metadata(p).ok().map(|m|m.len())).sum::<u64>();
+    }
     Ok(json!({"files":files,"cache_bytes":cache_bytes}))
 }
 
@@ -158,12 +161,14 @@ pub fn cleanup(c:&Connection,root:&Path,v:&Value)->Result<Value,String> {
         if !allowed.iter().any(|item|item["path"]==path){continue}
         let source=owned_file(root,Path::new(path))?;
         let name=source.file_name().unwrap_or_default().to_string_lossy();
-        let kind=match source.extension().and_then(|e|e.to_str()).unwrap_or("").to_ascii_lowercase().as_str(){"mp4"|"mov"|"webm"|"mkv"=>"video","png"|"jpg"|"jpeg"|"webp"|"gif"=>"image","mp3"|"wav"|"m4a"|"aac"|"ogg"|"flac"=>"audio",_=>"file"};
+        let kind=match source.extension().and_then(|e|e.to_str()).unwrap_or("").to_ascii_lowercase().as_str(){"mp4"|"mov"|"webm"|"mkv"=>"video","png"|"jpg"|"jpeg"|"webp"|"gif"|"svg"=>"image","mp3"|"wav"|"m4a"|"aac"|"ogg"|"flac"=>"audio",_=>"file"};
         c.execute("INSERT INTO media(name,path,kind,created_at,deleted_at) VALUES(?,?,?,?,?)",params![name,path,kind,now(),now()]).map_err(|e|e.to_string())?;
         count+=1;
     }
     if v["clear_cache"].as_bool().unwrap_or(false) {
-        for path in files_under(&root.join(".cache/thumbnails"))? { fs::remove_file(path).map_err(|e|e.to_string())?; }
+        for name in ["thumbnails","svg"] {
+            for path in files_under(&root.join(".cache").join(name))? { fs::remove_file(path).map_err(|e|e.to_string())?; }
+        }
     }
     Ok(json!({"recycled":count}))
 }

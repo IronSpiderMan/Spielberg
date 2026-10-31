@@ -22,6 +22,8 @@ const tool = (name, args, id) => ({id,type:'function',function:{name,arguments:J
    message={role:'assistant',content:'本轮执行已暂停，已完成的操作已保留。'};
   } else if(prompt.includes('预算测试')) {
    message={role:'assistant',content:null,tool_calls:[tool('get_project',{},'budget-first'),tool('get_project',{},'budget-skipped')]};
+  } else if(prompt.includes('SVG 测试')) {
+   message=results.length ? {role:'assistant',content:'SVG 已保存到素材库。'} : {role:'assistant',content:null,tool_calls:[tool('app_action',{operation:'media/create-svg',data:{name:'Agent 矢量图',svg:'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 140"><rect width="240" height="140" rx="20" fill="#315efb"/><circle cx="120" cy="70" r="40" fill="gold"/><text x="120" y="78" text-anchor="middle" font-size="20">SVG</text></svg>'}},'svg-create')]};
   } else if(prompt.includes('停止测试')) {
    await new Promise(resolve=>setTimeout(resolve,1800));
    message={role:'assistant',content:null,tool_calls:[tool('app_request',{method:'POST',resource:'roles',data:{name:'不应创建'}},'cancel-write')]};
@@ -151,8 +153,35 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
   await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
   await page.getByTestId('agent-plan').waitFor();
   await page.screenshot({path:path.join(screenshots,'dark.png'),fullPage:true,animations:'disabled'});
+  // The LLM writes SVG source directly; no image generation provider is configured.
+  await api('/actions/agent/config/save',{project_id:project.id,config:{max_steps:8}});
+  await page.getByTestId('agent-new-session').click();
+  await page.getByTestId('agent-composer').fill('SVG 测试：画一个矢量标志并保存');
+  await page.getByTestId('agent-send').click();
+  await page.getByText('SVG 已保存到素材库。',{exact:true}).waitFor({timeout:15000});
+  const svgImage=page.locator('.agent-generated-images img[alt="Agent 矢量图.svg"]');
+  await svgImage.waitFor();
+  await svgImage.evaluate(img=>img.decode());
+  assert(await svgImage.evaluate(img=>img.complete && img.naturalWidth>0 && img.naturalHeight>0),'SVG failed to render');
+  const svgAsset=(await api(`/projects/${project.id}/assets?kind=image`,undefined,'GET')).items.find(item=>item.name==='Agent 矢量图.svg');
+  assert(svgAsset && svgAsset.kind==='image');
+  const svgResponse=await fetch(`${base}/api/v1/projects/${project.id}/assets/${svgAsset.id}/content`);
+  assert.match(svgResponse.headers.get('content-type'),/image\/svg\+xml/);
+  assert.match(svgResponse.headers.get('content-security-policy'),/sandbox/);
+  const source=await svgResponse.text();assert(source.includes('<circle'));
+  await page.getByRole('button',{name:'预览 Agent 矢量图.svg',exact:true}).click();
+  await page.getByRole('dialog').waitFor();
+  await page.getByRole('dialog').locator('img').first().evaluate(img=>img.decode());
+  await page.context().grantPermissions(['clipboard-read','clipboard-write'],{origin:base});
+  await page.getByRole('button',{name:'复制图片',exact:true}).click();
+  await page.getByText('已复制图片',{exact:true}).waitFor();
+  assert(await page.evaluate(async()=> (await navigator.clipboard.read()).some(item=>item.types.includes('image/png'))));
+  await page.screenshot({path:path.join(screenshots,'svg-preview.png'),fullPage:true});
+  await page.keyboard.press('Escape');
+  await page.reload();await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
+  await page.locator('.agent-generated-images img[alt="Agent 矢量图.svg"]').waitFor();
   assert.deepEqual(failures,[]);
-  console.log('PASS: migrated image thumbnail/preview; fixed session order after selection/reload; Agent tools, durable plans, limited/skipped states, Markdown/source links, credential hiding, editor refresh, cancellation and desktop/mobile/dark themes');
+  console.log('PASS: Agent SVG creation/inline preview/modal/reload without image provider; migrated image thumbnail/preview; fixed session order after selection/reload; Agent tools, durable plans, limited/skipped states, Markdown/source links, credential hiding, editor refresh, cancellation and desktop/mobile/dark themes');
   console.log('Screenshots: '+screenshots);
  } finally {
   if(browser)await browser.close();

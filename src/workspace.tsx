@@ -765,7 +765,7 @@ function EpisodeEditor({
   const [baseline, setBaseline] = useState(episode);
   const [cover, setCover] = useState<Media | undefined>(episode?.cover_media);
   const uploadCover = async () => {
-    const path = await open({multiple:false, filters:[{name:"图片",extensions:["png","jpg","jpeg","webp"]}]});
+    const path = await open({multiple:false, filters:[{name:"图片",extensions:["png","jpg","jpeg","webp","gif","svg"]}]});
     if (typeof path === "string") setCover(await post<Media>("/media/import",{project_id:project.id,source_path:path}));
   };
   const [title, setTitle] = useState(episode?.title || "");
@@ -1241,7 +1241,7 @@ export function SceneEditor({
   const uploadFrame = async (key: FrameKey) => {
     const source = await open({
       multiple: false,
-      filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp"] }],
+      filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp", "gif", "svg"] }],
     });
     if (typeof source !== "string") return;
     const media = await post<Media>("/media/import", {
@@ -1252,7 +1252,7 @@ export function SceneEditor({
     await reload();
   };
   const addReferenceImages = async () => {
-    const selected = await open({ multiple: true, filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp"] }] });
+    const selected = await open({ multiple: true, filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp", "gif", "svg"] }] });
     if (!selected) return;
     const paths = typeof selected === "string" ? [selected] : selected;
     const imported = await Promise.all(paths.slice(0, Math.max(0, 9 - (options.reference_media_ids || []).length)).map(source => post<Media>("/media/import", { project_id: data.project.id, source_path: source })));
@@ -1268,7 +1268,7 @@ export function SceneEditor({
   const uploadRefs = async () => {
     const selected = await open({
       multiple: true,
-      filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp"] }],
+      filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp", "gif", "svg"] }],
     });
     if (!selected) return;
     const paths = typeof selected === "string" ? [selected] : selected;
@@ -1938,7 +1938,7 @@ function RoleEditor({
   const upload = async () => {
     const source = await open({
       multiple: false,
-      filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp"] }],
+      filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp", "gif", "svg"] }],
     });
     if (typeof source !== "string" || !role) return;
     const imported = await post<Media>("/media/import", {

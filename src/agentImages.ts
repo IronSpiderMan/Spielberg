@@ -7,7 +7,7 @@ export type ImageMessage = { role: string; content: string; images?: string[]; i
 export function generatedImages(message: ImageMessage, currentMedia: Map<number, Media>): Media[] {
   if (message.status === "running" || message.status === "failed" || message.status === "skipped" || message.tool_name !== "app_action" ||
       !message.arguments || typeof message.arguments !== "object" ||
-      (message.arguments as Record<string, unknown>).operation !== "generations/image") return [];
+      !["generations/image", "media/create-svg"].includes(String((message.arguments as Record<string, unknown>).operation))) return [];
   try {
     const result = JSON.parse(message.content);
     const found = new Map<number, Media>();

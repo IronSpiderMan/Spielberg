@@ -60,15 +60,32 @@ export function ImagePreviewModal({ media, onClose, title = "参考图片预览"
     try {
       const response = await fetch(imageUrl(media));
       if (!response.ok) throw new Error("图片读取失败");
-      const bitmap = await createImageBitmap(await response.blob());
-      const canvas = document.createElement("canvas");
-      canvas.width = bitmap.width; canvas.height = bitmap.height;
-      const context = canvas.getContext("2d");
-      if (!context) { bitmap.close(); throw new Error("图片转换失败"); }
-      context.drawImage(bitmap, 0, 0); bitmap.close();
-      const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error("图片转换失败")), "image/png"));
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      Message.success("已复制图片");
+      const source = await response.blob();
+      // Browsers cannot create ImageBitmap from SVGs that only have a viewBox.
+      // Decode those through an image element before copying a PNG rendition.
+      let bitmap: ImageBitmap | HTMLImageElement;
+      let objectUrl = "";
+      if (source.type.includes("svg") || /\.svg$/i.test(media.path)) {
+        const image = new Image();
+        objectUrl = URL.createObjectURL(source);
+        image.src = objectUrl;
+        try { await image.decode(); } catch (error) { URL.revokeObjectURL(objectUrl); throw error; }
+        bitmap = image;
+      } else { bitmap = await createImageBitmap(source); }
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = bitmap instanceof HTMLImageElement ? bitmap.naturalWidth : bitmap.width;
+        canvas.height = bitmap instanceof HTMLImageElement ? bitmap.naturalHeight : bitmap.height;
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("图片转换失败");
+        context.drawImage(bitmap, 0, 0);
+        const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error("图片转换失败")), "image/png"));
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+        Message.success("已复制图片");
+      } finally {
+        if (bitmap instanceof ImageBitmap) bitmap.close();
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+      }
     } catch { Message.error("复制图片失败，请使用下载功能保存图片"); }
   };
   const [rotation, setRotation] = useState(0);

@@ -138,7 +138,31 @@ def main():
             assert api("DELETE", scope)["data_retained"] is True
             assert Path(project["path"]).is_dir()
             api("GET", scope, expected=404)
-            print("PASS: seven-resource CRUD, PATCH preservation, concurrent projects, binary uploads, references, ranges, backup restore, validation, CORS, SPA hosting")
+            # SVG is an image throughout binary upload, inline serving, downloads,
+            # direct Agent-style creation, thumbnails and model-reference storage.
+            svg_project = api("POST", "/projects", {"name": "SVG validation"}, 201)
+            svg_scope = "/projects/" + svg_project["id"]
+            svg = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80"><rect width="120" height="80" fill="red"/></svg>'
+            uploaded, _ = raw("POST", "/api/v1" + svg_scope + "/assets/upload?name=vector.SVG", svg, expected=201)
+            vector = json.loads(uploaded)["data"]
+            assert vector["kind"] == "image"
+            content_path = "/api/v1" + svg_scope + f'/assets/{vector["id"]}/content'
+            for suffix in ["", "?download=1"]:
+                content, headers = raw("GET", content_path + suffix)
+                assert content == svg and headers["Content-Type"] == "image/svg+xml"
+                assert "sandbox" in headers["Content-Security-Policy"] and headers["X-Content-Type-Options"] == "nosniff"
+                if suffix: assert "attachment" in headers["Content-Disposition"]
+            thumb = api("POST", "/actions/media/thumbnail", {"project_id": svg_project["id"], "id": vector["id"]})
+            from urllib.parse import urlencode
+            content, _ = raw("GET", "/media?" + urlencode({"path": thumb["path"]}))
+            assert content.startswith(b"\x89PNG")
+            direct = api("POST", "/actions/media/create-svg", {"project_id": svg_project["id"], "name": "Agent vector", "svg": svg.decode()})
+            assert direct["name"] == "Agent vector.svg" and direct["kind"] == "image"
+            raw("POST", "/api/v1" + svg_scope + "/assets/upload?name=bad.svg", b"<svg/>", expected=400)
+            api("POST", "/actions/media/create-svg", {"project_id": svg_project["id"], "name": "bad", "svg": svg.decode().replace("<rect", '<script>alert(1)</script><rect')}, 400)
+            assert api("GET", svg_scope + "/assets?kind=image")["total"] == 2
+            api("DELETE", svg_scope)
+            print("PASS: seven-resource CRUD, PATCH preservation, concurrent projects, binary uploads, references, ranges, backup restore, SVG upload/create/preview/download/thumbnail/validation, CORS, SPA hosting")
         finally:
             process.terminate()
             try: process.wait(timeout=10)

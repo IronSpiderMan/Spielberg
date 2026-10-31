@@ -36,7 +36,7 @@ export function ShotPictureField({ picture, index, data, busy, onChange, onUploa
       <Button size="mini" disabled={busy} aria-label={`${label} 上传本地画面`} onClick={() => input.current?.click()}>本地上传</Button>
       {picture && <Button size="mini" disabled={busy} aria-label={`${label} 清除画面`} onClick={() => onChange("")}>清除</Button>}
     </Space>
-    <input ref={input} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden aria-label={`${label} 本地画面文件`}
+    <input ref={input} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden aria-label={`${label} 本地画面文件`}
       onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void onUpload(file); }} />
     <AssetImagePicker visible={picker === "asset"} label={`${label}画面`} value={media?.id || null} data={data} busy={busy}
       onSelect={id => { const item = data.media.find(item => item.id === id); if (item) select(item); }} onClose={() => setPicker(null)} />

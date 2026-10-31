@@ -247,7 +247,7 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
 }
 pub(crate) fn safe_extension(ext: &str)->ApiResult<String>{
     let ext=ext.trim_start_matches('.').to_ascii_lowercase();
-    if !["png","jpg","jpeg","webp","gif","mp4","mov","webm","mkv","mp3","wav","m4a","aac","ogg","flac"].contains(&ext.as_str()){return Err(bad("不支持的素材格式"))}Ok(ext)
+    if !["png","jpg","jpeg","webp","gif","svg","mp4","mov","webm","mkv","mp3","wav","m4a","aac","ogg","flac"].contains(&ext.as_str()){return Err(bad("不支持的素材格式"))}Ok(ext)
 }
 pub(crate) fn import_uploaded(state:&AppState,pid:&str,path:&Path,name:&str,role:Option<i64>)->ApiResult<Value>{
     if name.trim().is_empty(){return Err(bad("素材名称不能为空"))}
@@ -265,7 +265,7 @@ pub(crate) fn action(state:&AppState,path:&str,value:Value)->ApiResult<Value>{
     if ["/agent/config", "/agent/config/save", "/agent/sessions", "/agent/create", "/agent/session", "/agent/run", "/agent/cancel", "/agent/delete"].contains(&path) {
         return Ok(agent::command(state, path, &value)?);
     }
-    const ALLOWED:&[&str]=&["/canvas/load","/canvas/save","/editor/projects","/editor/save","/editor/probe","/editor/export","/app/settings/load","/app/settings/save","/project","/project/changes","/projects/open","/projects/migrate","/projects/backup","/projects/restore","/media/import","/media/export","/media/pose-reference","/media/thumbnail","/media/usage","/media/restore","/media/purge","/media/video-frame","/storage/scan","/storage/cleanup","/roles/media/add","/roles/media/delete","/roles/audio/save","/roles/audio/delete","/scripts/load","/scripts/save","/scripts/publish","/tasks","/generations/image","/generations/video","/prompts/optimize","/storyboard/generate","/storyboard/plan","/storyboard/validate","/scenes/reorder","/scenes/duplicate","/scenes/select-video","/scenes/delete-video","/episodes/reorder","/episodes/merge","/settings"];
+    const ALLOWED:&[&str]=&["/canvas/load","/canvas/save","/editor/projects","/editor/save","/editor/probe","/editor/export","/app/settings/load","/app/settings/save","/project","/project/changes","/projects/open","/projects/migrate","/projects/backup","/projects/restore","/media/import","/media/export","/media/pose-reference","/media/thumbnail","/media/create-svg","/media/usage","/media/restore","/media/purge","/media/video-frame","/storage/scan","/storage/cleanup","/roles/media/add","/roles/media/delete","/roles/audio/save","/roles/audio/delete","/scripts/load","/scripts/save","/scripts/publish","/tasks","/generations/image","/generations/video","/prompts/optimize","/storyboard/generate","/storyboard/plan","/storyboard/validate","/scenes/reorder","/scenes/duplicate","/scenes/select-video","/scenes/delete-video","/episodes/reorder","/episodes/merge","/settings"];
     if !ALLOWED.contains(&path){return Err(missing())}
     Ok(dispatch(state,"POST".into(),path.into(),Some(value))?)
 }

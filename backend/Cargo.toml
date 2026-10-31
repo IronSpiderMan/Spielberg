@@ -19,3 +19,4 @@ tower-http = { version = "0.6", features = ["fs", "cors"] }
 http-body-util = "0.1"
 dirs = "6"
 mime_guess = "2"
+resvg = "0.49"

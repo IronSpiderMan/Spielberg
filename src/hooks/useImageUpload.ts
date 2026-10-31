@@ -4,7 +4,7 @@ import { uploadAsset } from "../api";
 import type { Media } from "../core";
 import { localId } from "../id";
 
-const extensions: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" };
+const extensions: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif", "image/svg+xml": "svg" };
 export const isSupportedImage = (file: File) => Boolean(extensions[file.type]);
 export function supportedPastedImages(files: File[]) {
   return files.filter(file => {

@@ -9,7 +9,7 @@ const OPERATIONS: &[&str] = &[
     "episodes/merge", "roles/media/add", "roles/media/delete", "roles/audio/save", "roles/audio/delete", "canvas/load", "canvas/save",
     "storyboard/generate", "storyboard/plan", "storyboard/validate", "editor/projects",
     "editor/save", "editor/probe", "editor/export", "generations/image", "generations/video",
-    "prompts/optimize", "media/usage", "media/restore", "media/purge", "media/video-frame",
+    "prompts/optimize", "media/create-svg", "media/usage", "media/restore", "media/purge", "media/video-frame",
     "storage/scan", "storage/cleanup", "settings/read", "tasks", "projects/backup",
 ];
 
@@ -289,7 +289,7 @@ fn bounded(value:Value)->Value {
 fn describe(operation:Option<&str>)->Value {
     let terminology=json!({"roles":"资产库: reusable creative assets; GET snapshot field roles. Categories: person=人物, location=地点, object=物品, creature=生物, vehicle=载具, other=其他.","assets":"素材库: basic image/video/audio files; GET snapshot field media. Media IDs are not creative asset IDs."});
     let creative_assets=json!({"description":"Creative assets: characters, locations, objects, creatures, vehicles and other reusable subjects. UI label: 资产库. Use roles for these subjects; assets manages media files (素材库).","create_required":["name"],"fields":{"name":"string","description":"string","category":"person=人物/location=地点/object=物品/creature=生物/vehicle=载具/other=其他; defaults to person for compatibility; set explicitly when creating a non-person asset","enabled":"boolean; defaults to true; false disables subject and named-image @ mentions","design_media_id":"image media ID from resource=assets, or null"},"get_filters":{"category":"one of person/location/object/creature/vehicle/other; omit for all","enabled":"boolean; true for assets usable in @ references, false for disabled assets; omit for both","query":"case-insensitive substring in name or description"},"delete":"Removes only this creative asset and its image/audio associations; retains media files. For hiding/disabling use PATCH enabled=false instead. Images and audios are read-only lists; manage associations with roles/media/* and roles/audio/*."});
-    let media_files=json!({"description":"素材库: image, video and audio media files; does not store creative subjects or their categories.","create_required":["name","extension","data_base64"],"fields":{"name":"string","extension":"png/jpg/jpeg/webp/gif/mp4/mov/webm/mkv/mp3/wav/m4a/aac/ogg/flac","data_base64":"base64 file content; use only actual supplied data","role_id":"optional creative asset ID for linking an uploaded image; not for audio/video"},"update":"PATCH supports name only","get_filters":{"usage":"all/used/unused/trash","kind":"all/image/video/audio","query":"name substring","page":"positive integer","limit":"1..60"},"delete":"Moves unused media files to recycle bin; referenced files cannot be deleted, including files linked to disabled creative assets."});
+    let media_files=json!({"description":"素材库: image, video and audio media files; does not store creative subjects or their categories.","create_required":["name","extension","data_base64"],"fields":{"name":"string","extension":"png/jpg/jpeg/webp/gif/svg/mp4/mov/webm/mkv/mp3/wav/m4a/aac/ogg/flac","data_base64":"base64 file content; use only actual supplied data","role_id":"optional creative asset ID for linking an uploaded image; not for audio/video"},"update":"PATCH supports name only","get_filters":{"usage":"all/used/unused/trash","kind":"all/image/video/audio","query":"name substring","page":"positive integer","limit":"1..60"},"delete":"Moves unused media files to recycle bin; referenced files cannot be deleted, including files linked to disabled creative assets."});
     let audio_actions=json!({
         "roles/audio/save":{"required":{"role_id":"creative asset ID of any category","media_id":"audio media ID from resource=assets","name":"nonempty reference name"},"effect":"Adds or renames this asset's audio reference (voice, ambient sound or sound effect). Name is local to the association; the source media filename and other associations are unchanged."},
         "roles/audio/delete":{"required":{"role_id":"creative asset ID","media_id":"audio media ID"},"effect":"Unlinks only this asset's audio reference; retains the audio file and its other uses."},
@@ -327,7 +327,7 @@ fn describe(operation:Option<&str>)->Value {
             "editor/save":{"required":{"id":"UUID; generate a UUID for a new editor project","name":"string","draft":"object with clips array, format mp4/mp3, ratio 16:9/9:16/1:1"}},
             "editor/probe":{"required":{"media_id":"video/audio media ID"},"effect":"Returns duration and audio/video stream metadata."},
             "editor/export":{"required":{"clips":"array of Clip; may be empty if audio_clips nonempty","format":"mp4/mp3"},"optional":{"audio_clips":"Clip array with at for timeline offset","edit_id":"saved editor project UUID","name":"output name","ratio":"16:9/9:16/1:1"},"effect":"Produces a project audio/video media file using FFmpeg; may take minutes."},
-            "generations/image":{"effect":"Returns generated media/task; after completion link image with roles/media/add, and optionally PATCH roles design_media_id.","required":{"operation":"t2i/i2i","prompt":"nonempty string"},"optional":{"image_media_ids":"image media IDs; required for i2i","aspect_ratio":"16:9/9:16/1:1/2:3/3:2","size":"WIDTHxHEIGHT","mask_data_url":"actual supplied PNG mask data URL"}},
+            "generations/image":{"effect":"Calls the configured raster image generation service. For SVG/vector artwork use media/create-svg instead. Returns generated media/task; after completion link image with roles/media/add, and optionally PATCH roles design_media_id.","required":{"operation":"t2i/i2i","prompt":"nonempty string"},"optional":{"image_media_ids":"image media IDs; required for i2i","aspect_ratio":"16:9/9:16/1:1/2:3/3:2","size":"WIDTHxHEIGHT","mask_data_url":"actual supplied PNG mask data URL"}},
             "generations/video":{"required":{"prompt":"nonempty string"},"optional":{"scene_id":"attach video result to scene","duration":"seconds, default 5","aspect_ratio":"16:9/9:16/1:1","video_mode":"fl2v for first/last frames or ref2v/i2v for multimodal references; omit for t2v","first_media_id":"image media ID for fl2v","last_media_id":"image media ID for fl2v","image_media_ids":"up to 9 image IDs in ref2v","reference_video_media_ids":"up to 3 video IDs in ref2v","reference_audio_media_ids":"up to 3 audio IDs in ref2v"}},
             "prompts/optimize":{"required":{"prompt":"string"},"optional":{"kind":"image/video/structured","instruction":"extra requirements","image_media_ids":"image media IDs","prompt_format":"minimax-h3","h3_mode":"text2video/image2video"}},
             "media/usage":{"required":{"id":"media file ID"}},
@@ -347,6 +347,7 @@ fn describe(operation:Option<&str>)->Value {
             "Clip":{"id":"UUID for saved editor drafts","media_id":"video/audio media ID","duration":"source duration from editor/probe, required in saved draft","start":"source start seconds >=0","end":"source end seconds, >start","speed":"0.5..2","volume":"0..1","track":"optional audio","at":"audio timeline offset >=0"}
         }
     });
+    catalog["actions"]["media/create-svg"]=json!({"required":{"name":"image filename ending in .svg (appended if absent)","svg":"complete UTF-8 SVG source with xmlns=\"http://www.w3.org/2000/svg\" and width/height or viewBox; write the SVG yourself, no base64 required"},"optional":{"role_id":"existing creative asset ID; links this image"},"effect":"Validates and saves a static SVG image in the project media library immediately, without calling an image model. Returns image media ID/path for preview, roles/media/add, design_media_id, scene/canvas image references and generation inputs. No scripts, events, animation, foreignObject or external resources. Use self-contained shapes, paths, text, gradients, masks and internal references."});
     for (key,value) in audio_actions.as_object().unwrap() {catalog["actions"][key]=value.clone();}
     let project_actions=json!({"project/config/read":{"optional":{"offset":"outline character offset, default 0","max_chars":"1..1500 Unicode characters per page","documents_offset":"document list offset; 10 metadata items per page"},"effect":"Read project name, paginated outline and document metadata. Follow outline.next_offset and documents_next_offset until complete. Read relevant document bodies via project/document/read."},
             "project/config/update":{"optional":{"name":"nonempty project name","outline":"complete replacement outline, including empty string to clear"},"effect":"Updates only supplied name/outline fields; preserves all project documents. Read existing outline before changing it."},
@@ -561,6 +562,44 @@ mod tests {
         for operation in OPERATIONS {let result=describe(Some(operation));assert!(!result["definition"].is_null(),"Missing action {operation}");}
         for resource in RESOURCES {assert!(!describe(Some(resource))["definition"].is_null());}
         assert!(describe(Some("settings/save"))["error"].is_string());
+    }
+
+    #[test]
+    fn agent_creates_svg_without_image_service_and_reuses_it_as_image_media() {
+        let f=Fixture::new();
+        let role=f.call("app_request",json!({"resource":"roles","method":"POST","data":{"name":"SVG 标志","category":"object"}})).unwrap();
+        let source=r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90"><rect width="160" height="90" fill="#456789"/><circle cx="80" cy="45" r="30" fill="gold"/></svg>"##;
+        let image=f.call("app_action",json!({"operation":"media/create-svg","data":{"name":"标志","svg":source,"role_id":role["id"]}})).unwrap();
+        assert_eq!(image["kind"],"image");assert_eq!(image["name"],"标志.svg");
+        let path=Path::new(image["path"].as_str().unwrap());
+        assert_eq!(fs::read_to_string(path).unwrap(),source);
+        let updated=f.call("app_request",json!({"resource":"roles","method":"PATCH","id":role["id"],"data":{"design_media_id":image["id"]}})).unwrap();
+        assert_eq!(updated["images"][0]["id"],image["id"]);
+        assert_eq!(updated["design_media_id"],image["id"]);
+        let raster=svg::reference_path(path).unwrap();
+        assert_eq!(raster.extension().unwrap(),"png");
+        assert_eq!(svg::reference_path(path).unwrap(),raster);
+        assert!(fs::read(&raster).unwrap().starts_with(b"\x89PNG\r\n\x1a\n"));
+        let thumb=thumbnails::get(&f.state,&json!({"project_id":f.first,"id":image["id"]})).unwrap();
+        assert!(fs::read(thumb["path"].as_str().unwrap()).unwrap().starts_with(b"\x89PNG"));
+        let c=db(&f.state,&f.first).unwrap();
+        let png=base64::engine::general_purpose::STANDARD.decode(media_base64(&c,image["id"].as_i64(),"参考图").unwrap()).unwrap();
+        assert!(png.starts_with(b"\x89PNG"));
+        // Desktop and base64 uploads both validate before creating a media row.
+        let before=catalog::list(&c,&json!({"kind":"image"})).unwrap()["total"].clone();
+        assert!(f.call("app_action",json!({"operation":"media/create-svg","data":{"name":"bad","svg":"<svg/>"}})).is_err());
+        assert!(f.call("app_action",json!({"operation":"media/create-svg","data":{"name":"bad","svg":source,"role_id":999999}})).is_err());
+        assert!(f.call("app_action",json!({"operation":"media/create-svg","data":{"name":"bad","svg":source,"project_id":f.second}})).is_err());
+        assert_eq!(catalog::list(&c,&json!({"kind":"image"})).unwrap()["total"],before);
+        let project_root=PathBuf::from(project(&f.state,&f.first).unwrap()["path"].as_str().unwrap());
+        assert!(catalog::disk_scan(&c,&project_root).unwrap()["cache_bytes"].as_u64().unwrap()>0);
+        catalog::cleanup(&c,&project_root,&json!({"clear_cache":true})).unwrap();
+        assert!(!raster.exists());assert!(path.exists());
+        assert!(svg::reference_path(path).unwrap().exists());
+        let imported=f.call("app_request",json!({"resource":"assets","method":"POST","data":{"name":"upload.SVG","extension":"SVG","data_base64":base64::engine::general_purpose::STANDARD.encode(source)}})).unwrap();
+        assert_eq!(imported["kind"],"image");
+        fs::write(path,source.replace("gold","white")).unwrap();
+        assert_ne!(svg::reference_path(path).unwrap(),raster);
     }
 
     #[test]
