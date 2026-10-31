@@ -43,8 +43,8 @@ const assert = require('node:assert/strict');
    assert.equal(response.status,201); return (await response.json()).data;
   };
   const episode=await create('episodes',{title:'第一集',storyboard:{scenes:[{title:'雨夜',duration:4,shots:[{duration:4,description:'少年走进车站',camera:'大特写 · 推近',sound:'你好。'}]}]}});
-  await create('roles',{name:'林舟'});
-  await create('roles',{name:'苏晓'});
+  await create('assets',{name:'林舟'});
+  await create('assets',{name:'苏晓'});
   let episodeTitle='第一集';
   const openEpisode=async()=>{
    await page.getByRole('menuitem',{name:'剧集',exact:true}).click();

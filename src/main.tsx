@@ -284,7 +284,7 @@ function App() {
       const scene=data.episodes.flatMap(e=>e.scenes).find(item=>item.id===usage.target_id);
       if(scene){setSceneEditing({scene,isNew:false});return;}
     }
-    setSceneEditing(null);setPage(usage.kind==="role"?"roles":"episodes");
+    setSceneEditing(null);setPage(usage.kind==="asset"?"roles":"episodes");
   });
   const navigate = (next: string) => {
     setMobileNavOpen(false);
@@ -492,7 +492,7 @@ function App() {
               {page === "editor" && <MediaEditor key={data.project.id} data={data} reload={refresh} />}
               {page === "assets" && <AssetLibrary key={data.project.id} data={data} reload={refresh} onLocate={locateAsset} onImageToImage={media=>leaveEditor(()=>{setLocate(null);setImageSource(media);setStudioTab("images");setSceneEditing(null);setPage("studio");})} />}
               {page === "tasks" && <Tasks key={data.project.id} projectId={data.project.id} />}
-              {page === "roles" && <Roles data={data} reload={refresh} initialRoleId={locate?.kind==="role"?locate.target_id:undefined} />}{" "}
+              {page === "roles" && <Roles data={data} reload={refresh} initialRoleId={locate?.kind==="asset"?locate.target_id:undefined} />}{" "}
               {page === "prompts" && (
                 <Prompts data={data} reload={refresh} />
               )}{" "}

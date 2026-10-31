@@ -10,7 +10,7 @@ const assert=require('node:assert/strict');
    const image={id:1,name:'测试图片.png',path:'/spielberg-logo-s.png',kind:'image',created_at:'1789990000'};
    const scene={id:3,title:'测试场景',description:'保留描述',sort_order:0,first_media_id:9,last_media_id:8,reference_media_id:7,videos:[]};
    const role={id:2,name:'测试角色',description:'保留设定',design_media_id:null,images:[]};
-   const data={project,roles:[role],media:[image,{...image,id:2,name:'测试视频.mp4',kind:'video'}],episodes:[{id:1,title:'测试剧集',description:'',scenes:[scene]}],prompts:[],settings:{}};
+   const data={project,assets:[role],media:[image,{...image,id:2,name:'测试视频.mp4',kind:'video'}],episodes:[{id:1,title:'测试剧集',description:'',scenes:[scene]}],prompts:[],settings:{}};
    window.__qaData=data;window.__qaFail=false;
    window.__TAURI_INTERNALS__={convertFileSrc:p=>p,invoke:async(command,args)=>{
     if(command!=='api_request')return null;
@@ -21,8 +21,8 @@ if(path==='/media/list')return {items:data.media.map(m=>({...m,usage_count:0})),
 if(path==='/media/thumbnail')return {path:'/spielberg-logo-s.png'};
 if(path==='/projects')return [project];if(path==='/project')return structuredClone(data);if(path==='/tasks')return {items:[],has_more:false,next_cursor:null};
     if(window.__qaFail)throw Error('测试保存失败');
-    if(path==='/roles/media/add'){image.name=payload.name;if(!role.images.length)role.images.push(image);}
-    if(path==='/roles/update')Object.assign(role,payload);
+    if(path==='/assets/media/add'){image.name=payload.name;if(!role.images.length)role.images.push(image);}
+    if(path==='/assets/update')Object.assign(role,payload);
     if(path==='/scenes/update')Object.assign(scene,payload);
     if(path==='/scenes/select-video'){scene.video_media_id=payload.media_id;}
     return {ok:true};
@@ -49,7 +49,7 @@ if(path==='/projects')return [project];if(path==='/project')return structuredClo
    }
    await modal.getByRole('button',{name:'确定设置'}).click();await modal.waitFor({state:'hidden'});
    const data=await page.evaluate(()=>window.__qaData);
-   if(field==='role'){assert.equal(data.media[0].name,'正面');assert.equal(data.media[0].path,'/spielberg-logo-s.png');assert.equal(data.roles[0].design_media_id,1);assert.equal(data.roles[0].description,'保留设定');}
+   if(field==='role'){assert.equal(data.media[0].name,'正面');assert.equal(data.media[0].path,'/spielberg-logo-s.png');assert.equal(data.assets[0].design_media_id,1);assert.equal(data.assets[0].description,'保留设定');}
    else{assert.equal(data.episodes[0].scenes[0][field+'_media_id'],field==='video'?2:1);assert.equal(data.episodes[0].scenes[0].description,'保留描述');}
    if(field==='first'){assert.equal(data.episodes[0].scenes[0].last_media_id,8);assert.equal(data.episodes[0].scenes[0].reference_media_id,7);}
   }

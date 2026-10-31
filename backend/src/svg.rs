@@ -77,11 +77,11 @@ pub(crate) fn create(state: &AppState, value: &Value) -> Result<Value, String> {
     if name.is_empty() { return Err("SVG 名称不能为空".into()); }
     if !name.to_ascii_lowercase().ends_with(".svg") { name.push_str(".svg"); }
     let source = strv(value, "svg")?;
-    // Normal asset CRUD validates the optional role and imports through the same
+    // Media CRUD validates the optional creative asset and imports through the same
     // SVG validation as HTTP uploads and desktop imports, with no model request.
     let mut data = json!({"name":name,"extension":"svg","data_base64":base64::engine::general_purpose::STANDARD.encode(source.as_bytes())});
-    if let Some(role) = value.get("role_id") { data["role_id"] = role.clone(); }
-    rest::crud(state, "POST", &format!("projects/{pid}/assets"), data).map_err(|e|e.1)
+    if let Some(role) = value.get("asset_id") { data["asset_id"] = role.clone(); }
+    rest::crud(state, "POST", &format!("projects/{pid}/media"), data).map_err(|e|e.1)
 }
 
 pub(crate) fn reference_path(path: &Path) -> Result<PathBuf, String> {

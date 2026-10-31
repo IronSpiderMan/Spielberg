@@ -39,7 +39,7 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
   const images = [...uploaded.filter(m => !data.media.some(item => item.id === m.id)), ...data.media].filter(m => m.kind === "image");
   const prompts = [...data.prompts, ...STYLE_PRESETS];
   const expanded = resolvePromptReferences(prompt, prompts);
-  const mentions = mode === "i2v" ? findMentions(expanded, promptMentions(data.roles, data)) : [];
+  const mentions = mode === "i2v" ? findMentions(expanded, promptMentions(data.assets, data)) : [];
   const referenceIds = [...new Set([...refs, ...mentions.flatMap(item => item.media ? [item.media.id] : [])])];
   const disabled = busy || uploading || optimizing || uploadingReferences;
 
@@ -69,7 +69,7 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
     if (mode === "i2v" && mentions.some(item => !item.media)) return void Message.warning("引用的资产或场景尚无图片");
     let request: ReturnType<typeof buildVideoRequest>;
     try {
-      request=buildVideoRequest({mode,prompt:mode==="i2v"?resolveReferencePrompt(expanded,data):resolvePrompt(expanded,data.roles),
+      request=buildVideoRequest({mode,prompt:mode==="i2v"?resolveReferencePrompt(expanded,data):resolvePrompt(expanded,data.assets),
         duration,ratio,size,firstId:first,lastId:last,referenceIds,referenceVideoIds:referenceVideos,referenceAudioIds:referenceAudios});
     } catch(e) { Message.warning(e instanceof Error?e.message:String(e)); return; }
     generating.current = true; setBusy(true); setError("");
@@ -89,7 +89,7 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
           { value: "t2v", label: "文生视频" }, { value: "fl2v", label: "首尾帧" }, { value: "i2v", label: "全能参考" },
         ]} />
         <Form.Item label="视频描述" required>
-          <PromptInput value={prompt} onChange={setPrompt} roles={data.roles} data={mode === "i2v" ? data : undefined} prompts={prompts} templates={[...PROMPT_TEMPLATES, ...data.prompts]} placeholder="描述画面、动作和镜头运动，输入 @ 引用资产或提示词" disabled={disabled} onOptimize={optimize} optimizing={optimizing} onPasteImages={files => void importImages(files)} />
+          <PromptInput value={prompt} onChange={setPrompt} roles={data.assets} data={mode === "i2v" ? data : undefined} prompts={prompts} templates={[...PROMPT_TEMPLATES, ...data.prompts]} placeholder="描述画面、动作和镜头运动，输入 @ 引用资产或提示词" disabled={disabled} onOptimize={optimize} optimizing={optimizing} onPasteImages={files => void importImages(files)} />
           <p className="helper">{uploading ? "正在上传图片…" : "可粘贴图片作为参考，生成的视频会自动存入素材库"}</p>
         </Form.Item>
         {mode === "fl2v" && <>

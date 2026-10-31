@@ -7,7 +7,7 @@ const assert=require('node:assert/strict');
   const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
   const project={id:'editor-qa',name:'剪辑测试',path:'/fixture',updated_at:'刚刚'};
   const media={id:1,name:'演示视频.mp4',path:'/fixture.mp4',kind:'video',created_at:'0'};
-  const data={project,media:[media],roles:[],episodes:[],prompts:[],settings:{}};let exported;let edits=[];
+  const data={project,media:[media],assets:[],episodes:[],prompts:[],settings:{}};let exported;let edits=[];
   await page.route('**/api/v1/**',async route=>{
    const path=new URL(route.request().url()).pathname;let result={};
    if(path==='/api/v1/projects')result=[project];

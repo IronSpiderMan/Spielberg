@@ -81,14 +81,14 @@ VITE_API_BASE_URL=https://api.example.com npm run build
 | 资源 | 集合路径 |
 |---|---|
 | 项目 | `/api/v1/projects` |
-| 角色 | `/api/v1/projects/{project_id}/roles` |
-| 资产 | `/api/v1/projects/{project_id}/assets` |
+| 创作资产 | `/api/v1/projects/{project_id}/assets` |
+| 素材 | `/api/v1/projects/{project_id}/media` |
 | 剧集 | `/api/v1/projects/{project_id}/episodes` |
 | 场景集合 | `/api/v1/projects/{project_id}/episodes/{episode_id}/scenes` |
 | 剧本 / 分镜头剧本 | `/api/v1/projects/{project_id}/episodes/{episode_id}/screenplays` |
 | Prompt | `/api/v1/projects/{project_id}/prompts` |
 
-集合支持 `GET`、`POST`；场景集合位于剧集下。场景仍可通过 `/api/v1/projects/{project_id}/scenes/{scene_id}` 按 ID 读取、更新和删除。PATCH 只更新提交的字段。项目删除移除注册信息并保留目录；资产删除移入回收站，仍被引用时返回冲突。文件支持二进制上传、下载和 Range 请求；生成、脚本、任务、备份等操作也通过版本化 HTTP 接口执行。
+集合支持 `GET`、`POST`；场景集合位于剧集下。场景仍可通过 `/api/v1/projects/{project_id}/scenes/{scene_id}` 按 ID 读取、更新和删除。PATCH 只更新提交的字段。项目删除移除注册信息并保留目录；素材删除移入回收站，仍被引用时返回冲突。文件支持二进制上传、下载和 Range 请求；生成、脚本、任务、备份等操作也通过版本化 HTTP 接口执行。
 
 完整请求字段、示例、状态码和文件接口见 [API 文档](docs/api.md)。原 `/api` RPC 包装入口和业务 Tauri IPC 已移除。
 

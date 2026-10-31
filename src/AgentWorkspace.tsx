@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { imageUrl, post, type Media, type Snapshot } from "./core";
 import "./agent.css";
-import { uploadAsset } from "./api";
+import { uploadMedia } from "./api";
 import { localId } from "./id";
 import { ImagePreviewModal } from "./components/ImagePreviewModal";
 import { generatedImages, conversationImages, attachmentImage } from "./agentImages";
@@ -20,6 +20,17 @@ type Config = { inherit_llm: boolean; base_url: string; model: string; has_api_k
 const initialConfig: Config = { inherit_llm: true, base_url: "", model: "", has_api_key: false, search_provider: "duckduckgo", has_search_api_key: false, max_steps: 16, request_timeout_seconds: 600 };
 const statusText: Record<string, string> = { idle: "准备就绪", running: "执行中", completed: "本轮结束", limited: "已暂停，可继续", failed: "执行失败", cancelled: "已停止" };
 const toolText: Record<string, string> = { update_plan: "更新任务计划", get_project: "读取项目", search_conversation: "检索对话记录", list_skills: "查找技能", read_skill: "读取技能", app_describe: "查看操作说明", app_request: "操作项目数据", app_action: "执行创作操作", web_search: "联网搜索", fetch_webpage: "读取网页" };
+const toolTargetText: Record<string, string> = {
+  assets: "资产库", media: "素材库", episodes: "剧集", scenes: "场景", prompts: "提示词", screenplays: "剧本",
+  "assets/media/add": "关联资产图片", "assets/media/delete": "解除资产图片关联",
+  "assets/audio/save": "保存资产音频引用", "assets/audio/delete": "解除资产音频关联",
+};
+function toolTarget(args: unknown): string {
+  if (!args || typeof args !== "object") return "";
+  const fields = args as Record<string, unknown>;
+  const target = String(fields.operation || fields.resource || "");
+  return toolTargetText[target] || target;
+}
 const phaseText: Record<string, string> = { thinking: "正在整理下一步", retrying: "模型服务暂时不可用，正在重试", finalizing: "正在整理执行结果", tool: "正在执行操作" };
 function displayJson(value: unknown) { if (typeof value === "string") { try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; } } return JSON.stringify(value, null, 2); }
 
@@ -78,7 +89,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
       for (const file of files) {
         const url = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error("读取图片失败")); reader.readAsDataURL(file); });
         const ext = ({ "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif", "image/svg+xml": "svg" } as Record<string, string>)[file.type];
-        const media = await uploadAsset<Media>(pid, new File([file], `Agent粘贴图片-${localId()}.${ext}`, { type: file.type }));
+        const media = await uploadMedia<Media>(pid, new File([file], `Agent粘贴图片-${localId()}.${ext}`, { type: file.type }));
         count++;
         if (mounted.current) setImageDrafts(items => ({ ...items, [key]: [...(items[key] || []), { url, mediaId: media.id }].slice(0, 4) }));
       }
@@ -223,7 +234,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
             <span className="agent-empty-eyebrow">灵感就位，即刻开场</span>
             <h2>下一幕，从这里开始<span>。</span></h2><p>从一个想法到一个好故事，和你的 AI 创作搭档一起完成。</p>
           </div> : selected.messages.map((message, index) => message.role === "tool" ? <div className="agent-tool-result" key={`${message.tool_call_id || index}:${index}`}><details className="agent-tool">
-            <summary><Wrench size={14} /><span>{toolText[message.tool_name || ""] || message.tool_name || "执行工具"}</span><small>{message.arguments && typeof message.arguments === "object" ? String((message.arguments as Record<string, unknown>).operation || (message.arguments as Record<string, unknown>).resource || "") : ""}</small><span className={`agent-tool-status ${message.status}`}>{message.status === "running" ? "执行中" : message.status === "failed" ? "失败" : message.status === "skipped" ? "未执行" : <><Check size={12} />完成</>}</span><ChevronDown size={14} /></summary>
+            <summary><Wrench size={14} /><span>{toolText[message.tool_name || ""] || message.tool_name || "执行工具"}</span><small>{toolTarget(message.arguments)}</small><span className={`agent-tool-status ${message.status}`}>{message.status === "running" ? "执行中" : message.status === "failed" ? "失败" : message.status === "skipped" ? "未执行" : <><Check size={12} />完成</>}</span><ChevronDown size={14} /></summary>
             {message.arguments != null && <div><b>参数</b><pre>{displayJson(message.arguments)}</pre></div>}<div><b>结果</b><pre>{message.content ? displayJson(message.content) : "等待执行结果…"}</pre></div>
           </details>
           {generatedImages(message, currentMedia).length > 0 && <div className="agent-generated-images">{generatedImages(message, currentMedia).map(media => <button type="button" key={media.id} onClick={() => setPreview(media)} aria-label={`预览 ${media.name}`}><img src={imageUrl(media)} alt={media.name} onLoad={() => { if (followBottom.current && log.current) log.current.scrollTop = log.current.scrollHeight; }} /><span>{media.name}</span></button>)}</div>}

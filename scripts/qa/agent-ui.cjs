@@ -26,11 +26,11 @@ const tool = (name, args, id) => ({id,type:'function',function:{name,arguments:J
    message=results.length ? {role:'assistant',content:'SVG 已保存到素材库。'} : {role:'assistant',content:null,tool_calls:[tool('app_action',{operation:'media/create-svg',data:{name:'Agent 矢量图',svg:'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 140"><rect width="240" height="140" rx="20" fill="#315efb"/><circle cx="120" cy="70" r="40" fill="gold"/><text x="120" y="78" text-anchor="middle" font-size="20">SVG</text></svg>'}},'svg-create')]};
   } else if(prompt.includes('停止测试')) {
    await new Promise(resolve=>setTimeout(resolve,1800));
-   message={role:'assistant',content:null,tool_calls:[tool('app_request',{method:'POST',resource:'roles',data:{name:'不应创建'}},'cancel-write')]};
+   message={role:'assistant',content:null,tool_calls:[tool('app_request',{method:'POST',resource:'assets',data:{name:'不应创建'}},'cancel-write')]};
   } else if(!results.length) {
    message={role:'assistant',content:null,tool_calls:[
     tool('update_plan',{plan:[{step:'创建雨夜故事的角色与剧本',status:'in_progress'},{step:'检查创建结果',status:'pending'}]},'plan'),
-    tool('app_request',{method:'POST',resource:'roles',data:{name:'Agent 主角',description:'雨夜车站的旅人'}},'role'),
+    tool('app_request',{method:'POST',resource:'assets',data:{name:'Agent 主角',description:'雨夜车站的旅人'}},'role'),
     tool('app_request',{method:'POST',resource:'episodes',data:{title:'雨夜车站'}},'episode'),
    ]};
   } else if(results.length===3) {
@@ -71,14 +71,16 @@ const tool = (name, args, id) => ({id,type:'function',function:{name,arguments:J
   await page.getByTestId('agent-send').click();
   await page.getByRole('link',{name:'参考资料',exact:true}).waitFor({timeout:15000});
   await page.getByTestId('agent-plan').getByText('2/2',{exact:true}).waitFor();
+  assert(await page.locator('.agent-tool summary > small').getByText('资产库',{exact:true}).count()>0);
+  assert.equal(await page.locator('.agent-tool summary > small').getByText('roles',{exact:true}).count(),0);
   const originalSession=(await api('/actions/agent/sessions',{project_id:project.id})).items[0];
   assert.equal(await page.getByRole('link',{name:'参考资料',exact:true}).getAttribute('href'),'https://example.com/reference');
-  const roles=await api(`/projects/${project.id}/roles`,undefined,'GET');assert.equal(roles.length,1);assert.equal(roles[0].name,'Agent 主角');
+  const roles=await api(`/projects/${project.id}/assets`,undefined,'GET');assert.equal(roles.length,1);assert.equal(roles[0].name,'Agent 主角');
   const scripts=await api(`/projects/${project.id}/screenplays`,undefined,'GET');assert.equal(scripts.length,1);
   await page.screenshot({path:path.join(screenshots,'desktop.png'),fullPage:true});
   // Reproduce an already migrated history: the asset exists on this machine,
   // while its original generation result still contains a Windows path.
-  const upload=await fetch(`${base}/api/v1/projects/${project.id}/assets/upload?name=migrated.png`,{
+  const upload=await fetch(`${base}/api/v1/projects/${project.id}/media/upload?name=migrated.png`,{
    method:'POST',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aV1cAAAAASUVORK5CYII=','base64')
   });
   assert(upload.ok);const migrated=(await upload.json()).data;
@@ -121,7 +123,7 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
   await page.getByTestId('agent-send').click();
   await page.getByTestId('agent-stop').click();
   await page.waitForTimeout(2100);
-  assert.equal((await api(`/projects/${project.id}/roles`,undefined,'GET')).length,1);
+  assert.equal((await api(`/projects/${project.id}/assets`,undefined,'GET')).length,1);
   await api('/actions/agent/config/save',{project_id:project.id,config:{max_steps:1}});
   await page.getByTestId('agent-new-session').click();
   await page.getByTestId('agent-composer').fill('预算测试');
@@ -163,9 +165,9 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
   await svgImage.waitFor();
   await svgImage.evaluate(img=>img.decode());
   assert(await svgImage.evaluate(img=>img.complete && img.naturalWidth>0 && img.naturalHeight>0),'SVG failed to render');
-  const svgAsset=(await api(`/projects/${project.id}/assets?kind=image`,undefined,'GET')).items.find(item=>item.name==='Agent 矢量图.svg');
+  const svgAsset=(await api(`/projects/${project.id}/media?kind=image`,undefined,'GET')).items.find(item=>item.name==='Agent 矢量图.svg');
   assert(svgAsset && svgAsset.kind==='image');
-  const svgResponse=await fetch(`${base}/api/v1/projects/${project.id}/assets/${svgAsset.id}/content`);
+  const svgResponse=await fetch(`${base}/api/v1/projects/${project.id}/media/${svgAsset.id}/content`);
   assert.match(svgResponse.headers.get('content-type'),/image\/svg\+xml/);
   assert.match(svgResponse.headers.get('content-security-policy'),/sandbox/);
   const source=await svgResponse.text();assert(source.includes('<circle'));

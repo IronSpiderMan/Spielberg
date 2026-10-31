@@ -1,4 +1,4 @@
-import type {Media, Role, Snapshot} from "./core";
+import type {Media, Asset, Snapshot} from "./core";
 import type {AssetCategory} from "./asset-categories";
 
 export type SavedPrompt = {id:number|string; name:string; content:string; category:string};
@@ -18,7 +18,7 @@ export function resolvePromptReferences(value:string,prompts:SavedPrompt[]) {
   const items=savedPromptMentions(prompts), pattern=mentionPattern(items);
   return pattern ? value.replace(pattern,(_,name:string)=>items.find(item=>item.name===name)!.content!) : value;
 }
-export function promptMentions(roles:Role[], data?:Snapshot):PromptMention[] {
+export function promptMentions(roles:Asset[], data?:Snapshot):PromptMention[] {
   const imageAlias=(name:string)=>name.replace(/\.[^.]+$/, "").replace(/\s+/g,"_");
   // Reserve role names even when disabled so an asset cannot reintroduce their mentions.
   const disabledRoleNames=new Set(roles.filter(role=>role.enabled===false).flatMap(role=>[role.name,...(role.images||[])

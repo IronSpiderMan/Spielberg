@@ -322,11 +322,11 @@ mod tests {
     fn compacted_turn_keeps_early_writes_and_ids_even_after_later_reads_and_timeout() {
         let mut messages = vec![json!({"role":"user","content":"创建角色和分镜"})];
         messages.push(json!({"role":"tool","tool_name":"app_request","status":"completed",
-            "arguments":{"resource":"roles","method":"POST","data":{"name":"林晓"}},
+            "arguments":{"resource":"assets","method":"POST","data":{"name":"林晓"}},
             "content":"{\"id\":42,\"name\":\"林晓\"}"}));
         for _ in 0..8 {
             messages.push(json!({"role":"tool","tool_name":"app_request","status":"completed",
-                "arguments":{"resource":"roles","method":"GET"},"content":"[]"}));
+                "arguments":{"resource":"assets","method":"GET"},"content":"[]"}));
         }
         messages.push(json!({"role":"assistant","content":"模型请求超时"}));
         messages.push(json!({"role":"user","content":"材料".repeat(40_000)}));

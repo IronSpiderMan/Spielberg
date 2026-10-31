@@ -1,7 +1,7 @@
 import { PreviewVideo } from "../VideoPreviewModal";
 import { Button, Form, Message, Select } from "@arco-design/web-react";
 import { useRef, useState } from "react";
-import { uploadAsset } from "../../api";
+import { uploadMedia } from "../../api";
 import { imageUrl, type Media } from "../../core";
 
 export function ReferenceMediaPicker({ projectId, media, videoIds = [], audioIds = [], onChange, reload, disabled, onUploading }: {
@@ -26,7 +26,7 @@ export function ReferenceMediaPicker({ projectId, media, videoIds = [], audioIds
     inProgress.current = true; setUploading(true); onUploading?.(true);
     try {
       for (const file of files) {
-        const item = await uploadAsset<Media>(projectId, file);
+        const item = await uploadMedia<Media>(projectId, file);
         setUploaded(items => [...items, item]);
         if (item.kind !== kind) throw new Error("上传素材类型不符");
         ids.push(item.id); onChange(kind, [...ids]);

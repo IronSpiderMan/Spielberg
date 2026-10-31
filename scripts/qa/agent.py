@@ -117,33 +117,33 @@ class Model(BaseHTTPRequestHandler):
         if body.get("tool_choice") == "none":
             assert not body.get("tools"), "Finalization still advertises side effects"
             if "BUDGET_IGNORED" in prompt:
-                calls = [call("app_request", {"resource": "roles", "method": "POST", "data": {"name": "Forbidden during finalization"}}, "forbidden-final-write")]
+                calls = [call("app_request", {"resource": "assets", "method": "POST", "data": {"name": "Forbidden during finalization"}}, "forbidden-final-write")]
         elif "LIBRARY_ADAPT:" in prompt:
             refs = json.loads(prompt.split("LIBRARY_ADAPT:", 1)[1])
             instruction = message_text(messages[0])
-            assert "resource=roles" in instruction and "resource=assets" in instruction
+            assert "resource=assets" in instruction and "resource=media" in instruction
             assert "用户粘贴图片会自动加入项目素材库" in instruction
             action_schema = next(tool["function"] for tool in body["tools"] if tool["function"]["name"] == "app_action")
-            assert "roles/audio/save" in action_schema["parameters"]["properties"]["operation"]["enum"]
-            assert "roles/audio/delete" in action_schema["parameters"]["properties"]["operation"]["enum"]
+            assert "assets/audio/save" in action_schema["parameters"]["properties"]["operation"]["enum"]
+            assert "assets/audio/delete" in action_schema["parameters"]["properties"]["operation"]["enum"]
             if not tools:
                 calls = [call("app_describe", {"operation": name}, "library-describe-" + str(index))
-                         for index, name in enumerate(["roles", "assets", "roles/audio/save"])]
+                         for index, name in enumerate(["assets", "media", "assets/audio/save"])]
             elif len(tools) == 3:
-                calls = [call("app_request", {"resource": "roles", "method": "POST", "data": {
+                calls = [call("app_request", {"resource": "assets", "method": "POST", "data": {
                     "name": "Agent category " + category, "category": category, "description": "Library integration fixture"
                 }}, "library-create-" + category) for category in ["person", "location", "object", "creature", "vehicle", "other"]]
             elif len(tools) == 9:
                 location = json.loads(tools[4]["content"])
                 calls = [
-                    call("app_action", {"operation": "roles/media/add", "data": {"role_id": location["id"], "media_id": refs["image_id"]}}, "library-image"),
-                    call("app_action", {"operation": "roles/audio/save", "data": {"role_id": location["id"], "media_id": refs["audio_id"], "name": "车站环境音"}}, "library-audio"),
-                    call("app_request", {"resource": "roles", "method": "PATCH", "id": location["id"], "data": {"enabled": False}}, "library-disable"),
+                    call("app_action", {"operation": "assets/media/add", "data": {"asset_id": location["id"], "media_id": refs["image_id"]}}, "library-image"),
+                    call("app_action", {"operation": "assets/audio/save", "data": {"asset_id": location["id"], "media_id": refs["audio_id"], "name": "车站环境音"}}, "library-audio"),
+                    call("app_request", {"resource": "assets", "method": "PATCH", "id": location["id"], "data": {"enabled": False}}, "library-disable"),
                 ]
             elif len(tools) == 12:
                 calls = [
-                    call("app_request", {"resource": "roles", "method": "GET", "data": {"category": "location", "enabled": False, "query": "Agent category"}}, "library-filter"),
-                    call("app_request", {"resource": "assets", "method": "GET", "data": {"kind": "audio"}}, "library-media"),
+                    call("app_request", {"resource": "assets", "method": "GET", "data": {"category": "location", "enabled": False, "query": "Agent category"}}, "library-filter"),
+                    call("app_request", {"resource": "media", "method": "GET", "data": {"kind": "audio"}}, "library-media"),
                     call("get_project", {}, "library-verify"),
                 ]
         elif "PLAN_RESUME" in prompt:
@@ -154,15 +154,15 @@ class Model(BaseHTTPRequestHandler):
             calls = [call("update_plan", {"plan": [{"step": "核对当前角色后继续", "status": "in_progress"}, {"step": "验证结果", "status": "pending"}]}, "plan-start")]
         elif "AFTER_WRITE_RETRY" in prompt:
             if not tools:
-                calls = [call("app_request", {"resource": "roles", "method": "POST", "data": {"name": "Retry creates only once"}}, "retry-write")]
+                calls = [call("app_request", {"resource": "assets", "method": "POST", "data": {"name": "Retry creates only once"}}, "retry-write")]
         elif "BATCH_LIMIT" in prompt:
-            calls = [call("app_request", {"resource": "roles", "method": "POST", "data": {"name": name}}, "budget-" + str(i)) for i, name in enumerate(["Budget first", "Budget skipped"])]
+            calls = [call("app_request", {"resource": "assets", "method": "POST", "data": {"name": name}}, "budget-" + str(i)) for i, name in enumerate(["Budget first", "Budget skipped"])]
         elif "FAIL_LOOP" in prompt:
             calls = [call("unavailable_tool", {}, "failure-" + str(len(tools)))]
         elif "CANCEL" in prompt:
             self.delayed.set()
             time.sleep(1.5)
-            calls = [call("app_request", {"resource": "roles", "method": "POST", "data": {"name": "Must not be created"}}, "cancelled-write")]
+            calls = [call("app_request", {"resource": "assets", "method": "POST", "data": {"name": "Must not be created"}}, "cancelled-write")]
         elif "LOOP" in prompt:
             calls = [call("get_project", {}, "loop-" + str(len(tools)))]
         elif not tools and "HISTORY_SEARCH" in prompt:
@@ -182,7 +182,7 @@ class Model(BaseHTTPRequestHandler):
             calls = [call("web_search", {"query": "film cinematography lighting", "max_results": 3}, "web-live"), call("fetch_webpage", {"url": "https://example.com", "max_chars": 500}, "page-live")]
         elif not tools and "SCOPE:" in prompt:
             other = prompt.split("SCOPE:")[1].strip()
-            calls = [call("app_request", {"resource": "roles", "method": "POST", "data": {"project_id": other, "name": "Escaped"}}, "scope")]
+            calls = [call("app_request", {"resource": "assets", "method": "POST", "data": {"project_id": other, "name": "Escaped"}}, "scope")]
         elif not tools and "WEB_DISABLED" in prompt:
             calls = [call("web_search", {"query": "film composition"}, "web")]
         elif not tools and "UNKNOWN_TOOL" in prompt:
@@ -192,7 +192,7 @@ class Model(BaseHTTPRequestHandler):
             calls[0]["function"]["arguments"] = "invalid JSON"
         elif not tools and "CREATE" in prompt:
             calls = [
-                call("app_request", {"resource": "roles", "method": "POST", "data": {"name": "林晓", "description": "红色外套"}}, "role"),
+                call("app_request", {"resource": "assets", "method": "POST", "data": {"name": "林晓", "description": "红色外套"}}, "role"),
                 call("app_request", {"resource": "episodes", "method": "POST", "data": {"title": "第一集"}}, "episode"),
             ]
         elif len(tools) == 2 and "CREATE" in prompt:
@@ -272,7 +272,7 @@ def main():
             assert finished["status"] == "completed", finished
             assert len([m for m in finished["messages"] if m["role"] == "tool"]) == 4
             assert len(api(f"/projects/{pid}/screenplays", method="GET")) == 1
-            assert len(api(f"/projects/{pid}/roles", method="GET")) == 1
+            assert len(api(f"/projects/{pid}/assets", method="GET")) == 1
             assert len(api(f"/projects/{pid}/episodes", method="GET")[0]["scenes"]) == 1
             # Follow-up must preserve context and not repeat the previous mutations.
             agent("run", session_id=created["id"], message="查看项目", web_enabled=False)
@@ -284,7 +284,7 @@ def main():
                 assert result["status"] in ("completed", "failed"), result
                 trace = [m for m in result["messages"] if m["role"] == "tool"]
                 assert trace and any(m.get("status") == "failed" or "error" in m["content"] for m in trace), result
-            assert api(f'/projects/{other["id"]}/roles', method="GET") == []
+            assert api(f'/projects/{other["id"]}/assets', method="GET") == []
             if os.environ.get("AGENT_WEB_SMOKE") == "1":
                 web = agent("create")
                 agent("run", session_id=web["id"], message="WEB_LIVE", web_enabled=True)
@@ -309,31 +309,31 @@ def main():
             assert agent("cancel", session_id=session["id"])["status"] == "cancelled"
             time.sleep(1.8)
             assert wait(session)["status"] == "cancelled"
-            assert len(api(f"/projects/{pid}/roles", method="GET")) == 1
+            assert len(api(f"/projects/{pid}/assets", method="GET")) == 1
             # Drive the actual Agent loop through both libraries, categories and associations.
             png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="
-            image_media = api(f"/projects/{pid}/assets", {"name": "station.png", "extension": "png", "data_base64": png}, 201)
+            image_media = api(f"/projects/{pid}/media", {"name": "station.png", "extension": "png", "data_base64": png}, 201)
             wav = b"RIFF" + struct.pack("<I", 38) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, 8000, 16000, 2, 16) + b"data" + struct.pack("<I", 2) + b"\x00\x00"
-            audio_media = api(f"/projects/{pid}/assets", {"name": "station.wav", "extension": "wav", "data_base64": base64.b64encode(wav).decode()}, 201)
+            audio_media = api(f"/projects/{pid}/media", {"name": "station.wav", "extension": "wav", "data_base64": base64.b64encode(wav).decode()}, 201)
             libraries = agent("create", title="六类资产与素材适配")
             agent("run", session_id=libraries["id"], message="LIBRARY_ADAPT:" + json.dumps({"image_id": image_media["id"], "audio_id": audio_media["id"]}))
             adapted = wait(libraries)
             assert adapted["status"] == "completed", adapted.get("error")
             traces = [message for message in adapted["messages"] if message["role"] == "tool"]
             assert len(traces) == 15 and all(message["status"] == "completed" for message in traces), traces
-            subjects = api(f"/projects/{pid}/roles?query=Agent%20category", method="GET")
+            subjects = api(f"/projects/{pid}/assets?query=Agent%20category", method="GET")
             assert {subject["category"] for subject in subjects} == {"person", "location", "object", "creature", "vehicle", "other"}
             location = next(subject for subject in subjects if subject["category"] == "location")
             assert location["enabled"] is False and location["images"][0]["id"] == image_media["id"]
             assert location["audios"][0]["name"] == "车站环境音"
-            assert api(f"/projects/{pid}/assets/{audio_media['id']}", method="GET")["name"] == "station.wav"
-            assert api(f"/projects/{pid}/roles?category=location&enabled=false&query=Agent%20category", method="GET") == [location]
-            assert api(f"/projects/{pid}/roles?category=location&enabled=true&query=Agent%20category", method="GET") == []
-            api(f"/projects/{pid}/roles?enabled=invalid", expected=400, method="GET")
+            assert api(f"/projects/{pid}/media/{audio_media['id']}", method="GET")["name"] == "station.wav"
+            assert api(f"/projects/{pid}/assets?category=location&enabled=false&query=Agent%20category", method="GET") == [location]
+            assert api(f"/projects/{pid}/assets?category=location&enabled=true&query=Agent%20category", method="GET") == []
+            api(f"/projects/{pid}/assets?enabled=invalid", expected=400, method="GET")
             # Audio unlinking via the public action also retains the source media file.
-            api("/actions/roles/audio/delete", {"project_id": pid, "role_id": location["id"], "media_id": audio_media["id"]})
-            assert api(f"/projects/{pid}/roles/{location['id']}", method="GET")["audios"] == []
-            assert api(f"/projects/{pid}/assets/{audio_media['id']}", method="GET")["id"] == audio_media["id"]
+            api("/actions/assets/audio/delete", {"project_id": pid, "asset_id": location["id"], "media_id": audio_media["id"]})
+            assert api(f"/projects/{pid}/assets/{location['id']}", method="GET")["audios"] == []
+            assert api(f"/projects/{pid}/media/{audio_media['id']}", method="GET")["id"] == audio_media["id"]
             print("PASS: Agent model loop uses six-category assets, image/audio media associations, disabled filtering and HTTP query booleans")
             # A prior image must not evict the user's brief on the next short follow-up.
             vision = agent("create", title="图片连续对话")
@@ -437,14 +437,14 @@ def main():
             # execute only the permitted operation, and report skipped work honestly.
             agent("config/save", config={"max_steps": 1})
             batch = agent("create")
-            before_roles = len(api(f"/projects/{pid}/roles", method="GET"))
+            before_roles = len(api(f"/projects/{pid}/assets", method="GET"))
             agent("run", session_id=batch["id"], message="BATCH_LIMIT")
             bounded = wait(batch)
             assert bounded["status"] == "limited", bounded
             traces = [m for m in bounded["messages"] if m["role"] == "tool"]
             assert [m["status"] for m in traces] == ["completed", "skipped"], traces
             assert json.loads(traces[1]["content"])["executed"] is False
-            roles = api(f"/projects/{pid}/roles", method="GET")
+            roles = api(f"/projects/{pid}/assets", method="GET")
             assert len(roles) == before_roles + 1
             assert all(role["name"] != "Budget skipped" for role in roles)
             assert bounded["execution"]["tool_calls"] == 1
@@ -454,7 +454,7 @@ def main():
             rejected = wait(noncompliant)
             assert rejected["status"] == "failed", rejected
             assert rejected["execution"]["tool_calls"] == 1
-            assert len(api(f"/projects/{pid}/roles", method="GET")) == len(roles)
+            assert len(api(f"/projects/{pid}/assets", method="GET")) == len(roles)
 
             agent("config/save", config={"max_steps": 16})
             failed_loop = agent("create")
@@ -472,7 +472,7 @@ def main():
             assert retry_result["status"] == "completed", retry_result
             assert retry_result["execution"]["retries"] == 1
             assert retry_result["execution"]["model_requests"] == 3
-            assert len(api(f"/projects/{pid}/roles", method="GET")) == before_roles + 1
+            assert len(api(f"/projects/{pid}/assets", method="GET")) == before_roles + 1
             assert len([m for m in retry_result["messages"] if m["role"] == "tool"]) == 1
             for prompt in ["LONG_RETRY_AFTER", "DATE_RETRY_AFTER"]:
                 deferred = agent("create")

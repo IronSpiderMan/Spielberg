@@ -9,8 +9,8 @@
 | 资源 | 集合 URL | 创建字段 | PATCH 字段 |
 |---|---|---|---|
 | 项目 | `/projects` | `name` | `name` |
-| 资产 | `/projects/{pid}/roles` | `name`, `description?`, `enabled?`, `category?`, `design_media_id?` | 同创建字段 |
-| 素材 | `/projects/{pid}/assets` | `name`, `extension`, `data_base64`, `role_id?`；推荐二进制上传 | `name` |
+| 资产 | `/projects/{pid}/assets` | `name`, `description?`, `enabled?`, `category?`, `design_media_id?` | 同创建字段 |
+| 素材 | `/projects/{pid}/media` | `name`, `extension`, `data_base64`, `asset_id?`；推荐二进制上传 | `name` |
 | 剧集 | `/projects/{pid}/episodes` | `title`, `description?`, `cover_media_id?` | 同创建字段 |
 | 场景 | `/projects/{pid}/episodes/{episode_id}/scenes` | `title`, `description?`, `prompt?`, `first_media_id?`, `last_media_id?`, `reference_media_id?`, `generation_options?` | `/projects/{pid}/scenes/{scene_id}`，不能改变所属剧集 |
 | 剧本 / 分镜头剧本 | `/projects/{pid}/episodes/{episode_id}/screenplays` | `title`, `content?`, `format?`（`markdown/csv`） | `/projects/{pid}/screenplays/{id}`；支持 `episode_id` 移至其他剧集 |
@@ -26,13 +26,13 @@
 
 每个剧集最多一份 Markdown 剧本和一份 CSV 分镜头剧本，重复创建或移动到已有同类型内容的剧集返回 409；请读取已有资源并 PATCH。剧本按剧集归属：`GET/POST /projects/{pid}/episodes/{episode_id}/screenplays` 列出或创建该集剧本，路径指定归属。兼容 `/projects/{pid}/screenplays`，创建时必须提交有效 `episode_id`，GET 可用 `?episode_id=...` 筛选；单个资源的 GET/PATCH/DELETE 使用 `/projects/{pid}/screenplays/{id}`。PATCH 省略字段保持原值，更新 `episode_id` 可移动到当前项目的其他剧集，不能脱离剧集。资源包含 `id,episode_id,title,content,format,created_at,updated_at`。
 
-资产的 `category` 为 `person`（人物）、`location`（地点）、`object`（物品）、`creature`（生物）、`vehicle`（载具）或 `other`（其他），默认 `person`。旧项目自动迁移为人物，PATCH 省略类别时保留原值，其他类别值会被拒绝。资产列表 GET 支持 `category`、`enabled`（true/false）、`query`（名称或描述，不区分大小写）筛选；省略筛选返回所有资产，包括禁用项。资产库沿用 `/roles` 接口和 `roles` 数据字段；素材库沿用 `/assets` 接口和 `media` 数据字段，已有客户端与引用保持兼容。
+资产的 `category` 为 `person`（人物）、`location`（地点）、`object`（物品）、`creature`（生物）、`vehicle`（载具）或 `other`（其他），默认 `person`。旧项目自动迁移为人物，PATCH 省略类别时保留原值，其他类别值会被拒绝。资产列表 GET 支持 `category`、`enabled`（true/false）、`query`（名称或描述，不区分大小写）筛选；省略筛选返回所有资产，包括禁用项。资产库使用 `/assets` 接口和 `assets` 数据字段；素材库使用 `/media` 接口和 `media` 数据字段，关联参数统一为 `asset_id` 与 `media_id`。旧数据库表名和磁盘目录保留，资产、素材 ID 与文件引用不变；客户端与脚本需同步使用新资源名，API 前缀仍为 `/api/v1`。旧 Agent 会话的结构化工具参数会一次性迁移，用户原文不改写。
 
 资产的 `enabled` 为布尔值，默认 `true`（包含旧项目资产）。设为 `false` 后，资产及其命名图片不再支持 `@` 引用；省略该字段的更新保留原状态。资产返回 `enabled` 和 `images`，剧集返回排序后的 `scenes` 和 `cover_media`，场景返回引用图片、`videos`、`script` 和 `generation_options`。资产、图片、场景等 ID 为项目内整数，项目 ID 为 UUID。
 
 项目 DELETE 仅移除项目注册信息，返回额外的 `data_retained:true`，磁盘目录保留，可重新打开。素材 DELETE 使用回收站；使用中的素材拒绝删除。删除剧集会级联删除所属剧本、分镜头剧本、场景及其关联；删除资产不会删除素材文件。
 
-素材列表支持 `page`（默认 1）、`limit`（默认 24，上限 60）、`kind`（`all/image/video/audio`）、`query`、`usage`（`all/used/unused/trash`）。兼容首版平级资源路径，例如 `/roles?project_id={pid}` 和 `/scenes?project_id={pid}&episode_id={episode_id}`；前端使用上表的嵌套路径。
+素材列表支持 `page`（默认 1）、`limit`（默认 24，上限 60）、`kind`（`all/image/video/audio`）、`query`、`usage`（`all/used/unused/trash`）。同时支持平级资源路径，例如 `/assets?project_id={pid}` 和 `/scenes?project_id={pid}&episode_id={episode_id}`；前端使用上表的嵌套路径。
 
 ```bash
 # 创建项目
@@ -40,11 +40,11 @@ curl -X POST http://127.0.0.1:8080/api/v1/projects \
   -H 'Content-Type: application/json' -d '{"name":"新故事"}'
 
 # 将 PID 替换为刚创建项目的 UUID
-curl -X POST http://127.0.0.1:8080/api/v1/projects/PID/roles \
+curl -X POST http://127.0.0.1:8080/api/v1/projects/PID/assets \
   -H 'Content-Type: application/json' -d '{"name":"主角","description":"短发，红色外套"}'
 
 # 只更新名字，保留描述和主图
-curl -X PATCH http://127.0.0.1:8080/api/v1/projects/PID/roles/1 \
+curl -X PATCH http://127.0.0.1:8080/api/v1/projects/PID/assets/1 \
   -H 'Content-Type: application/json' -d '{"name":"林晓"}'
 ```
 
@@ -52,9 +52,9 @@ curl -X PATCH http://127.0.0.1:8080/api/v1/projects/PID/roles/1 \
 
 | 方法 | 路径 | 用法 |
 |---|---|---|
-| POST | `/projects/{pid}/assets/upload?name=portrait.png&role_id=1` | 请求体为原始文件，`role_id` 可省略；流式上传，单文件上限 100 MiB |
-| GET | `/projects/{pid}/assets/{id}/content` | 预览；支持 HTTP Range，视频可拖动播放 |
-| GET | `/projects/{pid}/assets/{id}/content?download=1` | 附件下载，提供 UTF-8 文件名 |
+| POST | `/projects/{pid}/media/upload?name=portrait.png&asset_id=1` | 请求体为原始文件，`asset_id` 可省略；流式上传，单文件上限 100 MiB |
+| GET | `/projects/{pid}/media/{id}/content` | 预览；支持 HTTP Range，视频可拖动播放 |
+| GET | `/projects/{pid}/media/{id}/content?download=1` | 附件下载，提供 UTF-8 文件名 |
 | POST | `/projects/{pid}/backup` | JSON `{include_api_keys:false}`；返回 `{url:"/api/v1/downloads/UUID"}` |
 | GET | `/downloads/{uuid}` | 下载备份；创建后至少保留 24 小时，下次生成备份时清理过期文件 |
 | POST | `/projects/restore-upload` | 原始 `.spielberg-backup` 文件作为请求体，上限 2 GiB；创建独立项目并返回项目对象 |
@@ -62,9 +62,9 @@ curl -X PATCH http://127.0.0.1:8080/api/v1/projects/PID/roles/1 \
 二进制文件上传不需要 Base64，上传中断或失败会清理临时文件。素材文件扩展名支持 png/jpg/jpeg/webp/gif/mp4/mov/webm/mkv。JSON 素材创建中的 `extension` 使用同一白名单，解码后的文件同样不超过 100 MiB。
 
 ```bash
-curl -X POST 'http://127.0.0.1:8080/api/v1/projects/PID/assets/upload?name=portrait.png' \
+curl -X POST 'http://127.0.0.1:8080/api/v1/projects/PID/media/upload?name=portrait.png' \
   -H 'Content-Type: application/octet-stream' --data-binary @portrait.png
-curl 'http://127.0.0.1:8080/api/v1/projects/PID/assets/1/content?download=1' -o portrait.png
+curl 'http://127.0.0.1:8080/api/v1/projects/PID/media/1/content?download=1' -o portrait.png
 ```
 
 兼容项目绝对素材路径的 `/media?path=...` 仅提供已注册项目 `assets/`、`.cache/` 下的文件，路径会规范化检查。前端缩略图及存量素材使用该入口。
@@ -80,16 +80,16 @@ curl 'http://127.0.0.1:8080/api/v1/projects/PID/assets/1/content?download=1' -o 
 | `projects/open` | `path`，后端机器上的已有项目目录 |
 | `projects/backup` | `project_id, path, include_api_keys`，保存到后端路径；桌面原生保存对话框使用 |
 | `projects/restore` | `path`，后端的备份文件或旧版备份目录 |
-| `media/import` | `project_id, source_path, role_id?`，导入后端本地文件；浏览器使用上传接口 |
+| `media/import` | `project_id, source_path, asset_id?`，导入后端本地文件；浏览器使用上传接口 |
 | `media/export` | `project_id, media_id, destination_path`，导出到后端路径；浏览器使用下载接口 |
 | `media/pose-reference` | `project_id, data_url`（PNG） |
 | `media/thumbnail` | `project_id, id` |
 | `media/usage` | `project_id, id` |
 | `media/restore`, `media/purge` | `project_id, id`，恢复/永久清理回收站素材 |
 | `media/video-frame` | `project_id, scene_id, media_id, frame`（first/last） |
-| `roles/media/add`, `roles/media/delete` | `project_id, role_id, media_id`；新增可传 `name` 重命名图片素材 |
-| `roles/audio/save` | `project_id, role_id, media_id, name`；新增或修改该资产的音频参考名，不重命名源素材 |
-| `roles/audio/delete` | `project_id, role_id, media_id`；仅解除音频关联 |
+| `assets/media/add`, `assets/media/delete` | `project_id, asset_id, media_id`；新增可传 `name` 重命名图片素材 |
+| `assets/audio/save` | `project_id, asset_id, media_id, name`；新增或修改该资产的音频参考名，不重命名源素材 |
+| `assets/audio/delete` | `project_id, asset_id, media_id`；仅解除音频关联 |
 | `scripts/load` | `project_id` |
 | `scripts/save`, `scripts/publish` | `project_id, draft` |
 | `scenes/reorder` | `project_id, episode_id, scene_ids` |
@@ -106,7 +106,7 @@ curl 'http://127.0.0.1:8080/api/v1/projects/PID/assets/1/content?download=1' -o 
 
 ## Agent
 
-Agent 的 `app_request` 使用 `resource=roles` 操作六类创作资产，使用 `resource=assets` 操作图片、视频、音频素材；`get_project` 对应返回 `roles` 和 `media`。资产支持类别、启用状态和名称查询，图片关联使用 `roles/media/*`，音频关联使用 `roles/audio/*`。解除关联或删除创作资产保留源素材；素材删除沿用引用保护及回收站语义。
+Agent 的 `app_request` 使用 `resource=assets` 操作六类创作资产，使用 `resource=media` 操作图片、视频、音频素材；`get_project` 对应返回 `assets` 和 `media`。资产支持类别、启用状态和名称查询，图片关联使用 `assets/media/*`，音频关联使用 `assets/audio/*`。解除关联或删除创作资产保留源素材；素材删除沿用引用保护及回收站语义。
 
 Agent 接口使用 `POST /api/v1/actions/agent/{动作}`，全部传入 `project_id`，会话 ID 为 UUID 且只在所属项目有效。
 

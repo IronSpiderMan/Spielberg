@@ -1,11 +1,11 @@
 import { Button, Empty, Modal, Tag } from "@arco-design/web-react";
 import {assetCategoryLabel} from "../asset-categories";
-import { imageUrl, type Media, type Role } from "../core";
+import { imageUrl, type Media, type Asset } from "../core";
 
 export function RoleImagePicker({ visible, title, roles, selectedIds, onSelect, onClose, multiple = false, disabled = false, showPrimary = true }: {
   visible: boolean;
   title: string;
-  roles: Role[];
+  roles: Asset[];
   selectedIds: number[];
   onSelect: (media: Media) => void;
   onClose: () => void;

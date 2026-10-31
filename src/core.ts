@@ -8,7 +8,7 @@ export type Media = {
   kind: string;
   created_at: string;
 };
-export type Role = {
+export type Asset = {
   id: number;
   name: string;
   description: string;
@@ -90,7 +90,7 @@ export type Snapshot = {
   screenplays?: Screenplay[];
   revisions?: Record<string,number>;
   project: Project;
-  roles: Role[];
+  assets: Asset[];
   prompts: { id: number; name: string; content: string; category: string }[];
   episodes: Episode[];
   media: Media[];

@@ -23,7 +23,7 @@ const assert = require('node:assert/strict');
         { ...base, id: 3, title: '音视频参考推断', sort_order: 2, generation_options: { reference_video_media_ids: [103], reference_audio_media_ids: [104] } },
         { ...base, id: 4, title: '保留首尾帧选择', sort_order: 3, first_media_id: 102, generation_options: { video_mode: 'fl2v', reference_media_ids: [101] } },
       ];
-      const data = { project, media, roles: [], episodes: [{ id: 1, title: '测试剧集', description: '', scenes }], prompts: [], settings: { ref2v: { url: 'https://example.invalid', api_key: '' }, fl2v: { url: 'https://example.invalid', api_key: '' } } };
+      const data = { project, media, assets: [], episodes: [{ id: 1, title: '测试剧集', description: '', scenes }], prompts: [], settings: { ref2v: { url: 'https://example.invalid', api_key: '' }, fl2v: { url: 'https://example.invalid', api_key: '' } } };
       window.__qaData = data;
       window.__qaGenerations = [];
       window.__TAURI_INTERNALS__ = { invoke: async (command, args) => {

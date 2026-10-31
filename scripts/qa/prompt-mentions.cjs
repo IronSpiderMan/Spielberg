@@ -13,7 +13,7 @@ const {promptMentions, findMentions, resolveReferencePrompt, resolvePrompt, reso
 const main = {id: 1, name: '主图.png', kind: 'image'};
 const detail = {id: 2, name: 'xx.png', kind: 'image'};
 const roles = [{id: 1, name: '角色', description: '资产描述', design_media_id: 1, images: [main, detail]}];
-const data = {roles, media: [main, detail], episodes: []};
+const data = {assets: roles, media: [main, detail], episodes: []};
 const items = promptMentions(roles, data);
 const ids = value => findMentions(value, items).map(item => item.media.id);
 assert.deepEqual(ids('@角色.xx'), [2]);
@@ -41,7 +41,7 @@ assert.deepEqual(selection.ids, [1, 2]);
 assert.equal(syncMentionReferences([1,2,3,4,5,6,7,8,9], [], [10]).ids.length, 9);
 // Disabled roles cannot be suggested, resolved, or reintroduced by asset aliases.
 const disabledRoles = [{...roles[0], enabled: false}];
-const disabledData = {...data, roles: disabledRoles, prompts: [], media: [...data.media,
+const disabledData = {...data, assets: disabledRoles, prompts: [], media: [...data.media,
   {id: 3, name: '角色.png', kind: 'image'}, {id: 4, name: '角色.xx.png', kind: 'image'}]};
 const disabledItems = promptMentions(disabledRoles, disabledData);
 assert(!disabledItems.some(item => item.kind === 'role'));

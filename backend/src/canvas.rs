@@ -36,8 +36,17 @@ pub fn install_scenes(c: &Connection) -> Result<(), String> {
 }
 fn load(c: &Connection, scene:i64) -> Result<Value, String> {
     c.query_row("SELECT draft,revision FROM scene_canvases WHERE scene_id=?", [scene], |r| Ok((r.get::<_,String>(0)?,r.get::<_,i64>(1)?)))
-        .optional().map_err(|e|e.to_string())?.map(|(draft,revision)| Ok(json!({"draft":serde_json::from_str::<Value>(&draft).map_err(|e|e.to_string())?,"revision":revision})))
+        .optional().map_err(|e|e.to_string())?.map(|(draft,revision)| {
+            let mut draft=serde_json::from_str::<Value>(&draft).map_err(|e|e.to_string())?;
+            normalize_asset_nodes(&mut draft);
+            Ok(json!({"draft":draft,"revision":revision}))
+        })
         .unwrap_or_else(|| Ok(json!({"draft":empty(),"revision":0})))
+}
+pub(super) fn normalize_asset_nodes(draft: &mut Value) {
+    if let Some(nodes)=draft.get_mut("nodes").and_then(Value::as_array_mut) {
+        for node in nodes { if node["kind"]=="role" { node["kind"]=json!("asset"); } }
+    }
 }
 fn validate(c: &Connection, draft: &Value) -> Result<HashSet<i64>, String> {
     if draft["version"] != 1 { return Err("画布版本无效".into()); }
@@ -59,7 +68,7 @@ fn validate(c: &Connection, draft: &Value) -> Result<HashSet<i64>, String> {
             } else if !node["ref_id"].is_null(){return Err("画布素材 ID 无效".into());}
             if let Some(prompt)=node.get("prompt"){if !prompt.as_str().is_some_and(|s|s.len()<=20_000){return Err("视频描述无效或过长".into());}}
             if let Some(duration)=node.get("duration"){if !duration.as_u64().is_some_and(|n|(1..=120).contains(&n)){return Err("视频时长无效".into());}}},
-            Some("scene"|"role"|"prompt")=>{if !node["ref_id"].as_i64().is_some_and(|id|id>0){return Err("画布引用 ID 无效".into());}},
+            Some("scene"|"asset"|"prompt")=>{if !node["ref_id"].as_i64().is_some_and(|id|id>0){return Err("画布引用 ID 无效".into());}},
             Some("note")=>{if !node["text"].as_str().is_some_and(|t|t.len()<=20_000){return Err("便签内容无效或过长".into());}},
             _=>return Err("画布节点类型无效".into())
         }
@@ -119,11 +128,16 @@ mod tests {
         c.execute_batch("DROP VIEW asset_usage; DROP TABLE scene_canvas_sources; DROP TABLE scene_canvases; ALTER TABLE scenes DROP COLUMN creation_mode; PRAGMA user_version=9;").unwrap();
         catalog::install(&c).unwrap();install(&c).unwrap();
         c.execute("INSERT INTO media(id,name,path,kind,created_at) VALUES(1,'image','/image','image','1')",[]).unwrap();
-        let mut draft=empty();draft["nodes"]=json!([{"id":"a","kind":"media","ref_id":1,"x":-50,"y":100}]);
+        let mut draft=empty();draft["nodes"]=json!([
+            {"id":"a","kind":"media","ref_id":1,"x":-50,"y":100},
+            {"id":"subject","kind":"role","ref_id":9,"x":100,"y":20,"text":"roles 原文"}
+        ]);
         c.execute("INSERT INTO canvas_board VALUES(1,?,7)",[draft.to_string()]).unwrap();c.execute("INSERT INTO canvas_sources VALUES(1)",[]).unwrap();
         migrate(&c).unwrap();migrate(&c).unwrap();
         let id:i64=c.query_row("SELECT id FROM scenes WHERE creation_mode='canvas'",[],|r|r.get(0)).unwrap();
+        draft["nodes"][1]["kind"]=json!("asset");
         assert_eq!(load(&c,id).unwrap(),json!({"draft":draft,"revision":7}));
+        assert_eq!(validate(&c,&draft).unwrap(),HashSet::from([1]));
         let uses=catalog::usages(&c,1).unwrap();assert_eq!(uses.len(),1);assert_eq!(uses[0]["target_id"],id);
         assert_eq!(c.query_row("SELECT COUNT(*) FROM canvas_board",[],|r|r.get::<_,i64>(0)).unwrap(),0);
         assert_eq!(c.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),15);

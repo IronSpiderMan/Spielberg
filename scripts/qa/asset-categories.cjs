@@ -15,7 +15,7 @@ const path = require('node:path');
     await page.addInitScript(() => {
       const project = {id: 'qa', name: '资产分类测试', path: '/fixture', updated_at: '刚刚'};
       const image = {id: 1, name: '正面.png', path: '/spielberg-logo-s.png', kind: 'image', created_at: '0'};
-      const data = JSON.parse(localStorage.getItem('qa-asset-categories') || 'null') || {project, media: [image], roles: [
+      const data = JSON.parse(localStorage.getItem('qa-asset-categories') || 'null') || {project, media: [image], assets: [
         {id: 1, name: '原有角色', description: '原有描述', enabled: true, design_media_id: 1, images: [image]},
         {id: 2, name: '旧车站', description: '停用地点', category: 'location', enabled: false, design_media_id: null, images: []},
       ], episodes: [], prompts: [], settings: {}};
@@ -27,14 +27,14 @@ const path = require('node:path');
         if (path === '/project' || path === '/project/changes') return structuredClone(data);
         if (path === '/tasks') return {items: [], has_more: false};
         if (path === '/media/list') return {items: data.media, total: data.media.length};
-        if (path === '/roles') {
-          const role = {id: Math.max(...data.roles.map(role => role.id)) + 1, name: payload.name, category: payload.category || 'person',
+        if (path === '/assets') {
+          const role = {id: Math.max(...data.assets.map(role => role.id)) + 1, name: payload.name, category: payload.category || 'person',
             description: '', enabled: true, images: [], design_media_id: null};
-          data.roles.push(role); persist(); return structuredClone(role);
+          data.assets.push(role); persist(); return structuredClone(role);
         }
-        if (path === '/roles/update') {
+        if (path === '/assets/update') {
           if (payload.category !== undefined) window.__qaCategoryUpdates.push(structuredClone(payload));
-          Object.assign(data.roles.find(role => role.id === payload.id), payload); persist(); return {ok: true};
+          Object.assign(data.assets.find(role => role.id === payload.id), payload); persist(); return {ok: true};
         }
         return null;
       }};

@@ -1,6 +1,6 @@
 import { Message } from "@arco-design/web-react";
 import { useRef, useState } from "react";
-import { uploadAsset } from "../api";
+import { uploadMedia } from "../api";
 import type { Media } from "../core";
 import { localId } from "../id";
 
@@ -35,7 +35,7 @@ export function useImageUpload({ projectId, reload, refreshError }: {
         if (!isSupportedImage(file)) { Message.error(`不支持${pasted ? "粘贴的" : "的"}图片格式：${file.type}`); continue; }
         try {
           const named = pasted ? new File([file], `粘贴图片-${localId()}.${extensions[file.type]}`, { type: file.type }) : file;
-          const media = await uploadAsset<Media>(projectId, named);
+          const media = await uploadMedia<Media>(projectId, named);
           onUploaded(media); count++;
         } catch (error) {
           Message.error(`图片上传失败：${String(error)}`);

@@ -15,7 +15,7 @@ module.exports = async function installHttpFixture(page) {
         const parts = path.split('/').filter(Boolean);
         if (parts[0] === 'projects' && parts.length >= 3) {
           payload.project_id = parts[1];
-          const resource = parts[2] === 'assets' ? 'media' : parts[2];
+          const resource = parts[2];
           path = `/${resource}`;
           if (parts[3]) {
             payload.id = Number(parts[3]);

@@ -2,7 +2,7 @@ use super::*;
 pub(super) fn load(c:&Connection,id:i64)->Result<Value,String>{let raw:String=c.query_row("SELECT storyboard FROM episodes WHERE id=?",[id],|r|r.get(0)).map_err(|e|e.to_string())?;serde_json::from_str(&raw).map_err(|e|e.to_string())}
 fn assets(s:&AppState,pid:&str)->Result<Value,String>{
  let snap=snapshot(s,pid)?;let mut refs=Vec::new();let mut role_names=std::collections::HashSet::new();
- for role in snap["roles"].as_array().unwrap(){
+ for role in snap["assets"].as_array().unwrap(){
   let mut role_refs=Vec::new();
   let name=role["name"].as_str().unwrap();let images=role["images"].as_array().unwrap();
   role_refs.push(json!({"name":name,"description":role["description"],"media_id":images.iter().find(|m|m["kind"]=="image").map(|m|m["id"].clone())}));
@@ -96,7 +96,7 @@ mod role_enablement_tests {
   }
   link_role_media(&c,role["id"].as_i64().unwrap(),1).unwrap();drop(c);
   assert!(check("@主角 @主角.正面",&assets(&state,pid).unwrap()).is_ok());
-  let path=format!("projects/{pid}/roles/{}",role["id"]);
+  let path=format!("projects/{pid}/assets/{}",role["id"]);
   rest::crud(&state,"PATCH",&path,json!({"enabled":false})).unwrap();
   let refs=assets(&state,pid).unwrap();
   assert!(check("@主角",&refs).is_err());assert!(check("@主角.正面",&refs).is_err());

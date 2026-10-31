@@ -19,7 +19,7 @@ export function ShotPictureField({ picture, index, data, busy, onChange, onUploa
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => setFailed(false), [picture]);
   const media = data.media.find(item => item.kind === "image" && item.path === picture)
-    || data.roles.flatMap(role => role.images).find(item => item.path === picture);
+    || data.assets.flatMap(role => role.images).find(item => item.path === picture);
   const selected: Media = media || { id: 0, path: picture, name: picture.split(/[\\/]/).pop() || "分镜画面", kind: "image", created_at: "" };
   const select = (item: Media) => { onChange(item.path); setPicker(null); };
   const label = `镜头 ${index + 1}`;
@@ -40,7 +40,7 @@ export function ShotPictureField({ picture, index, data, busy, onChange, onUploa
       onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void onUpload(file); }} />
     <AssetImagePicker visible={picker === "asset"} label={`${label}画面`} value={media?.id || null} data={data} busy={busy}
       onSelect={id => { const item = data.media.find(item => item.id === id); if (item) select(item); }} onClose={() => setPicker(null)} />
-    <RoleImagePicker visible={picker === "role"} title={`为${label}选择资产画面`} roles={data.roles} selectedIds={media ? [media.id] : []}
+    <RoleImagePicker visible={picker === "role"} title={`为${label}选择资产画面`} roles={data.assets} selectedIds={media ? [media.id] : []}
       disabled={busy} onSelect={select} onClose={() => setPicker(null)} />
     <ImagePreviewModal media={preview} onClose={() => setPreview(null)} title="分镜画面预览" />
   </div>;

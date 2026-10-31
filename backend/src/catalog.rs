@@ -54,13 +54,13 @@ pub fn revisions(c: &Connection) -> Result<Value,String> {
     let mut q=c.prepare("SELECT section,version FROM revisions").map_err(|e|e.to_string())?;
     let rows=q.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,i64>(1)?))).map_err(|e|e.to_string())?;
     let mut result=json!({});
-    for row in rows { let (key,value)=row.map_err(|e|e.to_string())?; result[key]=json!(value); }
+    for row in rows { let (key,value)=row.map_err(|e|e.to_string())?; result[if key=="roles" {"assets"} else {&key}]=json!(value); }
     Ok(result)
 }
 
 pub fn usages(c:&Connection, id:i64)->Result<Vec<Value>,String> {
     let mut q=c.prepare("SELECT kind,target_id,title,episode_id,episode_title,purpose FROM asset_usage WHERE media_id=? ORDER BY kind,target_id,purpose").map_err(|e|e.to_string())?;
-    let rows=q.query_map([id],|r|Ok(json!({"kind":r.get::<_,String>(0)?,"target_id":r.get::<_,i64>(1)?,"title":r.get::<_,String>(2)?,"episode_id":r.get::<_,Option<i64>>(3)?,"episode_title":r.get::<_,Option<String>>(4)?,"purpose":r.get::<_,String>(5)?.replace("角色","资产").replace("音色参考","音频参考")}))).map_err(|e|e.to_string())?;
+    let rows=q.query_map([id],|r|Ok(json!({"kind":(if r.get::<_,String>(0)?=="role" {"asset".to_string()} else {r.get::<_,String>(0)?}),"target_id":r.get::<_,i64>(1)?,"title":r.get::<_,String>(2)?,"episode_id":r.get::<_,Option<i64>>(3)?,"episode_title":r.get::<_,Option<String>>(4)?,"purpose":r.get::<_,String>(5)?.replace("角色","资产").replace("音色参考","音频参考")}))).map_err(|e|e.to_string())?;
     rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
 }
 

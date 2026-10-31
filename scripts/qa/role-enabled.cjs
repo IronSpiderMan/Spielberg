@@ -15,7 +15,7 @@ const path = require('node:path');
     await page.addInitScript(() => {
       const project = {id: 'qa', name: '角色启用测试', path: '/fixture', updated_at: '刚刚'};
       const image = {id: 1, name: '正面.png', path: '/spielberg-logo-s.png', kind: 'image', created_at: '0'};
-      const data = JSON.parse(localStorage.getItem('qa-role-enabled') || 'null') || {project, media: [image], roles: [
+      const data = JSON.parse(localStorage.getItem('qa-role-enabled') || 'null') || {project, media: [image], assets: [
         {id: 1, name: '主角', description: '角色描述', images: [image], design_media_id: 1},
         {id: 2, name: '配角', description: '', images: [], design_media_id: null, enabled: true},
         {id: 3, name: '停用角色', description: '', images: [], design_media_id: null, enabled: false},
@@ -27,11 +27,11 @@ const path = require('node:path');
         if (path === '/projects') return [project];
         if (path === '/project' || path === '/project/changes') return structuredClone(data);
         if (path === '/tasks') return {items: [], has_more: false};
-        if (path === '/roles/update') {
+        if (path === '/assets/update') {
           window.__qaRoleUpdates.push(structuredClone(payload));
           if (window.__qaFailRoleUpdate) throw Error('测试保存失败');
           assertEnabled(payload);
-          Object.assign(data.roles.find(role => role.id === payload.id), payload);
+          Object.assign(data.assets.find(role => role.id === payload.id), payload);
           localStorage.setItem('qa-role-enabled', JSON.stringify(data));
           return {ok: true};
         }
@@ -128,7 +128,7 @@ const path = require('node:path');
     await roles();
     assert.equal(await showDisabled.isChecked(), false);
     assert.equal(await card('主角').count(), 0);
-    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('qa-role-enabled')).roles[0].enabled), false);
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('qa-role-enabled')).assets[0].enabled), false);
     await setShowDisabled(true);
     await edit();
     await drawer.locator('[role="switch"][aria-checked="false"]').waitFor();

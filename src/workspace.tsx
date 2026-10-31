@@ -58,7 +58,7 @@ ZoomIn
 } from "lucide-react";
 
 
-import { api,defaultOptions,normalizeGenerationSize,Episode,FrameKey,GenerationOptions,imageUrl,Media,ModelSettings,post,Project,Role,Scene,Snapshot } from "./core";
+import { api,defaultOptions,normalizeGenerationSize,Episode,FrameKey,GenerationOptions,imageUrl,Media,ModelSettings,post,Project,Asset,Scene,Snapshot } from "./core";
 import { confirmDiscard,useEditGuard } from "./edit-guard";
 import { resolvePrompt, resolveH3Prompt } from "./resolve-prompt";
 import { type Storyboard } from "./StoryboardEditor";
@@ -71,7 +71,7 @@ import { PROMPT_TEMPLATES } from "./prompt-templates";
 const SequencePreview=lazy(()=>import("./creation").then(m=>({default:m.SequencePreview})));
 const ImageStudio=lazy(()=>import("./creation").then(m=>({default:m.ImageStudio})));
 
-function videoRequest(scene: Scene, settings: ModelSettings, roles: Role[], prompts: Snapshot["prompts"] = []) {
+function videoRequest(scene: Scene, settings: ModelSettings, roles: Asset[], prompts: Snapshot["prompts"] = []) {
   if(scene.creation_mode === "canvas") throw new Error(`${scene.title}：请进入画布，使用视频节点生成；已有场景视频可直接合并`);
   const options = sceneGenerationOptions(scene);
   const mode = options.video_mode;
@@ -513,7 +513,7 @@ export function Episodes({
     let requests: ReturnType<typeof videoRequest>[];
     try {
       requests = batch.scenes.map((scene) =>
-        videoRequest(scene, data.settings, data.roles, data.prompts),
+        videoRequest(scene, data.settings, data.assets, data.prompts),
       );
     } catch (e) {
       Message.error(String(e));
@@ -1105,7 +1105,7 @@ function SceneImageField({
           }}
         />}
       </Modal>
-      <RoleImagePicker title={`为${label}选择资产图片`} visible={rolesOpen} roles={data.roles} selectedIds={value===null?[]:[value]}
+      <RoleImagePicker title={`为${label}选择资产图片`} visible={rolesOpen} roles={data.assets} selectedIds={value===null?[]:[value]}
         onSelect={media=>{onChange(media.id);setRolesOpen(false);}} onClose={()=>setRolesOpen(false)} />
     </div>
   );
@@ -1151,7 +1151,7 @@ export function SceneEditor({
   );
   const automaticReferenceIds = useRef<number[]>([]);
   const mentionedReferenceIds = JSON.stringify([...new Set(
-    findMentions(effectivePrompt, promptMentions(data.roles, data))
+    findMentions(effectivePrompt, promptMentions(data.assets, data))
       .flatMap(mention => mention.media?.kind === "image" ? [mention.media.id] : []),
   )]);
   useEffect(() => {
@@ -1292,7 +1292,7 @@ export function SceneEditor({
     const prompt = scene.script?.[key] || description;
     setImagePrompt(prompt);
     setImageMode("t2i");
-    setImageRefs(findMentions(prompt, promptMentions(data.roles, data)).flatMap(mention => mention.media ? [mention.media] : []));
+    setImageRefs(findMentions(prompt, promptMentions(data.assets, data)).flatMap(mention => mention.media ? [mention.media] : []));
   };
   useEffect(() => {
     if (!generatedFrame) return;
@@ -1311,7 +1311,7 @@ export function SceneEditor({
       const media = await post<Media>("/generations/image", {
         project_id: data.project.id,
         operation: imageMode,
-        prompt: resolvePrompt(imagePrompt, data.roles),
+        prompt: resolvePrompt(imagePrompt, data.assets),
         aspect_ratio: ratio,
         size: options.size,
         image_media_ids: imageRefs.map((x) => x.id),
@@ -1366,7 +1366,7 @@ export function SceneEditor({
   const generateVideo = async () => {
     if (pasteInProgress.current || uploadingReferences) return;
     try {
-      const request = videoRequest(draft(), data.settings, data.roles, data.prompts);
+      const request = videoRequest(draft(), data.settings, data.assets, data.prompts);
       setVideoGenerating(true);
       await persist();
       await post<Media>("/generations/video", {
@@ -1468,11 +1468,11 @@ export function SceneEditor({
                 <Input value={title} onChange={setTitle} />
               </Form.Item>
               <Form.Item label={<span className="scene-description-label"><span>场景描述</span><Space size={2}><Button type="text" size="mini" onClick={()=>setOptimizationInstructionOpen(true)}>优化指令</Button><Button type="text" size="mini" icon={<WandSparkles size={14}/>} disabled={videoGenerating||optimizingPrompt||!description.trim()} onClick={optimizeVideoPrompt}>{optimizingPrompt?"正在优化…":"优化描述"}</Button></Space></span>}>
-                <PromptInput value={description} onChange={setDescription} roles={data.roles} data={data} prompts={data.prompts} templates={[...PROMPT_TEMPLATES,...data.prompts]} disabled={optimizingPrompt || pastingImages || savingScene || videoGenerating || persistedVideoGenerating} onPasteImages={files => void pasteReferenceImages(files)} placeholder="描述镜头、人物动作、台词与画面情绪… 输入 @template 选择模板，或引用资产、场景素材与 Prompt" />
+                <PromptInput value={description} onChange={setDescription} roles={data.assets} data={data} prompts={data.prompts} templates={[...PROMPT_TEMPLATES,...data.prompts]} disabled={optimizingPrompt || pastingImages || savingScene || videoGenerating || persistedVideoGenerating} onPasteImages={files => void pasteReferenceImages(files)} placeholder="描述镜头、人物动作、台词与画面情绪… 输入 @template 选择模板，或引用资产、场景素材与 Prompt" />
                 <p className="helper" role="status">{pastingImages ? "正在上传粘贴的图片…" : "可在此粘贴图片，自动添加到全能参考（最多 9 张）"}</p>
               </Form.Item>
               <Form.Item label="视频 Prompt">
-                <PromptInput value={prompt} onChange={setPrompt} roles={data.roles} data={data} prompts={data.prompts} templates={[...PROMPT_TEMPLATES,...data.prompts]} disabled={optimizingPrompt || pastingImages || savingScene || videoGenerating || persistedVideoGenerating} onPasteImages={files => void pasteReferenceImages(files)} placeholder="实际用于生成视频的提示词；留空时使用场景描述" />
+                <PromptInput value={prompt} onChange={setPrompt} roles={data.assets} data={data} prompts={data.prompts} templates={[...PROMPT_TEMPLATES,...data.prompts]} disabled={optimizingPrompt || pastingImages || savingScene || videoGenerating || persistedVideoGenerating} onPasteImages={files => void pasteReferenceImages(files)} placeholder="实际用于生成视频的提示词；留空时使用场景描述" />
                 <p className="helper">优化描述的结果会填入此栏，保留手工描述。留空时使用场景描述生成视频。</p>
               </Form.Item>
               <Modal title="自定义提示词优化指令" visible={optimizationInstructionOpen} onCancel={()=>setOptimizationInstructionOpen(false)} onOk={()=>setOptimizationInstructionOpen(false)} okText="完成">
@@ -1617,7 +1617,7 @@ export function SceneEditor({
         })}
         onClose={() => setMultiReferencePickerOpen(false)}
       />
-      <RoleImagePicker title="从资产中选择参考图" visible={referenceRolePickerOpen} roles={data.roles} multiple showPrimary={false}
+      <RoleImagePicker title="从资产中选择参考图" visible={referenceRolePickerOpen} roles={data.assets} multiple showPrimary={false}
         selectedIds={options.reference_media_ids||[]} onClose={()=>setReferenceRolePickerOpen(false)} onSelect={media=>setOptions(o=>{
           const ids=o.reference_media_ids||[];
           if(ids.includes(media.id))return {...o,reference_media_ids:ids.filter(id=>id!==media.id)};
@@ -1726,7 +1726,7 @@ export function SceneEditor({
           </Form.Item>
         </Form>
       </Modal>
-      <RoleImagePicker title="从资产中选择参考图" visible={rolePickerOpen} roles={data.roles} multiple
+      <RoleImagePicker title="从资产中选择参考图" visible={rolePickerOpen} roles={data.assets} multiple
         selectedIds={imageRefs.map(media=>media.id)} onSelect={toggleRef} onClose={()=>setRolePickerOpen(false)} />
     </section>
   );
@@ -1745,30 +1745,30 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
   const [showDisabled, setShowDisabled] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<AssetCategory | "all">("all");
   const [updatingRoleId, setUpdatingRoleId] = useState<number | null>(null);
-  const visibleRoles = data.roles.filter(role => (showDisabled || role.enabled !== false) && (categoryFilter === "all" || (role.category || "person") === categoryFilter));
+  const visibleRoles = data.assets.filter(role => (showDisabled || role.enabled !== false) && (categoryFilter === "all" || (role.category || "person") === categoryFilter));
   const [roleImagePreview, setRoleImagePreview] = useState<Media | null>(null);
   const [previewRoleId, setPreviewRoleId] = useState<number | null>(null);
-  const openRoleImage = (role: Role, media: Media) => { setPreviewRoleId(role.id); setRoleImagePreview(media); };
-  const [editing, setEditing] = useState<Role | null>(null);
+  const openRoleImage = (role: Asset, media: Media) => { setPreviewRoleId(role.id); setRoleImagePreview(media); };
+  const [editing, setEditing] = useState<Asset | null>(null);
   const [detailId, setDetailId] = useState<number | null>(initialRoleId ?? null);
-  const detail = data.roles.find(role => role.id === detailId);
+  const detail = data.assets.find(role => role.id === detailId);
   const detailImages = detail ? [...detail.images].sort((a, b) => Number(b.id === detail.design_media_id) - Number(a.id === detail.design_media_id)) : [];
-  const previewRole = data.roles.find(role => role.id === previewRoleId);
+  const previewRole = data.assets.find(role => role.id === previewRoleId);
   const previewImages = [...(previewRole?.images || [])].sort((a, b) => Number(b.id === previewRole?.design_media_id) - Number(a.id === previewRole?.design_media_id));
   useEffect(() => { if (initialRoleId != null) setDetailId(initialRoleId); }, [initialRoleId]);
-  const changeRoleEnabled = async (role: Role, enabled: boolean) => {
+  const changeRoleEnabled = async (role: Asset, enabled: boolean) => {
     if (updatingRoleId !== null) return;
     setUpdatingRoleId(role.id);
     try {
       if (!enabled && !await confirmDisableRole(role.name)) return;
-      await post("/roles/update", {project_id: data.project.id, id: role.id, enabled});
+      await post("/assets/update", {project_id: data.project.id, id: role.id, enabled});
       await reload();
       Message.success(enabled ? "资产已启用" : "资产已禁用");
     } catch (e) { Message.error(String(e)); }
     finally { setUpdatingRoleId(null); }
   };
   const make = async () => {
-    const x = await post<Role>("/roles", {
+    const x = await post<Asset>("/assets", {
       project_id: data.project.id,
       name: `新${assetCategoryLabel(categoryFilter === "all" ? "person" : categoryFilter)}`,
       category: categoryFilter === "all" ? "person" : categoryFilter,
@@ -1825,7 +1825,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
           </Button>
         </Space>
       </div>
-      {data.roles.length > 0 && !visibleRoles.length && <p className="helper">{categoryFilter !== "all" ? "当前类别下没有符合条件的资产，可切换类别、显示已禁用资产或创建新资产。" : "当前没有启用的资产，可勾选“显示已禁用资产”查看并重新启用。"}</p>}
+      {data.assets.length > 0 && !visibleRoles.length && <p className="helper">{categoryFilter !== "all" ? "当前类别下没有符合条件的资产，可切换类别、显示已禁用资产或创建新资产。" : "当前没有启用的资产，可勾选“显示已禁用资产”查看并重新启用。"}</p>}
       <div className="role-grid">
         {visibleRoles.map((r) => (
           <Card key={r.id} className={`role-card${r.enabled === false ? " role-card-disabled" : ""}`} bodyStyle={{ padding: 16 }}>
@@ -1857,7 +1857,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
               <Popconfirm
                 title="删除资产？"
                 onOk={() =>
-                  post("/roles/delete", {
+                  post("/assets/delete", {
                     project_id: data.project.id,
                     id: r.id,
                   }).then(reload)
@@ -1887,7 +1887,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
         >
           <div className="role-pic"><Plus size={28} strokeWidth={1.4} /></div>
           <h3>创建资产</h3>
-          <p>{data.roles.length ? "继续添加人物、地点或物品等资产" : "记录第一个资产，让镜头保持视觉一致。"}</p>
+          <p>{data.assets.length ? "继续添加人物、地点或物品等资产" : "记录第一个资产，让镜头保持视觉一致。"}</p>
         </Card>
       </div>
       </>}
@@ -1907,7 +1907,7 @@ function RoleEditor({
   onClose,
   reload,
 }: {
-  role: Role | null;
+  role: Asset | null;
   data: Snapshot;
   onClose: () => void;
   reload: () => void;
@@ -1924,7 +1924,7 @@ function RoleEditor({
   const [pendingImage, setPendingImage] = useState<{id:number;name:string}|null>(null);
   const [renamingImage, setRenamingImage] = useState<{id:number;name:string}|null>(null);
   const [imagePreview, setImagePreview] = useState<Media | null>(null);
-  const currentRole = data.roles.find((x) => x.id === role?.id) || role;
+  const currentRole = data.assets.find((x) => x.id === role?.id) || role;
   useEffect(() => {
     setName(role?.name || "");
     setDescription(role?.description || "");
@@ -1958,8 +1958,8 @@ function RoleEditor({
     if (!pendingImage.name.trim()) return Message.warning("请输入资产图片名称");
     setImportingAsset(true);
     try {
-      await post("/roles/media/add", {
-        project_id: data.project.id, role_id: role.id,
+      await post("/assets/media/add", {
+        project_id: data.project.id, asset_id: role.id,
         media_id: pendingImage.id, name: pendingImage.name.trim(),
       });
       setDesign(pendingImage.id);
@@ -1971,9 +1971,9 @@ function RoleEditor({
   };
   const removeImage = async (id: number) => {
     if (!role) return;
-    await post("/roles/media/delete", {
+    await post("/assets/media/delete", {
       project_id: data.project.id,
-      role_id: role.id,
+      asset_id: role.id,
       media_id: id,
     });
     if (design === id) setDesign(currentRole?.images.find((image) => image.id !== id)?.id ?? null);
@@ -1997,7 +1997,7 @@ function RoleEditor({
     setGenerating(true);
     try {
       const result = await post<Media>("/generations/image", {project_id:data.project.id, operation,
-        prompt:resolvePrompt(description, data.roles), aspect_ratio:"1:1", image_media_ids:operation === "i2i" ? [design] : []});
+        prompt:resolvePrompt(description, data.assets), aspect_ratio:"1:1", image_media_ids:operation === "i2i" ? [design] : []});
       await reload();
       setPendingImage({id:result.id,name:""});
     } catch(e) { Message.error(String(e)); }
@@ -2009,7 +2009,7 @@ function RoleEditor({
     setSavingRole(true);
     try {
       if (currentRole?.enabled !== false && !enabled && !await confirmDisableRole(name.trim())) return;
-      await post("/roles/update", {project_id:data.project.id,id:role.id,name:name.trim(),description,enabled,category,design_media_id:design});
+      await post("/assets/update", {project_id:data.project.id,id:role.id,name:name.trim(),description,enabled,category,design_media_id:design});
       await reload(); onClose();
     } catch(e) { Message.error(String(e)); }
     finally { setSavingRole(false); }

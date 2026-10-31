@@ -61,7 +61,7 @@ export function StoryboardEditor({data,episodeId,script,onScript,board,onChange,
  });
  const apply=(scene:BoardScene,index:number)=>run(`apply-${index}`,()=>saveScene(scene,index));
  return <div className="storyboard-columns">
-  <div className="storyboard-source"><div className="storyboard-panel-heading"><span className="editor-step">01</span><h3>剧本</h3><small>故事起点</small></div>{readOnlySource ? <pre className="storyboard-script-preview">{script || "请先在剧本页新建或导入剧本，保存后即可生成分镜。"}</pre> : <PromptInput value={script} onChange={onScript} roles={data.roles} data={data} prompts={data.prompts} disabled={locked} placeholder="填写剧本，输入 @ 引用已有资产、造型、图片资源或 Prompt；输入 @prompt 搜索 Prompt 库"/>}
+  <div className="storyboard-source"><div className="storyboard-panel-heading"><span className="editor-step">01</span><h3>剧本</h3><small>故事起点</small></div>{readOnlySource ? <pre className="storyboard-script-preview">{script || "请先在剧本页新建或导入剧本，保存后即可生成分镜。"}</pre> : <PromptInput value={script} onChange={onScript} roles={data.assets} data={data} prompts={data.prompts} disabled={locked} placeholder="填写剧本，输入 @ 引用已有资产、造型、图片资源或 Prompt；输入 @prompt 搜索 Prompt 库"/>}
    <p className="subtle">生成前检查所有 @ 引用；每个场景最长 15 秒。</p>
    {board?.scenes.length?<Popconfirm title="重新生成将替换当前分镜及补图计划，继续？" onOk={generate} disabled={locked}><Button type="primary" disabled={locked||!script.trim()} loading={busy==='board'}>一键生成分镜头剧本</Button></Popconfirm>:<Button type="primary" disabled={locked||!script.trim()} loading={busy==='board'} onClick={generate}>一键生成分镜头剧本</Button>}
    {error&&<p role="alert" className="storyboard-error">{error}</p>}

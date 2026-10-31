@@ -1,12 +1,12 @@
 import { jsonRequest, request, download } from "./transport";
 import { downloadName, releaseFile, selectedFile } from "./platform";
 const resourceFields: Record<string, string[]> = {
-  roles: ["name", "description", "enabled", "category", "design_media_id"],
+  assets: ["name", "description", "enabled", "category", "design_media_id"],
   episodes: ["title", "description", "cover_media_id", "storyboard"],
   scenes: ["creation_mode", "prompt", "title", "description", "episode_id", "first_media_id", "last_media_id", "reference_media_id", "generation_options"],
   screenplays: ["title", "content", "format", "episode_id"],
   prompts: ["name", "content", "category"],
-  projects: ["name", "outline", "agents_md", "documents"], assets: ["name"],
+  projects: ["name", "outline", "agents_md", "documents"], media: ["name"],
 };
 type Payload = Record<string, any>;
 function fields(resource: string, data: Payload) {
@@ -25,12 +25,12 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   if (path === "/projects" && method === "GET") return jsonRequest<T>("/api/v1/projects", "GET");
   if (path === "/media/list") {
     const { project_id, ...filters } = data;
-    return jsonRequest<T>(`${projectPath(project_id, "assets")}?${query(filters)}`, "GET");
+    return jsonRequest<T>(`${projectPath(project_id, "media")}?${query(filters)}`, "GET");
   }
   if (path === "/media/import") {
     const file = selectedFile(data.source_path);
     if (file) {
-      const result = await request<T>(`${projectPath(data.project_id, "assets/upload")}?${query({ name: file.name, role_id: data.role_id })}`, { method: "POST", body: file });
+      const result = await request<T>(`${projectPath(data.project_id, "media/upload")}?${query({ name: file.name, asset_id: data.asset_id })}`, { method: "POST", body: file });
       releaseFile(data.source_path); return result;
     }
   }
@@ -38,8 +38,8 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     const name = downloadName(data.destination_path);
     if (name !== null) {
       // Resolve the resource first so missing/deleted media errors reach the UI.
-      await jsonRequest(projectPath(data.project_id, `assets/${data.media_id}`), "GET");
-      download(`${projectPath(data.project_id, `assets/${data.media_id}/content`)}?download=1`, name);
+      await jsonRequest(projectPath(data.project_id, `media/${data.media_id}`), "GET");
+      download(`${projectPath(data.project_id, `media/${data.media_id}/content`)}?download=1`, name);
       return { path: name } as T;
     }
   }
@@ -58,7 +58,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     }
   }
   const parts = path.split("/").filter(Boolean);
-  const resource = parts[0] === "media" ? "assets" : parts[0];
+  const resource = parts[0];
   const operation = parts[1];
   if (resourceFields[resource] && (parts.length === 1 && method === "POST" || parts.length === 2 && ["update", "rename", "delete"].includes(operation))) {
     if (["scenes", "screenplays"].includes(resource) && !operation && method === "POST") {
@@ -78,7 +78,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
 }
 export const post = <T,>(path: string, data?: unknown) => api<T>(path, { method: "POST", body: JSON.stringify(data || {}) });
 
-/** Upload browser or clipboard files through the same asset endpoint. */
-export function uploadAsset<T>(projectId: string, file: File): Promise<T> {
-  return request<T>(`${projectPath(projectId, "assets/upload")}?${query({ name: file.name })}`, { method: "POST", body: file });
+/** Upload browser or clipboard files through the media endpoint. */
+export function uploadMedia<T>(projectId: string, file: File): Promise<T> {
+  return request<T>(`${projectPath(projectId, "media/upload")}?${query({ name: file.name })}`, { method: "POST", body: file });
 }

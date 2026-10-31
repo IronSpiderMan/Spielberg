@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { Button, Form, Input, Message, Modal, Select } from "@arco-design/web-react";
 import { Plus, Save, Undo2, Redo2, Maximize, Download, StickyNote, Trash2, ArrowLeft, Image, Film, Music, Upload, RotateCcw } from "lucide-react";
 import { defaultGenerationSize, normalizeGenerationSize, imageUrl, post, type Media, type Scene, type Snapshot } from "./core";
-import { uploadAsset } from "./api";
+import { uploadMedia } from "./api";
 import { buildVideoRequest } from "./generation-request";
 import { resolvePrompt } from "./resolve-prompt";
 import { MediaSizeFields, VideoDurationField } from "./components/generation/GenerationFields";
@@ -13,7 +13,7 @@ import { confirmDiscard, useEditGuard } from "./edit-guard";
 import "./infinite-canvas.css";
 
 type MediaKind = "image" | "audio" | "video";
-type Kind = MediaKind | "note" | "scene" | "role" | "media" | "prompt";
+type Kind = MediaKind | "note" | "scene" | "asset" | "media" | "prompt";
 type Node = { id: string; kind: Kind; ref_id?: number; text?: string; prompt?: string; duration?: number; ratio?: string; size?: string; x: number; y: number };
 type Edge = { id: string; from: string; to: string };
 type Draft = { version: 1; nodes: Node[]; edges: Edge[]; viewport: { x: number; y: number; zoom: number } };
@@ -26,7 +26,7 @@ function normalizeDraftSizes(draft: Draft): Draft {
     return { ...node, ratio, size: normalizeGenerationSize(ratio, node.size) };
   }) };
 }
-const labels: Record<Kind, string> = { image: "图片", audio: "音频", video: "视频", scene: "场景", role: "资产", media: "素材", prompt: "Prompt", note: "便签" };
+const labels: Record<Kind, string> = { image: "图片", audio: "音频", video: "视频", scene: "场景", asset: "资产", media: "素材", prompt: "Prompt", note: "便签" };
 const mediaKind = (kind: Kind): kind is MediaKind => ["image", "video", "audio"].includes(kind);
 const uid = () => crypto.randomUUID();
 const clamp = (n: number) => Math.max(.2, Math.min(2, n));
@@ -131,7 +131,7 @@ export default function InfiniteCanvas({ data, scene, reload, onClose }: {
       const media = available.find(m => m.id === node.ref_id);
       return { title: media?.name || `${labels[node.kind]}节点`, text: media ? `已选择${labels[node.kind]}素材` : node.ref_id ? "素材已移除，请替换素材" : "选择已有素材或上传文件", media };
     }
-    const original = node.kind === "scene" ? data.episodes.flatMap(e => e.scenes).find(s => s.id === node.ref_id) : node.kind === "role" ? data.roles.find(r => r.id === node.ref_id) : data.prompts.find(p => p.id === node.ref_id);
+    const original = node.kind === "scene" ? data.episodes.flatMap(e => e.scenes).find(s => s.id === node.ref_id) : node.kind === "asset" ? data.assets.find(r => r.id === node.ref_id) : data.prompts.find(p => p.id === node.ref_id);
     return { title: node.kind === "note" ? "创作便签" : original ? ("title" in original ? original.title : original.name) : `${labels[node.kind]}已移除`, text: node.text || (original ? ("description" in original ? original.description : original.content) : "") };
   };
   const remove = () => { if (busy.current) return; commit({ ...draft, nodes: draft.nodes.filter(n => n.id !== selected), edges: draft.edges.filter(e => e.from !== selected && e.to !== selected && e.id !== selected) }); setSelected(""); setLinkFrom(""); setLinkTo(""); setLinkPoint(null); };
@@ -168,7 +168,7 @@ export default function InfiniteCanvas({ data, scene, reload, onClose }: {
   };
   const upload = async (file: File) => {
     if (!picker || busy.current) return; busy.current = true; setBusyNode(picker.id);
-    try { const media = await uploadAsset<Media>(data.project.id, file); assign(media); await reload(); }
+    try { const media = await uploadMedia<Media>(data.project.id, file); assign(media); await reload(); }
     catch (e) { Message.error(String(e)); } finally { busy.current = false; setBusyNode(""); }
   };
   const generate = async (node: Node) => {
@@ -182,7 +182,7 @@ export default function InfiniteCanvas({ data, scene, reload, onClose }: {
     const imageIds = [...new Set([...references.filter(m => m?.kind === "image").map(m => m!.id), ...(node.kind === "image" && node.ref_id ? [node.ref_id] : [])])];
     let request: object;
     try {
-      request = node.kind === "image" ? { operation: imageIds.length ? "i2i" : "t2i", prompt: resolvePrompt(prompt, data.roles, data.prompts), aspect_ratio: node.ratio || "16:9", size: normalizeGenerationSize(node.ratio || "16:9", node.size), image_media_ids: imageIds } : buildVideoRequest({ mode: references.length ? "i2v" : "t2v", prompt: resolvePrompt(prompt, data.roles, data.prompts), duration: node.duration || 5, ratio: node.ratio || "16:9", size: normalizeGenerationSize(node.ratio || "16:9", node.size), sceneId: scene.id,
+      request = node.kind === "image" ? { operation: imageIds.length ? "i2i" : "t2i", prompt: resolvePrompt(prompt, data.assets, data.prompts), aspect_ratio: node.ratio || "16:9", size: normalizeGenerationSize(node.ratio || "16:9", node.size), image_media_ids: imageIds } : buildVideoRequest({ mode: references.length ? "i2v" : "t2v", prompt: resolvePrompt(prompt, data.assets, data.prompts), duration: node.duration || 5, ratio: node.ratio || "16:9", size: normalizeGenerationSize(node.ratio || "16:9", node.size), sceneId: scene.id,
         referenceIds: references.filter(m => m?.kind === "image").map(m => m!.id), referenceVideoIds: references.filter(m => m?.kind === "video").map(m => m!.id), referenceAudioIds: references.filter(m => m?.kind === "audio").map(m => m!.id) });
     } catch (e) { return void Message.warning(String(e)); }
     busy.current = true; setBusyNode(node.id);

@@ -10,7 +10,7 @@ const assert = require('node:assert/strict');
    const project = { id: 'canvas-qa', name: '画布测试项目', path: '/fixture', updated_at: '刚刚' };
    const image = { id: 1, name: '参考图片.png', path: '/spielberg-logo-s.png', kind: 'image', created_at: '1' };
    const scene = { id: 3, title: '默认场景', description: '', creation_mode: 'default', sort_order: 0, first_media_id: null, last_media_id: null, reference_media_id: null, videos: [] };
-   const initial = { project, roles: [], media: [image, { ...image, id: 2, name: '参考音频.wav', kind: 'audio' }, { ...image, id: 3, name: '参考视频.mp4', kind: 'video' }], episodes: [{ id: 1, title: '第一集', description: '', scenes: [scene] }], prompts: [], settings: {} };
+   const initial = { project, assets: [], media: [image, { ...image, id: 2, name: '参考音频.wav', kind: 'audio' }, { ...image, id: 3, name: '参考视频.mp4', kind: 'video' }], episodes: [{ id: 1, title: '第一集', description: '', scenes: [scene] }], prompts: [], settings: {} };
    const data = JSON.parse(sessionStorage.getItem('qa-data') || 'null') || initial;
    const boards = JSON.parse(sessionStorage.getItem('qa-boards') || '{}');
    window.__qaData = data; window.__qaBoards = boards; window.__qaRequests = []; window.__qaFail = false;
@@ -35,11 +35,11 @@ const assert = require('node:assert/strict');
      if (payload.revision !== (boards[payload.scene_id]?.revision || 0)) return new Response(JSON.stringify({ error: '画布已在其他窗口更新' }), { status: 400 });
      boards[payload.scene_id] = { draft: payload.draft, revision: payload.revision + 1 }; result = boards[payload.scene_id];
     }
-    if (path.endsWith('/assets') && method === 'GET') {
+    if (path.endsWith('/media') && method === 'GET') {
      const items = data.media.filter(m => m.kind === url.searchParams.get('kind') && m.name.includes(url.searchParams.get('query') || ''));
      result = { items, total: items.length };
     }
-    if (path.endsWith('/assets/upload')) {
+    if (path.endsWith('/media/upload')) {
      const file = init.body, m = { ...image, id: 30, name: file.name }; data.media.push(m); result = m;
     }
     if (path === '/actions/media/thumbnail') result = { path: '/spielberg-logo-s.png' };

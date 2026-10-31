@@ -2,10 +2,10 @@ import {useId,useRef,useState} from "react";
 import type {ReactNode} from "react";
 import {findMentions,mentionPattern,promptMentions,savedPromptMentions,templateMentions} from "./prompt-mentions";
 import type {SavedPrompt} from "./prompt-mentions";
-import type {Role,Snapshot} from "./core";
+import type {Asset,Snapshot} from "./core";
 import {assetCategoryLabel} from "./asset-categories";
 
-export function PromptInput({value,onChange,roles,data,prompts=[],templates=[],placeholder,disabled=false,onOptimize,optimizing=false,onPasteImages}:{value:string;onChange:(value:string)=>void;roles:Role[];data?:Snapshot;prompts?:SavedPrompt[];templates?:{id:string|number;name:string;content:string}[];placeholder?:string;disabled?:boolean;onOptimize?:()=>void;optimizing?:boolean;onPasteImages?:(files:File[])=>void}) {
+export function PromptInput({value,onChange,roles,data,prompts=[],templates=[],placeholder,disabled=false,onOptimize,optimizing=false,onPasteImages}:{value:string;onChange:(value:string)=>void;roles:Asset[];data?:Snapshot;prompts?:SavedPrompt[];templates?:{id:string|number;name:string;content:string}[];placeholder?:string;disabled?:boolean;onOptimize?:()=>void;optimizing?:boolean;onPasteImages?:(files:File[])=>void}) {
   const input=useRef<HTMLTextAreaElement>(null), backdrop=useRef<HTMLDivElement>(null);
   const [caret,setCaret]=useState(value.length),[focused,setFocused]=useState(false),[active,setActive]=useState(0),[dismissed,setDismissed]=useState(false);
   const listId=useId();

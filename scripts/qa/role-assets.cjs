@@ -8,7 +8,7 @@ const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors
 await page.addInitScript(()=>{
 const project={id:'qa',name:'测试项目',path:'/fixture',updated_at:'刚刚'};
 const image={id:1,name:'角色正面.png',path:'/spielberg-logo-s.png',kind:'image',created_at:'1789990000'};
-const data={project,roles:[],media:[image,{...image,id:2,name:'测试视频.mp4',kind:'video'}],episodes:[],prompts:[],settings:{}};
+const data={project,assets:[],media:[image,{...image,id:2,name:'测试视频.mp4',kind:'video'}],episodes:[],prompts:[],settings:{}};
 window.__qaCalls=[];window.__qaData=data;window.__qaFail=false;
 window.__TAURI_INTERNALS__={convertFileSrc:p=>p,invoke:async(command,args)=>{
 if(command!=='api_request')return null;
@@ -17,9 +17,9 @@ if(path==='/project/changes')return structuredClone(data);
 if(path==='/media/list')return {items:data.media.map(m=>({...m,usage_count:0})),total:data.media.length};
 if(path==='/media/thumbnail')return {path:'/spielberg-logo-s.png'};
 if(path==='/projects')return [project];if(path==='/project')return structuredClone(data);if(path==='/tasks')return {items:[],has_more:false,next_cursor:null};
-if(path==='/roles'){const role={id:1,name:payload.name,description:'',design_media_id:null,images:[]};data.roles.push(role);return structuredClone(role);}
-if(path==='/roles/media/add'){if(window.__qaFail)throw Error('测试导入失败');const role=data.roles[0];image.name=payload.name;if(!role.images.some(m=>m.id===payload.media_id))role.images.push(image);return {ok:true};}
-if(path==='/roles/update'){Object.assign(data.roles[0],payload);return {ok:true};}
+if(path==='/assets'){const role={id:1,name:payload.name,description:'',design_media_id:null,images:[]};data.assets.push(role);return structuredClone(role);}
+if(path==='/assets/media/add'){if(window.__qaFail)throw Error('测试导入失败');const role=data.assets[0];image.name=payload.name;if(!role.images.some(m=>m.id===payload.media_id))role.images.push(image);return {ok:true};}
+if(path==='/assets/update'){Object.assign(data.assets[0],payload);return {ok:true};}
 return null;
 }};
 });
@@ -43,7 +43,7 @@ await naming.getByLabel('资产图片名称',{exact:true}).fill('   ');
 assert(await naming.getByRole('button',{name:'确认添加'}).isDisabled());
 await naming.getByRole('button',{name:'取消',exact:true}).click();
 await naming.waitFor({state:'hidden'});
-assert.equal(await page.evaluate(()=>window.__qaData.roles[0].images.length),0);
+assert.equal(await page.evaluate(()=>window.__qaData.assets[0].images.length),0);
 await page.getByRole('button',{name:'从素材库选择',exact:true}).click();
 await picker.getByRole('button',{name:'选择素材 角色正面.png'}).click();
 await page.getByRole('button',{name:'选择此图片',exact:true}).click();
@@ -59,7 +59,7 @@ await naming.waitFor({state:'hidden'});
 await page.locator('.arco-drawer .media-option.selected').waitFor();
 await page.getByRole('button',{name:'保存资产',exact:true}).click();
 await page.locator('.arco-drawer:visible').waitFor({state:'hidden'});
-assert.equal(await page.evaluate(()=>window.__qaData.roles[0].design_media_id),1);
+assert.equal(await page.evaluate(()=>window.__qaData.assets[0].design_media_id),1);
 assert.equal(await page.evaluate(()=>window.__qaData.media.length),2);
 await page.getByRole('button',{name:'设定',exact:true}).click();
 await page.getByRole('button',{name:'从素材库选择',exact:true}).click();

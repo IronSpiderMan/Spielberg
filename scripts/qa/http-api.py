@@ -61,8 +61,8 @@ def main():
                 created = list(executor.map(lambda i: api("POST", "/projects", {"name": str(i)}, 201), range(8)))
             assert len(api("GET", "/projects")) == 9
             for item in created: api("DELETE", "/projects/" + item["id"])
-            role = api("POST", scope + "/roles", {"name": "主角", "description": "保留描述"}, 201)
-            assert api("PATCH", scope + f'/roles/{role["id"]}', {"name": "新名字"})["description"] == "保留描述"
+            role = api("POST", scope + "/assets", {"name": "主角", "description": "保留描述"}, 201)
+            assert api("PATCH", scope + f'/assets/{role["id"]}', {"name": "新名字"})["description"] == "保留描述"
             episode = api("POST", scope + "/episodes", {"title": "第一集", "description": "剧情"}, 201)
             scene = api("POST", scope + "/scenes", {"episode_id": episode["id"], "title": "场景一", "description": "雨夜"}, 201)
             prompt = api("POST", scope + "/prompts", {"name": "风格", "content": "水墨", "category": "风格"}, 201)
@@ -76,6 +76,9 @@ def main():
             screenplay_path = scope + f'/screenplays/{screenplay["id"]}'
             assert api("PATCH", screenplay_path, {"title": "第一稿"})["content"] == markdown
             snapshot = api("POST", "/actions/project", {"id": pid})
+            assert snapshot["assets"][0]["id"] == role["id"] and "roles" not in snapshot
+            assert "assets" in snapshot["revisions"] and "roles" not in snapshot["revisions"]
+            api("GET", scope + "/roles", expected=404)
             assert snapshot["screenplays"][0]["title"] == "第一稿"
             assert "screenplays" not in api("POST", "/actions/project/changes", {"id": pid, "revisions": snapshot["revisions"]})
             api("PATCH", screenplay_path, {"content": markdown + "\n\n---"})
@@ -90,16 +93,16 @@ def main():
             api("GET", screenplay_path, expected=404)
             assert api("GET", scope + "/screenplays") == []
             # Binary upload, role assignment, Unicode query, real file download, and byte ranges.
-            contents, _ = raw("POST", "/api/v1" + scope + "/assets/upload?" + urllib.parse.urlencode({"name": "参考图.png", "role_id": role["id"]}), PNG, expected=201)
+            contents, _ = raw("POST", "/api/v1" + scope + "/media/upload?" + urllib.parse.urlencode({"name": "参考图.png", "asset_id": role["id"]}), PNG, expected=201)
             asset = json.loads(contents)["data"]; mid = asset["id"]
-            assert api("GET", scope + f'/roles/{role["id"]}')["images"][0]["id"] == mid
-            assets = api("GET", scope + "/assets?" + urllib.parse.urlencode({"query": "参考图", "limit": 1}))
+            assert api("GET", scope + f'/assets/{role["id"]}')["images"][0]["id"] == mid
+            assets = api("GET", scope + "/media?" + urllib.parse.urlencode({"query": "参考图", "limit": 1}))
             assert assets["total"] == 1 and len(assets["items"]) == 1
-            api("PATCH", scope + f'/roles/{role["id"]}', {"design_media_id": mid})
-            api("PATCH", scope + f'/roles/{role["id"]}', {"description": "新描述"})
-            assert api("GET", scope + f'/roles/{role["id"]}')["design_media_id"] == mid
-            api("DELETE", scope + f"/assets/{mid}", expected=409)
-            content_path = "/api/v1" + scope + f"/assets/{mid}/content"
+            api("PATCH", scope + f'/assets/{role["id"]}', {"design_media_id": mid})
+            api("PATCH", scope + f'/assets/{role["id"]}', {"description": "新描述"})
+            assert api("GET", scope + f'/assets/{role["id"]}')["design_media_id"] == mid
+            api("DELETE", scope + f"/media/{mid}", expected=409)
+            content_path = "/api/v1" + scope + f"/media/{mid}/content"
             contents, headers = raw("GET", content_path + "?download=1")
             assert contents == PNG and "attachment" in headers["Content-Disposition"]
             contents, headers = raw("GET", content_path, headers={"Range": "bytes=0-7"}, expected=206)
@@ -109,10 +112,10 @@ def main():
             assert api("PATCH", scope + f'/scenes/{scene["id"]}', {"title": "新场景"})["description"] == "雨夜"
             assert api("GET", scope + "/scenes?episode_id=" + str(episode["id"]))[0]["id"] == scene["id"]
             api("PATCH", scope + f'/scenes/{scene["id"]}', {"last_media_id": 999999}, 400)
-            api("GET", scope + "/roles/999999", expected=404)
-            api("PATCH", scope + "/roles/999999", {"name": "missing"}, 404)
-            api("DELETE", scope + "/roles/999999", expected=404)
-            api("POST", scope + "/roles", {"name": ""}, 400)
+            api("GET", scope + "/assets/999999", expected=404)
+            api("PATCH", scope + "/assets/999999", {"name": "missing"}, 404)
+            api("DELETE", scope + "/assets/999999", expected=404)
+            api("POST", scope + "/assets", {"name": ""}, 400)
             raw("POST", "/api/v1/projects", b"broken json", expected=400)
             raw("POST", "/api/v1/projects", b"[]", expected=400)
             raw("GET", "/api/v1/projects", headers={"Origin": "https://untrusted.example"}, expected=403)
@@ -126,15 +129,15 @@ def main():
             restored_bytes, _ = raw("POST", "/api/v1/projects/restore-upload", archive, expected=201)
             restored = json.loads(restored_bytes)["data"]
             assert restored["id"] != pid
-            assert api("GET", f'/projects/{restored["id"]}/roles')[0]["description"] == "新描述"
-            for resource, identifier in [("prompts", prompt["id"]), ("roles", role["id"]), ("scenes", scene["id"]), ("episodes", episode["id"])]:
+            assert api("GET", f'/projects/{restored["id"]}/assets')[0]["description"] == "新描述"
+            for resource, identifier in [("prompts", prompt["id"]), ("assets", role["id"]), ("scenes", scene["id"]), ("episodes", episode["id"])]:
                 api("GET", scope + f"/{resource}/{identifier}")
                 api("DELETE", scope + f"/{resource}/{identifier}")
                 api("GET", scope + f"/{resource}/{identifier}", expected=404)
-            api("PATCH", scope + f"/assets/{mid}", {"name": "重命名.png"})
-            api("DELETE", scope + f"/assets/{mid}")
-            api("GET", scope + f"/assets/{mid}", expected=404)
-            assert api("GET", scope + "/assets?usage=trash")["total"] == 1
+            api("PATCH", scope + f"/media/{mid}", {"name": "重命名.png"})
+            api("DELETE", scope + f"/media/{mid}")
+            api("GET", scope + f"/media/{mid}", expected=404)
+            assert api("GET", scope + "/media?usage=trash")["total"] == 1
             assert api("DELETE", scope)["data_retained"] is True
             assert Path(project["path"]).is_dir()
             api("GET", scope, expected=404)
@@ -143,10 +146,10 @@ def main():
             svg_project = api("POST", "/projects", {"name": "SVG validation"}, 201)
             svg_scope = "/projects/" + svg_project["id"]
             svg = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80"><rect width="120" height="80" fill="red"/></svg>'
-            uploaded, _ = raw("POST", "/api/v1" + svg_scope + "/assets/upload?name=vector.SVG", svg, expected=201)
+            uploaded, _ = raw("POST", "/api/v1" + svg_scope + "/media/upload?name=vector.SVG", svg, expected=201)
             vector = json.loads(uploaded)["data"]
             assert vector["kind"] == "image"
-            content_path = "/api/v1" + svg_scope + f'/assets/{vector["id"]}/content'
+            content_path = "/api/v1" + svg_scope + f'/media/{vector["id"]}/content'
             for suffix in ["", "?download=1"]:
                 content, headers = raw("GET", content_path + suffix)
                 assert content == svg and headers["Content-Type"] == "image/svg+xml"
@@ -158,9 +161,9 @@ def main():
             assert content.startswith(b"\x89PNG")
             direct = api("POST", "/actions/media/create-svg", {"project_id": svg_project["id"], "name": "Agent vector", "svg": svg.decode()})
             assert direct["name"] == "Agent vector.svg" and direct["kind"] == "image"
-            raw("POST", "/api/v1" + svg_scope + "/assets/upload?name=bad.svg", b"<svg/>", expected=400)
+            raw("POST", "/api/v1" + svg_scope + "/media/upload?name=bad.svg", b"<svg/>", expected=400)
             api("POST", "/actions/media/create-svg", {"project_id": svg_project["id"], "name": "bad", "svg": svg.decode().replace("<rect", '<script>alert(1)</script><rect')}, 400)
-            assert api("GET", svg_scope + "/assets?kind=image")["total"] == 2
+            assert api("GET", svg_scope + "/media?kind=image")["total"] == 2
             api("DELETE", svg_scope)
             print("PASS: seven-resource CRUD, PATCH preservation, concurrent projects, binary uploads, references, ranges, backup restore, SVG upload/create/preview/download/thumbnail/validation, CORS, SPA hosting")
         finally:

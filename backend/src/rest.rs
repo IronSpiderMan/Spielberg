@@ -24,7 +24,7 @@ fn sql_error(error: rusqlite::Error) -> ApiError {
     ApiError(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
 }
 fn table(resource: &str) -> ApiResult<&'static str> {
-    match resource { "roles"=>Ok("roles"),"assets"=>Ok("media"),"episodes"=>Ok("episodes"),"scenes"=>Ok("scenes"),"prompts"=>Ok("prompts"),"screenplays"=>Ok("screenplays"),_=>Err(missing()) }
+    match resource { "assets"=>Ok("roles"),"media"=>Ok("media"),"episodes"=>Ok("episodes"),"scenes"=>Ok("scenes"),"prompts"=>Ok("prompts"),"screenplays"=>Ok("screenplays"),_=>Err(missing()) }
 }
 fn rows(c: &Connection, table: &str, id: Option<i64>) -> ApiResult<Vec<Value>> {
     // table is selected exclusively by table(), never interpolated from a request.
@@ -48,7 +48,7 @@ fn rows(c: &Connection, table: &str, id: Option<i64>) -> ApiResult<Vec<Value>> {
 }
 fn enrich(c: &Connection, resource: &str, mut value: Value) -> ApiResult<Value> {
     let id=value["id"].as_i64().unwrap();
-    if resource=="roles" {
+    if resource=="assets" {
         value["enabled"]=json!(value["enabled"].as_i64().unwrap_or(1)!=0);
         value["audios"]=json!(role_audios(c,id)?);
         let mut q=c.prepare("SELECT m.id FROM media m WHERE m.deleted_at IS NULL AND (m.id=? OR EXISTS(SELECT 1 FROM role_media r WHERE r.role_id=? AND r.media_id=m.id)) ORDER BY CASE WHEN m.id=? THEN 0 ELSE 1 END,m.id DESC").map_err(sql_error)?;
@@ -72,21 +72,21 @@ fn get(c: &Connection, resource: &str, id: i64) -> ApiResult<Value> {
 }
 fn validate(c: &Connection, resource: &str, value: &Value, create: bool) -> ApiResult<()> {
     let fields: &[&str]=match resource {
-        "roles"=>&["name","description","enabled","category","design_media_id"],
+        "assets"=>&["name","description","enabled","category","design_media_id"],
         "episodes"=>&["title","description","cover_media_id","storyboard"],
         "scenes"=>&["creation_mode","title","description","prompt","episode_id","first_media_id","last_media_id","reference_media_id","generation_options"],
         "prompts"=>&["name","content","category"],
         "screenplays"=>&["title","content","format","episode_id"],
-        "assets"=>&["name","extension","data_base64","role_id"],_=>return Err(missing()),
+        "media"=>&["name","extension","data_base64","asset_id"],_=>return Err(missing()),
     };
     for (key,item) in value.as_object().ok_or_else(||bad("JSON 必须是对象"))? {
         if ["project_id","id"].contains(&key.as_str()) {continue}
-        if resource=="assets" && !create && key!="name" {return Err(bad("素材更新仅支持 name"))}
+        if resource=="media" && !create && key!="name" {return Err(bad("素材更新仅支持 name"))}
         if !fields.contains(&key.as_str()) {return Err(bad(&format!("不支持的字段：{key}")))}
         if ["name","title","description","content","format","category","extension","data_base64"].contains(&key.as_str()) && !item.is_string(){return Err(bad(&format!("{key} 必须是字符串")))}
         if ["name","title"].contains(&key.as_str()) && item.as_str().unwrap_or("").trim().is_empty(){return Err(bad("名称不能为空"))}
         if key=="enabled" && !item.is_boolean(){return Err(bad("enabled 必须是布尔值"))}
-        if resource=="roles" && key=="category" && !["person","location","object","creature","vehicle","other"].contains(&item.as_str().unwrap_or("")) {
+        if resource=="assets" && key=="category" && !["person","location","object","creature","vehicle","other"].contains(&item.as_str().unwrap_or("")) {
             return Err(bad("资产类别必须为 person/location/object/creature/vehicle/other"));
         }
         if key.ends_with("_media_id") && !item.is_null() {
@@ -94,7 +94,7 @@ fn validate(c: &Connection, resource: &str, value: &Value, create: bool) -> ApiR
             let m=media(c,Some(mid)).ok_or_else(||bad("引用的素材不存在或已删除"))?;
             if m["kind"]!="image" {return Err(bad("该字段必须引用图片素材"))}
         }
-        if ["role_id","episode_id"].contains(&key.as_str()) && !item.as_i64().is_some_and(|n|n>0) {return Err(bad(&format!("{key} 必须是正整数")))}
+        if ["asset_id","episode_id"].contains(&key.as_str()) && !item.as_i64().is_some_and(|n|n>0) {return Err(bad(&format!("{key} 必须是正整数")))}
         if key=="creation_mode" && !["default","canvas"].contains(&item.as_str().unwrap_or("")){return Err(bad("创建方式必须为 default 或 canvas"))}
         if key=="creation_mode" && !create && get(c,"scenes",value["id"].as_i64().unwrap_or(0))?["creation_mode"]!=*item{return Err(bad("场景创建方式不可更改"))}
         if key=="format" && !["markdown","csv"].contains(&item.as_str().unwrap_or("")) {return Err(bad("剧本格式必须为 markdown 或 csv"))}
@@ -187,12 +187,12 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
                     let mut merged=current;
                     for (key,item) in value.as_object().unwrap() {merged[key]=item.clone();}
                     match resource {
-                        "screenplays"=>{screenplays::update(state,&merged)?;},"roles"=>{update_role(state,&merged)?;},"episodes"=>{update_episode(state,&merged)?;},"scenes"=>{update_scene(state,&merged)?;},"prompts"=>{update_prompt(state,&merged)?;},"assets"=>{manage_media(state,&merged,false)?;},_=>unreachable!(),
+                        "screenplays"=>{screenplays::update(state,&merged)?;},"assets"=>{update_role(state,&merged)?;},"episodes"=>{update_episode(state,&merged)?;},"scenes"=>{update_scene(state,&merged)?;},"prompts"=>{update_prompt(state,&merged)?;},"media"=>{manage_media(state,&merged,false)?;},_=>unreachable!(),
                     }
                     get(&c,resource,id)
                 },
                 "DELETE"=>{
-                    if resource=="assets" {manage_media(state,&value,true)?;} else {
+                    if resource=="media" {manage_media(state,&value,true)?;} else {
                         c.execute(&format!("DELETE FROM {table} WHERE id=?"),[id]).map_err(sql_error)?;
                     }
                     touch(state,&pid);Ok(json!({"deleted":true}))
@@ -202,10 +202,10 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
         } else {
             match method {
                 "GET"=>{
-                    if resource=="assets" {return Ok(catalog::list(&c,&value)?)}
+                    if resource=="media" {return Ok(catalog::list(&c,&value)?)}
                     if let Some(ep)=value.get("episode_id") { if ["scenes","screenplays"].contains(&resource) { get(&c,"episodes",ep.as_i64().ok_or_else(||bad("剧集 ID 无效"))?)?; } }
                     let mut all=rows(&c,table,None)?;
-                    if resource=="roles" {
+                    if resource=="assets" {
                         if let Some(category)=value.get("category") {
                             if !["person","location","object","creature","vehicle","other"].contains(&category.as_str().unwrap_or("")) {return Err(bad("资产类别无效"));}
                             all.retain(|role|role["category"]==*category);
@@ -225,19 +225,19 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
                 },
                 "POST"=>{
                     validate(&c,resource,&value,true)?;
-                    let item=match resource {"screenplays"=>screenplays::insert(state,&value)?,"roles"=>insert_role(state,&value)?,"episodes"=>insert_episode(state,&value)?,"scenes"=>insert_scene(state,&value)?,"prompts"=>insert_prompt(state,&value)?,"assets"=>{
+                    let item=match resource {"screenplays"=>screenplays::insert(state,&value)?,"assets"=>insert_role(state,&value)?,"episodes"=>insert_episode(state,&value)?,"scenes"=>insert_scene(state,&value)?,"prompts"=>insert_prompt(state,&value)?,"media"=>{
                         let bytes=base64::engine::general_purpose::STANDARD.decode(strv(&value,"data_base64")?).map_err(|_|bad("Base64 数据无效"))?;
                         if bytes.len()>100*1024*1024{return Err(ApiError(StatusCode::PAYLOAD_TOO_LARGE,"素材不能超过 100 MB".into()))}
                         let ext=strv(&value,"extension")?;
                         let temp=state.root.join(format!(".upload-{}.{}",Uuid::new_v4(),safe_extension(&ext)?));
                         fs::write(&temp,bytes).map_err(|e|ApiError(StatusCode::INTERNAL_SERVER_ERROR,e.to_string()))?;
-                        let result=import_uploaded(state,&pid,&temp,&strv(&value,"name")?,opti(&value,"role_id"));let _=fs::remove_file(&temp);result?
+                        let result=import_uploaded(state,&pid,&temp,&strv(&value,"name")?,opti(&value,"asset_id"));let _=fs::remove_file(&temp);result?
                     },_=>unreachable!()};
                     let id=item["id"].as_i64().unwrap();
                     // Apply optional create-time references using the same validation as PATCH.
                     let mut merged=get(&c,resource,id)?;
                     for (key,item) in value.as_object().unwrap(){merged[key]=item.clone();}
-                    match resource {"roles"=>{update_role(state,&merged)?;},"episodes"=>{update_episode(state,&merged)?;},"scenes"=>{update_scene(state,&merged)?;},_=>{}}
+                    match resource {"assets"=>{update_role(state,&merged)?;},"episodes"=>{update_episode(state,&merged)?;},"scenes"=>{update_scene(state,&merged)?;},_=>{}}
                     get(&c,resource,id)
                 },
                 _=>Err(ApiError(StatusCode::METHOD_NOT_ALLOWED,"集合支持 GET/POST".into())),
@@ -252,10 +252,10 @@ pub(crate) fn safe_extension(ext: &str)->ApiResult<String>{
 pub(crate) fn import_uploaded(state:&AppState,pid:&str,path:&Path,name:&str,role:Option<i64>)->ApiResult<Value>{
     if name.trim().is_empty(){return Err(bad("素材名称不能为空"))}
     let c=db(state,pid)?;
-    if let Some(role)=role {get(&c,"roles",role)?;}
-    let item=import_media(state,&json!({"project_id":pid,"source_path":path,"role_id":role}))?;
+    if let Some(role)=role {get(&c,"assets",role)?;}
+    let item=import_media(state,&json!({"project_id":pid,"source_path":path,"asset_id":role}))?;
     c.execute("UPDATE media SET name=? WHERE id=?",params![name,item["id"].as_i64().unwrap()]).map_err(sql_error)?;
-    get(&c,"assets",item["id"].as_i64().unwrap())
+    get(&c,"media",item["id"].as_i64().unwrap())
 }
 
 pub(crate) fn action(state:&AppState,path:&str,value:Value)->ApiResult<Value>{
@@ -265,7 +265,7 @@ pub(crate) fn action(state:&AppState,path:&str,value:Value)->ApiResult<Value>{
     if ["/agent/config", "/agent/config/save", "/agent/sessions", "/agent/create", "/agent/session", "/agent/run", "/agent/cancel", "/agent/delete"].contains(&path) {
         return Ok(agent::command(state, path, &value)?);
     }
-    const ALLOWED:&[&str]=&["/canvas/load","/canvas/save","/editor/projects","/editor/save","/editor/probe","/editor/export","/app/settings/load","/app/settings/save","/project","/project/changes","/projects/open","/projects/migrate","/projects/backup","/projects/restore","/media/import","/media/export","/media/pose-reference","/media/thumbnail","/media/create-svg","/media/usage","/media/restore","/media/purge","/media/video-frame","/storage/scan","/storage/cleanup","/roles/media/add","/roles/media/delete","/roles/audio/save","/roles/audio/delete","/scripts/load","/scripts/save","/scripts/publish","/tasks","/generations/image","/generations/video","/prompts/optimize","/storyboard/generate","/storyboard/plan","/storyboard/validate","/scenes/reorder","/scenes/duplicate","/scenes/select-video","/scenes/delete-video","/episodes/reorder","/episodes/merge","/settings"];
+    const ALLOWED:&[&str]=&["/canvas/load","/canvas/save","/editor/projects","/editor/save","/editor/probe","/editor/export","/app/settings/load","/app/settings/save","/project","/project/changes","/projects/open","/projects/migrate","/projects/backup","/projects/restore","/media/import","/media/export","/media/pose-reference","/media/thumbnail","/media/create-svg","/media/usage","/media/restore","/media/purge","/media/video-frame","/storage/scan","/storage/cleanup","/assets/media/add","/assets/media/delete","/assets/audio/save","/assets/audio/delete","/scripts/load","/scripts/save","/scripts/publish","/tasks","/generations/image","/generations/video","/prompts/optimize","/storyboard/generate","/storyboard/plan","/storyboard/validate","/scenes/reorder","/scenes/duplicate","/scenes/select-video","/scenes/delete-video","/episodes/reorder","/episodes/merge","/settings"];
     if !ALLOWED.contains(&path){return Err(missing())}
     Ok(dispatch(state,"POST".into(),path.into(),Some(value))?)
 }

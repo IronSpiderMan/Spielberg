@@ -28,10 +28,10 @@ export function AssetAssignmentModal({ media, data, reload, onClose, title = "�
     try {
       const project_id = data.project.id;
       if (usage === "role") {
-        const role = data.roles.find(item => item.id === target);
+        const role = data.assets.find(item => item.id === target);
         if (!role) throw new Error("请选择有效的资产");
-        await post("/roles/media/add", { project_id, role_id: role.id, media_id: media.id, name: name.trim() });
-        await post("/roles/update", { project_id, id: role.id, name: role.name, description: role.description, design_media_id: media.id });
+        await post("/assets/media/add", { project_id, asset_id: role.id, media_id: media.id, name: name.trim() });
+        await post("/assets/update", { project_id, id: role.id, name: role.name, description: role.description, design_media_id: media.id });
       } else {
         const scene = scenes.find(item => item.scene.id === target)?.scene;
         if (!scene) throw new Error("请选择有效的场景");
@@ -54,11 +54,11 @@ export function AssetAssignmentModal({ media, data, reload, onClose, title = "�
         options={media.kind === "video" ? [{ value: "video", label: "场景视频" }] : imageUsages} /></Form.Item>
       <Form.Item label={usage === "role" ? "选择资产" : "选择场景"} required><Select aria-label={usage === "role" ? "选择资产" : "选择场景"} showSearch allowClear value={target} onChange={setTarget}
         placeholder={usage === "role" ? "请选择资产" : "请选择剧集 / 场景"}
-        options={usage === "role" ? data.roles.map(role => ({ value: role.id, label: `${assetCategoryLabel(role.category)} · ${role.name}` })) : scenes.map(item => ({ value: item.scene.id, label: item.label }))} /></Form.Item>
+        options={usage === "role" ? data.assets.map(role => ({ value: role.id, label: `${assetCategoryLabel(role.category)} · ${role.name}` })) : scenes.map(item => ({ value: item.scene.id, label: item.label }))} /></Form.Item>
       {usage === "role" && <Form.Item label="资产图片名称" required extra="图生图时可用 @资产.图片名称 引用这张图片。">
         <Input aria-label="资产图片名称" value={name} onChange={setName} placeholder="请输入名称，例如：正面、侧面、校服" />
       </Form.Item>}
-      {(usage === "role" ? !data.roles.length : !scenes.length) && <p className="helper">{usage === "role" ? "请先在资产管理中创建资产" : "请先创建剧集和场景"}</p>}
+      {(usage === "role" ? !data.assets.length : !scenes.length) && <p className="helper">{usage === "role" ? "请先在资产管理中创建资产" : "请先创建剧集和场景"}</p>}
       <p className="helper">{usage === "role" ? "图片将加入资产图片并设为主图。" : usage === "video" ? "视频将加入该场景并设为当前使用的视频。" : "图片将替换所选场景对应的图片。"}</p>
     </Form>
   </Modal>;

@@ -11,7 +11,7 @@ const fs = require('node:fs');
   const project={id:'qa-project',name:long,path:'/fixture',updated_at:'刚刚'};
   const media={id:1,name:long+'.png',path:'/spielberg-logo-s.png',kind:'image',created_at:'1789990000'};
   const scenes=Array.from({length:3},(_,i)=>({id:i+1,title:`场景 ${i+1} · ${long}`,description:(long+'。').repeat(8),sort_order:i,first_media_id:1,last_media_id:null,reference_media_id:null,first_media:media,videos:[]}));
-  const data={project,media:[media],roles:[{id:1,name:long,description:long.repeat(6),design_media_id:1,images:[media]}],episodes:[{id:1,title:long,description:long.repeat(3),scenes}],prompts:[{id:1,name:long.repeat(3),content:long.repeat(12),category:'角色'}],settings:{t2i:{provider:'openai',base_url:'https://example.com',model:'test',api_key:'',description:''}}};
+  const data={project,media:[media],assets:[{id:1,name:long,description:long.repeat(6),design_media_id:1,images:[media]}],episodes:[{id:1,title:long,description:long.repeat(3),scenes}],prompts:[{id:1,name:long.repeat(3),content:long.repeat(12),category:'角色'}],settings:{t2i:{provider:'openai',base_url:'https://example.com',model:'test',api_key:'',description:''}}};
   window.__qaCalls=[];
   window.__qaFailLoad=false;
   let draft=null;

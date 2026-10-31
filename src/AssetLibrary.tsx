@@ -10,7 +10,7 @@ import { Media,Snapshot,imageUrl,post } from "./core";
 import { EmptyState } from "./ui";
 import "./creation.css";
 
-export type AssetUsage = {kind:"role"|"episode"|"scene"|"canvas";target_id:number;title:string;episode_id?:number;episode_title?:string;purpose:string};
+export type AssetUsage = {kind:"asset"|"episode"|"scene"|"canvas";target_id:number;title:string;episode_id?:number;episode_title?:string;purpose:string};
 type Asset = Media & {usage_count:number;deleted_at?:string};
 type DiskScan = {files:{path:string;size:number}[];cache_bytes:number};
 const bytes = (value:number) => value < 1048576 ? `${(value/1024).toFixed(1)} KB` : `${(value/1048576).toFixed(1)} MB`;
@@ -51,13 +51,13 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
       setItems(result.items);setTotal(result.total);
     }).catch(e=>{if(id===request.current)setError(String(e));}).finally(()=>{if(id===request.current)setLoading(false);});
     return()=>{request.current++;};
-  },[pid,kind,search,filter,page,version,data.revisions?.media,data.revisions?.roles,data.revisions?.episodes]);
+  },[pid,kind,search,filter,page,version,data.revisions?.media,data.revisions?.assets,data.revisions?.episodes]);
   useEffect(()=>{
     if(!tracking)return;
     let disposed=false;setUses([]);setUsageError("");setUsageLoading(true);
     void post<{items:AssetUsage[]}>("/media/usage",{project_id:pid,id:tracking.id}).then(result=>{if(!disposed)setUses(result.items);}).catch(e=>{if(!disposed)setUsageError(String(e));}).finally(()=>{if(!disposed)setUsageLoading(false);});
     return()=>{disposed=true;};
-  },[tracking,pid,data.revisions?.roles,data.revisions?.episodes]);
+  },[tracking,pid,data.revisions?.assets,data.revisions?.episodes]);
   const [assignment,setAssignment]=useState<Media|null>(null);
   const beginAssignment=(media:Media)=>{setPreview(null);setAssignment(media);};
   const importFiles=async()=>{try {
@@ -110,7 +110,7 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
     {total>0&&<Pagination className="asset-pagination" current={page} pageSize={24} total={total} onChange={setPage} showTotal/>}
     <Drawer width={460} visible={!!tracking} title="素材用途" footer={null} onCancel={()=>setTracking(null)}>
       <h3>{tracking?.name}</h3><Spin loading={usageLoading} style={{display:"block"}}>
-        {usageError?<p role="alert">{usageError}</p>:uses.length?uses.map((use,index)=><div className="usage-record" key={index}><Tag>{use.purpose}</Tag><b>{use.episode_title&&use.kind==="scene"?`${use.episode_title} / `:""}{use.title}</b><Button size="small" onClick={()=>{setTracking(null);onLocate(use);}}>前往{use.kind==="role"?"资产":use.kind==="episode"?"剧集":use.kind==="canvas"?"画布":"场景"}</Button></div>):!usageLoading&&<Empty description="尚未被资产、剧集或场景使用"/>}
+        {usageError?<p role="alert">{usageError}</p>:uses.length?uses.map((use,index)=><div className="usage-record" key={index}><Tag>{use.purpose}</Tag><b>{use.episode_title&&use.kind==="scene"?`${use.episode_title} / `:""}{use.title}</b><Button size="small" onClick={()=>{setTracking(null);onLocate(use);}}>前往{use.kind==="asset"?"资产":use.kind==="episode"?"剧集":use.kind==="canvas"?"画布":"场景"}</Button></div>):!usageLoading&&<Empty description="尚未被资产、剧集或场景使用"/>}
       </Spin>
     </Drawer>
     <ImagePreviewModal media={preview?.kind==="image"?preview:null} images={items.filter(item=>item.kind==="image")} onMediaChange={setPreview} onClose={()=>setPreview(null)} footer={filter==="trash"?null:<Button type="primary" onClick={()=>preview&&beginAssignment(preview)}>设置用途</Button>}/>

@@ -117,7 +117,7 @@ fn success(value:Value,status:StatusCode)->Response{(status,Json(json!({"data":v
 fn query_value(q:&HashMap<String,String>)->Value{
     let mut result=json!({});
     for (key,value) in q {
-        result[key]=if ["id","episode_id","role_id","limit","page","before","through"].contains(&key.as_str()) {
+        result[key]=if ["id","episode_id","asset_id","limit","page","before","through"].contains(&key.as_str()) {
             value.parse::<i64>().map(Value::from).unwrap_or_else(|_|json!(value))
         } else if key=="enabled" {
             value.parse::<bool>().map(Value::from).unwrap_or_else(|_|json!(value))
@@ -137,16 +137,16 @@ async fn endpoint_inner(state:Shared,query:HashMap<String,String>,request:Reques
         let file=state.root.join("downloads").join(format!("{id}.spielberg-backup"));
         return serve_file(file,Some("project.spielberg-backup"),request).await;
     }
-    if parts.len()==5 && parts[0]=="projects" && parts[2]=="assets" && parts[4]=="content" && method=="GET" {
-        let state2=state.clone();let pid=parts[1].to_string();let id=parts[3].parse::<i64>().map_err(|_|ApiError(StatusCode::BAD_REQUEST,"资产 ID 无效".into()))?;
-        let item=blocking(move||{let _lock=state2.guard.lock().map_err(|_|"数据锁不可用".to_string())?;media(&db(&state2,&pid)?,Some(id)).ok_or_else(||ApiError(StatusCode::NOT_FOUND,"资产不存在".into()))}).await?;
+    if parts.len()==5 && parts[0]=="projects" && parts[2]=="media" && parts[4]=="content" && method=="GET" {
+        let state2=state.clone();let pid=parts[1].to_string();let id=parts[3].parse::<i64>().map_err(|_|ApiError(StatusCode::BAD_REQUEST,"素材 ID 无效".into()))?;
+        let item=blocking(move||{let _lock=state2.guard.lock().map_err(|_|"数据锁不可用".to_string())?;media(&db(&state2,&pid)?,Some(id)).ok_or_else(||ApiError(StatusCode::NOT_FOUND,"素材不存在".into()))}).await?;
         let file=PathBuf::from(strv(&item,"path")?);let name=strv(&item,"name")?;
         return serve_file(file,if query.get("download")==Some(&"1".to_string()){Some(&name)}else{None},request).await;
     }
-    if method=="POST" && parts.len()==4 && parts[0]=="projects" && parts[2]=="assets" && parts[3]=="upload" {
+    if method=="POST" && parts.len()==4 && parts[0]=="projects" && parts[2]=="media" && parts[3]=="upload" {
         let pid=parts[1].to_string();let name=query.get("name").filter(|v|!v.trim().is_empty()).ok_or_else(||ApiError(StatusCode::BAD_REQUEST,"缺少文件名".into()))?.clone();
         let ext=rest::safe_extension(Path::new(&name).extension().and_then(|v|v.to_str()).unwrap_or(""))?;
-        let role=query.get("role_id").map(|v|v.parse::<i64>().map_err(|_|ApiError(StatusCode::BAD_REQUEST,"角色 ID 无效".into()))).transpose()?;
+        let role=query.get("asset_id").map(|v|v.parse::<i64>().map_err(|_|ApiError(StatusCode::BAD_REQUEST,"资产 ID 无效".into()))).transpose()?;
         let temp=receive_file(&state,request.into_body(),&ext,100*1024*1024).await?;
         return blocking(move||{let _lock=state.guard.lock().map_err(|_|"数据锁不可用".to_string())?;rest::import_uploaded(&state,&pid,&temp.0,&name,role)}).await.map(|v|success(v,StatusCode::CREATED));
     }

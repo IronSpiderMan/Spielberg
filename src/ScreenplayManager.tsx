@@ -7,7 +7,7 @@ import { post, type Media, type Screenplay, type Snapshot } from "./core";
 import { newShot, parseShotCsv, serializeShotCsv, shotSizes, cameraMoves, type ScriptShot } from "./shot-script";
 import { ShotPictureField } from "./components/ShotPictureField";
 import { MarkdownEditor } from "./components/MarkdownEditor";
-import { uploadAsset } from "./api";
+import { uploadMedia } from "./api";
 import { isSupportedImage } from "./hooks/useImageUpload";
 import { promptMentions, savedPromptMentions } from "./prompt-mentions";
 import { StoryboardEditor, type Storyboard } from "./StoryboardEditor";
@@ -65,7 +65,7 @@ const ScreenplayManager = forwardRef<ScreenplayEditorHandle, Props>(function Scr
     try { return { shots: parseShotCsv(draft.content, false), csvError: "" }; }
     catch (error) { return { shots: [] as ScriptShot[], csvError: (error as Error).message }; }
   }, [format, draft.content]);
-  const mentions = useMemo(() => [...promptMentions(data.roles, data), ...savedPromptMentions(data.prompts)], [data.roles, data.media, data.episodes, data.prompts]);
+  const mentions = useMemo(() => [...promptMentions(data.assets, data), ...savedPromptMentions(data.prompts)], [data.assets, data.media, data.episodes, data.prompts]);
   const editShots = (next: ScriptShot[]) => editContent("csv", serializeShotCsv(next));
   const editShot = (index: number, change: Partial<ScriptShot>) => editShots(shots.map((shot, i) => i === index ? { ...shot, ...change } : shot));
   const uploadPicture = async (index: number, file: File) => {
@@ -73,7 +73,7 @@ const ScreenplayManager = forwardRef<ScreenplayEditorHandle, Props>(function Scr
     if (!isSupportedImage(file)) { Message.warning("请选择 PNG、JPEG、WebP 或 GIF 图片"); return; }
     busyRef.current = true; setWorking(true);
     try {
-      const media = await uploadAsset<Media>(data.project.id, file);
+      const media = await uploadMedia<Media>(data.project.id, file);
       editShot(index, { picture: media.path });
       Message.success("画面已添加，请保存");
       try { await reload(); } catch (error) { Message.error(`图片已上传，刷新失败：${String(error)}`); }
