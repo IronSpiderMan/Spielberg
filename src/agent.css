@@ -159,6 +159,16 @@
 .agent-tool b { color: var(--agent-muted); font-size: 10px; }
 .agent-tool pre { max-height: 280px; overflow: auto; margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; line-height: 1.7; }
 .agent-working { display: flex; align-items: center; gap: 8px; margin: 20px 0 8px; color: var(--agent-muted); font-size: 11px; }
+.agent-plan { margin: 20px 0; padding: 14px 16px; border: 1px solid var(--agent-border); border-radius: 10px; background: var(--agent-soft); font-size: 12px; }
+.agent-plan-heading { display: flex; justify-content: space-between; gap: 12px; color: var(--agent-muted); }
+.agent-plan ol { list-style: none; padding: 0; margin: 10px 0 0; }
+.agent-plan li { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; overflow-wrap: anywhere; }
+.agent-plan li > span:first-child { flex: 0 0 16px; color: var(--agent-muted); }
+.agent-plan li > span:nth-child(2) { flex: 1; min-width: 0; }
+.agent-plan li small { flex-shrink: 0; color: var(--agent-muted); }
+.agent-plan li[data-status="in_progress"] > span { color: var(--agent-accent); }
+.agent-plan li[data-status="completed"] > span { color: var(--agent-muted); }
+.agent-limit-notice { margin: 16px 0; color: var(--agent-muted); font-size: 12px; line-height: 1.8; }
 .agent-pulse { width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: var(--agent-accent); animation: agent-breathe 1.5s ease-in-out infinite; }
 @keyframes agent-breathe { 50% { opacity: .25; } }
 .agent-error { margin: 16px 0 0; padding: 12px; border: 1px solid #d98576; border-radius: 8px; background: var(--agent-accent-soft); color: #b35241; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }

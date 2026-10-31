@@ -18,14 +18,27 @@ const tool = (name, args, id) => ({id,type:'function',function:{name,arguments:J
   const prompt=body.messages[lastUser].content;
   const results=body.messages.slice(lastUser+1).filter(m=>m.role==='tool');
   let message;
-  if(prompt.includes('停止测试')) {
+  if(body.tool_choice==='none') {
+   message={role:'assistant',content:'本轮执行已暂停，已完成的操作已保留。'};
+  } else if(prompt.includes('预算测试')) {
+   message={role:'assistant',content:null,tool_calls:[tool('get_project',{},'budget-first'),tool('get_project',{},'budget-skipped')]};
+  } else if(prompt.includes('停止测试')) {
    await new Promise(resolve=>setTimeout(resolve,1800));
    message={role:'assistant',content:null,tool_calls:[tool('app_request',{method:'POST',resource:'roles',data:{name:'不应创建'}},'cancel-write')]};
   } else if(!results.length) {
    message={role:'assistant',content:null,tool_calls:[
+    tool('update_plan',{plan:[{step:'创建雨夜故事的角色与剧本',status:'in_progress'},{step:'检查创建结果',status:'pending'}]},'plan'),
     tool('app_request',{method:'POST',resource:'roles',data:{name:'Agent 主角',description:'雨夜车站的旅人'}},'role'),
-    tool('app_request',{method:'POST',resource:'screenplays',data:{title:'Agent 测试剧本',content:'# 雨夜\n\n旅人走进车站。'}},'script'),
+    tool('app_request',{method:'POST',resource:'episodes',data:{title:'雨夜车站'}},'episode'),
    ]};
+  } else if(results.length===3) {
+   const episodeResult=JSON.parse(results.find(item=>item.tool_call_id==='episode').content);
+   const episode=episodeResult.data || episodeResult;
+   message={role:'assistant',content:null,tool_calls:[tool('app_request',{method:'POST',resource:'screenplays',episode_id:episode.id,data:{title:'Agent 测试剧本',content:'# 雨夜\n\n旅人走进车站。'}},'script')]};
+  } else if(results.length===4) {
+   message={role:'assistant',content:null,tool_calls:[tool('app_request',{method:'GET',resource:'screenplays'},'verify')]};
+  } else if(results.length===5) {
+   message={role:'assistant',content:null,tool_calls:[tool('update_plan',{plan:[{step:'创建雨夜故事的角色与剧本',status:'completed'},{step:'检查创建结果',status:'completed'}]},'plan-done')]};
   } else message={role:'assistant',content:'已创建 **Agent 主角** 和剧本。\n\n[参考资料](https://example.com/reference)'};
   res.writeHead(200,{'Content-Type':'application/json'});
   res.end(JSON.stringify({choices:[{message,finish_reason:message.tool_calls?'tool_calls':'stop'}]}));
@@ -55,12 +68,15 @@ const tool = (name, args, id) => ({id,type:'function',function:{name,arguments:J
   await page.getByTestId('agent-composer').fill('请创建雨夜故事的主角和剧本');
   await page.getByTestId('agent-send').click();
   await page.getByRole('link',{name:'参考资料',exact:true}).waitFor({timeout:15000});
+  await page.getByTestId('agent-plan').getByText('2/2',{exact:true}).waitFor();
+  const originalSession=(await api('/actions/agent/sessions',{project_id:project.id})).items[0];
   assert.equal(await page.getByRole('link',{name:'参考资料',exact:true}).getAttribute('href'),'https://example.com/reference');
   const roles=await api(`/projects/${project.id}/roles`,undefined,'GET');assert.equal(roles.length,1);assert.equal(roles[0].name,'Agent 主角');
   const scripts=await api(`/projects/${project.id}/screenplays`,undefined,'GET');assert.equal(scripts.length,1);
   await page.screenshot({path:path.join(screenshots,'desktop.png'),fullPage:true});
   await page.reload();await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
   await page.getByRole('link',{name:'参考资料',exact:true}).waitFor();
+  await page.getByTestId('agent-plan').getByText('2/2',{exact:true}).waitFor();
   await page.getByTestId('agent-settings').click();
   await page.getByRole('dialog').getByText('Agent 设置',{exact:true}).waitFor();
   await page.getByRole('switch',{name:'沿用项目 LLM 配置',exact:true}).click();
@@ -77,20 +93,32 @@ const tool = (name, args, id) => ({id,type:'function',function:{name,arguments:J
   await page.getByTestId('agent-stop').click();
   await page.waitForTimeout(2100);
   assert.equal((await api(`/projects/${project.id}/roles`,undefined,'GET')).length,1);
+  await api('/actions/agent/config/save',{project_id:project.id,config:{max_steps:1}});
+  await page.getByTestId('agent-new-session').click();
+  await page.getByTestId('agent-composer').fill('预算测试');
+  await page.getByTestId('agent-send').click();
+  await page.locator('.agent-limit-notice').waitFor();
+  assert.equal(await page.locator('.agent-tool-status.skipped').textContent(),'未执行');
+  await page.getByTestId(`agent-session-${originalSession.id}`).click();
+  await page.getByTestId('agent-plan').waitFor();
   // Narrow and dark themes must retain usable controls without horizontal overflow.
   for(const width of [1024,768,390]) {
    await page.setViewportSize({width,height:900});
    await page.getByTestId('agent-composer').waitFor({state:'visible'});
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,`overflow at ${width}`);
    const bounds=await page.getByTestId('agent-send').boundingBox();assert(bounds && bounds.x>=0 && bounds.x+bounds.width<=width+1);
-   if(width<=600){const nav=await page.locator('.side').boundingBox();assert(bounds.y+bounds.height<nav.y,`composer hidden by bottom navigation at ${width}`);}
+   assert(bounds.y>=0 && bounds.y+bounds.height<=900,`composer outside viewport at ${width}`);
+   assert(await page.getByTestId('agent-send').evaluate(button=>{const rect=button.getBoundingClientRect();const hit=document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2);return hit===button || button.contains(hit);}),`composer covered at ${width}`);
    await page.screenshot({path:path.join(screenshots,`width-${width}.png`),fullPage:true});
   }
   await page.setViewportSize({width:1440,height:1000});
+  await page.getByRole('menuitem',{name:'角色设定',exact:true}).click();
   await page.getByRole('button',{name:'切换到暗夜模式',exact:true}).click();
-  await page.screenshot({path:path.join(screenshots,'dark.png'),fullPage:true});
+  await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
+  await page.getByTestId('agent-plan').waitFor();
+  await page.screenshot({path:path.join(screenshots,'dark.png'),fullPage:true,animations:'disabled'});
   assert.deepEqual(failures,[]);
-  console.log('PASS: real browser Agent sends, executes app tools, renders Markdown/source links, persists sessions, hides credentials, refreshes normal editors, cancels and fits desktop/mobile/dark themes');
+  console.log('PASS: real browser Agent tools, durable plans, limited/skipped states, Markdown/source links, credential hiding, editor refresh, cancellation and desktop/mobile/dark themes');
   console.log('Screenshots: '+screenshots);
  } finally {
   if(browser)await browser.close();

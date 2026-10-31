@@ -12,11 +12,14 @@ import { backendUrl } from "./transport";
 
 type AgentMessage = { role: "user" | "assistant" | "tool"; content: string; images?: string[]; tool_name?: string; tool_call_id?: string; arguments?: unknown; status?: string; tool_calls?: unknown[] };
 type ConversationContext = { total_turns: number; recent_turns: number; summarized_turns: number; total_images: number; retained_images: number };
-type Session = { id: string; title: string; status: string; messages: AgentMessage[]; error?: string; updated_at: string; context?: ConversationContext };
+type PlanStep = { step: string; status: "pending" | "in_progress" | "completed" };
+type Execution = { phase?: string; tool_calls?: number; max_steps?: number; retries?: number; active_tool?: string; plan?: PlanStep[]; stop_reason?: string };
+type Session = { id: string; title: string; status: string; messages: AgentMessage[]; error?: string; updated_at: string; context?: ConversationContext; execution?: Execution };
 type Config = { inherit_llm: boolean; base_url: string; model: string; has_api_key: boolean; search_provider: string; has_search_api_key: boolean; max_steps: number; request_timeout_seconds: number };
 const initialConfig: Config = { inherit_llm: true, base_url: "", model: "", has_api_key: false, search_provider: "duckduckgo", has_search_api_key: false, max_steps: 16, request_timeout_seconds: 600 };
-const statusText: Record<string, string> = { idle: "准备就绪", running: "执行中", completed: "已完成", failed: "执行失败", cancelled: "已停止" };
-const toolText: Record<string, string> = { get_project: "读取项目", search_conversation: "检索对话记录", list_skills: "查找技能", read_skill: "读取技能", app_describe: "查看操作说明", app_request: "操作项目数据", app_action: "执行创作操作", web_search: "联网搜索", fetch_webpage: "读取网页" };
+const statusText: Record<string, string> = { idle: "准备就绪", running: "执行中", completed: "本轮结束", limited: "已暂停，可继续", failed: "执行失败", cancelled: "已停止" };
+const toolText: Record<string, string> = { update_plan: "更新任务计划", get_project: "读取项目", search_conversation: "检索对话记录", list_skills: "查找技能", read_skill: "读取技能", app_describe: "查看操作说明", app_request: "操作项目数据", app_action: "执行创作操作", web_search: "联网搜索", fetch_webpage: "读取网页" };
+const phaseText: Record<string, string> = { thinking: "正在整理下一步", retrying: "模型服务暂时不可用，正在重试", finalizing: "正在整理执行结果", tool: "正在执行操作" };
 function displayJson(value: unknown) { if (typeof value === "string") { try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; } } return JSON.stringify(value, null, 2); }
 
 // Only generation output is eligible: reference images in arguments must never
@@ -97,6 +100,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
     } catch (e) { Message.error(String(e)); } finally { if (count) { try { await reload(); } catch { Message.error("图片已加入资产，但列表刷新失败，请刷新页面"); } } pasting.current = false; if (mounted.current) setReadingImages(false); }
   };
   const running = selected?.status === "running";
+  const execution = selected?.execution;
   const configured = !!(config.base_url.trim() && config.model.trim());
   const anyRunning = sessions.some(item => item.status === "running");
   const updateDraft = (text: string) => setDrafts(items => ({ ...items, [draftKey]: text }));
@@ -233,14 +237,19 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
             <span className="agent-empty-eyebrow">灵感就位，即刻开场</span>
             <h2>下一幕，从这里开始<span>。</span></h2><p>从一个想法到一个好故事，和你的 AI 创作搭档一起完成。</p>
           </div> : selected.messages.map((message, index) => message.role === "tool" ? <div className="agent-tool-result" key={`${message.tool_call_id || index}:${index}`}><details className="agent-tool">
-            <summary><Wrench size={14} /><span>{toolText[message.tool_name || ""] || message.tool_name || "执行工具"}</span><small>{message.arguments && typeof message.arguments === "object" ? String((message.arguments as Record<string, unknown>).operation || (message.arguments as Record<string, unknown>).resource || "") : ""}</small><span className={`agent-tool-status ${message.status}`}>{message.status === "running" ? "执行中" : message.status === "failed" ? "失败" : <><Check size={12} />完成</>}</span><ChevronDown size={14} /></summary>
+            <summary><Wrench size={14} /><span>{toolText[message.tool_name || ""] || message.tool_name || "执行工具"}</span><small>{message.arguments && typeof message.arguments === "object" ? String((message.arguments as Record<string, unknown>).operation || (message.arguments as Record<string, unknown>).resource || "") : ""}</small><span className={`agent-tool-status ${message.status}`}>{message.status === "running" ? "执行中" : message.status === "failed" ? "失败" : message.status === "skipped" ? "未执行" : <><Check size={12} />完成</>}</span><ChevronDown size={14} /></summary>
             {message.arguments != null && <div><b>参数</b><pre>{displayJson(message.arguments)}</pre></div>}<div><b>结果</b><pre>{message.content ? displayJson(message.content) : "等待执行结果…"}</pre></div>
           </details>
           {generatedImages(message).length > 0 && <div className="agent-generated-images">{generatedImages(message).map(media => <button type="button" key={media.id} onClick={() => setPreview(media)} aria-label={`预览 ${media.name}`}><img src={imageUrl(media)} alt={media.name} onLoad={() => { if (followBottom.current && log.current) log.current.scrollTop = log.current.scrollHeight; }} /><span>{media.name}</span></button>)}</div>}
           </div> : message.content || message.images?.length ? <article className={`agent-message is-${message.role}`} key={index}>
             <div className="agent-message-label">{message.role === "user" ? "你" : <><Bot size={15} />Agent</>}</div><div className="agent-message-content">{message.role === "user" ? <>{message.images?.map((image, i) => <a key={i} href={image} target="_blank" rel="noopener noreferrer"><img className="agent-message-image" src={image} alt={`附件图片 ${i + 1}`} /></a>)}{message.content && <p>{message.content}</p>}</> : <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ children, href, ...props }) => <a {...props} href={href?.startsWith("/api/v1/") ? backendUrl(href) : href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{message.content}</ReactMarkdown>}</div>
           </article> : null)}
-          {running && <div className="agent-working"><span className="agent-pulse" /><span>Agent 正在处理项目，可以查看上方执行详情。</span></div>}
+          {!!execution?.plan?.length && <section className="agent-plan" data-testid="agent-plan" aria-label="任务计划">
+            <div className="agent-plan-heading"><b>任务计划</b><span>{execution.plan.filter(item => item.status === "completed").length}/{execution.plan.length}</span></div>
+            <ol>{execution.plan.map((item, index) => <li key={index} data-status={item.status}><span aria-hidden="true">{item.status === "completed" ? <Check size={14} /> : item.status === "in_progress" ? "◉" : "○"}</span><span>{item.step}</span><small>{item.status === "completed" ? "已完成" : item.status === "in_progress" ? running ? "进行中" : "待继续" : "待处理"}</small></li>)}</ol>
+          </section>}
+          {running && <div className="agent-working" role="status"><span className="agent-pulse" /><span>{execution?.phase === "tool" && execution.active_tool ? toolText[execution.active_tool] || "正在执行操作" : phaseText[execution?.phase || "thinking"] || "正在处理项目"}{execution?.max_steps != null && ` · ${execution.tool_calls || 0}/${execution.max_steps} 步`}</span></div>}
+          {selected?.status === "limited" && <div className="agent-limit-notice" role="status">{execution?.stop_reason === "repeated_tool_failure" ? "相同操作连续失败，已暂停以便调整。" : "本轮已达到执行步数上限。"}已完成的操作已保留，可以补充要求或发送“继续”。</div>}
           {(error || selected?.error) && <div className="agent-error" role="alert">{error || selected?.error}</div>}
         </div>
         <div className="agent-composer-wrap">

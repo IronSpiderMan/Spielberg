@@ -184,7 +184,9 @@ PLAYWRIGHT_PATH=/path/to/playwright node scripts/qa-screenplay-layout.cjs
 - 默认复用「设置」中的 LLM（分镜与 Prompt）配置。也可以在 Agent 配置中填写独立的 Base URL、模型名称和 API Key。模型服务须支持 OpenAI Chat Completions 的函数工具调用。
 - 支持当前项目的剧本、角色、Prompt、剧集、场景和资产增删改查，以及脚本发布、素材关联、画布、分镜规划、图片与视频生成、剪辑保存与导出、剧集合并、任务查询和项目备份等业务工具。生成和导出仍需对应服务或 FFmpeg 可用。
 - 联网搜索默认无需 Key，使用 DuckDuckGo，并在不可用时尝试 Bing；也可以配置 Brave Search 或 Tavily。搜索结果包含来源链接，Agent 可以继续读取公开网页。每次发送前可关闭联网。搜索服务受网络连通性和上游限流影响。
-- 会话、消息与执行记录保存在当前项目数据库，支持新建、切换和删除会话。后台执行不依赖页面持续打开；「停止」阻止后续工具步骤，已经开始的生成或导出可能继续完成。
+- 会话、消息与执行记录保存在当前项目数据库，支持新建、切换和删除会话。复杂任务可显示分步计划，保留待办和执行进度；重启后发送“继续”时，Agent 会结合原记录和当前项目状态接着处理。计划是工作记录，完成标记仍需真实工具结果支持。
+- 后台执行不依赖页面持续打开；「停止」会中断等待中的模型请求和自动重试，并阻止后续工具步骤。已经开始的业务工具（如生成或导出）可能继续完成，实际结果仍会保留。
+- 界面显示正在思考、执行工具、重试或整理结果，以及本轮已用步数。达到步数上限后，Agent 会进入只汇报结果的阶段，多出的工具调用明确标记“未执行”，会话显示“已暂停，可继续”。相同参数的工具失败三次会暂停，避免反复消耗步数。模型临时连接故障或限流、部分 5xx 错误最多自动重试两次；重试仅针对模型请求，不会重放已经完成的业务工具。
 - 连续对话保留近期原文，并将较早的要求、回复及工具执行结果整理为有限摘录；需要细节时，Agent 可检索当前会话的原始记录并分页回读。图片与文字使用独立的上下文预算，避免一张参考图挤掉此前要求。界面会提示较早对话何时使用了摘录；完整记录仍保存在项目中，重启后可继续使用。
 - 工具限定在当前项目，沿用已有校验和素材引用保护。Agent 不提供任意 Shell 或文件系统访问；本机文件选择、姿态编辑等交互仍由界面完成。项目内容和检索内容会发送给所配置的模型服务；API Key 不进入模型上下文，普通备份默认移除模型和搜索 Key。
 
@@ -194,7 +196,11 @@ PLAYWRIGHT_PATH=/path/to/playwright node scripts/qa-screenplay-layout.cjs
 npm run build
 cargo build --manifest-path backend/Cargo.toml
 npm run test:agent
+npm run test:skills
+PLAYWRIGHT_PATH=/path/to/playwright node scripts/qa/agent-ui.cjs
 ```
+
+实现分为执行循环（`backend/src/agent.rs`）、模型传输（`agent_model.rs`）、运行状态与计划（`agent_execution.rs`）、上下文投影/历史检索和项目业务工具。参考 [Codex App Server 的 turn、计划与中断设计](https://learn.chatgpt.com/docs/app-server)，在现有 OpenAI 兼容模型接口上实现独立运行状态，保留 Spielberg 自身的业务工具和项目权限边界。
 
 ## Skills 技能
 

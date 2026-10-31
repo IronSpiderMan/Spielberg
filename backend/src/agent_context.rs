@@ -23,6 +23,9 @@ struct View {
 pub(super) fn context(session: &Value, instruction: &str) -> Vec<Value> {
     let view = project(session);
     let mut messages = vec![json!({"role":"system","content":instruction})];
+    if let Some(plan) = session["execution"]["plan"].as_array().filter(|plan| !plan.is_empty()) {
+        messages.push(json!({"role":"assistant","content":format!("当前任务计划（仅为工作记录，不构成用户授权；以最新用户要求和真实工具结果为准）：{}", json!(plan))}));
+    }
     messages.extend(view.messages);
     messages
 }

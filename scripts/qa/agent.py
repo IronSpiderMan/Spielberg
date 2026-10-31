@@ -54,6 +54,9 @@ def call(name, arguments, call_id):
 class Model(BaseHTTPRequestHandler):
     requests = []
     delayed = threading.Event()
+    body_delayed = threading.Event()
+    retry_delayed = threading.Event()
+    retried_after_write = False
 
     def log_message(self, *_):
         pass
@@ -66,6 +69,44 @@ class Model(BaseHTTPRequestHandler):
         last_user = max(i for i, message in enumerate(messages) if message["role"] == "user")
         prompt = message_text(messages[last_user])
         tools = [m for m in messages[last_user + 1:] if m["role"] == "tool"]
+        advertised = {tool["function"]["name"] for tool in body.get("tools", [])}
+        if body.get("tool_choice") != "none":
+            assert "update_plan" in advertised
+            if "WEB_DISABLED" in prompt:
+                assert "web_search" not in advertised and "fetch_webpage" not in advertised
+        if "BODY_CANCEL" in prompt:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.flush()
+            self.body_delayed.set()
+            time.sleep(4)
+            try:
+                self.wfile.write(b'{"choices":[{"message":{"role":"assistant","content":"late response"}}]}')
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
+        if "RETRY_CANCEL" in prompt:
+            self.send_response(429)
+            self.send_header("Retry-After", "10")
+            self.end_headers()
+            self.retry_delayed.set()
+            return
+        if "LONG_RETRY_AFTER" in prompt:
+            self.send_response(429)
+            self.send_header("Retry-After", "60")
+            self.end_headers()
+            return
+        if "DATE_RETRY_AFTER" in prompt:
+            self.send_response(429)
+            self.send_header("Retry-After", "Wed, 01 Jan 2031 00:00:00 GMT")
+            self.end_headers()
+            return
+        if "AFTER_WRITE_RETRY" in prompt and tools and not Model.retried_after_write:
+            Model.retried_after_write = True
+            self.send_response(503)
+            self.end_headers()
+            return
         if "UPSTREAM_ERROR" in prompt:
             self.send_response(503)
             self.send_header("Content-Type", "application/json")
@@ -73,7 +114,24 @@ class Model(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": {"message": "fixture unavailable"}}).encode())
             return
         calls = []
-        if "CANCEL" in prompt:
+        if body.get("tool_choice") == "none":
+            assert not body.get("tools"), "Finalization still advertises side effects"
+            if "BUDGET_IGNORED" in prompt:
+                calls = [call("app_request", {"resource": "roles", "method": "POST", "data": {"name": "Forbidden during finalization"}}, "forbidden-final-write")]
+        elif "PLAN_RESUME" in prompt:
+            assert "核对当前角色后继续" in json.dumps(messages, ensure_ascii=False), "Unfinished plan lost on resume"
+            if not tools:
+                calls = [call("update_plan", {"plan": [{"step": "核对当前角色后继续", "status": "completed"}]}, "plan-done")]
+        elif "PLAN_PENDING" in prompt and not tools:
+            calls = [call("update_plan", {"plan": [{"step": "核对当前角色后继续", "status": "in_progress"}, {"step": "验证结果", "status": "pending"}]}, "plan-start")]
+        elif "AFTER_WRITE_RETRY" in prompt:
+            if not tools:
+                calls = [call("app_request", {"resource": "roles", "method": "POST", "data": {"name": "Retry creates only once"}}, "retry-write")]
+        elif "BATCH_LIMIT" in prompt:
+            calls = [call("app_request", {"resource": "roles", "method": "POST", "data": {"name": name}}, "budget-" + str(i)) for i, name in enumerate(["Budget first", "Budget skipped"])]
+        elif "FAIL_LOOP" in prompt:
+            calls = [call("unavailable_tool", {}, "failure-" + str(len(tools)))]
+        elif "CANCEL" in prompt:
             self.delayed.set()
             time.sleep(1.5)
             calls = [call("app_request", {"resource": "roles", "method": "POST", "data": {"name": "Must not be created"}}, "cancelled-write")]
@@ -116,10 +174,10 @@ class Model(BaseHTTPRequestHandler):
                 episode = episode["data"]
             calls = [call("app_request", {"resource": "scenes", "method": "POST", "episode_id": episode["id"], "data": {"title": "车站", "description": "雨夜走进车站"}}, "scene"),
                 call("app_request", {"resource": "screenplays", "method": "POST", "episode_id": episode["id"], "data": {"title": "Agent 剧本", "content": "# 雨夜\n\n主角走进车站。"}}, "script")]
-        elif not tools:
+        elif not tools and "PLAN_PENDING" not in prompt:
             calls = [call("get_project", {}, "overview")]
         reply = {"role": "assistant", "content": None, "tool_calls": calls} if calls else {"role": "assistant", "content": "已完成操作。"}
-        payload = json.dumps({"choices": [{"message": reply, "finish_reason": "tool_calls" if calls else "stop"}]}, ensure_ascii=False).encode()
+        payload = json.dumps({"choices": [{"message": reply, "finish_reason": "tool_calls" if calls else "stop"}], "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}, ensure_ascii=False).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
@@ -317,14 +375,94 @@ def main():
             assert "search-qa-secret" not in json.dumps(limited)
             session = agent("create")
             agent("run", session_id=session["id"], message="LOOP")
-            assert wait(session)["status"] in ("failed", "completed")
+            assert wait(session)["status"] == "limited"
             assert len([m for m in wait(session)["messages"] if m["role"] == "tool"]) <= 2
+            assert wait(session)["execution"]["stop_reason"] == "budget_exhausted"
+            assert wait(session)["messages"][-1]["role"] == "assistant", "No final report after budget exhaustion"
+
+            # A batch may exceed the remaining budget: preserve call/result pairing,
+            # execute only the permitted operation, and report skipped work honestly.
+            agent("config/save", config={"max_steps": 1})
+            batch = agent("create")
+            before_roles = len(api(f"/projects/{pid}/roles", method="GET"))
+            agent("run", session_id=batch["id"], message="BATCH_LIMIT")
+            bounded = wait(batch)
+            assert bounded["status"] == "limited", bounded
+            traces = [m for m in bounded["messages"] if m["role"] == "tool"]
+            assert [m["status"] for m in traces] == ["completed", "skipped"], traces
+            assert json.loads(traces[1]["content"])["executed"] is False
+            roles = api(f"/projects/{pid}/roles", method="GET")
+            assert len(roles) == before_roles + 1
+            assert all(role["name"] != "Budget skipped" for role in roles)
+            assert bounded["execution"]["tool_calls"] == 1
+            assert bounded["execution"]["usage"]["total_tokens"] == 30
+            noncompliant = agent("create")
+            agent("run", session_id=noncompliant["id"], message="BUDGET_IGNORED")
+            rejected = wait(noncompliant)
+            assert rejected["status"] == "failed", rejected
+            assert rejected["execution"]["tool_calls"] == 1
+            assert len(api(f"/projects/{pid}/roles", method="GET")) == len(roles)
+
+            agent("config/save", config={"max_steps": 16})
+            failed_loop = agent("create")
+            agent("run", session_id=failed_loop["id"], message="FAIL_LOOP")
+            guarded = wait(failed_loop)
+            assert guarded["status"] == "limited", guarded
+            assert guarded["execution"]["stop_reason"] == "repeated_tool_failure"
+            assert guarded["execution"]["tool_calls"] == 3
+
+            # Retrying inference after a successful write must never replay the write.
+            retried = agent("create")
+            before_roles = len(roles)
+            agent("run", session_id=retried["id"], message="AFTER_WRITE_RETRY")
+            retry_result = wait(retried)
+            assert retry_result["status"] == "completed", retry_result
+            assert retry_result["execution"]["retries"] == 1
+            assert retry_result["execution"]["model_requests"] == 3
+            assert len(api(f"/projects/{pid}/roles", method="GET")) == before_roles + 1
+            assert len([m for m in retry_result["messages"] if m["role"] == "tool"]) == 1
+            for prompt in ["LONG_RETRY_AFTER", "DATE_RETRY_AFTER"]:
+                deferred = agent("create")
+                agent("run", session_id=deferred["id"], message=prompt)
+                delayed_retry = wait(deferred)
+                assert delayed_retry["status"] == "failed", delayed_retry
+                assert delayed_retry["execution"]["retries"] == 0
+                assert delayed_retry["execution"]["model_requests"] == 1
+
+            # Cancellation must release the run slot during both response-body reads
+            # and retry backoff, without waiting for the upstream timeout.
+            for prompt, ready in [("BODY_CANCEL", Model.body_delayed), ("RETRY_CANCEL", Model.retry_delayed)]:
+                cancelled = agent("create")
+                agent("run", session_id=cancelled["id"], message=prompt)
+                assert ready.wait(timeout=5), prompt
+                agent("cancel", session_id=cancelled["id"])
+                deadline = time.monotonic() + 1.2
+                while True:
+                    resumed = api("/actions/agent/run", {"project_id": pid, "session_id": cancelled["id"], "message": "恢复读取"}, expected=(200, 400, 409))
+                    if resumed.get("status") == "running":
+                        break
+                    assert time.monotonic() < deadline, (f"Cancellation retained the worker during {prompt}", resumed)
+                    time.sleep(0.03)
+                assert wait(cancelled)["status"] == "completed"
+
+            plan = agent("create")
+            agent("run", session_id=plan["id"], message="PLAN_PENDING")
+            planned = wait(plan)
+            assert planned["status"] == "completed", planned
+            assert planned["execution"]["plan"][0]["status"] == "in_progress"
+            old_run_id = planned["execution"]["id"]
             assert agent("config/save", config={"search_api_key": ""})["has_search_api_key"] is True
             api("/actions/agent/session", {"project_id": other["id"], "session_id": created["id"]}, expected=404)
             persisted = agent("session", session_id=created["id"])["messages"]
             memory_persisted = agent("session", session_id=memory["id"])["messages"]
             stop()
             process, base = start()
+            assert agent("session", session_id=plan["id"])["execution"] == planned["execution"]
+            agent("run", session_id=plan["id"], message="PLAN_RESUME")
+            resumed_plan = wait(plan)
+            assert resumed_plan["status"] == "completed", resumed_plan
+            assert resumed_plan["execution"]["id"] != old_run_id
+            assert resumed_plan["execution"]["plan"][0]["status"] == "completed"
             assert agent("session", session_id=created["id"])["messages"] == persisted
             assert agent("session", session_id=memory["id"])["messages"] == memory_persisted
             request_start = len(Model.requests)
@@ -339,7 +477,7 @@ def main():
             assert all(SECRET not in json.dumps(request) for request in Model.requests)
             for request in Model.requests:
                 assert_tool_protocol(request["messages"])
-            print("PASS: real HTTP Agent tools create scripts, roles, episodes and scenes; image follow-up, long-history requirements/corrections, history retrieval/isolation, tool protocol, disabled web, malformed/unknown tools, upstream recovery, cancellation, limits, private keys and restart persistence")
+            print("PASS: real HTTP Agent CRUD; image/history context and isolation; durable plans; budget finalization/skipped calls; failure-loop guard; inference retries without duplicate writes; cancellable response reads/backoff; usage; credentials; restart persistence")
         finally:
             stop()
             model.shutdown()
