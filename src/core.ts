@@ -1,4 +1,5 @@
 export type Media = {
+  preview_url?: string;
   id: number;
   name: string;
   path: string;
@@ -94,4 +95,4 @@ export type Snapshot = {
 export { api, post } from "./api";
 import { backendUrl } from "./transport";
 export const fileUrl = (path: string) => backendUrl(`/media?path=${encodeURIComponent(path)}`);
-export const imageUrl = (m?: Media) => (m ? fileUrl(m.path) : "");
+export const imageUrl = (m?: Media) => (m ? m.preview_url || fileUrl(m.path) : "");

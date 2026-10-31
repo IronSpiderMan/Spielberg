@@ -8,9 +8,10 @@ import "./agent.css";
 import { uploadAsset } from "./api";
 import { localId } from "./id";
 import { ImagePreviewModal } from "./components/ImagePreviewModal";
+import { generatedImages, conversationImages, attachmentImage } from "./agentImages";
 import { backendUrl } from "./transport";
 
-type AgentMessage = { role: "user" | "assistant" | "tool"; content: string; images?: string[]; tool_name?: string; tool_call_id?: string; arguments?: unknown; status?: string; tool_calls?: unknown[] };
+type AgentMessage = { role: "user" | "assistant" | "tool"; content: string; images?: string[]; image_media_ids?: number[]; tool_name?: string; tool_call_id?: string; arguments?: unknown; status?: string; tool_calls?: unknown[] };
 type ConversationContext = { total_turns: number; recent_turns: number; summarized_turns: number; total_images: number; retained_images: number };
 type PlanStep = { step: string; status: "pending" | "in_progress" | "completed" };
 type Execution = { phase?: string; tool_calls?: number; max_steps?: number; retries?: number; active_tool?: string; plan?: PlanStep[]; stop_reason?: string };
@@ -22,32 +23,6 @@ const toolText: Record<string, string> = { update_plan: "更新任务计划", ge
 const phaseText: Record<string, string> = { thinking: "正在整理下一步", retrying: "模型服务暂时不可用，正在重试", finalizing: "正在整理执行结果", tool: "正在执行操作" };
 function displayJson(value: unknown) { if (typeof value === "string") { try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; } } return JSON.stringify(value, null, 2); }
 
-// Only generation output is eligible: reference images in arguments must never
-// be presented as successful output. Bounded tool results may wrap data.
-function generatedImages(message: AgentMessage, currentMedia: Map<number, Media>): Media[] {
-  if (message.status === "running" || message.status === "failed" || message.tool_name !== "app_action" ||
-      !message.arguments || typeof message.arguments !== "object" ||
-      (message.arguments as Record<string, unknown>).operation !== "generations/image") return [];
-  try {
-    const result = JSON.parse(message.content);
-    const found = new Map<number, Media>();
-    const visit = (value: unknown) => {
-      if (!value || typeof value !== "object") return;
-      if (Array.isArray(value)) { value.forEach(visit); return; }
-      const item = value as Record<string, unknown>;
-      if (typeof item.id === "number" && item.kind === "image" && typeof item.path === "string" && item.path) {
-        // Tool history can still contain paths from the machine before migration.
-        // Asset IDs survive backup/restore, so use the project's current asset.
-        found.set(item.id, currentMedia.get(item.id) || { id: item.id, kind: "image", path: item.path,
-          name: typeof item.name === "string" ? item.name : "生成图片", created_at: typeof item.created_at === "string" ? item.created_at : "" });
-        return;
-      }
-      Object.values(item).forEach(visit);
-    };
-    visit(result);
-    return [...found.values()];
-  } catch { return []; }
-}
 
 function updateSession(items: Session[], session: Session): Session[] {
   return items.some(item => item.id === session.id)
@@ -61,6 +36,8 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   const [preview, setPreview] = useState<Media | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selected, setSelected] = useState<Session | null>(null);
+  const gallery = useMemo(() => conversationImages(selected?.messages || [], currentMedia), [selected?.messages, currentMedia]);
+  useEffect(() => setPreview(null), [selected?.id]);
   const selectedRef = useRef<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -251,7 +228,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
           </details>
           {generatedImages(message, currentMedia).length > 0 && <div className="agent-generated-images">{generatedImages(message, currentMedia).map(media => <button type="button" key={media.id} onClick={() => setPreview(media)} aria-label={`预览 ${media.name}`}><img src={imageUrl(media)} alt={media.name} onLoad={() => { if (followBottom.current && log.current) log.current.scrollTop = log.current.scrollHeight; }} /><span>{media.name}</span></button>)}</div>}
           </div> : message.content || message.images?.length ? <article className={`agent-message is-${message.role}`} key={index}>
-            <div className="agent-message-label">{message.role === "user" ? "你" : <><Bot size={15} />Agent</>}</div><div className="agent-message-content">{message.role === "user" ? <>{message.images?.map((image, i) => <a key={i} href={image} target="_blank" rel="noopener noreferrer"><img className="agent-message-image" src={image} alt={`附件图片 ${i + 1}`} /></a>)}{message.content && <p>{message.content}</p>}</> : <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ children, href, ...props }) => <a {...props} href={href?.startsWith("/api/v1/") ? backendUrl(href) : href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{message.content}</ReactMarkdown>}</div>
+            <div className="agent-message-label">{message.role === "user" ? "你" : <><Bot size={15} />Agent</>}</div><div className="agent-message-content">{message.role === "user" ? <>{message.images?.map((image, i) => <button type="button" key={i} className="agent-attachment-preview" aria-label={`预览附件图片 ${i + 1}`} onClick={() => setPreview(attachmentImage(message, index, i, currentMedia))}><img className="agent-message-image" src={image} alt={`附件图片 ${i + 1}`} /></button>)}{message.content && <p>{message.content}</p>}</> : <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: ({ src, alt }) => { const media = gallery.find(item => item.preview_url === src); return <button type="button" className="agent-attachment-preview" aria-label={`预览 ${alt || "图片"}`} onClick={() => media && setPreview(media)}><img src={src} alt={alt || "图片"} /></button>; }, a: ({ children, href, ...props }) => <a {...props} href={href?.startsWith("/api/v1/") ? backendUrl(href) : href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{message.content}</ReactMarkdown>}</div>
           </article> : null)}
           {!!execution?.plan?.length && <section className="agent-plan" data-testid="agent-plan" aria-label="任务计划">
             <div className="agent-plan-heading"><b>任务计划</b><span>{execution.plan.filter(item => item.status === "completed").length}/{execution.plan.length}</span></div>
@@ -280,7 +257,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
         </div>
       </div>
     </div>
-    <ImagePreviewModal media={preview} onClose={() => setPreview(null)} />
+    <ImagePreviewModal media={preview} images={gallery} onMediaChange={setPreview} onClose={() => setPreview(null)} />
     <Modal title="Agent 设置" visible={settingsOpen} onCancel={() => !saving && setSettingsOpen(false)} onOk={() => void saveSettings()} okText="保存设置" cancelText="取消" confirmLoading={saving} maskClosable={!saving} style={{ width: 580 }} className="agent-settings-modal">
       <div className="agent-settings-form"><label className="agent-inherit"><span><b>沿用项目 LLM 配置</b><small>使用「设置」中的 LLM（分镜与 Prompt）服务。</small></span><Switch aria-label="沿用项目 LLM 配置" checked={form.inherit_llm} onChange={value => setForm(item => ({ ...item, inherit_llm: value }))} disabled={saving} /></label>
         <label>Base URL<Input aria-label="Base URL" value={form.base_url} disabled={form.inherit_llm || saving} placeholder="https://your-service.example/v1" onChange={value => setForm(item => ({ ...item, base_url: value }))} /></label>
