@@ -6,7 +6,7 @@ const resourceFields: Record<string, string[]> = {
   scenes: ["creation_mode", "prompt", "title", "description", "episode_id", "first_media_id", "last_media_id", "reference_media_id", "generation_options"],
   screenplays: ["title", "content", "format", "episode_id"],
   prompts: ["name", "content", "category"],
-  projects: ["name", "outline", "documents"], assets: ["name"],
+  projects: ["name", "outline", "agents_md", "documents"], assets: ["name"],
 };
 type Payload = Record<string, any>;
 function fields(resource: string, data: Payload) {

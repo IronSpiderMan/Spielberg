@@ -6,7 +6,7 @@ import { useEditGuard } from "./edit-guard";
 import "./project-config.css";
 import { MarkdownEditor } from "./components/MarkdownEditor";
 
-const draftOf = (project: Project) => ({ name: project.name, outline: project.outline || "", documents: project.documents || [] });
+const draftOf = (project: Project) => ({ name: project.name, outline: project.outline || "", agents_md: project.agents_md || "", documents: project.documents || [] });
 export default function ProjectConfig({ project, reload }: { project: Project; reload: () => Promise<void> }) {
   const [draft, setDraft] = useState(() => draftOf(project));
   const [saved, setSaved] = useState(() => JSON.stringify(draftOf(project)));
@@ -64,6 +64,7 @@ export default function ProjectConfig({ project, reload }: { project: Project; r
     <div className="project-config-heading"><div><h1>项目配置</h1><p>从故事大纲到创作资料，整理这个项目的共同设定。</p></div><Space>{dirty && <Tag color="orange">未保存</Tag>}<Button type="primary" icon={<Save size={16} />} loading={busy} onClick={() => void save()}>保存配置</Button></Space></div>
     <Card className="project-config-info" title="基本信息"><Form layout="vertical" disabled={busy}><Form.Item label="项目名称" required><Input aria-label="项目名称" value={draft.name} maxLength={100} onChange={name => setDraft(value => ({ ...value, name }))} /></Form.Item></Form></Card>
     <Card className="project-config-outline" title="故事大纲"><Input.TextArea aria-label="项目大纲" disabled={busy} value={draft.outline} onChange={outline => setDraft(value => ({ ...value, outline }))} placeholder="记录故事背景、主线、关键转折与结局……" /></Card>
+    <Card className="project-config-agents" title="AGENTS.md"><p className="helper">项目 Agent 每次执行都会读取并遵循这里的指令。可填写创作规范、工作流程与输出要求，保存后生效。</p><Input.TextArea aria-label="AGENTS.md" disabled={busy} value={draft.agents_md} onChange={agents_md => setDraft(value => ({ ...value, agents_md }))} placeholder="例如：剧本使用中文；修改前先核对人物设定；完成后汇报修改内容。" /></Card>
     <Card className="project-config-documents" title="项目文档" extra={<Space><Button disabled={busy} icon={<Upload size={15} />} onClick={() => input.current?.click()}>导入文档</Button><Button disabled={busy} icon={<Plus size={15} />} onClick={() => addDoc()}>新建文档</Button></Space>}>
       <input ref={input} type="file" hidden accept=".md,.markdown,.txt" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void importDoc(file); }} />
       <p className="helper">保存世界观、人物关系与创作笔记。支持导入 Markdown / TXT，修改后点击「保存配置」。</p>

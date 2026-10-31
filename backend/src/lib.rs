@@ -100,6 +100,7 @@ fn snapshot_database(connection:&mut Connection,p:Value,known:&Value)->Result<Va
  let mut p=p;
  let raw:Option<String>=c.query_row("SELECT value FROM settings WHERE key='project_config'",[],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
  let config:Value=raw.and_then(|raw|serde_json::from_str(&raw).ok()).unwrap_or(json!({}));
+ p["agents_md"]=config.get("agents_md").cloned().unwrap_or(json!(""));
  p["outline"]=config.get("outline").cloned().unwrap_or(json!(""));
  p["documents"]=config.get("documents").cloned().unwrap_or(json!([]));
  let mut result=json!({"project":p,"revisions":versions});
