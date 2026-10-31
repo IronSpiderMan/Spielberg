@@ -173,6 +173,24 @@ html .arco-btn-primary.arco-btn-disabled {
   font-size: 11px;
   backdrop-filter: blur(4px);
 }
+html .content .role-card.role-card-disabled {
+  background: #f0f1f2 !important;
+  border-color: #c9cdd2 !important;
+}
+.role-card-disabled .role-kind.arco-tag {
+  background: #e2e5e8;
+  border-color: #b7bdc4;
+  color: #4e5969;
+}
+html[data-theme="dark"] .content .role-card.role-card-disabled {
+  background: #303538 !important;
+  border-color: #626b73 !important;
+}
+html[data-theme="dark"] .role-card-disabled .role-kind.arco-tag {
+  background: #424a52 !important;
+  border-color: #77818b !important;
+  color: #e1e5e9 !important;
+}
 .role-card.role-create {
   border-style: dashed;
   background: transparent;

@@ -1730,7 +1730,20 @@ export function SceneEditor({
     </section>
   );
 }
+function confirmDisableRole(name: string): Promise<boolean> {
+  return new Promise(resolve => Modal.confirm({
+    title: `禁用角色“${name}”？`,
+    content: "禁用后，该角色及其命名图片无法被 @ 引用，并从默认角色列表中隐藏。可勾选“显示已禁用角色”后重新启用。",
+    okText: "确认禁用",
+    cancelText: "取消",
+    onOk: () => { resolve(true); },
+    onCancel: () => { resolve(false); },
+  }));
+}
 export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload: () => void; initialRoleId?:number }) {
+  const [showDisabled, setShowDisabled] = useState(false);
+  const [updatingRoleId, setUpdatingRoleId] = useState<number | null>(null);
+  const visibleRoles = data.roles.filter(role => showDisabled || role.enabled !== false);
   const [roleImagePreview, setRoleImagePreview] = useState<Media | null>(null);
   const [previewRoleId, setPreviewRoleId] = useState<number | null>(null);
   const openRoleImage = (role: Role, media: Media) => { setPreviewRoleId(role.id); setRoleImagePreview(media); };
@@ -1741,6 +1754,17 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
   const previewRole = data.roles.find(role => role.id === previewRoleId);
   const previewImages = [...(previewRole?.images || [])].sort((a, b) => Number(b.id === previewRole?.design_media_id) - Number(a.id === previewRole?.design_media_id));
   useEffect(() => { if (initialRoleId != null) setDetailId(initialRoleId); }, [initialRoleId]);
+  const changeRoleEnabled = async (role: Role, enabled: boolean) => {
+    if (updatingRoleId !== null) return;
+    setUpdatingRoleId(role.id);
+    try {
+      if (!enabled && !await confirmDisableRole(role.name)) return;
+      await post("/roles/update", {project_id: data.project.id, id: role.id, enabled});
+      await reload();
+      Message.success(enabled ? "角色已启用" : "角色已禁用");
+    } catch (e) { Message.error(String(e)); }
+    finally { setUpdatingRoleId(null); }
+  };
   const make = async () => {
     const x = await post<Role>("/roles", {
       project_id: data.project.id,
@@ -1784,18 +1808,22 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
       </div> : <>
       <div className="section-title page-actions">
         <div className="page-intro"><h1>角色设定</h1><p>记录人物特征，保持故事中的角色形象一致。</p></div>
-        <Button
-          className="role-create-button"
-          type="primary"
-          icon={<Plus size={18} />}
-          onClick={() => make().catch((e) => Message.error(String(e)))}
-        >
-          创建角色
-        </Button>
+        <Space wrap>
+          <Checkbox checked={showDisabled} onChange={setShowDisabled}>显示已禁用角色</Checkbox>
+          <Button
+            className="role-create-button"
+            type="primary"
+            icon={<Plus size={18} />}
+            onClick={() => make().catch((e) => Message.error(String(e)))}
+          >
+            创建角色
+          </Button>
+        </Space>
       </div>
+      {!showDisabled && data.roles.length > 0 && !visibleRoles.length && <p className="helper">当前没有启用的角色，可勾选“显示已禁用角色”查看并重新启用。</p>}
       <div className="role-grid">
-        {data.roles.map((r) => (
-          <Card key={r.id} className="role-card" bodyStyle={{ padding: 16 }}>
+        {visibleRoles.map((r) => (
+          <Card key={r.id} className={`role-card${r.enabled === false ? " role-card-disabled" : ""}`} bodyStyle={{ padding: 16 }}>
             <div className="role-pic">
               {(r.images.find((image) => image.id === r.design_media_id) || r.images[0]) ? (
                 <button type="button" className="role-image-zoom" onClick={() => openRoleImage(r, r.images.find((image) => image.id === r.design_media_id) || r.images[0])} aria-label={`放大查看${r.name}的角色图`} title="放大查看">
@@ -1816,6 +1844,10 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
               <div className="role-card-actions">
               <Button type="text" size="mini" onClick={() => setEditing(r)}>
                 设定
+              </Button>
+              <Button type="text" size="mini" loading={updatingRoleId === r.id} disabled={updatingRoleId !== null && updatingRoleId !== r.id}
+                onClick={() => void changeRoleEnabled(r, r.enabled === false)}>
+                {r.enabled === false ? "启用" : "禁用"}
               </Button>
               <Popconfirm
                 title="删除角色？"
@@ -1969,6 +2001,7 @@ function RoleEditor({
     if (!name.trim()) return Message.warning("请输入角色名称");
     setSavingRole(true);
     try {
+      if (currentRole?.enabled !== false && !enabled && !await confirmDisableRole(name.trim())) return;
       await post("/roles/update", {project_id:data.project.id,id:role.id,name:name.trim(),description,enabled,design_media_id:design});
       await reload(); onClose();
     } catch(e) { Message.error(String(e)); }

@@ -9,6 +9,7 @@ const path = require('node:path');
   const screenshots = fs.mkdtempSync(path.join(os.tmpdir(), 'spielberg-role-enabled-'));
   try {
     const page = await browser.newPage({viewport: {width: 1440, height: 1000}});
+    page.setDefaultTimeout(10000);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => {
@@ -17,13 +18,18 @@ const path = require('node:path');
       const data = JSON.parse(localStorage.getItem('qa-role-enabled') || 'null') || {project, media: [image], roles: [
         {id: 1, name: '主角', description: '角色描述', images: [image], design_media_id: 1},
         {id: 2, name: '配角', description: '', images: [], design_media_id: null, enabled: true},
+        {id: 3, name: '停用角色', description: '', images: [], design_media_id: null, enabled: false},
       ], episodes: [], prompts: [], settings: {}};
+      window.__qaRoleUpdates = [];
+      window.__qaFailRoleUpdate = false;
       window.__TAURI_INTERNALS__ = {invoke: async (command, args) => {
         const {path, payload} = args;
         if (path === '/projects') return [project];
         if (path === '/project' || path === '/project/changes') return structuredClone(data);
         if (path === '/tasks') return {items: [], has_more: false};
         if (path === '/roles/update') {
+          window.__qaRoleUpdates.push(structuredClone(payload));
+          if (window.__qaFailRoleUpdate) throw Error('测试保存失败');
           assertEnabled(payload);
           Object.assign(data.roles.find(role => role.id === payload.id), payload);
           localStorage.setItem('qa-role-enabled', JSON.stringify(data));
@@ -53,35 +59,101 @@ const path = require('node:path');
       await modal.locator('.arco-modal-close-icon').click();
       await modal.waitFor({state: 'hidden'});
     };
+    const card = name => page.locator('.role-card').filter({has: page.getByRole('heading', {name, exact: true})});
+    const showDisabled = page.getByRole('checkbox', {name: '显示已禁用角色', exact: true});
+    const setShowDisabled = async checked => {
+      if (await showDisabled.isChecked() !== checked) await page.locator('label.arco-checkbox').filter({hasText: '显示已禁用角色'}).click();
+      assert.equal(await showDisabled.isChecked(), checked);
+    };
+    const confirmation = page.locator('.arco-modal:visible').filter({hasText: '确认禁用'});
+    const confirm = async () => {
+      await confirmation.getByRole('button', {name: '确认禁用', exact: true}).click();
+      await confirmation.waitFor({state: 'hidden'});
+    };
+    const updateCount = () => page.evaluate(() => window.__qaRoleUpdates.length);
     await page.goto(process.env.QA_URL || 'http://127.0.0.1:1420');
     await roles();
+    assert.equal(await showDisabled.isChecked(), false);
+    assert.equal(await card('停用角色').count(), 0);
     await verifyMentions(true);
-    await edit();
-    assert.equal(await toggle.getAttribute('aria-checked'), 'true');
-    await toggle.click();
-    await drawer.locator('[role="switch"][aria-checked="false"]').waitFor();
-    await page.screenshot({path: path.join(screenshots, 'disabled-editor.png'), fullPage: true, animations: 'disabled'});
-    await save();
-    await page.locator('.role-card').filter({hasText: '主角'}).getByText('已禁用', {exact: true}).waitFor();
+
+    // Cancelling and failed saves must leave the role visible and enabled.
+    await card('主角').getByRole('button', {name: '禁用', exact: true}).click();
+    await confirmation.waitFor();
+    assert.equal(await updateCount(), 0);
+    await confirmation.getByRole('button', {name: '取消', exact: true}).click();
+    await confirmation.waitFor({state: 'hidden'});
+    assert.equal(await card('主角').count(), 1);
+    assert.equal(await updateCount(), 0);
+    await page.evaluate(() => { window.__qaFailRoleUpdate = true; });
+    await card('主角').getByRole('button', {name: '禁用', exact: true}).click();
+    await confirm();
+    await page.getByText('Error: 测试保存失败', {exact: true}).waitFor();
+    assert.equal(await card('主角').count(), 1);
+    await page.evaluate(() => { window.__qaFailRoleUpdate = false; });
+
+    await card('主角').getByRole('button', {name: '禁用', exact: true}).click();
+    await page.screenshot({path: path.join(screenshots, 'disable-confirmation.png'), fullPage: true, animations: 'disabled'});
+    await confirm();
+    await card('主角').waitFor({state: 'hidden'});
     await verifyMentions(false);
+    await setShowDisabled(true);
+    await card('主角').getByText('已禁用', {exact: true}).waitFor();
+    assert.equal(await card('停用角色').count(), 1);
+    await page.screenshot({path: path.join(screenshots, 'show-disabled-roles.png'), fullPage: true, animations: 'disabled'});
+    await card('主角').getByRole('button', {name: '启用', exact: true}).click();
+    await card('主角').getByRole('button', {name: '禁用', exact: true}).waitFor();
+    await verifyMentions(true);
+    await setShowDisabled(false);
+
+    // Disabling through the editor also requires confirmation before saving.
+    await edit();
+    await drawer.locator('[role="switch"][aria-checked="true"]').waitFor();
+    await toggle.click();
+    const countBeforeEditor = await updateCount();
+    await drawer.getByRole('button', {name: '保存角色', exact: true}).click();
+    await confirmation.getByRole('button', {name: '取消', exact: true}).click();
+    await confirmation.waitFor({state: 'hidden'});
+    assert(await drawer.isVisible());
+    assert.equal(await updateCount(), countBeforeEditor);
+    await drawer.getByRole('button', {name: '保存角色', exact: true}).click();
+    await confirm();
+    await drawer.waitFor({state: 'hidden'});
+    await card('主角').waitFor({state: 'hidden'});
+    await verifyMentions(false);
+    await setShowDisabled(true);
     await page.getByRole('button', {name: '查看主角的角色详情', exact: true}).click();
     await page.locator('.role-detail-meta').getByText('已禁用', {exact: true}).waitFor();
     await page.reload();
     await roles();
+    assert.equal(await showDisabled.isChecked(), false);
+    assert.equal(await card('主角').count(), 0);
     assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('qa-role-enabled')).roles[0].enabled), false);
+    await setShowDisabled(true);
     await edit();
     await drawer.locator('[role="switch"][aria-checked="false"]').waitFor();
-    assert.equal(await toggle.getAttribute('aria-checked'), 'false');
     await page.setViewportSize({width: 390, height: 1000});
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
     await page.screenshot({path: path.join(screenshots, 'disabled-editor-mobile.png'), fullPage: true, animations: 'disabled'});
     await toggle.click();
     await save();
     await page.setViewportSize({width: 1440, height: 1000});
-    assert.equal(await page.locator('.role-card').filter({hasText: '主角'}).getByText('已禁用', {exact: true}).count(), 0);
     await verifyMentions(true);
+    await setShowDisabled(false);
+    for (const name of ['主角', '配角']) {
+      await card(name).getByRole('button', {name: '禁用', exact: true}).click();
+      await confirm();
+      await card(name).waitFor({state: 'hidden'});
+    }
+    await page.getByText('当前没有启用的角色，可勾选“显示已禁用角色”查看并重新启用。', {exact: true}).waitFor();
+    await page.setViewportSize({width: 390, height: 1000});
+    await page.screenshot({path: path.join(screenshots, 'hidden-roles-mobile.png'), fullPage: true, animations: 'disabled'});
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+    await setShowDisabled(true);
+    assert.equal(await page.locator('.role-card:not(.role-create)').count(), 3);
+    await page.screenshot({path: path.join(screenshots, 'show-disabled-mobile.png'), fullPage: true, animations: 'disabled'});
     assert.deepEqual(errors, []);
-    console.log('PASS: default enabled; disabled state saved through HTTP; role and named-image @ suggestions hidden; disabled status shown; reload preserves state; reenable restores mentions; mobile layout');
+    console.log('PASS: default hides disabled roles; card disable confirmation/cancel/retry; editor disable confirmation/cancel; show disabled and reenable; @ suggestions follow status; reload resets filter and preserves status; all-disabled hint; mobile layout');
     console.log('Screenshots: ' + screenshots);
   } finally {await browser.close();}
 })().catch(error => {console.error(error); process.exitCode = 1;});
