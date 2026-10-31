@@ -1,5 +1,5 @@
 import { Button, Message, Modal, Select } from "@arco-design/web-react";
-import { ChevronLeft, ChevronRight, Download, Film, Maximize, Pause, Play, Repeat, RotateCcw, Volume2, VolumeX } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Film, Maximize, Repeat, RotateCcw, Volume2, VolumeX } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode, type VideoHTMLAttributes } from "react";
 import AssetThumbnail, { cachedThumbnailUrl, loadThumbnailUrl } from "../AssetThumbnail";
 import { imageUrl, type Media } from "../core";
@@ -32,16 +32,15 @@ function time(value: number) {
 export function VideoPreviewModal({ visible, ...props }: Props) {
   const open = !!props.media && (visible ?? true);
   return <Modal className="image-preview-modal video-preview-modal is-fullscreen" wrapClassName="image-preview-wrapper" alignCenter={false}
-    visible={open} title={props.media?.name || props.title || "视频预览"} closable={false} footer={props.footer ?? null} onCancel={props.onClose} unmountOnExit>
+    visible={open} title={props.media?.name || props.title || "视频预览"} closable={false} footer={null} onCancel={props.onClose} unmountOnExit>
     {open && props.media && <VideoPreview key={`${props.playbackKey ?? ""}:${props.media.id}:${props.media.path}`} {...props} media={props.media} />}
   </Modal>;
 }
 
-function VideoPreview({ media, onClose, title = "视频预览", videos = noVideos, projectId, onMediaChange, toolbar, onEnded, allowLoop = true, autoPlay = false, initialTime = 0 }: Omit<Props, "visible"> & { media: Media }) {
+function VideoPreview({ media, onClose, title = "视频预览", videos = noVideos, projectId, onMediaChange, toolbar, footer, onEnded, allowLoop = true, autoPlay = false, initialTime = 0 }: Omit<Props, "visible"> & { media: Media }) {
   const player = useRef<HTMLVideoElement>(null);
   const [metadata, setMetadata] = useState({ width: 0, height: 0, duration: 0 });
   const [currentTime, setCurrentTime] = useState(0);
-  const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [loop, setLoop] = useState(false);
@@ -126,14 +125,13 @@ function VideoPreview({ media, onClose, title = "视频预览", videos = noVideo
     finally { setDownloading(false); }
   };
   return <>
+    <div className="video-preview-topbar">
     <div className="video-preview-header image-preview-heading">
       <span className="image-preview-file-icon"><Film size={20} /></span>
       <div><strong title={media.name || title}>{media.name || title}</strong><span>{ready ? `${title === "视频预览" ? "" : `${title} · `}${metadata.width} × ${metadata.height} px · ${time(metadata.duration)}` : title}</span></div>
-      <Button className="video-preview-close" aria-label="关闭视频预览" onClick={onClose}>关闭</Button>
     </div>
     <div className="image-preview-toolbar" role="toolbar" aria-label="视频预览工具">
       <div className="image-preview-tools">
-        <Button disabled={!ready} aria-label={playing ? "暂停" : "播放"} title="播放 / 暂停 (空格)" onClick={play} icon={playing ? <Pause size={16} /> : <Play size={16} />}>{playing ? "暂停" : "播放"}</Button>
         <Button disabled={!ready} aria-label="从头播放" onClick={() => { if (player.current) { player.current.currentTime = 0; void player.current.play().catch(() => Message.warning("请点击播放开始观看")); } }} icon={<RotateCcw size={16} />} />
         <Button disabled={!ready} className={fit ? "is-active" : ""} onClick={() => setFit(true)} title="适应窗口 (0)" icon={<Maximize size={16} />}>适应窗口</Button>
         <Button disabled={!ready} className={!fit ? "is-active" : ""} onClick={() => setFit(false)} title="原始尺寸 (1)">1:1</Button>
@@ -144,6 +142,8 @@ function VideoPreview({ media, onClose, title = "视频预览", videos = noVideo
         <Button disabled={!ready} aria-label={muted ? "取消静音" : "静音"} title="静音 (M)" onClick={() => { if (player.current) player.current.muted = !player.current.muted; }} icon={muted ? <VolumeX size={16} /> : <Volume2 size={16} />} />
       </div>
       <div className="image-preview-tools image-preview-actions">{toolbar}<Button loading={downloading} icon={<Download size={16} />} onClick={() => void download()}>下载</Button></div>
+    </div>
+    <Button className="video-preview-close" aria-label="关闭视频预览" onClick={onClose}>关闭</Button>
     </div>
     <div className="image-preview-stage video-preview-stage">
       {canNavigate && <button type="button" className="image-preview-nav is-previous" aria-label="上一个视频" onClick={() => move(-1)}><ChevronLeft size={24} /></button>}
@@ -157,10 +157,10 @@ function VideoPreview({ media, onClose, title = "视频预览", videos = noVideo
             if (initialTime > 0 && Number.isFinite(video.duration)) video.currentTime = Math.min(initialTime, video.duration);
           }}
           onLoadedData={event => frameLoaded(event.currentTarget)} onSeeked={event => frameLoaded(event.currentTarget)} onCanPlay={event => frameLoaded(event.currentTarget)}
-          onWaiting={() => setLoading(true)} onPlaying={() => { setPlaying(true); setHasFrame(true); setLoading(false); }}
-          onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => { setPlaying(false); onEnded?.(); }}
+          onWaiting={() => setLoading(true)} onPlaying={() => { setHasFrame(true); setLoading(false); }}
+          onEnded={onEnded}
           onVolumeChange={event => setMuted(event.currentTarget.muted)} onRateChange={event => setSpeed(event.currentTarget.playbackRate)}
-          onTimeUpdate={event => setCurrentTime(event.currentTarget.currentTime)} onError={() => { setFailed(true); setLoading(false); setPlaying(false); }} />
+          onTimeUpdate={event => setCurrentTime(event.currentTarget.currentTime)} onError={() => { setFailed(true); setLoading(false); }} />
       </div>
       {((loading && !hasFrame && !poster) || failed) && <div className={`image-preview-placeholder video-preview-placeholder${failed ? " is-error" : ""}`} role={failed ? "alert" : "status"}>
         <Film size={28} /><span>{failed ? "视频加载失败，请检查文件或更换版本" : "正在加载视频…"}</span>
@@ -169,6 +169,7 @@ function VideoPreview({ media, onClose, title = "视频预览", videos = noVideo
       {canNavigate && <button type="button" className="image-preview-nav is-next" aria-label="下一个视频" onClick={() => move(1)}><ChevronRight size={24} /></button>}
     </div>
     <div className="image-preview-status"><span>空格 播放 / 暂停 · J / L 后退 / 前进 5 秒 · M 静音</span><span>{time(currentTime)} / {time(metadata.duration)}<i />{fit ? "适应窗口" : "原始尺寸"}<i />Esc 关闭</span></div>
+    {(canNavigate || footer) && <div className="video-preview-bottom-bar">
     {canNavigate && <div className="image-preview-filmstrip video-preview-filmstrip" aria-label="视频列表">
       <span className="image-preview-position" aria-live="polite">{currentIndex + 1} / {videos.length}</span>
       <div>{videos.map((item, index) => <button type="button" key={item.id} title={item.name} aria-label={`查看第 ${index + 1} 个视频：${item.name}`} aria-pressed={item.id === media.id}
@@ -176,6 +177,8 @@ function VideoPreview({ media, onClose, title = "视频预览", videos = noVideo
         {projectId ? <AssetThumbnail media={item} projectId={projectId} /> : <Film size={20} />}<span>{index + 1}</span>
       </button>)}</div>
       <span className="image-preview-key-hint">← → 切换视频</span>
+    </div>}
+    {footer && <div className="video-preview-footer-actions">{footer}</div>}
     </div>}
   </>;
 }
