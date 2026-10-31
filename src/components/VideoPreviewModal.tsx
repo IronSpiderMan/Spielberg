@@ -83,20 +83,23 @@ function VideoPreview({ media, onClose, title = "视频预览", videos = noVideo
   };
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey ||
-        (event.target as HTMLElement).closest('input, textarea, select, [role="combobox"], [role="listbox"], [contenteditable="true"]')) return;
-      // Native playback controls keep Space and arrow keys for their own actions.
-      const target = event.target as HTMLElement;
-      if ((event.code === "Space" && target.closest("button, video")) ||
-        ((event.key === "ArrowLeft" || event.key === "ArrowRight") && target.closest("video"))) return;
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
+      const target = event.target instanceof Element ? event.target : null;
       const video = player.current;
-      if (!video) return;
-      if (event.code === "Space") { event.preventDefault(); play(); }
+      if (!target || !video) return;
+      const dialog = video.closest('[role="dialog"]');
+      // Leave editing, open selectors and dialogs above the preview in control.
+      const dialogs = Array.from(document.querySelectorAll('[role="dialog"]')).filter(element => element.getClientRects().length > 0);
+      if (dialogs[dialogs.length - 1] !== dialog ||
+        target.closest('input, textarea, select, [role="listbox"], [role="combobox"][aria-expanded="true"], [contenteditable]:not([contenteditable="false"])')) return;
+      // Capture before native video controls or focused buttons consume the keys.
+      const consume = () => { event.preventDefault(); event.stopPropagation(); };
+      if (event.code === "Space" || event.key === " ") { consume(); if (!event.repeat) play(); }
       else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         if (!canNavigate) return;
-        event.preventDefault(); move(event.key === "ArrowLeft" ? -1 : 1);
+        consume(); move(event.key === "ArrowLeft" ? -1 : 1);
       } else if (["j", "l", "m", "0", "1"].includes(event.key.toLowerCase())) {
-        event.preventDefault();
+        consume();
         switch (event.key.toLowerCase()) {
           case "j": case "l":
             if (ready && Number.isFinite(video.duration)) video.currentTime = Math.max(0, Math.min(video.duration, video.currentTime + (event.key.toLowerCase() === "j" ? -5 : 5)));
@@ -107,8 +110,8 @@ function VideoPreview({ media, onClose, title = "视频预览", videos = noVideo
         }
       }
     };
-    document.addEventListener("keydown", keydown);
-    return () => document.removeEventListener("keydown", keydown);
+    document.addEventListener("keydown", keydown, true);
+    return () => document.removeEventListener("keydown", keydown, true);
   }, [canNavigate, move, play, ready]);
   const download = async () => {
     setDownloading(true);
