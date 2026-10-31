@@ -27,11 +27,19 @@ const path = require('node:path');
       };
       window.__qaData = data;
       window.__qaFailUnlink = false;
+      window.__qaFailRename = false;
       window.__TAURI_INTERNALS__ = {invoke: async (command, args) => {
         const {path, payload} = args;
         if (path === '/projects') return [project];
         if (path === '/project' || path === '/project/changes') return structuredClone(data);
         if (path === '/tasks') return {items: [], has_more: false};
+        if (path === '/media/rename') {
+          if (window.__qaFailRename) throw Error('测试重命名失败');
+          data.media.find(m => m.id === payload.id).name = payload.name;
+          for (const asset of data.assets) {
+            for (const image of asset.images) if (image.id === payload.id) image.name = payload.name;
+          }
+        }
         if (path === '/assets/media/delete') {
           if (window.__qaFailUnlink) throw Error('测试取消关联失败');
           const asset = data.assets.find(a => a.id === payload.asset_id);
@@ -71,7 +79,31 @@ const path = require('node:path');
     await openDetail('未来家');
     const gallery = page.getByRole('region', {name: '资产图片', exact: true});
     assert.equal(await gallery.locator('figure').count(), 2);
-    await gallery.getByRole('button', {name: '预览 空间全景.png', exact: true}).click();
+    await gallery.getByRole('button', {name: '重命名 空间全景.png', exact: true}).click();
+    const renameModal = page.locator('.arco-modal:visible').filter({has: page.getByText('重命名素材', {exact: true})});
+    const nameInput = renameModal.getByRole('textbox', {name: '素材名称', exact: true});
+    assert.equal(await nameInput.inputValue(), '空间全景.png');
+    await nameInput.fill('   ');
+    assert(await renameModal.getByRole('button', {name: '保存名称', exact: true}).isDisabled());
+    await renameModal.getByRole('button', {name: '取消', exact: true}).click();
+    await renameModal.waitFor({state: 'hidden'});
+    assert.equal(await page.evaluate(() => window.__qaData.media[0].name), '空间全景.png');
+    await gallery.getByRole('button', {name: '重命名 空间全景.png', exact: true}).click();
+    await nameInput.fill(' 客厅全景.png ');
+    await page.evaluate(() => {window.__qaFailRename = true;});
+    await renameModal.getByRole('button', {name: '保存名称', exact: true}).click();
+    await page.getByText('Error: 测试重命名失败', {exact: true}).waitFor();
+    assert.equal(await nameInput.inputValue(), ' 客厅全景.png ');
+    await page.evaluate(() => {window.__qaFailRename = false;});
+    await nameInput.press('Enter');
+    await renameModal.waitFor({state: 'hidden'});
+    await gallery.getByRole('button', {name: '重命名 客厅全景.png', exact: true}).waitFor();
+    assert.deepEqual(await page.evaluate(() => ({
+      mediaName: window.__qaData.media[0].name,
+      sharedName: window.__qaData.assets[1].images[0].name,
+      main: window.__qaData.assets[0].design_media_id,
+    })), {mediaName: '客厅全景.png', sharedName: '客厅全景.png', main: 1});
+    await gallery.getByRole('button', {name: '预览 客厅全景.png', exact: true}).click();
     await page.locator('.image-preview-modal:visible').waitFor();
     await page.keyboard.press('Escape');
     await page.locator('.image-preview-modal:visible').waitFor({state: 'hidden'});
@@ -81,7 +113,7 @@ const path = require('node:path');
     await page.screenshot({path: path.join(screenshots, 'references-dark.png'), fullPage: true});
     await page.setViewportSize({width: 390, height: 1000});
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
-    const size = await gallery.getByRole('button', {name: '取消关联 空间全景.png', exact: true}).boundingBox();
+    const size = await gallery.getByRole('button', {name: '取消关联 客厅全景.png', exact: true}).boundingBox();
     assert(size.height < 50, 'Unlink control must not inherit the image preview height');
     await page.screenshot({path: path.join(screenshots, 'references-mobile.png'), fullPage: true});
     await page.setViewportSize({width: 1440, height: 1000});
@@ -90,12 +122,12 @@ const path = require('node:path');
       await page.locator('.arco-popconfirm:visible').getByRole('button', {name: '取消关联', exact: true}).click();
     };
     await page.evaluate(() => {window.__qaFailUnlink = true;});
-    await unlink('空间全景.png');
+    await unlink('客厅全景.png');
     await page.getByText('Error: 测试取消关联失败', {exact: true}).waitFor();
     assert.equal(await gallery.locator('figure').count(), 2);
     await page.evaluate(() => {window.__qaFailUnlink = false;});
-    await unlink('空间全景.png');
-    await gallery.locator('figure').filter({hasText: '空间全景.png'}).waitFor({state: 'hidden'});
+    await unlink('客厅全景.png');
+    await gallery.locator('figure').filter({hasText: '客厅全景.png'}).waitFor({state: 'hidden'});
     assert.deepEqual(await page.evaluate(() => ({
       main: window.__qaData.assets[0].design_media_id,
       files: window.__qaData.media.length,
@@ -106,12 +138,13 @@ const path = require('node:path');
     await page.getByRole('menuitem', {name: '资产库', exact: true}).click();
     await openDetail('未来家');
     assert.equal(await gallery.locator('figure').count(), 1);
+    assert.equal(await page.evaluate(() => window.__qaData.media[0].name), '客厅全景.png');
     await unlink('布局细节.png');
     await gallery.getByText('添加参考图片，记录资产的外观与细节', {exact: true}).waitFor();
     await page.locator('.role-detail-no-image').waitFor();
     assert.equal(await page.evaluate(() => window.__qaData.media.length), 3);
     assert.deepEqual(errors, []);
-    console.log('PASS: category-specific audio in cards/detail/editor; draft category switching; image preview; unlink retry, main-image clearing, shared media preservation, persistence, last-image empty state; light/dark/mobile layout');
+    console.log('PASS: category-specific audio in cards/detail/editor; draft category switching; rename validation, cancellation, retry, shared names and persistence; image preview; unlink retry, main-image clearing, shared media preservation, last-image empty state; light/dark/mobile layout');
     console.log('Screenshots: ' + screenshots);
   } finally {await browser.close();}
 })().catch(error => {console.error(error); process.exitCode = 1;});

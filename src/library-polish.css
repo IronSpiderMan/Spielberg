@@ -775,7 +775,8 @@ html .app .content:has(> .asset-library) {
 .role-detail-images figure { margin: 0; min-width: 0; }
 .role-detail-images .role-detail-image-preview { position: relative; display: block; width: 100%; height: 210px; padding: 10px; border: 1px solid var(--ui-border); border-radius: 10px; background: var(--ui-subtle); cursor: zoom-in; overflow: hidden; transition: border-color 160ms, box-shadow 160ms; }
 .role-detail-images .role-detail-image-preview:hover { border-color: var(--ui-primary); box-shadow: 0 4px 16px rgba(0,0,0,.05); }
-.role-detail-images .role-detail-image-unlink { margin-top: 6px; color: var(--ui-muted); }
+.role-detail-image-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.role-detail-image-actions .arco-btn { color: var(--ui-muted); }
 .role-detail-images img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .role-detail-images figcaption { margin-top: 10px; font-size: 12px; color: var(--ui-secondary-text); white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .role-detail-image-number { position: absolute; bottom: 8px; left: 10px; font-size: 10px; color: var(--ui-muted); font-variant-numeric: tabular-nums; }

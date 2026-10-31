@@ -1747,6 +1747,8 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
   const [categoryFilter, setCategoryFilter] = useState<AssetCategory | "all">("all");
   const [updatingRoleId, setUpdatingRoleId] = useState<number | null>(null);
   const [unlinkingImageId, setUnlinkingImageId] = useState<number | null>(null);
+  const [renamingMedia, setRenamingMedia] = useState<{id:number;name:string} | null>(null);
+  const [renamingMediaBusy, setRenamingMediaBusy] = useState(false);
   const visibleRoles = data.assets.filter(role => (showDisabled || role.enabled !== false) && (categoryFilter === "all" || (role.category || "person") === categoryFilter));
   const [roleImagePreview, setRoleImagePreview] = useState<Media | null>(null);
   const [previewRoleId, setPreviewRoleId] = useState<number | null>(null);
@@ -1758,6 +1760,17 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
   const previewRole = data.assets.find(role => role.id === previewRoleId);
   const previewImages = [...(previewRole?.images || [])].sort((a, b) => Number(b.id === previewRole?.design_media_id) - Number(a.id === previewRole?.design_media_id));
   useEffect(() => { if (initialRoleId != null) setDetailId(initialRoleId); }, [initialRoleId]);
+  const renameMedia = async () => {
+    if (!renamingMedia?.name.trim() || renamingMediaBusy) return;
+    setRenamingMediaBusy(true);
+    try {
+      await post("/media/rename", {project_id: data.project.id, id: renamingMedia.id, name: renamingMedia.name.trim()});
+      await reload();
+      setRenamingMedia(null);
+      Message.success("素材名称已更新");
+    } catch (e) { Message.error(String(e)); }
+    finally { setRenamingMediaBusy(false); }
+  };
   const unlinkImage = async (role: Asset, media: Media) => {
     if (unlinkingImageId !== null) return;
     setUnlinkingImageId(media.id);
@@ -1819,9 +1832,12 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
           {detailImages.length ? <div className="role-detail-images">{detailImages.map((media, index) => <figure key={media.id}>
             <button type="button" className="role-detail-image-preview" onClick={() => openRoleImage(detail, media)} aria-label={`预览 ${media.name}`}><img src={imageUrl(media)} alt={media.name} /><span className="role-detail-image-number">{String(index + 1).padStart(2, "0")}</span>{media.id === detail.design_media_id && <span className="role-detail-main-badge">主图</span>}</button>
             <figcaption title={media.name}>{media.name}</figcaption>
+            <div className="role-detail-image-actions">
+            <Button type="text" size="mini" icon={<Pencil size={13}/>} disabled={unlinkingImageId !== null} aria-label={`重命名 ${media.name}`} onClick={() => setRenamingMedia({id:media.id,name:media.name})}>重命名</Button>
             <Popconfirm title="取消这张图片与资产的关联？" content={media.id === detail.design_media_id ? "素材库中的原文件会保留，同时清除该资产的主图设置。" : "素材库中的原文件会保留。"} okText="取消关联" onOk={() => unlinkImage(detail, media)}>
               <Button className="role-detail-image-unlink" type="text" size="mini" icon={<Link2Off size={13}/>} loading={unlinkingImageId === media.id} disabled={unlinkingImageId !== null} aria-label={`取消关联 ${media.name}`}>取消关联</Button>
             </Popconfirm>
+            </div>
           </figure>)}</div> : <Empty description="添加参考图片，记录资产的外观与细节" />}
         </section>
       </div> : <>
@@ -1907,6 +1923,15 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
         </Card>
       </div>
       </>}
+      <Modal visible={!!renamingMedia} title="重命名素材" okText="保存名称" confirmLoading={renamingMediaBusy}
+        okButtonProps={{disabled:!renamingMedia?.name.trim()}} cancelButtonProps={{disabled:renamingMediaBusy}}
+        maskClosable={!renamingMediaBusy} closable={!renamingMediaBusy} escToExit={!renamingMediaBusy}
+        unmountOnExit onCancel={() => {if (!renamingMediaBusy) setRenamingMedia(null);}} onOk={renameMedia}>
+        <Form layout="vertical"><Form.Item label="素材名称" required extra="名称会同步到素材库及其他引用此图片的资产。">
+          <Input autoFocus aria-label="素材名称" value={renamingMedia?.name || ""} disabled={renamingMediaBusy}
+            onChange={name => setRenamingMedia(current => current ? {...current,name} : null)} onPressEnter={renameMedia}/>
+        </Form.Item></Form>
+      </Modal>
       <ImagePreviewModal media={roleImagePreview} images={previewImages} onMediaChange={setRoleImagePreview} title="资产图预览" onClose={()=>setRoleImagePreview(null)} />
       <RoleEditor
         role={editing}
