@@ -341,7 +341,7 @@ fn describe(operation:Option<&str>)->Value {
             "projects/backup":{"effect":"Creates downloadable project backup with credentials excluded. Returns download URL; caller cannot select filesystem path."}
         },
         "types":{
-            "ScriptDraft":{"title":"episode title","scenes":[{"scene_id":"optional existing scene ID to keep","description":"scene description","mode":"fl2v/i2v","first":"first image prompt","last":"last image prompt","references":["reference image description"]}]},
+            "ScriptDraft":{"title":"episode title","scenes":[{"scene_id":"optional existing scene ID to keep","description":"scene description","mode":"t2v/fl2v/i2v","first":"first image prompt","last":"last image prompt","references":["reference image description"]}]},
             "CanvasDraft":{"version":1,"nodes":[{"id":"unique string","kind":"note/media/image/audio/video/scene/asset/prompt","x":0,"y":0,"ref_id":"creative asset ID for asset nodes; media file ID for media nodes; matching resource ID for other reference nodes","text":"note text","prompt":"optional image/video prompt","duration":"optional video seconds"}],"edges":[{"id":"unique string","from":"source node ID","to":"destination node ID"}],"viewport":{"x":80,"y":80,"zoom":1}},
             "StoryboardScene":{"title":"string","duration":"sum of shot durations, >0 and <=15 seconds","shots":[{"duration":"positive seconds","description":"nonempty description with valid @resource references","camera":"camera direction","sound":"sound/dialogue"}]},
             "Clip":{"id":"UUID for saved editor drafts","media_id":"video/audio media ID","duration":"source duration from editor/probe, required in saved draft","start":"source start seconds >=0","end":"source end seconds, >start","speed":"0.5..2","volume":"0..1","track":"optional audio","at":"audio timeline offset >=0"}
@@ -355,6 +355,12 @@ fn describe(operation:Option<&str>)->Value {
             "project/document/save":{"required":{"title":"nonempty title when creating"},"optional":{"id":"existing document string ID; omit to create with generated UUID","title":"new title; omit to preserve when updating","content":"complete replacement Markdown body; omit to preserve when updating"},"effect":"Creates or updates one document. Existing IDs must belong to current project; preserves other documents. Read the whole document before replacing content."},
             "project/document/delete":{"required":{"id":"existing document string ID"},"effect":"Deletes only this document in current project. Use when user requests deletion."}});
     for (key,value) in project_actions.as_object().unwrap() {catalog["actions"][key]=value.clone();}
+    for name in ["generations/image","generations/video"] {
+        catalog["actions"][name]["optional"]["channel_id"]=json!("configured generation channel ID; omit for default");
+        catalog["actions"][name]["optional"]["model"]=json!("exact model ID within selected channel; parameters depend on model capabilities");
+    }
+    catalog["actions"]["generations/video"]["optional"]["resolution"]=json!("480P/720P/1080P for Token Plan");
+    catalog["actions"]["generations/video"]["optional"]["audio"]=json!("boolean, Wan 3.0 only");
     if let Some(name)=operation {
         if let Some(item)=catalog["actions"].get(name).or_else(||catalog["resources"].get(name)) {
             return json!({"operation":name,"definition":item,"types":catalog["types"],"scope":catalog["scope"]});

@@ -8,10 +8,12 @@ export function resolvePrompt(prompt: string, roles: Asset[], prompts: SavedProm
   return pattern ? prompt.replace(pattern,(_,name:string)=>{const role=roles.find(role=>role.name===name)!;return `${name}（${role.description || "保持资产设定"}）`;}) : prompt;
 }
 
-export function resolveReferencePrompt(prompt: string, data: Snapshot) {
+export function resolveReferencePrompt(prompt: string, data: Snapshot, imageIds?: number[]) {
   const items = promptMentions(data.assets, data), pattern = mentionPattern(items);
   return pattern ? prompt.replace(pattern, (_, name: string) => {
     const item = items.find(item => item.name === name)!;
+    const index = item.media && imageIds ? imageIds.indexOf(item.media.id) : -1;
+    if (index >= 0) return `${name}（${item.description}，来自 [Image ${index + 1}]）`;
     return item.kind === "role" ? `${name}（${item.description}）` : `参考图片（${item.description}）`;
   }) : prompt;
 }

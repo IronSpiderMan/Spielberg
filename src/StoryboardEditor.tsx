@@ -1,3 +1,6 @@
+import { GenerationSelector } from "./components/generation/GenerationSelector";
+import { modelImageSize, modelRatio, selectionPayload, useGenerationSelection } from "./generation-channels";
+import { Form } from "@arco-design/web-react";
 import { PreviewImage } from "./components/ImagePreviewModal";
 import {useRef, useState} from 'react';
 import {Button, Input, Message, Popconfirm, Select} from '@arco-design/web-react';
@@ -11,6 +14,7 @@ type Plan={reference_media_ids:number[];image_tasks:ImageTask[];prompt:string};
 type BoardScene={title:string;duration:number;shots:Shot[];plan?:Plan;scene_id?:number};
 export type Storyboard={scenes:BoardScene[];source_script?:string};
 export function StoryboardEditor({data,episodeId,script,onScript,board,onChange,onBusy,reload,disabled,readOnlySource=false}:{data:Snapshot;episodeId:number;script:string;onScript:(v:string)=>void;board?:Storyboard;onChange:(v:Storyboard)=>void;onBusy:(v:boolean)=>void;reload:()=>void;disabled:boolean;readOnlySource?:boolean}){
+ const imageGeneration=useGenerationSelection(data.settings,"image");
  const [busy,setBusy]=useState(''),[error,setError]=useState(''),[target,setTarget]=useState<Record<number,number>>({});
  const boardRef=useRef(board);boardRef.current=board;
  const [batchProgress,setBatchProgress]=useState<{current:number;total:number}|null>(null);
@@ -31,7 +35,7 @@ export function StoryboardEditor({data,episodeId,script,onScript,board,onChange,
   await post('/scenes/update',{project_id:data.project.id,id:created.id,title:scene.title,description,prompt:plan.prompt,reference_media_id:ids[0],generation_options:{...defaultOptions,custom:true,video_mode:'i2v',first:false,last:false,reference:true,duration:scene.duration,reference_media_ids:ids}});
   await reload();Message.success('参考图与 H3 Prompt 已写入本集场景');
  };
- const generateImage=(task:ImageTask)=>post<Media>('/generations/image',{project_id:data.project.id,operation:task.operation,prompt:task.prompt,image_media_ids:task.source_media_ids,aspect_ratio:'16:9'});
+ const generateImage=(task:ImageTask)=>post<Media>('/generations/image',{project_id:data.project.id,operation:task.operation,prompt:task.prompt,image_media_ids:task.source_media_ids,aspect_ratio:modelRatio(imageGeneration.choice,'16:9'),...selectionPayload(imageGeneration.choice),size:modelImageSize(imageGeneration.choice,'16:9',undefined,task.operation)});
  const prepareScene=async(scene:BoardScene,index:number)=>{
   const plan=await post<Plan>('/storyboard/plan',{project_id:data.project.id,scene});
   let prepared={...scene,plan};update(index,prepared);
@@ -67,6 +71,7 @@ export function StoryboardEditor({data,episodeId,script,onScript,board,onChange,
    {error&&<p role="alert" className="storyboard-error">{error}</p>}
   </div>
   <div className="storyboard-results"><div className="storyboard-panel-heading"><span className="editor-step">02</span><h3>分镜头剧本</h3><small>{board?.scenes.length ? `${board.scenes.length} 个场景` : '镜头规划'}</small></div>{board?.source_script!==undefined&&board.source_script!==script&&<p className="storyboard-error">剧本已修改，当前分镜来自之前的剧本。</p>}
+   <Form layout="vertical"><GenerationSelector settings={data.settings} kind="image" value={imageGeneration.value} onChange={imageGeneration.setValue} disabled={locked}/></Form>
    {!!board?.scenes.length&&<div className="storyboard-batch"><Button type="primary" disabled={locked} loading={busy==='all'} onClick={prepareAll}>全部生成（参考图 + Prompt）</Button><p className="subtle" role="status" aria-live="polite">{batchProgress?`正在生成场景 ${batchProgress.current} / ${batchProgress.total}，完成后自动保存到本集场景。`:`按顺序生成全部 ${board.scenes.length} 个场景，并自动保存到本集场景。`}</p></div>}
    {!board?.scenes.length&&<p className="subtle">生成结果按场景显示。选择场景准备参考图与视频 Prompt。</p>}
    {board?.scenes.map((scene,index)=><div className="storyboard-scene" key={index}>

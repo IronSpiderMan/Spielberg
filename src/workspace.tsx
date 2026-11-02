@@ -1,3 +1,7 @@
+import { GenerationSelector } from "./components/generation/GenerationSelector";
+import { ImageModelFields, VideoModelFields } from "./components/generation/ModelGenerationFields";
+import { channelsFor, generationChoice, modelImageSize, modelRatio, selectionPayload, useGenerationSelection, validateGeneration } from "./generation-channels";
+import { GenerationChannelsSettings } from "./GenerationChannelsSettings";
 import { RoleAudioReferences } from "./components/RoleAudioReferences";
 import { ASSET_CATEGORIES, assetCategoryLabel, supportsAudioReferences, type AssetCategory } from "./asset-categories";
 import { PreviewVideo, VideoPreviewModal } from "./components/VideoPreviewModal";
@@ -75,12 +79,13 @@ function videoRequest(scene: Scene, settings: ModelSettings, roles: Asset[], pro
   if(scene.creation_mode === "canvas") throw new Error(`${scene.title}：请进入画布，使用视频节点生成；已有场景视频可直接合并`);
   const options = sceneGenerationOptions(scene);
   const mode = options.video_mode;
+  const choice=generationChoice(settings,"video",options,mode === "i2v"?"ref2v":mode);
   const request=buildVideoRequest({mode,prompt:resolvePrompt(sceneVideoPrompt(scene),roles,prompts),label:scene.title,sceneId:scene.id,
-    duration:options.duration,ratio:options.aspect_ratio,size:options.size,firstId:scene.first_media_id,lastId:scene.last_media_id,
+    duration:options.duration,ratio:modelRatio(choice,options.aspect_ratio),size:options.size,firstId:scene.first_media_id,lastId:scene.last_media_id,
     referenceIds:options.reference_media_ids??(scene.reference_media_id?[scene.reference_media_id]:[]),
     referenceVideoIds:options.reference_video_media_ids,referenceAudioIds:options.reference_audio_media_ids});
-  if (!(settings.video?.base_url || settings.video?.url || settings[mode]?.url || (mode === "i2v" && settings.ref2v?.url))) throw new Error("请先配置视频生成 Base URL");
-  return request;
+  validateGeneration(choice,mode==="i2v"?"ref2v":mode,{images:request.image_media_ids.length,videos:mode==="i2v"?options.reference_video_media_ids?.length:0,audios:mode==="i2v"?options.reference_audio_media_ids?.length:0,last:!!request.last_media_id,duration:options.duration});
+  return {...request,...selectionPayload(choice),...(choice?.capabilities.size_mode==="resolution"?{resolution:options.resolution || "720P"}:{}),...(choice?.capabilities.audio?{audio:options.audio ?? true}:{})};
 }
 const sceneVideos = (scene: Scene) =>
   scene.videos || (scene.video_media ? [scene.video_media] : []);
@@ -1149,6 +1154,8 @@ export function SceneEditor({
   const [ratio, setRatio] = useState(
     scene.generation_options?.aspect_ratio || defaultOptions.aspect_ratio,
   );
+  const videoChoice=generationChoice(data.settings,"video",options,options.video_mode==="i2v"?"ref2v":options.video_mode || "fl2v");
+  const imageGeneration=useGenerationSelection(data.settings,"image");
   const automaticReferenceIds = useRef<number[]>([]);
   const mentionedReferenceIds = JSON.stringify([...new Set(
     findMentions(effectivePrompt, promptMentions(data.assets, data))
@@ -1311,10 +1318,11 @@ export function SceneEditor({
       const media = await post<Media>("/generations/image", {
         project_id: data.project.id,
         operation: imageMode,
+        ...selectionPayload(imageGeneration.choice),
         prompt: resolvePrompt(imagePrompt, data.assets),
-        aspect_ratio: ratio,
-        size: options.size,
-        image_media_ids: imageRefs.map((x) => x.id),
+        aspect_ratio: modelRatio(imageGeneration.choice,ratio),
+        size: modelImageSize(imageGeneration.choice,ratio,options.size,imageMode),
+        image_media_ids: imageMode === "i2i" ? imageRefs.map((x) => x.id) : [],
       });
       choose(imageTarget, media.id);
       await reload();
@@ -1424,10 +1432,10 @@ export function SceneEditor({
     finally { setAttachingVideo(false); }
   };
   const optimizeVideoPrompt=()=>{
-    const imageIds=options.video_mode==="i2v"?(options.reference_media_ids||[]):[frames.first,frames.last].filter((id):id is number=>Boolean(id));
+    const imageIds=options.video_mode==="t2v"?[]:options.video_mode==="i2v"?(options.reference_media_ids||[]):[frames.first,frames.last].filter((id):id is number=>Boolean(id));
     return optimizePrompt({projectId:data.project.id,
     prompt:resolveH3Prompt(description,data,imageIds),kind:"video",instruction:optimizationInstruction,imageIds,
-    h3:{mode:options.video_mode==="i2v"?"ref2va":frames.first?(frames.last?"fl2va":"i2va"):frames.last?"l2va":"t2va",duration:options.duration,
+    h3:{mode:options.video_mode==="t2v"?"t2va":options.video_mode==="i2v"?"ref2va":frames.first?(frames.last?"fl2va":"i2va"):frames.last?"l2va":"t2va",duration:options.duration,
       videoIds:options.video_mode==="i2v"?options.reference_video_media_ids:[],audioIds:options.video_mode==="i2v"?options.reference_audio_media_ids:[]},
     onOptimized:setPrompt,successMessage:"已转换为 MiniMax-H3 Prompt"});
   };
@@ -1483,18 +1491,20 @@ export function SceneEditor({
           </div>
           <div className="scene-visuals">
           <div className="scene-section-heading"><h2>画面素材</h2><span>{options.video_mode === "i2v" ? "最多 9 张参考图" : "上传首帧，可选尾帧"}</span></div>
-          <Tabs activeTab={options.video_mode} onChange={key => { if (pasteInProgress.current) return; setOptions(o => ({...o, video_mode: key as "fl2v" | "i2v"})); setReferenceSourcesOpen(false); }}>
-          <Tabs.TabPane key="fl2v" title="首尾帧">
+          <Form layout="vertical"><GenerationSelector settings={data.settings} kind="video" value={options} disabled={videoGenerating||persistedVideoGenerating} onChange={value=>setOptions(o=>{const choice=generationChoice(data.settings,"video",value);const mode=o.video_mode==="i2v"?"ref2v":o.video_mode || "fl2v";const nextMode=choice?.capabilities.modes.includes(mode)?mode:choice?.capabilities.modes[0] || "fl2v";return {...o,...value,video_mode:nextMode==="ref2v"?"i2v":nextMode as "t2v"|"fl2v",duration:5};})}/></Form>
+          <Tabs activeTab={options.video_mode} onChange={key => { if (pasteInProgress.current) return; setOptions(o => ({...o, video_mode: key as "t2v" | "fl2v" | "i2v", model:undefined})); setReferenceSourcesOpen(false); }}>
+          <Tabs.TabPane key="t2v" title="文生视频"><p className="helper">使用视频 Prompt 生成，不传入首尾帧或参考素材。</p></Tabs.TabPane>
+          <Tabs.TabPane key="fl2v" title={videoChoice?.capabilities.last_frame?"首尾帧":"首帧"}>
           <div className="scene-image-grid">
             {(
               [
                 ["first", "首帧"],
                 ["last", "尾帧"],
               ] as const
-            ).map(([key, label]) => (
+            ).filter(([key])=>key!=="last" || !videoChoice || videoChoice.capabilities.last_frame || !!frames.last).map(([key, label]) => (
               <SceneImageField
                 key={key}
-                label={label}
+                label={key==="last"&&videoChoice&&!videoChoice.capabilities.last_frame?"尾帧（当前模型不支持，请清除）":label}
                 reload={reload}
                 value={frames[key]}
                 data={data}
@@ -1537,23 +1547,22 @@ export function SceneEditor({
               </div>}
             </Space>
           </div>
-          <Form layout="vertical"><ReferenceMediaPicker projectId={data.project.id} media={data.media} videoIds={options.reference_video_media_ids} audioIds={options.reference_audio_media_ids}
+          {(!videoChoice || !!videoChoice.capabilities.max_videos || !!options.reference_video_media_ids?.length || !!options.reference_audio_media_ids?.length)&&<Form layout="vertical"><ReferenceMediaPicker projectId={data.project.id} media={data.media} videoIds={options.reference_video_media_ids} audioIds={options.reference_audio_media_ids}
             reload={reload} disabled={savingScene || videoGenerating || persistedVideoGenerating || pastingImages} onUploading={setUploadingReferences}
-            onChange={(kind, ids) => setOptions(current => ({...current, [kind === "video" ? "reference_video_media_ids" : "reference_audio_media_ids"]: ids}))} /></Form>
+            onChange={(kind, ids) => setOptions(current => ({...current, [kind === "video" ? "reference_video_media_ids" : "reference_audio_media_ids"]: ids}))} /></Form>}
           </Tabs.TabPane>
           </Tabs>
           </div>
             <div className="video-generator scene-video-panel">
               <Form layout="vertical">
                 <div className="generation-options">
-                  <VideoDurationField value={options.duration} onChange={duration => setOptions(o => ({ ...o, duration }))} />
-                  <MediaSizeFields ratio={ratio} size={options.size} ratioLabel="画面比例" ariaPrefix="视频"
-                    onChange={value => { setRatio(value.ratio); setOptions(o => ({ ...o, aspect_ratio: value.ratio, size: value.size })); }} />
+                  <VideoModelFields choice={videoChoice} mode={options.video_mode || "fl2v"} duration={options.duration} onDuration={duration=>setOptions(o=>({...o,duration}))} ratio={ratio} size={options.size} onSize={value=>{setRatio(value.ratio);setOptions(o=>({...o,aspect_ratio:value.ratio,size:value.size}));}} resolution={options.resolution} onResolution={resolution=>setOptions(o=>({...o,resolution}))} audio={options.audio} onAudio={audio=>setOptions(o=>({...o,audio}))}/>
+
                 </div>
               </Form>
               <div className="scene-video-action">
                 <span className="subtle">
-                {options.video_mode === "i2v" ? "全能参考生成" : "首尾帧生成"}
+                {options.video_mode === "t2v" ? "文生视频" : options.video_mode === "i2v" ? "全能参考生成" : "首尾帧生成"}
                 </span>
               <Space wrap>
               <Button icon={<Film size={15}/>} disabled={attachingVideo||videoGenerating||persistedVideoGenerating} onClick={()=>void openVideoAssetPicker()}>从素材库选择</Button>
@@ -1646,7 +1655,7 @@ export function SceneEditor({
         confirmLoading={imageGenerating}
         okText="生成图片"
       >
-        <Form layout="vertical">
+        <Form layout="vertical"><GenerationSelector settings={data.settings} kind="image" value={imageGeneration.value} onChange={imageGeneration.setValue} disabled={imageGenerating}/>
           <Form.Item label="生成方式">
             <div className="image-generation-modes">
               <button
@@ -1717,13 +1726,8 @@ export function SceneEditor({
               placeholder="描述主体、构图、光线、色彩与画风…"
             />
           </Form.Item>
-          <Form.Item label="画面比例">
-            <Select value={ratio} onChange={value => { setRatio(value); setOptions(o => ({ ...o, aspect_ratio: value, size: normalizeGenerationSize(value, o.size) })); }}>
-              <Select.Option value="16:9">16:9 横屏</Select.Option>
-              <Select.Option value="9:16">9:16 竖屏</Select.Option>
-              <Select.Option value="1:1">1:1 方形</Select.Option>
-            </Select>
-          </Form.Item>
+          <ImageModelFields choice={imageGeneration.choice} operation={imageMode} ratio={ratio} size={options.size} onChange={value=>{setRatio(value.ratio);setOptions(o=>({...o,aspect_ratio:value.ratio,size:value.size}));}}/>
+
         </Form>
       </Modal>
       <RoleImagePicker title="从资产中选择参考图" visible={rolePickerOpen} roles={data.assets} multiple
@@ -1967,6 +1971,7 @@ function RoleEditor({
   onClose: () => void;
   reload: () => void;
 }) {
+  const imageGeneration=useGenerationSelection(data.settings,"image");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [enabled, setEnabled] = useState(true);
@@ -2052,7 +2057,7 @@ function RoleEditor({
     setGenerating(true);
     try {
       const result = await post<Media>("/generations/image", {project_id:data.project.id, operation,
-        prompt:resolvePrompt(description, data.assets), aspect_ratio:"1:1", image_media_ids:operation === "i2i" ? [design] : []});
+        prompt:resolvePrompt(description, data.assets), ...selectionPayload(imageGeneration.choice), aspect_ratio:"1:1", size:modelImageSize(imageGeneration.choice,"1:1",undefined,operation), image_media_ids:operation === "i2i" ? [design] : []});
       await reload();
       setPendingImage({id:result.id,name:""});
     } catch(e) { Message.error(String(e)); }
@@ -2173,6 +2178,7 @@ function RoleEditor({
         {currentRole && supportsAudioReferences(category) && (supportsAudioReferences(currentRole.category)
           ? <RoleAudioReferences key={currentRole.id} role={currentRole} data={data} reload={reload} editable/>
           : <p className="helper">保存资产类别后可添加音频参考。</p>)}
+        <GenerationSelector settings={data.settings} kind="image" value={imageGeneration.value} onChange={imageGeneration.setValue} disabled={generating}/>
         <Form.Item label="生成方式">
           <Space>
             <Button icon={<Sparkles size={15} />} type="primary" loading={generating} onClick={() => generateRoleImage("t2i")}>
@@ -2181,7 +2187,7 @@ function RoleEditor({
             <Button icon={<ImagePlus size={15} />} disabled={generating || !design} onClick={() => generateRoleImage("i2i")}>图生图</Button>
           </Space>
           <p className="subtle">
-            创建生成任务会使用「设置」中配置的 t2i / i2i 服务。
+            使用上方选择的图片渠道与模型生成。
           </p>
         </Form.Item>
       </Form>
@@ -2373,11 +2379,7 @@ export function SettingsPage({
     },
     [data.settings, dirty],
   );
-  const methods = [
-    ["image", "图片生成", "Text / Image to Image"],
-    ["video", "视频生成", "Text / Image to Video"],
-    ["llm", "LLM（分镜与 Prompt）", "OpenAI Chat Completions"],
-  ];
+  const methods = [["llm", "LLM（分镜与 Prompt）", "OpenAI Chat Completions"]];
   const set = (key: string, field: string, value: string) => {
     setDirty(true);
     setSettings((s) => ({
@@ -2429,42 +2431,20 @@ export function SettingsPage({
         </Form>
       </div>
       <SkillsSettings />
-      {methods.map(([key, label, sub]) => {
-        const image = key === "image";
-        const video = key === "video";
-        const llm = key === "llm";
-        const provider = settings[key]?.provider || "cast";
-        return (
-          <div className="setting-block" key={key}>
-            <div className="setting-heading"><h3>{label}</h3>
-            <p>{sub}</p></div>
-            <Form layout="vertical" disabled={saving}>
-              <div className={`settings-fields ${image && provider === "openai" ? "settings-fields-openai" : ""}`}>
-                {image && <Form.Item label="接口类型">
-                  <Select value={provider} onChange={v => set(key, "provider", v)} style={{width:260}}
-                    options={[{label:"CAST 兼容接口",value:"cast"},{label:"OpenAI 官方兼容接口",value:"openai"}]}/>
-                </Form.Item>}
-                {image && provider === "openai" ? <>
-                  <Form.Item label="服务地址（Base URL）"><Input value={settings[key]?.base_url || ""}
-                    onChange={v => set(key,"base_url",v)} placeholder="https://api.openai.com/v1"/></Form.Item>
-                  <Form.Item label="模型名称"><Input value={settings[key]?.model || ""}
-                    onChange={v => set(key,"model",v)} placeholder="默认 gpt-image-1"/></Form.Item>
-                </> : <Form.Item label={image || video || llm ? "服务地址（Base URL）" : "服务地址"}><Input value={(settings[key]?.base_url || settings[key]?.url || (image ? settings.t2i?.url : video ? (settings.t2v?.url || settings.i2v?.url) : "")) || ""}
-                  onChange={v => set(key,image||video||llm ? "base_url" : "url",v)} placeholder={llm ? "https://api.openai.com/v1" : video ? "http://127.0.0.1:8190" : "http://127.0.0.1:8190"}/></Form.Item>}
-                <Form.Item label={provider === "openai" ? "API Key" : "API Key（可选）"}>
-                  <Input.Password value={settings[key]?.api_key || (image ? settings.t2i?.api_key : "") || ""} onChange={v => set(key,"api_key",v)} placeholder="输入 API Key"/>
-                </Form.Item>
-                {llm&&<Form.Item label="模型名称"><Input value={settings[key]?.model || ""} onChange={v=>set(key,"model",v)} placeholder="例如 gpt-4o-mini"/></Form.Item>}
-              </div>
-            </Form>
-          </div>
-        );
-      })}
+      <GenerationChannelsSettings settings={settings} disabled={saving} onChange={next=>{setSettings(next);setDirty(true);}}/>
+      {methods.map(([key,label,sub])=><div className="setting-block" key={key}>
+        <div className="setting-heading"><h3>{label}</h3><p>{sub}</p></div>
+        <Form layout="vertical" disabled={saving}><div className="settings-fields">
+          <Form.Item label="服务地址（Base URL）"><Input value={settings[key]?.base_url || settings[key]?.url || ""} onChange={v=>set(key,"base_url",v)} placeholder="https://api.openai.com/v1"/></Form.Item>
+          <Form.Item label="API Key"><Input.Password value={settings[key]?.api_key || ""} onChange={v=>set(key,"api_key",v)}/></Form.Item>
+          <Form.Item label="模型名称"><Input value={settings[key]?.model || ""} onChange={v=>set(key,"model",v)} placeholder="例如 gpt-4o-mini"/></Form.Item>
+        </div></Form>
+      </div>)}
       <Card className="connection-help" title="接口约定" bordered={false}>
         <Typography.Paragraph style={{ margin: 0 }}>
           图片配置共用一组 URL 与 API Key；OpenAI 模式会根据 Base URL 自动调用 <code>/images/generations</code>
           （t2i）或 <code>/images/edits</code>
-          （i2i），并将画面比例映射为官方支持的尺寸。视频 Base URL 会按生成方式补全接口路径。Prompt 优化使用 OpenAI 格式的{" "}
+          （i2i），并将画面比例映射为官方支持的尺寸。千问 Token Plan 使用专属视频接口，自动查询进度并下载入库；CAST 视频 Base URL 会按生成方式补全接口路径。Prompt 优化使用 OpenAI 格式的{" "}
           <code>/chat/completions</code>。CAST 图片接口也会按生成方式补全路径。{" "}
           <code>
             POST /v1/generations/{"{"}t2i | i2i | t2v | ref2v | fl2v{"}"}

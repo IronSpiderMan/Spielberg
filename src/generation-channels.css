@@ -1,0 +1,10 @@
+.setting-block.generation-channels-settings{display:block}
+.generation-channel-card{border:1px solid var(--color-border-2);border-radius:12px;padding:20px;margin:16px 0;background:var(--color-bg-2)}
+.generation-channel-heading,.generation-model-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+.generation-channel-config{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px}
+.generation-channel-model{border:1px solid var(--color-border-2);border-radius:8px;padding:16px;margin:12px 0}
+.generation-channel-model-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.generation-model-summary{font-size:12px;color:var(--color-text-3);margin-bottom:0;flex-wrap:wrap}
+.generation-model-route{margin-top:12px}.generation-model-route label{display:flex;align-items:center;gap:8px}
+.generation-channel-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;width:100%}
+@media(max-width:700px){.generation-channel-config,.generation-channel-model-fields,.generation-channel-fields{grid-template-columns:1fr}.generation-channel-card{padding:14px}}

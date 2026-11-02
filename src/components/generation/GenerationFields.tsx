@@ -24,13 +24,14 @@ export function MediaSizeFields({ ratio, size, onChange, ratioLabel = "画幅", 
   </>;
 }
 
-export function VideoDurationField({ value, onChange, disabled }: {
+export function VideoDurationField({ value, onChange, disabled, wan = false }: {
   value: number;
   onChange: (value: number) => void;
   disabled?: boolean;
+  wan?: boolean;
 }) {
   return <Form.Item label="时长"><Select aria-label="视频时长" value={value} onChange={onChange} disabled={disabled}
-    options={Array.from({ length: 13 }, (_, i) => ({ label: `${i + 3} 秒`, value: i + 3 }))} /></Form.Item>;
+    options={[...(wan ? [{label:"智能时长",value:-1}] : []), ...Array.from({ length: wan ? 29 : 13 }, (_, i) => ({ label: `${i + (wan ? 2 : 3)} 秒`, value: i + (wan ? 2 : 3) }))]} /></Form.Item>;
 }
 
 export function GenerationModeTabs<T extends string>({ value, onChange, modes, disabled = false }: {

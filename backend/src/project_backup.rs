@@ -43,7 +43,7 @@ fn rewrite(value:&mut Value, paths:&HashMap<String,String>, strip_secrets:bool) 
         Value::String(text)=>{if let Some(next)=paths.get(text){*text=next.clone();}},
         Value::Array(items)=>for item in items {rewrite(item,paths,strip_secrets)},
         Value::Object(items)=>for (key,item) in items {
-            if strip_secrets && ["api_key","apiKey","search_api_key","authorization","access_token"].contains(&key.as_str()) {*item=json!("")} else {rewrite(item,paths,strip_secrets)}
+            if strip_secrets && ["api_key","apiKey","search_api_key","operation_api_keys","authorization","access_token"].contains(&key.as_str()) {*item=json!("")} else {rewrite(item,paths,strip_secrets)}
         },
         _=>{},
     }

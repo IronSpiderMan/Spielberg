@@ -1,11 +1,14 @@
+import { GenerationSelector } from "./components/generation/GenerationSelector";
+import { VideoModelFields } from "./components/generation/ModelGenerationFields";
+import { modelRatio, selectionPayload, useGenerationSelection, validateGeneration } from "./generation-channels";
 import { PreviewVideo } from "./components/VideoPreviewModal";
 import { ReferenceMediaPicker } from "./components/generation/ReferenceMediaPicker";
 import { buildVideoRequest, type VideoMode } from "./generation-request";
 import { GenerationModeTabs, MediaSizeFields, VideoDurationField } from "./components/generation/GenerationFields";
 import { ImageAssetSelect, ReferenceImagePicker } from "./components/generation/ReferenceImagePicker";
-import { Button, Empty, Form, Message, Tag } from "@arco-design/web-react";
+import { Button, Checkbox, Empty, Form, Message, Select, Tag } from "@arco-design/web-react";
 import { Film, Upload } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { isSupportedImage, useImageUpload } from "./hooks/useImageUpload";
 import { usePromptOptimization } from "./hooks/usePromptOptimization";
 import { defaultGenerationSize, Media, Snapshot, post } from "./core";
@@ -17,11 +20,14 @@ import { resolvePrompt, resolveReferencePrompt } from "./resolve-prompt";
 
 
 export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => void }) {
+  const generation=useGenerationSelection(data.settings,"video");
+  const [resolution,setResolution]=useState("720P");
   const [mode, setMode] = useState<VideoMode>("t2v");
   const [prompt, setPrompt] = useState("");
   const [ratio, setRatio] = useState("16:9");
   const [size, setSize] = useState(defaultGenerationSize("16:9"));
   const [duration, setDuration] = useState(5);
+  const [audio, setAudio] = useState(true);
   const [first, setFirst] = useState<number>();
   const [last, setLast] = useState<number>();
   const [referenceVideos, setReferenceVideos] = useState<number[]>([]);
@@ -42,9 +48,21 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
   const mentions = mode === "i2v" ? findMentions(expanded, promptMentions(data.assets, data)) : [];
   const referenceIds = [...new Set([...refs, ...mentions.flatMap(item => item.media ? [item.media.id] : [])])];
   const disabled = busy || uploading || optimizing || uploadingReferences;
+  const cap=generation.choice?.capabilities;
+  const qianwen=generation.choice?.channel.provider === "qianwen-token-plan";
+  const happyhorse=cap?.label.startsWith("HappyHorse");
+  useEffect(()=>{
+    if (!cap) return;
+    const operation=mode === "i2v"?"ref2v":mode;
+    if (!cap.modes.includes(operation)) setMode(cap.modes[0] === "ref2v"?"i2v":cap.modes[0] as VideoMode);
+    if (!(duration===-1&&cap.smart_duration) && (duration<(cap.min_duration||3)||duration>(cap.max_duration||15))) setDuration(5);
+  },[generation.choice?.channel.id,generation.choice?.model.id]);
 
   const importImages = async (files: File[]) => {
     if (generating.current || importing.current || !files.length) return;
+    if (cap && !cap.modes.includes("ref2v") && !cap.modes.includes("fl2v")) {
+      Message.warning("当前模型不支持图片输入，请先切换到首帧或图片参考模型"); return;
+    }
     if (files.some(file => !isSupportedImage(file))) {
       Message.warning("请选择 PNG、JPG、WebP 或 GIF 图片"); return;
     }
@@ -69,12 +87,14 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
     if (mode === "i2v" && mentions.some(item => !item.media)) return void Message.warning("引用的资产或场景尚无图片");
     let request: ReturnType<typeof buildVideoRequest>;
     try {
-      request=buildVideoRequest({mode,prompt:mode==="i2v"?resolveReferencePrompt(expanded,data):resolvePrompt(expanded,data.assets),
-        duration,ratio,size,firstId:first,lastId:last,referenceIds,referenceVideoIds:referenceVideos,referenceAudioIds:referenceAudios});
+      validateGeneration(generation.choice,mode==="i2v"?"ref2v":mode,{images:mode==="i2v"?referenceIds.length:0,videos:mode==="i2v"?referenceVideos.length:0,audios:mode==="i2v"?referenceAudios.length:0,last:mode==="fl2v"&&!!last,duration});
+      request=buildVideoRequest({mode,prompt:mode==="i2v"?resolveReferencePrompt(expanded,data,qianwen?referenceIds:undefined):resolvePrompt(expanded,data.assets),
+        duration,ratio:modelRatio(generation.choice,ratio),size,firstId:first,lastId:cap?.last_frame?last:undefined,referenceIds,
+        referenceVideoIds:cap?.max_videos?referenceVideos:[],referenceAudioIds:cap?.max_audios?referenceAudios:[]});
     } catch(e) { Message.warning(e instanceof Error?e.message:String(e)); return; }
     generating.current = true; setBusy(true); setError("");
     try {
-      const media = await post<Media>("/generations/video", {project_id:data.project.id,...request});
+      const media = await post<Media>("/generations/video", {project_id:data.project.id,...request,...selectionPayload(generation.choice),...(cap?.size_mode==="resolution"?{resolution}:{}),...(cap?.audio?{audio}:{})});
       setResult(media); Message.success("视频已保存到素材库");
       try { await reload(); } catch (e) { Message.error(`视频已入库，但刷新素材失败：${String(e)}`); }
     } catch (e) { setError(String(e)); Message.error(String(e)); }
@@ -85,16 +105,17 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
     <div className="creation-panel">
       <div className="generation-panel-heading"><h2>视频生成</h2></div>
       <Form layout="vertical" disabled={disabled}>
-        <GenerationModeTabs value={mode} onChange={setMode} disabled={disabled} modes={[
-          { value: "t2v", label: "文生视频" }, { value: "fl2v", label: "首尾帧" }, { value: "i2v", label: "全能参考" },
-        ]} />
+        <GenerationSelector settings={data.settings} kind="video" value={generation.value} onChange={value=>{generation.setValue(value);setLast(undefined);setReferenceVideos([]);setReferenceAudios([]);}} disabled={disabled}/>
+        <GenerationModeTabs value={mode} onChange={value=>setMode(value as VideoMode)} disabled={disabled} modes={[
+          { value: "t2v", label: "文生视频" }, { value: "fl2v", label: cap?.last_frame ? "首尾帧" : "首帧生视频" }, { value: "i2v", label: cap?.max_videos ? "全能参考" : "图片参考" },
+        ].filter(item=>!cap || cap.modes.includes(item.value === "i2v"?"ref2v":item.value))} />
         <Form.Item label="视频描述" required>
           <PromptInput value={prompt} onChange={setPrompt} roles={data.assets} data={mode === "i2v" ? data : undefined} prompts={prompts} templates={[...PROMPT_TEMPLATES, ...data.prompts]} placeholder="描述画面、动作和镜头运动，输入 @ 引用资产或提示词" disabled={disabled} onOptimize={optimize} optimizing={optimizing} onPasteImages={files => void importImages(files)} />
           <p className="helper">{uploading ? "正在上传图片…" : "可粘贴图片作为参考，生成的视频会自动存入素材库"}</p>
         </Form.Item>
         {mode === "fl2v" && <>
           <Form.Item label="首帧" required><ImageAssetSelect media={images} value={first} onChange={setFirst} label="首帧" disabled={disabled} /></Form.Item>
-          <Form.Item label="尾帧（可选）"><ImageAssetSelect media={images} value={last} onChange={setLast} label="尾帧（可选）" disabled={disabled} /></Form.Item>
+          {cap?.last_frame && <Form.Item label="尾帧（可选）"><ImageAssetSelect media={images} value={last} onChange={setLast} label="尾帧（可选）" disabled={disabled} /></Form.Item>}
         </>}
         {mode === "i2v" && <Form.Item label={`参考图片 · ${referenceIds.length} / 9`}>
           <ReferenceImagePicker media={images} value={refs} mentionedIds={mentions.flatMap(item => item.media ? [item.media.id] : [])} presentation="select" disabled={disabled} ariaLabel="视频参考图片"
@@ -102,9 +123,9 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
           {mentions.filter(item => !item.media).map(item => <Tag color="red" key={item.id}>{item.name} 缺少图片</Tag>)}
         </Form.Item>}
         {mode !== "t2v" && <Form.Item><Button icon={<Upload size={15} />} disabled={disabled} onClick={() => fileInput.current?.click()}>上传参考图片</Button><input ref={fileInput} hidden type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" multiple={mode === "i2v"} onChange={event => { const files = Array.from(event.target.files || []); event.target.value = ""; void importImages(files); }} /></Form.Item>}
-        {mode === "i2v" && <ReferenceMediaPicker projectId={data.project.id} media={data.media} videoIds={referenceVideos} audioIds={referenceAudios} reload={reload} disabled={busy || uploading || optimizing} onUploading={setUploadingReferences} onChange={(kind, ids) => kind === "video" ? setReferenceVideos(ids) : setReferenceAudios(ids)} />}
-        <VideoDurationField value={duration} onChange={setDuration} />
-        <MediaSizeFields ratio={ratio} size={size} ariaPrefix="视频" onChange={value => { setRatio(value.ratio); setSize(value.size); }} />
+        {mode === "i2v" && !!cap?.max_videos && <ReferenceMediaPicker projectId={data.project.id} media={data.media} videoIds={referenceVideos} audioIds={referenceAudios} reload={reload} disabled={busy || uploading || optimizing} onUploading={setUploadingReferences} onChange={(kind, ids) => kind === "video" ? setReferenceVideos(ids) : setReferenceAudios(ids)} />}
+        <VideoModelFields choice={generation.choice} mode={mode} duration={duration} onDuration={setDuration} ratio={ratio} size={size} onSize={value=>{setRatio(value.ratio);setSize(value.size);}} resolution={resolution} onResolution={setResolution} audio={audio} onAudio={setAudio}/>
+        {qianwen&&mode==="i2v"&&<p className="helper">使用 [Image 1]、[Image 2] 引用所选图片。{cap?.max_videos?"参考视频支持 MP4/MOV，音频支持 MP3/WAV；视频和音频各自总时长不超过 15 秒，输入视频与输出视频总时长不超过 30 秒。":""}</p>}
         </Form>
       <Button className="generation-submit" type="primary" long icon={<Film size={16} />} loading={busy} disabled={uploading || optimizing || uploadingReferences} onClick={() => void generate()}>{busy ? "视频生成中…" : "生成视频"}</Button>
     </div>

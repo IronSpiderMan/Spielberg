@@ -49,6 +49,8 @@ npm-debug.log*
 !/scripts/qa/prompt-mentions.cjs
 !/scripts/qa/asset-categories.cjs
 !/scripts/qa/asset-references.cjs
+!/scripts/qa/qianwen-video.cjs
+!/scripts/qa/generation-channels.cjs
 
 # Tauri
 src-tauri/gen/

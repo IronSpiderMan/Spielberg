@@ -74,6 +74,34 @@ VITE_API_BASE_URL=https://api.example.com npm run build
 
 后端设置通过进程环境变量传入；Vite 设置可写入 `.env.local`，示例见 `.env.example`。数据目录应放在持久化磁盘上。项目路径和旧数据库迁移逻辑继续保留；服务未提供多用户鉴权，局域网部署应使用可信网络，需要对外开放时在反向代理处提供认证和 HTTPS。
 
+### 生成渠道与模型
+
+「工作室设置」可分别管理多个图片渠道和视频渠道。每个渠道有独立名称、接口地址、API Key、模型列表和默认模型；也可设置默认渠道。旧项目的单组配置会兼容转换为「原图片渠道」「原视频渠道」，保留原地址、Key 和不同生成方式的旧接口。
+
+- 图片渠道：OpenAI 兼容图片接口、千问 Token Plan；已有 CAST 图片配置继续兼容。OpenAI 可添加自定义模型 ID 与名称；千问预设包含 `qwen-image-3.0-pro`、`wan2.7-image` 和 `wan2.7-image-pro`。
+- 视频渠道：RunningHub / ComfyUI 兼容接口、千问 Token Plan。千问预设包含 `wan3.0-video`、`happyhorse-1.1-t2v`、`happyhorse-1.1-i2v` 和 `happyhorse-1.1-r2v`，每个 ID 是独立可选模型。
+
+在工作台、图片生成弹窗、资产图生成、场景生成和画布中选择渠道、模型，再设置生成参数。场景和画布节点会保存选择，批量生成使用各场景已保存的选择。分镜补图也可选择图片渠道、模型。未明确指定时使用默认渠道及支持当前生成方式的默认模型；指定的模型或渠道被删除时会提示重新选择，不会悄悄改用其他渠道。
+
+| 模型能力 | 生成参数 |
+|---|---|
+| OpenAI 图片接口 | 文生图、参考图编辑、蒙版；尺寸映射为 1024×1024、1536×1024、1024×1536 |
+| Qwen Image 3.0 Pro | 文生图、最多 3 张参考图；像素面积 512²–2048²，不传 PNG 蒙版 |
+| Wan 2.7 Image / Pro | 文生图、最多 9 张参考图；普通版最高 2K，Pro 文生图最高 4K，图生图最高 2K；不传 PNG 蒙版 |
+| RunningHub / ComfyUI | 沿用现有文生视频、首尾帧和全能参考；像素尺寸与 3–15 秒时长 |
+| Wan 3.0 | 文生视频、首尾帧、全能参考；2–30 秒或智能时长；480P/720P/1080P；可开关声音 |
+| HappyHorse T2V | 仅文生视频；3–15 秒、480P/720P/1080P |
+| HappyHorse I2V | 仅单张首帧；无尾帧，画幅跟随首帧；3–15 秒、480P/720P/1080P |
+| HappyHorse R2V | 仅图片参考，最多 9 张；无音视频参考；3–15 秒、480P/720P/1080P |
+
+模型能力由前后端共用的 `src/generation-models.json` 定义，界面按能力显示参数，后端再次校验。图片批量数量仍通过多次单图请求实现。参考素材顺序保留，可使用 `[Image 1]`、`[Image 2]` 引用对应图片。
+
+千问 Token Plan 使用[个人版 API Keys 页面](https://platform.qianwenai.com/home/api-keys?target=individual)创建的 `sk-sp-` 专属 Key。默认地址为 `https://token-plan.maas.qianwenaiapi.com`，也可粘贴控制台 `/compatible-mode/v1` 地址；必须使用配套 Key 和地址。参考图通过 Base64 data URL 提交，SVG 会转换为 PNG，无需公开本地素材或调用独立上传接口。Wan 3.0 参考视频支持 MP4/MOV（单段不超过 100 MB）、音频支持 MP3/WAV（单段不超过 15 MB），视频和音频各自总时长不超过 15 秒，输入视频与输出视频总时长不超过 30 秒；时长、帧率和尺寸由远程服务进一步校验。
+
+RunningHub 类固定模型服务不接收 `model` 字段时保持「接口接收 model 参数」关闭；不同模型使用不同服务时，在模型下填写独立服务地址。支持按 `model` 分发的兼容服务可开启该开关。视频提交、轮询、下载入库自动完成；后台任务保存实际渠道、模型和远程任务编号，重启后恢复查询，避免重复提交。
+
+接口依据[千问多模态接入文档](https://platform.qianwenai.com/docs/token-plan/best-practices/multimodal-generation)、[图片生成文档](https://platform.qianwenai.com/docs/developer-guides/image-generation/text-to-image)和[Wan 3.0 文档](https://platform.qianwenai.com/docs/api-reference/video-generation/wan30-video/create-task)实现。
+
 ## API 与分层
 
 七类资源的 REST CRUD 路径：

@@ -1,3 +1,6 @@
+import { GenerationSelector } from "./components/generation/GenerationSelector";
+import { ImageModelFields, VideoModelFields } from "./components/generation/ModelGenerationFields";
+import { generationChoice, modelImageSize, modelRatio, selectionPayload, validateGeneration } from "./generation-channels";
 import { PreviewVideo } from "./components/VideoPreviewModal";
 import { PreviewImage } from "./components/ImagePreviewModal";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
@@ -14,7 +17,7 @@ import "./infinite-canvas.css";
 
 type MediaKind = "image" | "audio" | "video";
 type Kind = MediaKind | "note" | "scene" | "asset" | "media" | "prompt";
-type Node = { id: string; kind: Kind; ref_id?: number; text?: string; prompt?: string; duration?: number; ratio?: string; size?: string; x: number; y: number };
+type Node = { channel_id?:string; model?:string; resolution?:string; audio?:boolean; video_mode?:"t2v"|"i2v"|"fl2v"; id: string; kind: Kind; ref_id?: number; text?: string; prompt?: string; duration?: number; ratio?: string; size?: string; x: number; y: number };
 type Edge = { id: string; from: string; to: string };
 type Draft = { version: 1; nodes: Node[]; edges: Edge[]; viewport: { x: number; y: number; zoom: number } };
 type Board = { draft: Draft; revision: number };
@@ -180,10 +183,25 @@ export default function InfiniteCanvas({ data, scene, reload, onClose }: {
     if (references.some(m => !m)) return void Message.warning("请先为所有上游节点选择素材或生成视频");
     if (!prompt.trim()) return void Message.warning("请填写画面描述");
     const imageIds = [...new Set([...references.filter(m => m?.kind === "image").map(m => m!.id), ...(node.kind === "image" && node.ref_id ? [node.ref_id] : [])])];
+    const kind=node.kind === "image" ? "image" : "video";
+    const choice=generationChoice(data.settings,kind,node);
+    const cap=choice?.capabilities;
+    const mode=node.video_mode || (cap?.modes.length===1 ? cap.modes[0]==="ref2v"?"i2v":cap.modes[0] as "t2v"|"fl2v" : references.length?"i2v":"t2v");
     let request: object;
     try {
-      request = node.kind === "image" ? { operation: imageIds.length ? "i2i" : "t2i", prompt: resolvePrompt(prompt, data.assets, data.prompts), aspect_ratio: node.ratio || "16:9", size: normalizeGenerationSize(node.ratio || "16:9", node.size), image_media_ids: imageIds } : buildVideoRequest({ mode: references.length ? "i2v" : "t2v", prompt: resolvePrompt(prompt, data.assets, data.prompts), duration: node.duration || 5, ratio: node.ratio || "16:9", size: normalizeGenerationSize(node.ratio || "16:9", node.size), sceneId: scene.id,
-        referenceIds: references.filter(m => m?.kind === "image").map(m => m!.id), referenceVideoIds: references.filter(m => m?.kind === "video").map(m => m!.id), referenceAudioIds: references.filter(m => m?.kind === "audio").map(m => m!.id) });
+      if (kind === "image") {
+        const operation=imageIds.length?"i2i":"t2i";
+        validateGeneration(choice,operation,{images:imageIds.length});
+        request={operation,prompt:resolvePrompt(prompt,data.assets,data.prompts),aspect_ratio:modelRatio(choice,node.ratio || "16:9"),size:modelImageSize(choice,node.ratio || "16:9",node.size,operation),image_media_ids:imageIds};
+      } else {
+        if (mode === "t2v" && references.length) throw new Error("文生视频模型不使用上游参考素材，请移除连线或切换模型");
+        if (mode === "fl2v" && (references.some(m=>m?.kind!=="image") || imageIds.length>2)) throw new Error("首尾帧模式仅支持一张首帧和可选的一张尾帧图片");
+        const videoIds=references.filter(m=>m?.kind==="video").map(m=>m!.id),audioIds=references.filter(m=>m?.kind==="audio").map(m=>m!.id);
+        validateGeneration(choice,mode==="i2v"?"ref2v":mode,{images:mode==="i2v"?imageIds.length:0,videos:videoIds.length,audios:audioIds.length,last:mode==="fl2v"&&imageIds.length>1,duration:node.duration || 5});
+        request=buildVideoRequest({mode,prompt:resolvePrompt(prompt,data.assets,data.prompts),duration:node.duration || 5,ratio:modelRatio(choice,node.ratio || "16:9"),size:node.size,sceneId:scene.id,firstId:imageIds[0],lastId:imageIds[1],referenceIds:imageIds,referenceVideoIds:videoIds,referenceAudioIds:audioIds});
+        request={...request,...(cap?.size_mode==="resolution"?{resolution:node.resolution || "720P"}:{}),...(cap?.audio?{audio:node.audio ?? true}:{})};
+      }
+      request={...request,...selectionPayload(choice)};
     } catch (e) { return void Message.warning(String(e)); }
     busy.current = true; setBusyNode(node.id);
     try {
@@ -253,6 +271,8 @@ export default function InfiniteCanvas({ data, scene, reload, onClose }: {
         })()}</svg>
         {draft.nodes.map(node => {
           const info = describe(node), inputs = draft.edges.filter(e => e.to === node.id).map(e => draft.nodes.find(n => n.id === e.from)!);
+          const choice=generationChoice(data.settings,node.kind==="image"?"image":"video",node);
+          const nodeMode=node.video_mode || (choice?.capabilities.modes.length===1 ? choice.capabilities.modes[0]==="ref2v"?"i2v":choice.capabilities.modes[0] : inputs.some(n=>mediaKind(n.kind))?"i2v":"t2v");
           return <article key={node.id} data-node-id={node.id} className={`ic-node ic-${node.kind}${selected === node.id ? " selected" : ""}${linkFrom === node.id ? " linking" : ""}`} style={{ left: node.x, top: node.y }} onPointerDown={e => e.stopPropagation()} onClick={() => setSelected(node.id)}>
             <header className={node.kind === "image" && info.media ? "ic-image-title" : undefined} onPointerDown={e => start(e, node.id)}><small>{node.kind === "image" ? <Image size={13} /> : node.kind === "video" ? <Film size={13} /> : node.kind === "audio" ? <Music size={13} /> : <StickyNote size={13} />}{labels[node.kind]}</small><strong title={info.title}>{info.title}</strong></header>
             {(node.kind === "video" || node.kind === "image") && <button className="ic-port ic-input" aria-label={`输入${info.title}`} title="拖出连线添加上游节点，或连接已有节点" disabled={!!busyNode} onPointerDown={e => { e.stopPropagation(); if (linkFrom) { connect(node.id); return; } stage.current?.focus(); setLinkTo(node.id); setLinkFrom(""); setMenu(null); linkDrag.current = { x: e.clientX, y: e.clientY }; stage.current?.setPointerCapture(e.pointerId); }} />}
@@ -263,7 +283,9 @@ export default function InfiniteCanvas({ data, scene, reload, onClose }: {
             {node.kind === "note" ? <textarea aria-label="便签内容" placeholder="记录创作思路…" value={node.text || ""} disabled={!!busyNode} maxLength={5000} onFocus={() => { setPast(p => [...p.slice(-49), current.current]); setFuture([]); }} onChange={e => setDraft({ ...draft, nodes: draft.nodes.map(n => n.id === node.id ? { ...n, text: e.target.value } : n) })} /> : node.kind === "video" ? <div className="ic-video-fields">
               <div className="ic-input-summary">参考输入：{inputs.length ? inputs.map(n => labels[n.kind]).join("、") : "无 · 文生视频"}</div>
               <textarea aria-label="视频节点描述" placeholder="描述要生成的视频…" disabled={!!busyNode} maxLength={5000} value={node.prompt || ""} onFocus={() => { setPast(p => [...p.slice(-49), current.current]); setFuture([]); }} onChange={e => setDraft({ ...draft, nodes: draft.nodes.map(n => n.id === node.id ? { ...n, prompt: e.target.value } : n) })} />
-              <Form layout="vertical"><div className="ic-video-options"><VideoDurationField value={node.duration || 5} disabled={!!busyNode} onChange={duration => patch(node.id, { duration })} /><MediaSizeFields ratio={node.ratio || "16:9"} size={node.size} disabled={!!busyNode} onChange={value => patch(node.id, { ratio: value.ratio, size: value.size })} /></div></Form>
+              <Form layout="vertical"><GenerationSelector settings={data.settings} kind="video" value={node} disabled={!!busyNode} onChange={value=>patch(node.id,{...value,video_mode:undefined,duration:5})}/>
+                {choice&&choice.capabilities.modes.length>1&&<Form.Item label="生成方式"><Select aria-label="视频节点生成方式" value={nodeMode} disabled={!!busyNode} options={choice.capabilities.modes.map(mode=>({value:mode==="ref2v"?"i2v":mode,label:mode==="t2v"?"文生视频":mode==="fl2v"?"首尾帧":"全能参考"}))} onChange={video_mode=>patch(node.id,{video_mode})}/></Form.Item>}
+                <div className="ic-video-options"><VideoModelFields choice={choice} mode={nodeMode} duration={node.duration || 5} disabled={!!busyNode} onDuration={duration=>patch(node.id,{duration})} ratio={node.ratio || "16:9"} size={node.size} onSize={value=>patch(node.id,{ratio:value.ratio,size:value.size})} resolution={node.resolution} onResolution={resolution=>patch(node.id,{resolution})} audio={node.audio} onAudio={audio=>patch(node.id,{audio})}/></div></Form>
               <Button type="primary" long loading={busyNode === node.id} disabled={!!busyNode && busyNode !== node.id} onClick={() => void generate(node)}>生成视频</Button>
               {info.media?.kind === "video" && <Button long size="small" disabled={!!busyNode || scene.video_media_id === info.media.id} onClick={() => void selectVideo(info.media!)}>{scene.video_media_id === info.media.id ? "当前场景视频" : "设为场景视频"}</Button>}
             </div> : node.kind === "image" && info.media ? null : <p>{info.text}</p>}
@@ -277,9 +299,10 @@ export default function InfiniteCanvas({ data, scene, reload, onClose }: {
     <Modal title="生成图片" visible={!!imageEditor} footer={null} onCancel={() => { if (!busyNode) setImageEditor(""); }}>
       {(() => { const node = draft.nodes.find(n => n.id === imageEditor); if (!node) return null;
         const inputs = draft.edges.filter(e => e.to === node.id).map(e => draft.nodes.find(n => n.id === e.from)!);
+        const choice=generationChoice(data.settings,"image",node);
         return <div className="ic-video-fields"><p>{node.ref_id || inputs.some(n => n.kind === "image") ? "图生图：使用当前图片和上游图片作为参考" : "文生图：连接图片节点后可使用图生图"}</p>
           <textarea aria-label="图片节点描述" placeholder="描述要生成的图片…" maxLength={5000} value={node.prompt || ""} disabled={!!busyNode} onChange={e => patch(node.id, { prompt: e.target.value })} />
-          <Form layout="vertical"><MediaSizeFields ratio={node.ratio || "16:9"} size={node.size} disabled={!!busyNode} onChange={value => patch(node.id, { ratio: value.ratio, size: value.size })} /></Form>
+          <Form layout="vertical"><GenerationSelector settings={data.settings} kind="image" value={node} disabled={!!busyNode} onChange={value=>patch(node.id,value)}/><ImageModelFields choice={choice} operation={node.ref_id || inputs.some(n=>n.kind==="image")?"i2i":"t2i"} ratio={node.ratio || "16:9"} size={node.size} disabled={!!busyNode} onChange={value=>patch(node.id,{ratio:value.ratio,size:value.size})}/></Form>
           <Button type="primary" long loading={busyNode === node.id} disabled={!!busyNode && busyNode !== node.id} onClick={() => void generate(node)}>生成图片</Button>
         </div>;
       })()}

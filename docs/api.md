@@ -102,6 +102,30 @@ curl 'http://127.0.0.1:8080/api/v1/projects/PID/media/1/content?download=1' -o p
 | `storage/scan` | `project_id` |
 | `storage/cleanup` | `project_id, files, clear_cache` |
 
+图片和视频渠道分别保存在 `settings.image.channels`、`settings.video.channels`。每组可设置 `default_channel_id`，每个渠道包含稳定的 `id`、`name`、`provider`、`base_url`、`api_key`、`models` 和可选 `default_model_id`。渠道 ID 在同组内唯一，模型 ID 在同一渠道内唯一；不同渠道可使用相同模型 ID。旧的 `settings.image/video`、t2i/i2i 等配置仍可读取，并在快照中兼容为一个渠道。
+
+```json
+{
+  "image": {
+    "default_channel_id": "image-primary",
+    "channels": [{
+      "id": "image-primary", "name": "千问图片", "provider": "qianwen-token-plan",
+      "base_url": "https://token-plan.maas.qianwenaiapi.com", "api_key": "sk-sp-placeholder",
+      "default_model_id": "qwen-image-3.0-pro",
+      "models": [{"id": "qwen-image-3.0-pro", "name": "Qwen Image 3.0 Pro", "profile": "qwen-image"}]
+    }]
+  }
+}
+```
+
+图片 `provider` 支持 `openai`、`qianwen-token-plan` 以及保留兼容的 `cast`；视频支持 `cast`、`qianwen-token-plan`。模型 `profile` 指向共享能力表 `src/generation-models.json`，Token Plan 模型 ID 与能力必须匹配。CAST 模型可另设 `base_url` 覆盖渠道地址、`send_model: true` 向服务发送所选模型 ID；默认不发送，以兼容固定模型适配服务。保存配置时校验重复 ID、默认项及能力与渠道类型。
+
+`generations/image` 和 `generations/video` 可传 `channel_id`、`model` 选择已配置渠道和模型，不能在生成请求中覆盖渠道凭证。省略时使用默认渠道及支持当前方式的模型；显式选项不存在或参数不受支持时返回错误。
+
+`generations/video` 沿用 `video_mode: "fl2v"`（`first_media_id`、可选 `last_media_id`）、`video_mode: "i2v"` 或 `operation: "ref2v"`（`image_media_ids`、可选音视频参考）；省略模式与参考素材时为文生视频。Wan 3.0 的 `duration` 为 2–30 或 `-1`，可传布尔值 `audio`、`prompt_extend`、`watermark`；HappyHorse 各模型仅支持对应方式，时长 3–15。Token Plan 视频可传 `resolution: "480P"/"720P"/"1080P"`（默认 720P），不使用像素 `size`。千问图片使用 `size: "宽x高"`，后端转换为 DashScope 格式，并按模型校验像素面积、参考图数量与蒙版支持。
+
+场景 `generation_options`、画布节点可保存 `channel_id`、`model`、`resolution`、`audio`，画布视频还可保存 `video_mode`。场景 `video_mode: "t2v"` 支持纯文生视频。后台任务持久化实际渠道、模型和远程任务编号，恢复时使用原选择。
+
 `GET /api/v1/health` 返回服务状态和 API 版本。原来的 `/api` RPC 包装路由和 Tauri 业务 IPC 不再提供。
 
 ## Agent

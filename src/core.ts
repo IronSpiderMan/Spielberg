@@ -20,7 +20,7 @@ export type Asset = {
 };
 export type FrameKey = "first" | "last" | "reference";
 export type GenerationOptions = {
-  video_mode?: "fl2v" | "i2v" | "ref2v";
+  video_mode?: "t2v" | "fl2v" | "i2v" | "ref2v";
   custom?: boolean;
   first: boolean;
   last: boolean;
@@ -28,6 +28,10 @@ export type GenerationOptions = {
   duration: number;
   aspect_ratio: string;
   size?: string;
+  channel_id?: string;
+  model?: string;
+  resolution?: string;
+  audio?: boolean;
   reference_media_ids?: number[];
   reference_video_media_ids?: number[];
   reference_audio_media_ids?: number[];
@@ -77,11 +81,18 @@ export type Project = { id: string; name: string; path: string; updated_at: stri
 export type ModelSettings = Record<
   string,
   {
-    provider?: "cast" | "openai";
+    provider?: "cast" | "openai" | "qianwen-token-plan";
     url: string;
     base_url?: string;
     api_key: string;
     model?: string;
+    i2v_model?: string;
+    r2v_model?: string;
+    resolution?: string;
+    cast_base_url?: string;
+    qianwen_base_url?: string;
+    channels?: import("./generation-channels").GenerationChannel[];
+    default_channel_id?: string;
     description: string;
   }
 >;

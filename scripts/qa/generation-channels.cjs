@@ -1,0 +1,101 @@
+// Run with PLAYWRIGHT_PATH pointing to an installed Playwright package.
+// All business API requests are isolated fixtures; no paid service is contacted.
+const {chromium}=require(process.env.PLAYWRIGHT_PATH || 'playwright');
+const assert=require('node:assert/strict');
+(async()=>{
+ const browser=await chromium.launch({headless:true});
+ try {
+  const page=await browser.newPage({viewport:{width:1440,height:1100}});page.setDefaultTimeout(12000);
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.addInitScript(()=>{
+   const project={id:'qa-channels',name:'渠道测试',path:'/fixture',updated_at:'1'};
+   const data={project,assets:[],episodes:[],prompts:[],media:[1,2].map(id=>({id,name:`图片 ${id}`,kind:'image',path:'/spielberg-logo-s.png',created_at:'1'})),settings:{image:{provider:'openai',base_url:'https://old.example.com/v1',api_key:'fixture-old',model:'gpt-image-1'},video:{provider:'cast',base_url:'http://fixture:8190',api_key:'',model:'minimax-h3'}}};
+   window.__qaCalls=[];
+   const original=window.fetch.bind(window);
+   window.fetch=async(input,init={})=>{
+    const url=new URL(typeof input==='string'?input:input.url,location.href);
+    if(!url.pathname.startsWith('/api/v1/'))return original(input,init);
+    let path=url.pathname.slice('/api/v1'.length);if(path.startsWith('/actions/'))path=path.slice('/actions'.length);
+    const payload=init.body?JSON.parse(init.body):{};window.__qaCalls.push({path,payload});
+    let result=null;
+    if(path==='/projects')result=[project];
+    if(path==='/project'||path==='/project/changes')result=structuredClone(data);
+    if(path==='/tasks')result={items:[],has_more:false};
+    if(path==='/settings'){data.settings=payload.settings;result={ok:true};}
+    if(path==='/app/settings/load')result={projects_directory:'/fixture'};
+    if(path==='/skills/list')result={items:[],directory:'/fixture/skills'};
+    if(path==='/generations/image')result={id:100,name:'生成图片.png',kind:'image',path:'/spielberg-logo-s.png',created_at:'1'};
+    if(path==='/generations/video')result={id:101,name:'生成视频.mp4',kind:'video',path:'/fixture.mp4',created_at:'1'};
+    return new Response(JSON.stringify({data:result}),{status:200,headers:{'Content-Type':'application/json'}});
+   };
+  });
+  const select=async(scope,label,text)=>{
+   await scope.getByLabel(label,{exact:true}).click();
+   await page.locator('.arco-select-popup:visible').last().getByText(text,{exact:true}).click();
+  };
+  const openSettings=()=>page.locator('.side-bottom button').filter({hasText:'设置'}).click();
+  const calls=path=>page.evaluate(path=>window.__qaCalls.filter(c=>c.path===path),path);
+  await page.goto(process.env.QA_URL || 'http://127.0.0.1:1420');await openSettings();
+  await page.getByRole('heading',{name:'图片生成渠道',exact:true}).waitFor();
+  const imageSettings=page.locator('.generation-channels-settings').filter({has:page.getByRole('heading',{name:'图片生成渠道',exact:true})});
+  const videoSettings=page.locator('.generation-channels-settings').filter({has:page.getByRole('heading',{name:'视频生成渠道',exact:true})});
+  assert.equal(await imageSettings.locator('.generation-channel-card').count(),1);
+  assert.equal(await imageSettings.getByLabel('图片渠道地址',{exact:true}).inputValue(),'https://old.example.com/v1');
+  await imageSettings.getByRole('button',{name:'添加图片渠道',exact:true}).click();
+  let card=imageSettings.locator('.generation-channel-card').last();
+  await card.getByLabel('图片渠道名称',{exact:true}).fill('OpenAI 二号');
+  await card.getByLabel('图片渠道地址',{exact:true}).fill('https://second.example.com/v1');
+  await card.getByRole('button',{name:'添加自定义模型',exact:true}).click();
+  const custom=card.locator('.generation-channel-model').last();
+  await custom.getByLabel('图片模型 ID',{exact:true}).fill('custom-image-v2');await custom.getByLabel('图片模型名称',{exact:true}).fill('自定义图片模型');
+  await imageSettings.getByRole('button',{name:'添加图片渠道',exact:true}).click();card=imageSettings.locator('.generation-channel-card').last();
+  await card.getByLabel('图片渠道名称',{exact:true}).fill('千问图片');
+  await select(card,'图片渠道接口类型','千问 Token Plan');
+  await card.getByLabel('图片渠道 API Key',{exact:true}).fill('sk-sp-fixture');
+  assert.equal(await card.locator('.generation-channel-model').count(),3);
+  await videoSettings.getByRole('button',{name:'添加视频渠道',exact:true}).click();card=videoSettings.locator('.generation-channel-card').last();
+  await card.getByLabel('视频渠道名称',{exact:true}).fill('千问视频');await select(card,'视频渠道接口类型','千问 Token Plan');
+  await card.getByLabel('视频渠道 API Key',{exact:true}).fill('sk-sp-fixture');
+  assert.equal(await card.locator('.generation-channel-model').count(),4);
+  await page.getByRole('button',{name:'保存配置',exact:true}).click();await page.getByText('接口配置已保存',{exact:true}).waitFor();
+  const saved=(await calls('/settings')).at(-1).payload.settings;
+  assert.equal(saved.image.channels.length,3);assert.equal(saved.image.channels[1].models[1].id,'custom-image-v2');assert.equal(saved.video.channels.length,2);
+  await page.getByRole('menuitem',{name:'工作台',exact:true}).click();
+  const image=page.locator('.creation-split:not(.video-creation-split):visible').first();
+  await select(image,'图片生成渠道','OpenAI 二号');await select(image,'图片生成模型','自定义图片模型');
+  await image.getByRole('textbox',{name:'画面描述',exact:true}).fill('树林里的小屋');
+  await image.getByRole('button',{name:'生成 1 张图片',exact:true}).click();
+  await page.waitForFunction(()=>window.__qaCalls.some(c=>c.path==='/generations/image'));
+  let request=(await calls('/generations/image')).at(-1).payload;
+  assert.equal(request.channel_id,saved.image.channels[1].id);assert.equal(request.model,'custom-image-v2');assert.equal(request.size,'1536x1024');assert.equal(request.aspect_ratio,'3:2');
+  await select(image,'图片生成渠道','千问图片');await select(image,'图片生成模型','Wan 2.7 Image Pro');
+  await select(image,'图片画幅','1:1');await select(image,'图片输出尺寸','4096x4096');
+  await image.getByRole('button',{name:'生成 1 张图片',exact:true}).click();
+  await page.waitForFunction(()=>window.__qaCalls.filter(c=>c.path==='/generations/image').length===2);
+  request=(await calls('/generations/image')).at(-1).payload;assert.equal(request.model,'wan2.7-image-pro');assert.equal(request.size,'4096x4096');
+  await page.getByRole('tab',{name:'视频生成',exact:true}).click();const video=page.locator('.video-creation-split:visible');
+  await select(video,'视频生成渠道','千问视频');await select(video,'视频生成模型','Wan 3.0');
+  await video.getByRole('textbox',{name:'画面描述',exact:true}).fill('镜头缓缓拉远');
+  await select(video,'视频时长','20 秒');await select(video,'视频分辨率','1080P');await video.getByText('生成声音',{exact:true}).click();
+  await video.getByRole('button',{name:'生成视频',exact:true}).click();await page.waitForFunction(()=>window.__qaCalls.some(c=>c.path==='/generations/video'));
+  request=(await calls('/generations/video')).at(-1).payload;
+  assert.equal(request.channel_id,saved.video.channels[1].id);assert.equal(request.model,'wan3.0-video');assert.equal(request.duration,20);assert.equal(request.resolution,'1080P');assert.equal(request.audio,false);
+  await select(video,'视频生成模型','HappyHorse 1.1 首帧');
+  await video.getByRole('tab',{name:'首帧生视频',exact:true}).waitFor();
+  assert.equal(await video.getByLabel('尾帧（可选）',{exact:true}).count(),0);assert.equal(await video.getByText('生成声音',{exact:true}).count(),0);
+  assert.equal(await video.getByRole('tab',{name:'文生视频',exact:true}).count(),0);
+  await select(video,'视频生成模型','HappyHorse 1.1 图片参考');
+  await video.getByRole('tab',{name:'图片参考',exact:true}).waitFor();assert.equal(await video.getByLabel('参考视频',{exact:true}).count(),0);
+  await select(video,'视频生成模型','HappyHorse 1.1 文生视频');
+  await video.getByRole('tab',{name:'文生视频',exact:true}).waitFor();assert.equal(await video.getByRole('tab',{name:'首帧生视频',exact:true}).count(),0);
+  await select(video,'视频生成渠道','原视频渠道');assert(await video.getByLabel('视频输出尺寸',{exact:true}).isVisible());assert.equal(await video.getByLabel('视频分辨率',{exact:true}).count(),0);
+  await page.screenshot({path:'/tmp/spielberg-generation-channels.png',fullPage:true});
+  await openSettings();await page.getByRole('heading',{name:'图片生成渠道',exact:true}).waitFor();
+  await imageSettings.scrollIntoViewIfNeeded();
+  const widths=await imageSettings.locator('.generation-channel-card').evaluateAll(cards=>cards.map(c=>Math.round(c.getBoundingClientRect().width)));
+  assert(widths.every(width=>width===widths[0] && width>650),JSON.stringify(widths));
+  await imageSettings.screenshot({path:'/tmp/spielberg-generation-settings.png'});
+  assert.deepEqual(errors,[]);
+  console.log('PASS: legacy configuration, multiple channels/models, settings round-trip, selected image/video routing, model-specific sizes/modes/duration/resolution/audio');
+ } finally {await browser.close();}
+})().catch(e=>{console.error(e);process.exit(1);});

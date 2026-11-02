@@ -67,7 +67,7 @@ fn validate(c: &Connection, draft: &Value) -> Result<HashSet<i64>, String> {
                 sources.insert(mid);
             } else if !node["ref_id"].is_null(){return Err("画布素材 ID 无效".into());}
             if let Some(prompt)=node.get("prompt"){if !prompt.as_str().is_some_and(|s|s.len()<=20_000){return Err("视频描述无效或过长".into());}}
-            if let Some(duration)=node.get("duration"){if !duration.as_u64().is_some_and(|n|(1..=120).contains(&n)){return Err("视频时长无效".into());}}},
+            if let Some(duration)=node.get("duration"){if !duration.as_i64().is_some_and(|n|n==-1 || (1..=120).contains(&n)){return Err("视频时长无效".into());}}},
             Some("scene"|"asset"|"prompt")=>{if !node["ref_id"].as_i64().is_some_and(|id|id>0){return Err("画布引用 ID 无效".into());}},
             Some("note")=>{if !node["text"].as_str().is_some_and(|t|t.len()<=20_000){return Err("便签内容无效或过长".into());}},
             _=>return Err("画布节点类型无效".into())
@@ -167,7 +167,8 @@ mod tests {
     fn scenes_are_isolated_and_copy_delete_preserve_reference_integrity() {
         let (s,p,ep)=fixture();let first=canvas_scene(&s,&p,&ep);let second=canvas_scene(&s,&p,&ep);let pid=p["id"].as_str().unwrap();
         let c=db(&s,pid).unwrap();c.execute("INSERT INTO media(id,name,path,kind,created_at) VALUES(1,'image','/image','image','1')",[]).unwrap();drop(c);
-        let mut draft=empty();draft["nodes"]=json!([{"id":"image","kind":"image","ref_id":1,"x":0,"y":0}]);
+        let mut draft=empty();draft["nodes"]=json!([{"id":"image","kind":"image","ref_id":1,"x":0,"y":0,"channel_id":"image-channel","model":"qwen-image-3.0-pro"},
+            {"id":"output","kind":"video","x":500,"y":0,"channel_id":"video-channel","model":"wan3.0-video","video_mode":"t2v","duration":-1,"resolution":"1080P","audio":false}]);
         let request=json!({"project_id":pid,"scene_id":first["id"],"revision":0,"draft":draft});
         assert_eq!(command(&s,&request,true).unwrap()["revision"],1);assert!(command(&s,&request,true).is_err());
         assert_eq!(command(&s,&json!({"project_id":pid,"scene_id":second["id"]}),false).unwrap()["draft"],empty());
