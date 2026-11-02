@@ -3,7 +3,8 @@
 # Usage: npm run desktop:dmg
 # Optional: TARGET=universal-apple-darwin npm run desktop:dmg
 # Optional: VERBOSE=1 npm run desktop:dmg
-# Optional: OPEN_DMG=1 npm run desktop:dmg (open the finished DMG after verification)
+# Optional: INSTALL_APP=0 npm run desktop:dmg (build only)
+# Optional: INSTALL_DIR="$HOME/Applications" npm run desktop:dmg
 
 set -euo pipefail
 
@@ -12,7 +13,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 
-for required in npm node cargo hdiutil; do
+for required in npm node cargo hdiutil ditto; do
   if ! command -v "$required" >/dev/null 2>&1; then
     echo "Error: $required is required to build the application." >&2
     exit 1
@@ -26,7 +27,7 @@ cd "$project_dir"
 target_dir="$(cd "$project_dir/src-tauri" && cargo metadata --no-deps --format-version 1 --offline |
   node -e 'let data="";process.stdin.on("data",v=>data+=v);process.stdin.on("end",()=>process.stdout.write(JSON.parse(data).target_directory));')"
 build_target="${TARGET:-${CARGO_BUILD_TARGET:-}}"
-tauri_args=(build --bundles dmg)
+tauri_args=(build --bundles app)
 if [[ -n "$build_target" ]]; then
   tauri_args+=(--target "$build_target")
   target_dir="$target_dir/$build_target"
@@ -35,38 +36,63 @@ if [[ "${VERBOSE:-0}" == "1" ]]; then
   tauri_args+=(--verbose)
 fi
 
-marker="$(mktemp "${TMPDIR:-/tmp}/spielberg-dmg-build.XXXXXX")"
-trap 'rm -f "$marker"' EXIT
+work_dir="$(mktemp -d "${TMPDIR:-/tmp}/spielberg-dmg-build.XXXXXX")"
+trap 'rm -rf "$work_dir"' EXIT
 
-echo "Building Spielberg DMG..."
+echo "Building Spielberg app..."
 npm exec -- tauri "${tauri_args[@]}"
 
-bundle_dir="$target_dir/release/bundle/dmg"
-shopt -s nullglob
-created=()
-for dmg in "$bundle_dir"/*.dmg; do
-  # Historical versions may remain in this directory; report only this build's output.
-  if [[ "$dmg" -nt "$marker" ]]; then
-    created+=("$dmg")
-  fi
-done
-if (( ${#created[@]} == 0 )); then
-  echo "Error: build finished without a new DMG in $bundle_dir." >&2
+app="$target_dir/release/bundle/macos/Spielberg.app"
+if [[ ! -d "$app" ]]; then
+  echo "Error: build finished without $app." >&2
   exit 1
 fi
-for dmg in "${created[@]}"; do
-  hdiutil verify "$dmg"
-  echo "DMG created: $dmg"
-done
 
-# Tauri already opens a temporary Finder window to configure the DMG layout.
-# Opening the finished DMG is opt-in to avoid another window during normal builds.
-# Open only after every package has passed verification. CI builds stay headless.
-if [[ "${OPEN_DMG:-0}" == "1" && -z "${CI:-}" ]]; then
-  for dmg in "${created[@]}"; do
-    echo "Opening installation window: $dmg"
-    if ! open "$dmg"; then
-      echo "Warning: could not open the installation window. Open the DMG above manually." >&2
+# Create the image without Finder/AppleScript layout windows.
+version="$(node -p 'JSON.parse(require("fs").readFileSync("src-tauri/tauri.conf.json", "utf8")).version')"
+architecture="${build_target:-$(uname -m)}"
+bundle_dir="$target_dir/release/bundle/dmg"
+mkdir -p "$bundle_dir" "$work_dir/image"
+ditto "$app" "$work_dir/image/Spielberg.app"
+ln -s /Applications "$work_dir/image/Applications"
+dmg="$bundle_dir/Spielberg_${version}_${architecture}.dmg"
+hdiutil create -volname Spielberg -srcfolder "$work_dir/image" -format UDZO -ov "$dmg"
+hdiutil verify "$dmg"
+echo "DMG created: $dmg"
+
+# CI produces artifacts only. Local builds install unless explicitly disabled.
+if [[ "${INSTALL_APP:-1}" == "1" && -z "${CI:-}" ]]; then
+  install_dir="${INSTALL_DIR:-/Applications}"
+  mkdir -p "$install_dir"
+  if [[ ! -w "$install_dir" ]]; then
+    echo "Error: $install_dir is not writable. Use INSTALL_DIR=\"\$HOME/Applications\" or INSTALL_APP=0." >&2
+    exit 1
+  fi
+  destination="$install_dir/Spielberg.app"
+  executable="$destination/Contents/MacOS/spielberg-studio"
+  if pgrep -f "^$executable([[:space:]]|$)" >/dev/null; then
+    echo "Error: quit Spielberg before installing. DMG is available at $dmg." >&2
+    exit 1
+  fi
+  # Stage a complete copy before replacing the installed application.
+  stage="$(mktemp -d "$install_dir/.spielberg-install.XXXXXX")"
+  if ! ditto "$app" "$stage/Spielberg.app"; then
+    rm -rf "$stage"
+    exit 1
+  fi
+  if [[ -e "$destination" || -L "$destination" ]]; then
+    if ! mv "$destination" "$stage/previous.app"; then
+      rm -rf "$stage"
+      exit 1
     fi
-  done
+  fi
+  if ! mv "$stage/Spielberg.app" "$destination"; then
+    if [[ -e "$stage/previous.app" ]]; then
+      mv "$stage/previous.app" "$destination"
+    fi
+    rm -rf "$stage"
+    exit 1
+  fi
+  rm -rf "$stage"
+  echo "Installed: $destination"
 fi

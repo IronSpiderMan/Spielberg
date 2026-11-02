@@ -29,7 +29,7 @@ npm run desktop:dmg
 npm run desktop:exe
 ```
 
-macOS 的 `npm run desktop:dmg` 在构建和校验成功后自动打开 DMG 安装窗口，将应用拖入 Applications 即可安装。使用 `OPEN_DMG=0 npm run desktop:dmg` 可跳过自动打开；CI 环境默认跳过。
+macOS 的 `npm run desktop:dmg` 无窗口生成并校验 DMG，成功后直接安装到 `/Applications/Spielberg.app`，无需拖拽。更新前请先退出 Spielberg。使用 `INSTALL_APP=0 npm run desktop:dmg` 可只生成安装包；`INSTALL_DIR="$HOME/Applications" npm run desktop:dmg` 可安装到个人应用目录；CI 环境默认只生成安装包。
 
 Windows 构建需要 Node.js、Rust MSVC 工具链及 Visual Studio C++ Build Tools；首次运行脚本会自动安装前端依赖。默认输出为 `src-tauri/target/x86_64-pc-windows-msvc/release/spielberg-studio.exe` 和其下 `bundle/nsis/*-setup.exe`，脚本结束会打印实际路径。可通过 `npm run desktop:exe -- -Target aarch64-pc-windows-msvc` 指定目标架构（需先安装对应 Rust target 和编译工具）。
 

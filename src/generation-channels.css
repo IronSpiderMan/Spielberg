@@ -32,7 +32,7 @@
 .generation-channel-fields .arco-form-item{width:100%}
 .generation-picker-trigger{box-sizing:border-box;display:flex;align-items:center;gap:10px;width:100%;min-width:0;min-height:44px;padding:10px 12px;border:1px solid var(--color-border-2);border-radius:var(--ui-radius-control,8px);background:var(--color-fill-2);color:var(--color-text-1);font:inherit;text-align:left;cursor:pointer;transition:border-color .15s,background .15s}
 .generation-picker-trigger:hover:not(:disabled){border-color:var(--ui-primary)}
-.generation-picker-trigger:disabled{opacity:.5;cursor:not-allowed}
+.generation-picker-trigger:disabled{opacity:1;cursor:not-allowed;background:var(--ui-subtle,var(--color-fill-2));color:var(--color-text-2)}
 .generation-picker-trigger>svg{flex-shrink:0;color:var(--color-text-3)}
 .generation-picker-trigger>svg:last-child{margin-left:auto}
 .generation-picker-value{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
@@ -86,3 +86,9 @@
 .generation-duration-bounds{display:flex;justify-content:space-between;margin-top:6px;color:var(--color-text-3);font-size:11px}
 .generation-frame-note{margin:0 0 20px;padding:14px;border-radius:8px;background:var(--color-fill-2);color:var(--color-text-3)}
 @media(max-width:480px){.generation-parameters{padding:14px}.generation-cascade-channels button{padding:11px 6px;gap:6px}.generation-cascade-channels button>svg:first-child{display:none}.generation-model-option{padding:11px 6px;gap:6px}.generation-cascade-models{padding-left:4px}.generation-model-option>svg:first-child{display:none}.generation-model-filters{gap:4px}.generation-model-filters button{padding:6px 8px}}
+
+/* Keep Trigger from moving a disabled button’s classes onto its wrapper. */
+.generation-picker-anchor{display:block;width:100%;min-width:0}
+.generation-picker-trigger{min-height:60px;background:var(--ui-surface,var(--color-bg-2))}
+.generation-picker-trigger>svg:first-child{box-sizing:content-box;padding:8px;border-radius:8px;background:var(--ui-accent-soft,var(--color-fill-2));color:var(--ui-primary)}
+.generation-picker-trigger:disabled>svg:first-child{color:var(--color-text-2);background:var(--color-fill-2)}

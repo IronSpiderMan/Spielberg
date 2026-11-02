@@ -45,9 +45,11 @@ export function GenerationSelector({settings,kind,value,onChange,disabled,operat
           </div>
         </div>
       </div>}>
+        <span className="generation-picker-anchor">
         <button ref={trigger} type="button" className="generation-picker-trigger" aria-label={`${label}渠道与模型`} aria-haspopup="dialog" aria-expanded={open && !disabled} disabled={disabled || !channels.length} onKeyDown={event=>{if(event.key==="Escape"){event.stopPropagation();setOpen(false);}}}>
           <Icon size={17}/><span className="generation-picker-value"><strong>{choice ? selectableModels([choice.model])[0].name || choice.model.id : channels.length ? "选择渠道与模型" : "请先在设置中添加渠道"}</strong>{choice && <small>{choice.channel.name}</small>}</span><ChevronDown size={15}/>
         </button>
+        </span>
       </Trigger>
     </Form.Item>
   </div>;
