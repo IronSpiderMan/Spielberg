@@ -184,9 +184,10 @@ export default function InfiniteCanvas({ data, scene, reload, onClose }: {
     if (!prompt.trim()) return void Message.warning("请填写画面描述");
     const imageIds = [...new Set([...references.filter(m => m?.kind === "image").map(m => m!.id), ...(node.kind === "image" && node.ref_id ? [node.ref_id] : [])])];
     const kind=node.kind === "image" ? "image" : "video";
-    const choice=generationChoice(data.settings,kind,node);
+    let choice=generationChoice(data.settings,kind,node);
     const cap=choice?.capabilities;
     const mode=node.video_mode || (cap?.modes.length===1 ? cap.modes[0]==="ref2v"?"i2v":cap.modes[0] as "t2v"|"fl2v" : references.length?"i2v":"t2v");
+    if (kind === "video") choice=generationChoice(data.settings,kind,node,mode==="i2v"?"ref2v":mode);
     let request: object;
     try {
       if (kind === "image") {

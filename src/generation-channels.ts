@@ -38,14 +38,27 @@ export function channelsFor(settings: ModelSettings, kind: GenerationKind): Gene
   return [channel];
 }
 
+// Task-specific API models share one user-facing model family.
+export const modelFamily = (model: GenerationModel) => model.id.replace(/^(happyhorse-[\d.]+)-(?:t2v|i2v|r2v)$/, "$1");
+export function selectableModels(models: GenerationModel[]) {
+  return models.filter((model,index)=>models.findIndex(other=>modelFamily(other)===modelFamily(model))===index)
+    .map(model=>({...model,id:modelFamily(model),name:modelFamily(model)!==model.id?`HappyHorse ${modelFamily(model).replace("happyhorse-","")}`:model.name}));
+}
+
 export function generationChoice(settings: ModelSettings, kind: GenerationKind, value: GenerationSelection = {}, operation?: string): GenerationChoice | undefined {
   const channels = channelsFor(settings,kind);
   const channel = value.channel_id ? channels.find(c => c.id === value.channel_id) : channels.find(c => c.id === settings[kind]?.default_channel_id) || channels[0];
   if (!channel) return;
   const candidates = channel.models.filter(m => !operation || MODEL_PROFILES[m.profile]?.modes.includes(operation));
-  const model = value.model ? channel.models.find(m => m.id === value.model) : candidates.find(m => m.id === channel.default_model_id) || candidates[0];
+  const selected = value.model || channel.default_model_id;
+  const family = selected && modelFamily({id:selected} as GenerationModel);
+  const siblings = channel.models.filter(m=>modelFamily(m)===family);
+  const model = (operation ? candidates : channel.models).find(m=>modelFamily(m)===family) || (value.model ? undefined : candidates[0]);
   const capabilities = model && MODEL_PROFILES[model.profile];
-  return model && capabilities ? {channel,model,capabilities} : undefined;
+  if (!model || !capabilities) return;
+  // Without a task, expose the family's combined modes for the configuration UI.
+  const combined = !operation && siblings.length>1 ? {...capabilities,modes:[...new Set(siblings.flatMap(m=>MODEL_PROFILES[m.profile]?.modes || []))],max_images:Math.max(...siblings.map(m=>MODEL_PROFILES[m.profile]?.max_images || 0))} : capabilities;
+  return {channel,model,capabilities:combined};
 }
 
 export function useGenerationSelection(settings: ModelSettings, kind: GenerationKind, operation?: string) {

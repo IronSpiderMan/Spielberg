@@ -8,3 +8,22 @@
 .generation-model-route{margin-top:12px}.generation-model-route label{display:flex;align-items:center;gap:8px}
 .generation-channel-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;width:100%}
 @media(max-width:700px){.generation-channel-config,.generation-channel-model-fields,.generation-channel-fields{grid-template-columns:1fr}.generation-channel-card{padding:14px}}
+
+.video-audio-field .arco-switch {
+  min-width: 44px;
+  height: 26px;
+  background-color: var(--color-fill-4);
+  transition: background-color 200ms ease, box-shadow 200ms ease;
+}
+.video-audio-field .arco-switch-checked { background-color: rgb(var(--primary-6)); }
+.video-audio-field .arco-switch-dot {
+  width: 20px;
+  height: 20px;
+  top: 3px;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 16%);
+  transition: left 220ms cubic-bezier(.22,1,.36,1), transform 220ms cubic-bezier(.22,1,.36,1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .video-audio-field .arco-switch,
+  .video-audio-field .arco-switch-dot { transition: none; }
+}

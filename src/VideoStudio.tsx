@@ -1,6 +1,6 @@
 import { GenerationSelector } from "./components/generation/GenerationSelector";
 import { VideoModelFields } from "./components/generation/ModelGenerationFields";
-import { modelRatio, selectionPayload, useGenerationSelection, validateGeneration } from "./generation-channels";
+import { generationChoice, modelRatio, selectionPayload, useGenerationSelection, validateGeneration } from "./generation-channels";
 import { PreviewVideo } from "./components/VideoPreviewModal";
 import { ReferenceMediaPicker } from "./components/generation/ReferenceMediaPicker";
 import { buildVideoRequest, type VideoMode } from "./generation-request";
@@ -20,9 +20,9 @@ import { resolvePrompt, resolveReferencePrompt } from "./resolve-prompt";
 
 
 export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => void }) {
-  const generation=useGenerationSelection(data.settings,"video");
   const [resolution,setResolution]=useState("720P");
   const [mode, setMode] = useState<VideoMode>("t2v");
+  const generation=useGenerationSelection(data.settings,"video",mode==="i2v"?"ref2v":mode);
   const [prompt, setPrompt] = useState("");
   const [ratio, setRatio] = useState("16:9");
   const [size, setSize] = useState(defaultGenerationSize("16:9"));
@@ -48,7 +48,7 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
   const mentions = mode === "i2v" ? findMentions(expanded, promptMentions(data.assets, data)) : [];
   const referenceIds = [...new Set([...refs, ...mentions.flatMap(item => item.media ? [item.media.id] : [])])];
   const disabled = busy || uploading || optimizing || uploadingReferences;
-  const cap=generation.choice?.capabilities;
+  const cap=generationChoice(data.settings,"video",generation.value)?.capabilities;
   const qianwen=generation.choice?.channel.provider === "qianwen-token-plan";
   const happyhorse=cap?.label.startsWith("HappyHorse");
   useEffect(()=>{
