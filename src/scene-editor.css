@@ -61,7 +61,7 @@
 .scene-reference-thumb.drop-target { outline: 2px solid var(--ui-primary); outline-offset: 2px; }
 .scene-editor-page .generation-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 16px; align-items: start; }
 .scene-editor-page .generation-options .arco-form-item { min-width: 0; margin-bottom: 0; }
-.scene-editor-page .generation-options .video-audio-field .arco-form-item-control-children { display: flex; align-items: center; min-height: 36px; }
+.scene-editor-page .generation-options .video-audio-field .arco-form-item-control-children { display: flex; align-items: center; min-height: 40px; }
 .scene-editor-page .scene-video-action { display: flex; flex-direction: row; justify-content: space-between; align-items: center; margin-top: 12px; }
 .scene-editor-page .scene-video-action > .arco-btn { width: auto; min-width: 150px; height: 38px; }
 .scene-editor-page .scene-results { display: flex; flex-direction: column; gap: 16px; padding: 0 6px 0 0; min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }

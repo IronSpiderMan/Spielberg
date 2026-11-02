@@ -1556,7 +1556,7 @@ export function SceneEditor({
             <div className="video-generator scene-video-panel">
               <Form layout="vertical">
                 <div className="generation-options">
-                  <VideoModelFields choice={videoChoice} mode={options.video_mode || "fl2v"} duration={options.duration} onDuration={duration=>setOptions(o=>({...o,duration}))} ratio={ratio} size={options.size} onSize={value=>{setRatio(value.ratio);setOptions(o=>({...o,aspect_ratio:value.ratio,size:value.size}));}} resolution={options.resolution} onResolution={resolution=>setOptions(o=>({...o,resolution}))} audio={options.audio} onAudio={audio=>setOptions(o=>({...o,audio}))}/>
+                  <VideoModelFields disabled={videoGenerating||persistedVideoGenerating} choice={videoChoice} mode={options.video_mode || "fl2v"} duration={options.duration} onDuration={duration=>setOptions(o=>({...o,duration}))} ratio={ratio} size={options.size} onSize={value=>{setRatio(value.ratio);setOptions(o=>({...o,aspect_ratio:value.ratio,size:value.size}));}} resolution={options.resolution} onResolution={resolution=>setOptions(o=>({...o,resolution}))} audio={options.audio} onAudio={audio=>setOptions(o=>({...o,audio}))}/>
 
                 </div>
               </Form>
@@ -1726,7 +1726,7 @@ export function SceneEditor({
               placeholder="描述主体、构图、光线、色彩与画风…"
             />
           </Form.Item>
-          <ImageModelFields choice={imageGeneration.choice} operation={imageMode} ratio={ratio} size={options.size} onChange={value=>{setRatio(value.ratio);setOptions(o=>({...o,aspect_ratio:value.ratio,size:value.size}));}}/>
+          <ImageModelFields disabled={imageGenerating} choice={imageGeneration.choice} operation={imageMode} ratio={ratio} size={options.size} onChange={value=>{setRatio(value.ratio);setOptions(o=>({...o,aspect_ratio:value.ratio,size:value.size}));}}/>
 
         </Form>
       </Modal>

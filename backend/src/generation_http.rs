@@ -33,8 +33,12 @@ pub(crate) fn submission_client_builder(url: &str) -> ClientBuilder {
 }
 
 pub(crate) fn request_error(error: &reqwest::Error, url: &str) -> String {
+    request_error_for(error, url, "视频生成")
+}
+
+pub(crate) fn request_error_for(error: &reqwest::Error, url: &str, operation: &str) -> String {
     use std::error::Error;
-    let mut message = format!("视频生成请求失败（{url}）：{error}");
+    let mut message = format!("{operation}请求失败（{url}）：{error}");
     let mut source = error.source();
     while let Some(cause) = source {
         message.push_str(&format!("；{cause}"));
