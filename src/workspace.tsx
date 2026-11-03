@@ -1152,6 +1152,10 @@ export function SceneEditor({
   const [options, setOptions] = useState<GenerationOptions>(
     () => sceneGenerationOptions(scene),
   );
+  const referenceImages = (options.reference_media_ids || []).flatMap(id => {
+    const media = data.media.find(item => item.id === id) || pastedMedia.find(item => item.id === id);
+    return media ? [media] : [];
+  });
   const [ratio, setRatio] = useState(
     scene.generation_options?.aspect_ratio || defaultOptions.aspect_ratio,
   );
@@ -1634,7 +1638,7 @@ export function SceneEditor({
           if(ids.length>=9){Message.warning("最多选择 9 张参考图");return o;}
           return {...o,reference_media_ids:[...ids,media.id]};
         })} />
-      <ImagePreviewModal media={referencePreview} title="参考图预览" onClose={()=>setReferencePreview(null)} />
+      <ImagePreviewModal media={referencePreview} images={referenceImages} onMediaChange={setReferencePreview} title="参考图预览" onClose={()=>setReferencePreview(null)} />
       <Modal
         title="选择视频素材"
         visible={videoAssetPickerOpen}
