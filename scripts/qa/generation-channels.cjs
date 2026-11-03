@@ -100,6 +100,37 @@ const assert=require('node:assert/strict');
   assert.equal(ttsRequest.channel_id,saved.tts.channels[1].id);assert.equal(ttsRequest.model,'qwen-audio-3.0-tts-plus');
   assert.equal(ttsRequest.voice,'longanhuan_v3.6');assert.equal(ttsRequest.text,'你好，欢迎来到工作室。');assert(!('speed' in ttsRequest));assert(!('instructions' in ttsRequest));
   await pick(tts,'TTS','OpenAI 配音','GPT-4o mini TTS');
+  // The popup is portalled outside the scrolling workspace. Keep it next to
+  // the selector, including after scrolling with the menu still open.
+  await page.setViewportSize({width:1440,height:800});
+  const ttsSelector=tts.getByRole('button',{name:'TTS渠道与模型',exact:true});
+  const workspace=page.locator('.app .content');
+  await workspace.evaluate(el=>el.scrollTop=0);
+  const scrollBefore=await workspace.evaluate(el=>el.scrollTop);
+  await ttsSelector.click();
+  const ttsMenu=page.getByRole('dialog',{name:'TTS渠道与模型',exact:true});
+  await ttsMenu.waitFor();
+  await page.waitForFunction(()=>document.querySelector('.generation-cascade-tts')?.contains(document.activeElement));
+  assert.equal(await workspace.evaluate(el=>el.scrollTop),scrollBefore,'Opening the menu must not scroll the form');
+  assert((await ttsMenu.boundingBox()).width<=480,'The TTS menu should fit the narrow form');
+  const aligned=()=>page.waitForFunction(()=>{
+   const anchor=document.querySelector('.tts-studio .generation-picker-trigger').getBoundingClientRect();
+   const popup=document.querySelector('.generation-cascade-tts').getBoundingClientRect();
+   return Math.abs(popup.left-anchor.left)<2 && (Math.abs(popup.top-anchor.bottom)<2 || Math.abs(popup.bottom-anchor.top)<2);
+  });
+  await aligned();
+  await workspace.evaluate(el=>el.scrollTop+=120);
+  assert((await workspace.evaluate(el=>el.scrollTop))>scrollBefore,'Exercise an actual workspace scroll');
+  await aligned();
+  await page.screenshot({animations:'disabled',path:'/tmp/spielberg-tts-menu-fixed.png'});
+  await dismiss(ttsMenu);
+  assert(await ttsSelector.evaluate(el=>document.activeElement===el),'Escape restores keyboard focus');
+  await page.setViewportSize({width:390,height:844});
+  await ttsSelector.click();
+  await ttsMenu.waitFor();
+  assert(await ttsMenu.evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&el.scrollWidth<=el.clientWidth;}));
+  await dismiss(ttsMenu);
+  await page.setViewportSize({width:1440,height:1100});
   assert.equal(await tts.getByLabel('TTS 音色',{exact:true}).inputValue(),'alloy');
   await tts.getByLabel('TTS 风格指令',{exact:true}).fill('平静地讲述');
   await select(tts,'TTS 音频格式','WAV');

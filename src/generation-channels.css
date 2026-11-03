@@ -40,6 +40,7 @@
 .generation-picker-value small{color:var(--color-text-3);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .generation-cascade,.generation-parameters{box-sizing:border-box;border:1px solid var(--color-border-2);border-radius:var(--ui-radius-panel,10px);background:var(--color-bg-popup);color:var(--color-text-1);box-shadow:var(--ui-shadow);font-size:13px;max-height:calc(100dvh - 32px);overflow:auto}
 .generation-cascade{width:min(640px,calc(100vw - 32px));padding:8px}
+.generation-cascade-tts{width:min(480px,calc(100vw - 32px))}
 .generation-cascade button,.generation-parameters button{font:inherit;color:inherit;cursor:pointer;border:0;border-radius:7px;background:transparent}
 .generation-cascade button:focus-visible,.generation-parameters button:focus-visible,.generation-picker-trigger:focus-visible{outline:2px solid var(--ui-primary);outline-offset:2px}
 .generation-model-filters{display:flex;gap:6px;flex-wrap:wrap;padding:8px 8px 14px;border-bottom:1px solid var(--color-border-2)}

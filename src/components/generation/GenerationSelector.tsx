@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Form, Trigger } from "@arco-design/web-react";
 import { Check, ChevronDown, ChevronRight, Film, Image, Layers, Mic } from "lucide-react";
 import type { ModelSettings } from "../../core";
@@ -11,24 +11,32 @@ export function GenerationSelector({settings,kind,value,onChange,disabled,operat
   const channels = channelsFor(settings,kind), choice = generationChoice(settings,kind,value,operation);
   const [open,setOpen] = useState(false), [browsing,setBrowsing] = useState<string>(), [filter,setFilter] = useState("");
   const trigger = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  useEffect(()=>{
+    if (!open || disabled) return;
+    // Wait for Trigger to attach its portal, then focus without scrolling the
+    // form away from the anchor. Run on reopen even if its exit is still animating.
+    const frame = requestAnimationFrame(()=>menu.current?.querySelector<HTMLButtonElement>('.generation-cascade-channels button[aria-pressed="true"]')?.focus({preventScroll:true}));
+    return ()=>cancelAnimationFrame(frame);
+  },[open,disabled]);
   const active = channels.find(c=>c.id===browsing) || choice?.channel || channels[0];
   const modelsFor = (id: string) => selectableModels((channels.find(c=>c.id===id)?.models || []).filter(m=>!operation || MODEL_PROFILES[m.profile]?.modes.includes(operation)));
   const modesFor = (channelId: string, model: string) => generationChoice(settings,kind,{channel_id:channelId,model})?.capabilities.modes || [];
   const modes = [...new Set(channels.flatMap(c=>modelsFor(c.id).flatMap(m=>modesFor(c.id,m.id))))];
   const models = active ? modelsFor(active.id).filter(m=>!filter || modesFor(active.id,m.id).includes(filter)) : [];
   const label = kind === "image" ? "图片" : kind === "tts" ? "TTS" : "视频", Icon = kind === "image" ? Image : kind === "tts" ? Mic : Film;
-  const close = () => {setOpen(false);trigger.current?.focus();};
+  const close = () => {setOpen(false);trigger.current?.focus({preventScroll:true});};
   return <div className="generation-channel-fields">
     <Form.Item label="渠道 / 模型" layout="vertical">
-      <Trigger escToClose trigger="click" position="bl" popupVisible={open && !disabled} onVisibleChange={visible=>{
+      <Trigger escToClose updateOnScroll trigger="click" position="bl" popupVisible={open && !disabled} onVisibleChange={visible=>{
         setOpen(visible); if(visible){setBrowsing(choice?.channel.id || value.channel_id);setFilter("");}
-      }} popup={()=> <div className="generation-cascade" role="dialog" tabIndex={-1} aria-label={`${label}渠道与模型`} onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();close();}}}>
+      }} popup={()=> <div ref={menu} className={`generation-cascade generation-cascade-${kind}`} role="dialog" tabIndex={-1} aria-label={`${label}渠道与模型`} onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();close();}}}>
         {modes.length>1 && <div className="generation-model-filters" aria-label="按生成方式筛选">
           {["",...modes].map(mode=><button type="button" key={mode} aria-pressed={filter===mode} onClick={()=>setFilter(mode)}>{MODE_LABELS[mode] || "全部"}</button>)}
         </div>}
         <div className="generation-cascade-columns">
           <div className="generation-cascade-channels" aria-label="生成渠道">
-            {channels.map(channel=><button type="button" key={channel.id} autoFocus={channel.id===active?.id} aria-pressed={active?.id===channel.id} onMouseEnter={()=>setBrowsing(channel.id)} onFocus={()=>setBrowsing(channel.id)} onClick={()=>setBrowsing(channel.id)}>
+            {channels.map(channel=><button type="button" key={channel.id} aria-pressed={active?.id===channel.id} onMouseEnter={()=>setBrowsing(channel.id)} onFocus={()=>setBrowsing(channel.id)} onClick={()=>setBrowsing(channel.id)}>
               <Layers size={16}/><span>{channel.name}</span><ChevronRight size={14}/>
             </button>)}
           </div>
