@@ -929,12 +929,14 @@ mod role_image_name_tests {
 
 // Avoid console windows when the desktop app invokes media tools.
 fn background_command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Command {
-    let mut command = std::process::Command::new(program);
+    let command = std::process::Command::new(program);
     #[cfg(windows)]
-    {
+    let command = {
         use std::os::windows::process::CommandExt;
+        let mut command = command;
         command.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
+        command
+    };
     command
 }
 
