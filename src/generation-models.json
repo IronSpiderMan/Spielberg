@@ -9,7 +9,10 @@
     "wan3-video": {"label":"Wan 3.0","kind":"video","providers":["qianwen-token-plan"],"modes":["t2v","fl2v","ref2v"],"last_frame":true,"max_images":9,"max_videos":3,"max_audios":3,"min_duration":2,"max_duration":30,"smart_duration":true,"audio":true,"size_mode":"resolution","resolutions":["480P","720P","1080P"],"ratios":["16:9","9:16","1:1","4:3","3:4","21:9","adaptive"]},
     "happyhorse-t2v": {"label":"HappyHorse 文生视频","kind":"video","providers":["qianwen-token-plan"],"modes":["t2v"],"min_duration":3,"max_duration":15,"size_mode":"resolution","resolutions":["480P","720P","1080P"],"ratios":["16:9","9:16","1:1","4:3","3:4","4:5","5:4","9:21","21:9"]},
     "happyhorse-i2v": {"label":"HappyHorse 首帧生视频","kind":"video","providers":["qianwen-token-plan"],"modes":["fl2v"],"max_images":1,"min_duration":3,"max_duration":15,"size_mode":"resolution","resolutions":["480P","720P","1080P"]},
-    "happyhorse-r2v": {"label":"HappyHorse 图片参考","kind":"video","providers":["qianwen-token-plan"],"modes":["ref2v"],"max_images":9,"min_duration":3,"max_duration":15,"size_mode":"resolution","resolutions":["480P","720P","1080P"],"ratios":["16:9","9:16","1:1","4:3","3:4","4:5","5:4","9:21","21:9"]}
+    "happyhorse-r2v": {"label":"HappyHorse 图片参考","kind":"video","providers":["qianwen-token-plan"],"modes":["ref2v"],"max_images":9,"min_duration":3,"max_duration":15,"size_mode":"resolution","resolutions":["480P","720P","1080P"],"ratios":["16:9","9:16","1:1","4:3","3:4","4:5","5:4","9:21","21:9"]},
+    "openai-tts": {"label":"OpenAI TTS","kind":"tts","providers":["openai"],"modes":["tts"],"size_mode":"audio","default_voice":"alloy","formats":["mp3","wav"],"max_text":4096,"speed":true},
+    "openai-tts-instruct": {"label":"OpenAI TTS · 风格指令","kind":"tts","providers":["openai"],"modes":["tts"],"size_mode":"audio","default_voice":"alloy","formats":["mp3","wav"],"max_text":4096,"speed":true,"instructions":true},
+    "qwen-tts": {"label":"QwenTokenPlan TTS","kind":"tts","providers":["qianwen-token-plan"],"modes":["tts"],"size_mode":"audio","default_voice":"longanhuan_v3.6","formats":["mp3","wav"],"max_text":4096}
   },
   "models": [
     {"id":"gpt-image-1","name":"GPT Image 1","profile":"openai-image"},
@@ -21,6 +24,10 @@
     {"id":"wan3.0-video","name":"Wan 3.0","profile":"wan3-video"},
     {"id":"happyhorse-1.1-t2v","name":"HappyHorse 1.1 文生视频","profile":"happyhorse-t2v"},
     {"id":"happyhorse-1.1-i2v","name":"HappyHorse 1.1 首帧","profile":"happyhorse-i2v"},
-    {"id":"happyhorse-1.1-r2v","name":"HappyHorse 1.1 图片参考","profile":"happyhorse-r2v"}
+    {"id":"happyhorse-1.1-r2v","name":"HappyHorse 1.1 图片参考","profile":"happyhorse-r2v"},
+    {"id":"gpt-4o-mini-tts","name":"GPT-4o mini TTS","profile":"openai-tts-instruct"},
+    {"id":"tts-1","name":"TTS-1","profile":"openai-tts"},
+    {"id":"tts-1-hd","name":"TTS-1 HD","profile":"openai-tts"},
+    {"id":"qwen-audio-3.0-tts-plus","name":"Qwen Audio 3.0 TTS Plus","profile":"qwen-tts"}
   ]
 }

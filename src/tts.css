@@ -1,0 +1,9 @@
+.tts-studio{display:grid;grid-template-columns:minmax(280px,420px) minmax(0,1fr);gap:24px;align-items:start;padding:8px 0 24px}
+.tts-form,.tts-results{min-width:0;padding:20px;border:1px solid var(--color-border-2);border-radius:12px;background:var(--color-bg-2)}
+.tts-studio h2{display:flex;align-items:center;gap:8px;margin:0 0 20px;font-size:18px}
+.tts-results h2 span{font-size:13px;color:var(--color-text-3)}
+.tts-audio{display:flex;flex-direction:column;gap:12px;padding:16px 0;border-top:1px solid var(--color-border-2)}
+.tts-audio strong{overflow-wrap:anywhere;font-size:14px}
+.tts-audio audio{width:100%}
+.tts-error{color:rgb(var(--danger-6));overflow-wrap:anywhere}
+@media(max-width:800px){.tts-studio{grid-template-columns:minmax(0,1fr);gap:16px}.tts-form,.tts-results{padding:16px}}

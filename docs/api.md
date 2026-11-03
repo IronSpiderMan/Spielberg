@@ -95,6 +95,7 @@ curl 'http://127.0.0.1:8080/api/v1/projects/PID/media/1/content?download=1' -o p
 | `scenes/reorder` | `project_id, episode_id, scene_ids` |
 | `scenes/select-video`, `scenes/delete-video` | `project_id, scene_id, media_id` |
 | `generations/image`, `generations/video` | 原有生成参数，包括 `project_id, operation, prompt` 等 |
+| `generations/tts` | `project_id, text`，可选 `channel_id, model, voice, format`；OpenAI 另支持 `speed`，支持风格指令的模型可传 `instructions` |
 | `episodes/merge` | `project_id, episode_id` |
 | `prompts/optimize` | `project_id, prompt, kind, image_media_ids, instruction?`；H3 转换另传 `prompt_format: "minimax-h3", h3_mode, duration, reference_video_media_ids?, reference_audio_media_ids?` |
 | `settings` | `project_id, settings` |
@@ -121,6 +122,16 @@ curl 'http://127.0.0.1:8080/api/v1/projects/PID/media/1/content?download=1' -o p
 图片 `provider` 支持 `openai`、`qianwen-token-plan` 以及保留兼容的 `cast`；视频支持 `cast`、`qianwen-token-plan`。模型 `profile` 指向共享能力表 `src/generation-models.json`，Token Plan 模型 ID 与能力必须匹配。CAST 模型可另设 `base_url` 覆盖渠道地址、`send_model: true` 向服务发送所选模型 ID；默认不发送，以兼容固定模型适配服务。保存配置时校验重复 ID、默认项及能力与渠道类型。
 
 `generations/image` 和 `generations/video` 可传 `channel_id`、`model` 选择已配置渠道和模型，不能在生成请求中覆盖渠道凭证。省略时使用默认渠道及支持当前方式的模型；显式选项不存在或参数不受支持时返回错误。
+
+`POST /api/v1/actions/generations/tts` 使用 `settings.tts.channels` 和 `settings.tts.default_channel_id`，渠道结构与图片/视频一致。支持 `provider: "openai"`（能力 `openai-tts` 或支持风格指令的 `openai-tts-instruct`）及 `provider: "qianwen-token-plan"`（模型 `qwen-audio-3.0-tts-plus`，能力 `qwen-tts`）。文本必须非空且不超过 4096 字符，`format` 为 `mp3`（默认）或 `wav`，`voice` 默认 OpenAI `alloy`、千问 `longanhuan_v3.6`。OpenAI `speed` 范围为 0.25–4，默认 1；`instructions` 最多 4096 字符，`tts-1`/`tts-1-hd` 不支持。千问不接受语速和风格指令参数，使用固定 24000 Hz 采样率及 `sk-sp-` 专属 Key。显式选择无效渠道或模型会报错，不回退至其他渠道。
+
+OpenAI Base URL 支持服务根地址、`/v1` 地址或完整 `/v1/audio/speech` 地址；千问支持根地址、控制台 `/compatible-mode/v1` 地址或完整 `/api/v1/services/audio/tts/SpeechSynthesizer` 地址。同步返回已入库的 `kind: "audio"` 素材对象（包含 `id, name, path, created_at`）；任务由后端记录，失败响应和无效音频不会入库。请求中不接收凭证覆盖。
+
+千问上游非流式响应为 JSON，后端从 `output.audio.url` 提取下载地址并下载完整音频，下载时不转发渠道 API Key。仍兼容渠道直接返回音频文件的情况。HTTP 200 中的业务错误、缺少下载地址、下载失败和无效音频均记录为失败；不会因此重新提交合成请求。
+
+```json
+{"project_id":"项目 ID","text":"你好，欢迎来到工作室。","channel_id":"已配置的 TTS 渠道 ID","model":"gpt-4o-mini-tts","voice":"alloy","format":"mp3","speed":1,"instructions":"温柔、平静地讲述"}
+```
 
 `generations/video` 沿用 `video_mode: "fl2v"`（`first_media_id`、可选 `last_media_id`）、`video_mode: "i2v"` 或 `operation: "ref2v"`（`image_media_ids`、可选音视频参考）；省略模式与参考素材时为文生视频。Wan 3.0 的 `duration` 为 2–30 或 `-1`，可传布尔值 `audio`、`prompt_extend`、`watermark`；HappyHorse 各模型仅支持对应方式，时长 3–15。Token Plan 视频可传 `resolution: "480P"/"720P"/"1080P"`（默认 720P），不使用像素 `size`。千问图片使用 `size: "宽x高"`，后端转换为 DashScope 格式，并按模型校验像素面积、参考图数量与蒙版支持。
 

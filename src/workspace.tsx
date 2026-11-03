@@ -431,7 +431,7 @@ export function Tasks({projectId}:{projectId:string}) {
       <div className="task-head">
         <span className={`task-state task-${job.status}`} aria-hidden="true" />
         <b>{job.project_name}</b>
-        <Tag>{job.operation.includes("image")?"图片生成":job.operation.includes("video")?"视频生成":"剧集合并"}</Tag>
+        <Tag>{job.operation.includes("image")?"图片生成":job.operation.includes("video")?"视频生成":job.operation.includes("tts")?"语音合成":"剧集合并"}</Tag>
         <Tag className="task-status" color={job.status==="failed"?"red":job.status==="completed"?"green":"blue"}>{labels[job.status]||job.status}</Tag>
         <small className="task-time">{new Date(Number(job.created_at)*1000).toLocaleString()}</small>
       </div>
@@ -439,6 +439,7 @@ export function Tasks({projectId}:{projectId:string}) {
       <small className="task-id">任务 #{job.id}</small>
       {job.error && <TaskText text={job.error} error/>}
       {job.result?.kind==="video" && <VideoAsset video={job.result} projectId={job.project_id}/>}
+      {job.result?.kind==="audio" && <audio controls preload="none" aria-label="试听生成语音" src={imageUrl(job.result)}/>}
       {job.result?.kind==="image" && <PreviewImage className="task-image" media={job.result} alt="生成结果"/>}
     </Card>)}</div>
     <div style={{textAlign:"center",padding:24}}>
@@ -447,7 +448,7 @@ export function Tasks({projectId}:{projectId:string}) {
     </div>
     {!jobs.length&&!loading&&!error&&<EmptyState
       title={filter==="all"?"暂无后台任务":"暂无符合此状态的任务"}
-      description={filter==="all"?"生成图片、视频或合并剧集后，进度和结果会按时间出现在这里。":"切换到「全部状态」查看其他运行记录。"}
+      description={filter==="all"?"生成图片、视频、语音或合并剧集后，进度和结果会按时间出现在这里。":"切换到「全部状态」查看其他运行记录。"}
     />}</section>;
 }
 function SceneThumb({ scene, media, onPreview }: { scene: Scene; media: Media[]; onPreview?: () => void }) {

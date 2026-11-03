@@ -76,10 +76,13 @@ VITE_API_BASE_URL=https://api.example.com npm run build
 
 ### 生成渠道与模型
 
-「工作室设置」可分别管理多个图片渠道和视频渠道。每个渠道有独立名称、接口地址、API Key、模型列表和默认模型；也可设置默认渠道。旧项目的单组配置会兼容转换为「原图片渠道」「原视频渠道」，保留原地址、Key 和不同生成方式的旧接口。
+「工作室设置」可分别管理多个图片、视频和 TTS 渠道。每个渠道有独立名称、接口地址、API Key、模型列表和默认模型；也可设置默认渠道。旧项目的单组配置会兼容转换为「原图片渠道」「原视频渠道」，保留原地址、Key 和不同生成方式的旧接口。
 
 - 图片渠道：OpenAI 兼容图片接口、千问 Token Plan；已有 CAST 图片配置继续兼容。OpenAI 可添加自定义模型 ID 与名称；千问预设包含 `qwen-image-3.0-pro`、`wan2.7-image` 和 `wan2.7-image-pro`。
 - 视频渠道：RunningHub / ComfyUI 兼容接口、千问 Token Plan。千问预设包含 `wan3.0-video`、`happyhorse-1.1-t2v`、`happyhorse-1.1-i2v` 和 `happyhorse-1.1-r2v`，每个 ID 是独立可选模型。
+- TTS 渠道：OpenAI 兼容语音接口、QwenTokenPlan（千问 Token Plan）。OpenAI 预设 `gpt-4o-mini-tts`、`tts-1`、`tts-1-hd`，支持自定义模型；千问预设 `qwen-audio-3.0-tts-plus`。在工作台「语音合成」输入文本，选择渠道、模型、音色 ID 和 MP3/WAV 格式；OpenAI 可设置语速，GPT-4o mini TTS 可设置风格指令。生成音频自动保存到素材库，可试听、用于资产音频参考和剪辑，任务及失败原因显示在后台任务中。默认音色分别为 `alloy`、`longanhuan_v3.6`，千问固定使用 24000 Hz。当前单次文本上限为 4096 字符。
+
+TTS 请求格式见 [OpenAI Speech API](https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create)、[千问 Token Plan 多模态文档](https://platform.qianwenai.com/docs/token-plan/best-practices/multimodal-generation)和[千问语音合成 HTTP API](https://platform.qianwenai.com/docs/api-reference/speech-synthesis/qwen-audio-tts/http-api)。千问非流式返回 JSON 中的 `output.audio.url`，后端下载音频后保存到素材库。OpenAI 官方已公告上述 Speech API 模型将于 2027-01-06 停用；兼容渠道的模型可用性以服务商为准。
 
 在工作台、图片生成弹窗、资产图生成、场景生成和画布中选择渠道、模型，再设置生成参数。场景和画布节点会保存选择，批量生成使用各场景已保存的选择。分镜补图也可选择图片渠道、模型。未明确指定时使用默认渠道及支持当前生成方式的默认模型；指定的模型或渠道被删除时会提示重新选择，不会悄悄改用其他渠道。
 

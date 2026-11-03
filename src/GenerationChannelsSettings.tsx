@@ -9,13 +9,13 @@ export function GenerationChannelsSettings({settings,onChange,disabled}: {settin
   const save=(kind:GenerationKind,channels:GenerationChannel[],defaultId?:string)=>onChange({...settings,[kind]:{
     ...(settings[kind] || {url:"",api_key:"",description:""}),channels,default_channel_id:defaultId !== undefined ? defaultId : settings[kind]?.default_channel_id || channels[0]?.id,
   }});
-  return <>{(["image","video"] as const).map(kind=>{
-    const channels=channelsFor(settings,kind),label=kind === "image" ? "图片" : "视频";
+  return <>{(["image","video","tts"] as const).map(kind=>{
+    const channels=channelsFor(settings,kind),label=kind === "image" ? "图片" : kind === "tts" ? "TTS" : "视频";
     const update=(channel:GenerationChannel)=>save(kind,channels.map(c=>c.id===channel.id?channel:c));
     const add=()=>{
-      const provider=kind === "image" ? "openai" : "cast";
+      const provider=kind === "video" ? "cast" : "openai";
       const models=presetsFor(kind,provider).map(m=>({...m}));
-      const channel:GenerationChannel={id:localId(),name:`${label}渠道 ${channels.length+1}`,provider,base_url:kind === "image"?"https://api.openai.com/v1":"",api_key:"",models,default_model_id:models[0]?.id};
+      const channel:GenerationChannel={id:localId(),name:`${label}渠道 ${channels.length+1}`,provider,base_url:kind !== "video"?"https://api.openai.com/v1":"",api_key:"",models,default_model_id:models[0]?.id};
       save(kind,[...channels,channel]);
     };
     return <div className="setting-block generation-channels-settings" key={kind}>
@@ -34,7 +34,7 @@ export function GenerationChannelsSettings({settings,onChange,disabled}: {settin
             <div className="generation-channel-config">
               <Form.Item label="渠道名称"><Input aria-label={`${label}渠道名称`} value={channel.name} onChange={name=>change({name})}/></Form.Item>
               <Form.Item label="接口类型"><Select aria-label={`${label}渠道接口类型`} value={channel.provider} options={[
-                {label:kind === "image"?"OpenAI 兼容图片接口":"RunningHub / ComfyUI 兼容接口",value:kind === "image"?"openai":"cast"},
+                {label:kind === "image"?"OpenAI 兼容图片接口":kind === "tts"?"OpenAI 兼容语音接口":"RunningHub / ComfyUI 兼容接口",value:kind === "video"?"cast":"openai"},
                 {label:"千问 Token Plan",value:"qianwen-token-plan"},
                 ...(kind === "image"&&channel.provider === "cast"?[{label:"CAST 图片接口（旧配置）",value:"cast"}]:[]),
               ]} onChange={(provider:ChannelProvider)=>{const models=presetsFor(kind,provider).map(m=>({...m}));change({provider,models,default_model_id:models[0]?.id,base_url:provider === "qianwen-token-plan"?"https://token-plan.maas.qianwenaiapi.com":provider === "openai"?"https://api.openai.com/v1":"",api_key:"",operation_urls:undefined,operation_api_keys:undefined});}}/></Form.Item>

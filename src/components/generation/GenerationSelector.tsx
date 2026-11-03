@@ -1,11 +1,11 @@
 import { useRef, useState } from "react";
 import { Form, Trigger } from "@arco-design/web-react";
-import { Check, ChevronDown, ChevronRight, Film, Image, Layers } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Film, Image, Layers, Mic } from "lucide-react";
 import type { ModelSettings } from "../../core";
 import { channelsFor, generationChoice, modelFamily, selectableModels, MODEL_PROFILES, type GenerationKind, type GenerationSelection } from "../../generation-channels";
 import "../../generation-channels.css";
 
-const MODE_LABELS: Record<string, string> = { t2i: "文生图", i2i: "图生图", t2v: "文生视频", fl2v: "首尾帧", ref2v: "参考生视频" };
+const MODE_LABELS: Record<string, string> = { tts: "语音合成", t2i: "文生图", i2i: "图生图", t2v: "文生视频", fl2v: "首尾帧", ref2v: "参考生视频" };
 
 export function GenerationSelector({settings,kind,value,onChange,disabled,operation}: {settings:ModelSettings;kind:GenerationKind;value:GenerationSelection;onChange:(value:GenerationSelection)=>void;disabled?:boolean;operation?:string}) {
   const channels = channelsFor(settings,kind), choice = generationChoice(settings,kind,value,operation);
@@ -16,7 +16,7 @@ export function GenerationSelector({settings,kind,value,onChange,disabled,operat
   const modesFor = (channelId: string, model: string) => generationChoice(settings,kind,{channel_id:channelId,model})?.capabilities.modes || [];
   const modes = [...new Set(channels.flatMap(c=>modelsFor(c.id).flatMap(m=>modesFor(c.id,m.id))))];
   const models = active ? modelsFor(active.id).filter(m=>!filter || modesFor(active.id,m.id).includes(filter)) : [];
-  const label = kind === "image" ? "图片" : "视频", Icon = kind === "image" ? Image : Film;
+  const label = kind === "image" ? "图片" : kind === "tts" ? "TTS" : "视频", Icon = kind === "image" ? Image : kind === "tts" ? Mic : Film;
   const close = () => {setOpen(false);trigger.current?.focus();};
   return <div className="generation-channel-fields">
     <Form.Item label="渠道 / 模型" layout="vertical">
