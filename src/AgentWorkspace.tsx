@@ -8,7 +8,9 @@ import "./agent.css";
 import { uploadMedia } from "./api";
 import { localId } from "./id";
 import { ImagePreviewModal } from "./components/ImagePreviewModal";
-import { generatedImages, conversationImages, attachmentImage } from "./agentImages";
+import { VideoPreviewModal } from "./components/VideoPreviewModal";
+import { AgentMediaPreview } from "./components/AgentMediaPreview";
+import { toolMedia, conversationImages, attachmentImage, mediaFromUrl } from "./agentImages";
 import { backendUrl } from "./transport";
 
 type AgentMessage = { role: "user" | "assistant" | "tool"; content: string; images?: string[]; image_media_ids?: number[]; tool_name?: string; tool_call_id?: string; arguments?: unknown; status?: string; tool_calls?: unknown[] };
@@ -24,6 +26,7 @@ const toolTargetText: Record<string, string> = {
   assets: "资产库", media: "素材库", episodes: "剧集", scenes: "场景", prompts: "提示词", screenplays: "剧本",
   "assets/media/add": "关联资产图片", "assets/media/delete": "解除资产图片关联",
   "assets/audio/save": "保存资产音频引用", "assets/audio/delete": "解除资产音频关联",
+  "generations/image": "生成图片", "generations/video": "生成视频", "generations/tts": "合成配音",
 };
 function toolTarget(args: unknown): string {
   if (!args || typeof args !== "object") return "";
@@ -47,7 +50,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   const [preview, setPreview] = useState<Media | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selected, setSelected] = useState<Session | null>(null);
-  const gallery = useMemo(() => conversationImages(selected?.messages || [], currentMedia), [selected?.messages, currentMedia]);
+  const gallery = useMemo(() => conversationImages(selected?.messages || [], currentMedia, pid), [selected?.messages, currentMedia, pid]);
   useEffect(() => setPreview(null), [selected?.id]);
   const selectedRef = useRef<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,6 +74,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   const busy = useRef(false);
   const log = useRef<HTMLDivElement>(null);
   const followBottom = useRef(true);
+  const followMedia = () => { if (followBottom.current && log.current) log.current.scrollTop = log.current.scrollHeight; };
   const composer = useRef<HTMLTextAreaElement>(null);
   const history = useRef<HTMLElement>(null);
   const historyTrigger = useRef<HTMLButtonElement>(null);
@@ -237,9 +241,20 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
             <summary><Wrench size={14} /><span>{toolText[message.tool_name || ""] || message.tool_name || "执行工具"}</span><small>{toolTarget(message.arguments)}</small><span className={`agent-tool-status ${message.status}`}>{message.status === "running" ? "执行中" : message.status === "failed" ? "失败" : message.status === "skipped" ? "未执行" : <><Check size={12} />完成</>}</span><ChevronDown size={14} /></summary>
             {message.arguments != null && <div><b>参数</b><pre>{displayJson(message.arguments)}</pre></div>}<div><b>结果</b><pre>{message.content ? displayJson(message.content) : "等待执行结果…"}</pre></div>
           </details>
-          {generatedImages(message, currentMedia).length > 0 && <div className="agent-generated-images">{generatedImages(message, currentMedia).map(media => <button type="button" key={media.id} onClick={() => setPreview(media)} aria-label={`预览 ${media.name}`}><img src={imageUrl(media)} alt={media.name} onLoad={() => { if (followBottom.current && log.current) log.current.scrollTop = log.current.scrollHeight; }} /><span>{media.name}</span></button>)}</div>}
+          <div className="agent-generated-images agent-media-results">{toolMedia(message, currentMedia).map(media => <AgentMediaPreview key={media.id} media={media} onPreview={setPreview} onLoad={followMedia} />)}</div>
           </div> : message.content || message.images?.length ? <article className={`agent-message is-${message.role}`} key={index}>
-            <div className="agent-message-label">{message.role === "user" ? "你" : <><Bot size={15} />Agent</>}</div><div className="agent-message-content">{message.role === "user" ? <>{message.images?.map((image, i) => <button type="button" key={i} className="agent-attachment-preview" aria-label={`预览附件图片 ${i + 1}`} onClick={() => setPreview(attachmentImage(message, index, i, currentMedia))}><img className="agent-message-image" src={image} alt={`附件图片 ${i + 1}`} /></button>)}{message.content && <p>{message.content}</p>}</> : <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: ({ src, alt }) => { const media = gallery.find(item => item.preview_url === src); return <button type="button" className="agent-attachment-preview" aria-label={`预览 ${alt || "图片"}`} onClick={() => media && setPreview(media)}><img src={src} alt={alt || "图片"} /></button>; }, a: ({ children, href, ...props }) => <a {...props} href={href?.startsWith("/api/v1/") ? backendUrl(href) : href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{message.content}</ReactMarkdown>}</div>
+            <div className="agent-message-label">{message.role === "user" ? "你" : <><Bot size={15} />Agent</>}</div><div className="agent-message-content">{message.role === "user" ? <>{message.images?.map((_, i) => {
+              const media = attachmentImage(message, index, i, currentMedia);
+              return <button type="button" key={i} className="agent-attachment-preview" aria-label={`预览附件图片 ${i + 1}`} onClick={() => setPreview(media)}><img className="agent-message-image" src={imageUrl(media)} alt={`附件图片 ${i + 1}`} onLoad={followMedia} /></button>;
+            })}{message.content && <p>{message.content}</p>}</> : <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+              img: ({ src, alt }) => {
+                const media = src ? mediaFromUrl(src, alt || "图片", currentMedia, pid, true) : null;
+                return media ? <AgentMediaPreview key={imageUrl(media)} media={media} inline onPreview={setPreview} onLoad={followMedia} /> : <span>{alt || "图片不可用"}</span>;
+              },
+              a: ({ children, href, node: _node, ...props }) => {
+                return <a {...props} href={href?.startsWith("/api/v1/") || href?.startsWith("/media?") ? backendUrl(href) : href} target="_blank" rel="noopener noreferrer">{children}</a>;
+              },
+            }}>{message.content}</ReactMarkdown>}</div>
           </article> : null)}
           {!!execution?.plan?.length && <section className="agent-plan" data-testid="agent-plan" aria-label="任务计划">
             <div className="agent-plan-heading"><b>任务计划</b><span>{execution.plan.filter(item => item.status === "completed").length}/{execution.plan.length}</span></div>
@@ -268,7 +283,8 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
         </div>
       </div>
     </div>
-    <ImagePreviewModal media={preview} images={gallery} onMediaChange={setPreview} onClose={() => setPreview(null)} />
+    <ImagePreviewModal media={preview?.kind === "image" ? preview : null} images={gallery} title="对话图片预览" onMediaChange={setPreview} onClose={() => setPreview(null)} />
+    <VideoPreviewModal media={preview?.kind === "video" ? preview : null} onClose={() => setPreview(null)} />
     <Modal title="Agent 设置" visible={settingsOpen} onCancel={() => !saving && setSettingsOpen(false)} onOk={() => void saveSettings()} okText="保存设置" cancelText="取消" confirmLoading={saving} maskClosable={!saving} style={{ width: 580 }} className="agent-settings-modal">
       <div className="agent-settings-form"><label className="agent-inherit"><span><b>沿用项目 LLM 配置</b><small>使用「设置」中的 LLM（分镜与 Prompt）服务。</small></span><Switch aria-label="沿用项目 LLM 配置" checked={form.inherit_llm} onChange={value => setForm(item => ({ ...item, inherit_llm: value }))} disabled={saving} /></label>
         <label>Base URL<Input aria-label="Base URL" value={form.base_url} disabled={form.inherit_llm || saving} placeholder="https://your-service.example/v1" onChange={value => setForm(item => ({ ...item, base_url: value }))} /></label>

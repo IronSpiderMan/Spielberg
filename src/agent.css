@@ -270,11 +270,20 @@ html[data-theme=dark] .agent-workspace .agent-model-button.arco-btn:not(.arco-bt
 .agent-message-image { max-width:min(100%,320px); max-height:240px; object-fit:contain; border-radius:8px; margin:4px 8px 8px 0; }
 
 .agent-tool-result { min-width: 0; }
-.agent-generated-images { display: flex; flex-wrap: wrap; gap: 12px; margin: 10px 0 18px; }
-.agent-generated-images button { display: flex; flex-direction: column; gap: 8px; width: 220px; max-width: 100%; padding: 8px; border: 1px solid var(--agent-border); border-radius: 10px; background: var(--agent-surface); color: var(--agent-muted); font: inherit; text-align: left; cursor: zoom-in; }
-.agent-generated-images button:focus-visible { outline: 2px solid var(--agent-accent); outline-offset: 3px; }
-.agent-generated-images img { display: block; width: 100%; height: 220px; object-fit: contain; border-radius: 6px; }
-.agent-generated-images span { max-width: 100%; overflow-wrap: anywhere; font-size: 12px; }
+.agent-media-results { display: flex; flex-wrap: wrap; gap: 12px; margin: 10px 0 18px; }
+.agent-media-results:empty { display: none; }
+.agent-media-preview { display: inline-flex; vertical-align: top; flex-direction: column; gap: 8px; width: 320px; max-width: 100%; box-sizing: border-box; margin: 4px 0 8px; padding: 8px; border: 1px solid var(--agent-border); border-radius: 10px; background: var(--agent-surface); color: var(--agent-muted); line-height: 1.5; }
+.agent-media-preview.is-image { width: 220px; }
+.agent-media-preview.is-video { width: 400px; }
+.agent-media-image { display: block; width: 100%; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: zoom-in; }
+.agent-media-image img { display: block; width: 100%; height: 220px; object-fit: contain; border-radius: 6px; }
+.agent-media-preview video { display: block; width: 100%; max-height: 280px; aspect-ratio: 16 / 9; border-radius: 6px; background: #121614; }
+.agent-media-preview audio { display: block; width: 100%; min-width: 0; height: 42px; }
+.agent-media-name { display: flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
+.agent-media-name svg { flex-shrink: 0; }
+.agent-media-expand { display: flex; align-items: center; align-self: flex-end; gap: 5px; padding: 5px 8px; border: 1px solid var(--agent-border); border-radius: 6px; background: var(--agent-soft); color: var(--agent-text); font: inherit; font-size: 11px; cursor: pointer; }
+.agent-media-error { padding: 18px 8px; font-size: 12px; overflow-wrap: anywhere; }
+.agent-media-error a { color: var(--agent-accent); }
 
 .agent-attachment-preview { display: inline-block; padding: 0; border: 0; background: transparent; cursor: zoom-in; }
 .agent-attachment-preview img { max-width: 100%; }

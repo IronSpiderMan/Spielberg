@@ -8,7 +8,7 @@ const OPERATIONS: &[&str] = &[
     "scenes/reorder", "scenes/select-video", "scenes/delete-video", "episodes/reorder",
     "episodes/merge", "assets/media/add", "assets/media/delete", "assets/audio/save", "assets/audio/delete", "canvas/load", "canvas/save",
     "storyboard/generate", "storyboard/plan", "storyboard/validate", "editor/projects",
-    "editor/save", "editor/probe", "editor/export", "generations/image", "generations/video",
+    "editor/save", "editor/probe", "editor/export", "generations/image", "generations/video", "generations/tts",
     "prompts/optimize", "media/create-svg", "media/usage", "media/restore", "media/purge", "media/video-frame",
     "storage/scan", "storage/cleanup", "settings/read", "tasks", "projects/backup",
 ];
@@ -347,6 +347,7 @@ fn describe(operation:Option<&str>)->Value {
             "Clip":{"id":"UUID for saved editor drafts","media_id":"video/audio media ID","duration":"source duration from editor/probe, required in saved draft","start":"source start seconds >=0","end":"source end seconds, >start","speed":"0.5..2","volume":"0..1","track":"optional audio","at":"audio timeline offset >=0"}
         }
     });
+    catalog["actions"]["generations/tts"]=json!({"required":{"text":"nonempty text to speak, at most 4096 Unicode characters"},"optional":{"voice":"voice ID supported by the selected provider; default alloy for OpenAI or longanhuan_v3.6 for QwenTokenPlan","format":"mp3/wav; default mp3","speed":"number 0.25..4; OpenAI only; omit for QwenTokenPlan","instructions":"style instructions, at most 4096 characters; only models with profile openai-tts-instruct support this; omit for other profiles"},"effect":"Synthesizes speech using configured TTS channels. Read settings/read to discover channel IDs and model profiles; never request API keys. Returns a completed audio media file saved in the current project's media library and previewable in chat. May link its ID to a person/creature with assets/audio/save only when requested. Failures do not create media; missing configuration must be set up by the user in studio settings."});
     catalog["actions"]["media/create-svg"]=json!({"required":{"name":"image filename ending in .svg (appended if absent)","svg":"complete UTF-8 SVG source with xmlns=\"http://www.w3.org/2000/svg\" and width/height or viewBox; write the SVG yourself, no base64 required"},"optional":{"asset_id":"existing creative asset ID; links this image"},"effect":"Validates and saves a static SVG image in the project media library immediately, without calling an image model. Returns image media ID/path for preview, assets/media/add, design_media_id, scene/canvas image references and generation inputs. No scripts, events, animation, foreignObject or external resources. Use self-contained shapes, paths, text, gradients, masks and internal references."});
     for (key,value) in audio_actions.as_object().unwrap() {catalog["actions"][key]=value.clone();}
     let project_actions=json!({"project/config/read":{"optional":{"offset":"outline character offset, default 0","max_chars":"1..1500 Unicode characters per page","documents_offset":"document list offset; 10 metadata items per page"},"effect":"Read project name, paginated outline and document metadata. Follow outline.next_offset and documents_next_offset until complete. Read relevant document bodies via project/document/read."},
@@ -355,7 +356,7 @@ fn describe(operation:Option<&str>)->Value {
             "project/document/save":{"required":{"title":"nonempty title when creating"},"optional":{"id":"existing document string ID; omit to create with generated UUID","title":"new title; omit to preserve when updating","content":"complete replacement Markdown body; omit to preserve when updating"},"effect":"Creates or updates one document. Existing IDs must belong to current project; preserves other documents. Read the whole document before replacing content."},
             "project/document/delete":{"required":{"id":"existing document string ID"},"effect":"Deletes only this document in current project. Use when user requests deletion."}});
     for (key,value) in project_actions.as_object().unwrap() {catalog["actions"][key]=value.clone();}
-    for name in ["generations/image","generations/video"] {
+    for name in ["generations/image","generations/video","generations/tts"] {
         catalog["actions"][name]["optional"]["channel_id"]=json!("configured generation channel ID; omit for default");
         catalog["actions"][name]["optional"]["model"]=json!("exact model ID within selected channel; parameters depend on model capabilities");
     }
@@ -568,6 +569,31 @@ mod tests {
         for operation in OPERATIONS {let result=describe(Some(operation));assert!(!result["definition"].is_null(),"Missing action {operation}");}
         for resource in RESOURCES {assert!(!describe(Some(resource))["definition"].is_null());}
         assert!(describe(Some("settings/save"))["error"].is_string());
+    }
+
+    #[test]
+    fn agent_tts_uses_existing_validation_and_current_project_scope() {
+        let f=Fixture::new();
+        save_settings(&f.state,&json!({"project_id":f.first,"settings":{"tts":{"channels":[
+            {"id":"speech","name":"Speech","provider":"openai","base_url":"http://127.0.0.1:9","models":[{"id":"custom-tts","profile":"openai-tts-instruct"}]}
+        ]}}})).unwrap();
+        let description=f.call("app_describe",json!({"operation":"generations/tts"})).unwrap();
+        assert!(description["definition"]["required"]["text"].is_string());
+        assert!(description["definition"]["optional"]["channel_id"].is_string());
+        for (data,expected) in [
+            (json!({"text":""}),"4096"),
+            (json!({"text":"hello","channel_id":"missing"}),"渠道"),
+            (json!({"text":"hello","model":"missing"}),"模型"),
+            (json!({"text":"hello","speed":5}),"语速"),
+            (json!({"text":"hello","format":"ogg"}),"格式"),
+            (json!({"text":"hello","project_id":f.second}),"当前项目"),
+        ] {
+            let error=f.call("app_action",json!({"operation":"generations/tts","data":data})).unwrap_err();
+            assert!(error.contains(expected),"Unexpected TTS error: {error}");
+        }
+        for pid in [&f.first,&f.second] {
+            assert_eq!(db(&f.state,pid).unwrap().query_row("SELECT COUNT(*) FROM media",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+        }
     }
 
     #[test]

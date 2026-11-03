@@ -11,15 +11,27 @@ const tool = (name, args, id) => ({id,type:'function',function:{name,arguments:J
 (async () => {
  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'spielberg-agent-ui-'));
  const screenshots = path.join(temp, 'screenshots'); fs.mkdirSync(screenshots);
+ let speechAudio;
+ const speechRequests=[];
  const model = http.createServer(async (req,res) => {
   const chunks=[];for await(const chunk of req) chunks.push(chunk);
   const body=JSON.parse(Buffer.concat(chunks).toString());
+  if(req.url.endsWith('/audio/speech')) {
+   speechRequests.push({url:req.url,body});
+   res.writeHead(200,{'Content-Type':'audio/wav'});res.end(speechAudio);return;
+  }
   const lastUser=body.messages.findLastIndex(m=>m.role==='user');
   const prompt=body.messages[lastUser].content;
   const results=body.messages.slice(lastUser+1).filter(m=>m.role==='tool');
   let message;
   if(body.tool_choice==='none') {
    message={role:'assistant',content:'本轮执行已暂停，已完成的操作已保留。'};
+  } else if(prompt.includes('TTS 测试')) {
+   assert(body.tools.find(item=>item.function.name==='app_action').function.parameters.properties.operation.enum.includes('generations/tts'));
+   const selected=prompt.includes('指定');
+   const calls=[tool('app_describe',{operation:'generations/tts'},'tts-describe'),tool('app_action',{operation:'settings/read'},'tts-settings'),
+    tool('app_action',{operation:'generations/tts',data:{text:'雨停了，故事才刚刚开始。',format:'wav',...(selected?{channel_id:'speech-selected',model:'custom-narrator',voice:'nova',speed:1.25,instructions:'平静地讲述'}:{})}},'tts-generate')];
+   message=results.length<calls.length?{role:'assistant',content:null,tool_calls:[calls[results.length]]}:{role:'assistant',content:'配音已生成，可直接试听。'};
   } else if(prompt.includes('预算测试')) {
    message={role:'assistant',content:null,tool_calls:[tool('get_project',{},'budget-first'),tool('get_project',{},'budget-skipped')]};
   } else if(prompt.includes('SVG 测试')) {
@@ -84,6 +96,21 @@ const tool = (name, args, id) => ({id,type:'function',function:{name,arguments:J
    method:'POST',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aV1cAAAAASUVORK5CYII=','base64')
   });
   assert(upload.ok);const migrated=(await upload.json()).data;
+  // Real playable files exercise media loading, rather than only checking tags.
+  const audioFile=path.join(temp,'preview.wav'),videoFile=path.join(temp,'preview.mp4');
+  for(const args of [
+   ['-f','lavfi','-i','sine=frequency=440:duration=2','-c:a','pcm_s16le',audioFile],
+   ['-f','lavfi','-i','color=c=blue:s=240x140:d=2','-c:v','libx264','-pix_fmt','yuv420p',videoFile],
+  ]) {
+   const generated=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-y',...args],{encoding:'utf8'});
+   assert.equal(generated.status,0,generated.stderr);
+  }
+  const uploadFixture=async(file)=>{
+   const response=await fetch(`${base}/api/v1/projects/${project.id}/media/upload?name=${encodeURIComponent(path.basename(file))}`,{method:'POST',body:fs.readFileSync(file)});
+   assert(response.ok);return (await response.json()).data;
+  };
+  const audio=await uploadFixture(audioFile),video=await uploadFixture(videoFile);
+  speechAudio=fs.readFileSync(audioFile);
   const seed=spawnSync('python3',['-c',`
 import json,sqlite3,sys
 c=sqlite3.connect(sys.argv[1])
@@ -94,8 +121,23 @@ messages.extend([
  {'role':'assistant','content':'','tool_calls':[{'id':'migrated-output','type':'function','function':{'name':'app_action','arguments':json.dumps(arguments)}}]},
  {'role':'tool','tool_call_id':'migrated-output','tool_name':'app_action','status':'completed','arguments':arguments,'content':json.dumps({'data':{'media':media}})}
 ])
+audio=json.loads(sys.argv[4]);video=json.loads(sys.argv[5]);pid=sys.argv[6]
+def output(operation,value,status='completed'):
+ return {'role':'tool','tool_name':'app_action','status':status,'arguments':{'operation':operation,'data':{'image_media_ids':[media['id']]}},'content':json.dumps(value)}
+messages.extend([
+ output('generations/video',{'data':{'media':dict(video,path=r'C:\\old\\preview.mp4')}}),
+ output('generations/tts',dict(audio,path=r'C:\\old\\preview.wav')),
+ output('generations/image',media,'failed'),
+ output('tasks',{'items':[{'status':'running','result':media}]}),
+ output('tasks',{'items':[{'status':'completed','result':audio}]}),
+ output('editor/export',audio),
+ output('episodes/merge',video),
+ output('media/video-frame',media),
+ {'role':'tool','tool_name':'app_request','status':'completed','arguments':{'resource':'media','method':'GET'},'content':json.dumps({'items':[media,audio,video]})},
+ {'role':'assistant','content':f'[试听音频](/api/v1/projects/{pid}/media/{audio["id"]}/content)\\n\\n[播放视频](/media?path={video["path"]})\\n\\n![引用图片][picture]\\n\\n[picture]: /api/v1/projects/{pid}/media/{media["id"]}/content'},
+])
 c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages),sys.argv[2]));c.commit()
-`,path.join(project.path,'spielberg.sqlite'),originalSession.id,JSON.stringify(migrated)],{encoding:'utf8'});
+`,path.join(project.path,'spielberg.sqlite'),originalSession.id,JSON.stringify(migrated),JSON.stringify(audio),JSON.stringify(video),project.id],{encoding:'utf8'});
   assert.equal(seed.status,0,seed.stderr);
   await page.reload();await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
   await page.getByRole('link',{name:'参考资料',exact:true}).waitFor();
@@ -104,10 +146,46 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
   await thumbnail.waitFor();
   await page.waitForFunction(()=>document.querySelector('.agent-generated-images img')?.naturalWidth>0);
   assert.equal(new URL(await thumbnail.getAttribute('src'),base).searchParams.get('path'),migrated.path);
-  await page.getByRole('button',{name:'预览 migrated.png',exact:true}).click();
+  await page.locator('.agent-media-results').getByRole('button',{name:'预览 migrated.png',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('.image-preview-full img')?.naturalWidth>0);
   await page.screenshot({path:path.join(screenshots,'migrated-image.png'),fullPage:true});
   await page.keyboard.press('Escape');
+  assert.equal(await page.locator('.agent-media-results img').count(),1,'Only successful image generation should have a preview');
+  assert.equal(await page.locator('.agent-media-results audio').count(),1,'Media queries, completed tasks and exports must not add audio previews');
+  assert.equal(await page.locator('.agent-media-results video').count(),1,'Media queries and merges must not add video previews');
+  const inlineAudio=page.locator('.agent-media-results audio');
+  assert.equal(new URL(await inlineAudio.getAttribute('src'),base).searchParams.get('path'),audio.path);
+  await inlineAudio.evaluate(async player=>{await player.play();player.pause();});
+  const inlineVideo=page.locator('.agent-media-results video');
+  assert.equal(new URL(await inlineVideo.getAttribute('src'),base).searchParams.get('path'),video.path);
+  await inlineVideo.evaluate(async player=>{await player.play();player.pause();});
+  await page.locator('.agent-media-results').getByRole('button',{name:'放大预览 preview.mp4',exact:true}).click();
+  await page.getByRole('dialog').getByLabel('视频画布').waitFor();
+  await page.waitForFunction(()=>document.querySelector('.video-preview-viewport video')?.videoWidth>0);
+  await page.screenshot({path:path.join(screenshots,'video-preview.png'),fullPage:true});
+  await page.getByRole('button',{name:'关闭视频预览',exact:true}).click();
+  await page.getByRole('dialog').waitFor({state:'hidden'});
+  assert.equal(await page.locator('.agent-message-content audio').count(),0,'Ordinary audio links must remain links');
+  assert.equal(await page.locator('.agent-message-content video').count(),0,'Ordinary video links must remain links');
+  await page.getByRole('link',{name:'试听音频',exact:true}).waitFor();
+  await page.getByRole('link',{name:'播放视频',exact:true}).waitFor();
+  await page.locator('.agent-message-content').getByRole('button',{name:'预览 migrated.png',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('.image-preview-full img')?.naturalWidth>0);
+  await page.keyboard.press('Escape');
+  // Broken external media should offer the original URL instead of a blank card.
+  await page.route('**/broken-preview.png',route=>route.abort());
+  const brokenSession=await api('/actions/agent/create',{project_id:project.id});
+  const brokenSeed=spawnSync('python3',['-c',`
+import json,sqlite3,sys
+c=sqlite3.connect(sys.argv[1]);messages=[{'role':'assistant','content':'![加载失败图片](https://example.com/broken-preview.png)'}]
+c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages),sys.argv[2]));c.commit()
+`,path.join(project.path,'spielberg.sqlite'),brokenSession.id],{encoding:'utf8'});
+  assert.equal(brokenSeed.status,0,brokenSeed.stderr);
+  await page.reload();await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
+  await page.getByTestId(`agent-session-${brokenSession.id}`).click();
+  await page.getByRole('link',{name:'打开原文件',exact:true}).waitFor();
+  await page.getByTestId(`agent-session-${originalSession.id}`).click();
+  await page.getByTestId('agent-plan').waitFor();
   await page.getByTestId('agent-settings').click();
   await page.getByRole('dialog').getByText('Agent 设置',{exact:true}).waitFor();
   await page.getByRole('switch',{name:'沿用项目 LLM 配置',exact:true}).click();
@@ -182,8 +260,35 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
   await page.keyboard.press('Escape');
   await page.reload();await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
   await page.locator('.agent-generated-images img[alt="Agent 矢量图.svg"]').waitFor();
+  // Execute real Agent tool calls against a local TTS fixture, with default and
+  // explicitly selected channels. No paid model or speech service is contacted.
+  await api('/actions/settings',{project_id:project.id,settings:{
+   llm:{base_url:`http://127.0.0.1:${model.address().port}/v1`,model:'qa-tool-model',api_key:'ui-test-private-key'},
+   tts:{default_channel_id:'speech-default',channels:[
+    {id:'speech-default',name:'默认配音',provider:'openai',base_url:`http://127.0.0.1:${model.address().port}/default`,models:[{id:'tts-1',profile:'openai-tts'}]},
+    {id:'speech-selected',name:'指定配音',provider:'openai',base_url:`http://127.0.0.1:${model.address().port}/selected`,models:[{id:'custom-narrator',profile:'openai-tts-instruct'}]},
+   ]},
+  }});
+  for(const mode of ['默认','指定']) {
+   await page.getByTestId('agent-new-session').click();
+   await page.getByTestId('agent-composer').fill(`TTS 测试 ${mode}：为雨夜故事生成配音`);
+   await page.getByTestId('agent-send').click();
+   await page.getByText('配音已生成，可直接试听。',{exact:true}).waitFor({timeout:15000});
+   const speechPlayer=page.locator('.agent-media-results audio');
+   await speechPlayer.waitFor();await speechPlayer.evaluate(async player=>{await player.play();player.pause();});
+   assert(await page.locator('.agent-tool summary > small').getByText('合成配音',{exact:true}).count()>0);
+  }
+  assert.deepEqual(speechRequests,[
+   {url:'/default/v1/audio/speech',body:{model:'tts-1',input:'雨停了，故事才刚刚开始。',voice:'alloy',response_format:'wav'}},
+   {url:'/selected/v1/audio/speech',body:{model:'custom-narrator',input:'雨停了，故事才刚刚开始。',voice:'nova',response_format:'wav',speed:1.25,instructions:'平静地讲述'}},
+  ]);
+  const speechMedia=(await api(`/projects/${project.id}/media?kind=audio`,undefined,'GET')).items.filter(item=>item.name.startsWith('TTS-'));
+  assert.equal(speechMedia.length,2);
+  await page.screenshot({path:path.join(screenshots,'agent-tts.png'),fullPage:true});
+  await page.reload();await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
+  await page.locator('.agent-media-results audio').waitFor();
   assert.deepEqual(failures,[]);
-  console.log('PASS: Agent SVG creation/inline preview/modal/reload without image provider; migrated image thumbnail/preview; fixed session order after selection/reload; Agent tools, durable plans, limited/skipped states, Markdown/source links, credential hiding, editor refresh, cancellation and desktop/mobile/dark themes');
+  console.log('PASS: Only successful image/audio/video generation adds tool previews; media queries/tasks/exports/merges/frame extraction and ordinary links do not; Agent TTS default and selected channels/playback/persistence/reload; video modal; image fallback; migrated paths; SVG previews; session order, plans, cancellation and desktop/mobile/dark themes');
   console.log('Screenshots: '+screenshots);
  } finally {
   if(browser)await browser.close();
