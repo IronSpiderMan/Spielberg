@@ -1,7 +1,6 @@
 import { GenerationSelector } from "./components/generation/GenerationSelector";
 import { ImageModelFields, VideoModelFields } from "./components/generation/ModelGenerationFields";
 import { channelsFor, generationChoice, modelImageSize, modelRatio, selectionPayload, useGenerationSelection, validateGeneration } from "./generation-channels";
-import { GenerationChannelsSettings } from "./GenerationChannelsSettings";
 import { RoleAudioReferences } from "./components/RoleAudioReferences";
 import { ASSET_CATEGORIES, assetCategoryLabel, supportsAudioReferences, type AssetCategory } from "./asset-categories";
 import { PreviewVideo, VideoPreviewModal } from "./components/VideoPreviewModal";
@@ -14,7 +13,6 @@ import { ImagePreviewModal, PreviewImage } from "./components/ImagePreviewModal"
 import { usePromptOptimization } from "./hooks/usePromptOptimization";
 import { supportedPastedImages, useImageUpload } from "./hooks/useImageUpload";
 import { AssetImagePicker } from "./components/AssetImagePicker";
-import { SkillsSettings } from "./SkillsSettings";
 import { MediaSizeFields, VideoDurationField } from "./components/generation/GenerationFields";
 import React,{ lazy,useCallback,useEffect,useRef,useState } from "react";
 
@@ -35,11 +33,9 @@ Select,
 Space,
 Switch,
 Tag,
-Tabs,
-Typography
+Tabs
 } from "@arco-design/web-react";
 import { open,save as saveDialog } from "./platform";
-import { isLocalDesktop } from "./transport";
 import {
 ArrowDown,
 ArrowLeft,
@@ -2326,118 +2322,6 @@ export function Prompts({ data, reload }: { data: Snapshot; reload: () => void }
           </Form.Item>
         </Form>
       </Modal>
-    </section>
-  );
-}
-export function SettingsPage({
-  data,
-  reload,
-}: {
-  data: Snapshot;
-  reload: () => void;
-}) {
-  const [settings, setSettings] = useState<ModelSettings>({
-    ...data.settings,
-  });
-  const [dirty, setDirty] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [projectsDirectory, setProjectsDirectory] = useState("");
-  const [savedDirectory, setSavedDirectory] = useState<string | null>(null);
-  const [loadingDirectory, setLoadingDirectory] = useState(true);
-  const [savingDirectory, setSavingDirectory] = useState(false);
-  const directoryDirty = savedDirectory !== null && projectsDirectory !== savedDirectory;
-  useEditGuard(dirty || directoryDirty);
-  const loadDirectory = async () => {
-    setLoadingDirectory(true);
-    try {
-      const config = await post<{ projects_directory: string }>("/app/settings/load");
-      setProjectsDirectory(config.projects_directory);
-      setSavedDirectory(config.projects_directory);
-    } catch (e) { Message.error(String(e)); }
-    finally { setLoadingDirectory(false); }
-  };
-  useEffect(() => { void loadDirectory(); }, []);
-  const chooseDirectory = async () => {
-    try {
-      const selected = await open({ directory: true, multiple: false, title: "选择项目存储目录", defaultPath: projectsDirectory || undefined });
-      if (typeof selected === "string") setProjectsDirectory(selected);
-    } catch (e) { Message.error(String(e)); }
-  };
-  const saveDirectory = async () => {
-    if (savingDirectory || !directoryDirty) return;
-    if (!projectsDirectory.trim()) { Message.warning("请输入项目存储路径"); return; }
-    setSavingDirectory(true);
-    try {
-      const config = await post<{ projects_directory: string }>("/app/settings/save", { projects_directory: projectsDirectory.trim() });
-      setProjectsDirectory(config.projects_directory);
-      setSavedDirectory(config.projects_directory);
-      Message.success("项目存储路径已保存");
-    } catch (e) { Message.error(String(e)); }
-    finally { setSavingDirectory(false); }
-  };
-  useEffect(
-    () => {
-      if (dirty) return;
-      setSettings({
-        ...data.settings,
-      });
-    },
-    [data.settings, dirty],
-  );
-  const save = async () => {
-    if (saving) return;
-    setSaving(true);
-    try {
-      await post("/settings", { project_id: data.project.id, settings });
-      await reload(); setDirty(false); Message.success("接口配置已保存");
-    } finally { setSaving(false); }
-  };
-  return (
-    <section>
-      <div className="section-title page-actions">
-        <div className="page-intro"><h1>工作室设置</h1><p>管理项目存储位置、Skills 技能与创作服务配置。</p></div>
-        <Button
-          type="primary"
-          icon={<Save size={16} />}
-          loading={saving}
-          disabled={!dirty}
-          onClick={() => save().catch((e) => Message.error(String(e)))}
-        >
-          {dirty ? "保存配置" : "配置已保存"}
-        </Button>
-      </div>
-      <div className="setting-block">
-        <div className="setting-heading">
-          <h3>项目存储</h3>
-          <p>项目地址路径</p>
-        </div>
-        <Form layout="vertical" disabled={loadingDirectory || savingDirectory || savedDirectory === null}>
-          <Form.Item label="项目存储路径" extra={`新建项目和从备份恢复的项目会保存在此目录，每个项目使用独立子文件夹。修改后已有项目仍保留在原位置。${isLocalDesktop ? "" : "请填写后端服务器上的绝对路径。"}`}>
-            <div className="project-directory-input">
-              <Input value={projectsDirectory} onChange={setProjectsDirectory} placeholder="输入项目存储目录的完整路径" aria-label="项目存储路径" />
-              {isLocalDesktop && <Button onClick={() => void chooseDirectory()}>选择文件夹</Button>}
-            </div>
-          </Form.Item>
-          <Space>
-            <Button type="primary" loading={savingDirectory} disabled={!directoryDirty || loadingDirectory} onClick={() => void saveDirectory()}>保存项目路径</Button>
-            {savedDirectory === null && !loadingDirectory && <Button onClick={() => void loadDirectory()} disabled={false}>重新加载</Button>}
-          </Space>
-        </Form>
-      </div>
-      <SkillsSettings />
-      <GenerationChannelsSettings settings={settings} disabled={saving} onChange={next=>{setSettings(next);setDirty(true);}}/>
-      <Card className="connection-help" title="接口约定" bordered={false}>
-        <Typography.Paragraph style={{ margin: 0 }}>
-          图片配置共用一组 URL 与 API Key；OpenAI 模式会根据 Base URL 自动调用 <code>/images/generations</code>
-          （t2i）或 <code>/images/edits</code>
-          （i2i），并将画面比例映射为官方支持的尺寸。千问 Token Plan 使用专属视频接口，自动查询进度并下载入库；CAST 视频 Base URL 会按生成方式补全接口路径。LLM 统一渠道供分镜、Prompt 优化及 Agent 使用，按默认渠道和模型调用 OpenAI 兼容的{" "}
-          <code>/chat/completions</code>。CAST 图片接口也会按生成方式补全路径。{" "}
-          <code>
-            POST /v1/generations/{"{"}t2i | i2i | t2v | ref2v | fl2v{"}"}
-          </code>{" "}
-          格式。
-        </Typography.Paragraph>
-      </Card>
     </section>
   );
 }

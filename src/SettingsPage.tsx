@@ -1,0 +1,139 @@
+import { useEffect, useRef, useState } from "react";
+import { Button, Form, Input, Message, Space } from "@arco-design/web-react";
+import { Check, FolderOpen, Image, MessageSquare, Mic, Save, Sparkles, Video } from "lucide-react";
+import { type ModelSettings, type Snapshot, post } from "./core";
+import { useEditGuard } from "./edit-guard";
+import { type GenerationKind } from "./generation-channels";
+import { GenerationChannelsSettings } from "./GenerationChannelsSettings";
+import { SkillsSettings } from "./SkillsSettings";
+import { open } from "./platform";
+import { isLocalDesktop } from "./transport";
+import "./settings.css";
+
+const categories = [
+  { id: "llm", label: "文本与推理", icon: MessageSquare },
+  { id: "image", label: "图片生成", icon: Image },
+  { id: "video", label: "视频生成", icon: Video },
+  { id: "tts", label: "语音合成", icon: Mic },
+  { id: "skills", label: "Skills 技能", icon: Sparkles },
+  { id: "storage", label: "项目存储", icon: FolderOpen },
+] as const;
+type Category = typeof categories[number]["id"];
+const serviceKinds: GenerationKind[] = ["llm", "image", "video", "tts"];
+
+export default function SettingsPage({ data, reload }: { data: Snapshot; reload: () => void | Promise<void> }) {
+  const [category, setCategory] = useState<Category>("llm");
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const [skillsVisited, setSkillsVisited] = useState(false);
+  const [settings, setSettings] = useState<ModelSettings>({ ...data.settings });
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const [projectsDirectory, setProjectsDirectory] = useState("");
+  const [savedDirectory, setSavedDirectory] = useState<string | null>(null);
+  const [loadingDirectory, setLoadingDirectory] = useState(true);
+  const [savingDirectory, setSavingDirectory] = useState(false);
+  const directoryDirty = savedDirectory !== null && projectsDirectory !== savedDirectory;
+  useEditGuard(dirty || directoryDirty || saving || savingDirectory);
+
+  const loadDirectory = async () => {
+    setLoadingDirectory(true);
+    try {
+      const config = await post<{ projects_directory: string }>("/app/settings/load");
+      setProjectsDirectory(config.projects_directory);
+      setSavedDirectory(config.projects_directory);
+    } catch (error) { Message.error(String(error)); }
+    finally { setLoadingDirectory(false); }
+  };
+  useEffect(() => { void loadDirectory(); }, []);
+  useEffect(() => { if (!dirty) setSettings({ ...data.settings }); }, [data.settings, dirty]);
+  useEffect(() => {
+    const tabs = tabsRef.current;
+    if (!tabs) return;
+    const keepSelectedVisible = () => {
+      const selected = tabs.querySelector('[aria-selected="true"]');
+      if (!selected) return;
+      const bounds = tabs.getBoundingClientRect();
+      const item = selected.getBoundingClientRect();
+      if (item.left < bounds.left) tabs.scrollLeft += item.left - bounds.left;
+      else if (item.right > bounds.right) tabs.scrollLeft += item.right - bounds.right;
+    };
+    keepSelectedVisible();
+    const observer = new ResizeObserver(keepSelectedVisible);
+    observer.observe(tabs);
+    return () => observer.disconnect();
+  }, [category]);
+  const chooseDirectory = async () => {
+    try {
+      const selected = await open({ directory: true, multiple: false, title: "选择项目存储目录", defaultPath: projectsDirectory || undefined });
+      if (typeof selected === "string") setProjectsDirectory(selected);
+    } catch (error) { Message.error(String(error)); }
+  };
+  const saveDirectory = async () => {
+    if (savingDirectory || !directoryDirty) return;
+    if (!projectsDirectory.trim()) { Message.warning("请输入项目存储路径"); return; }
+    setSavingDirectory(true);
+    try {
+      const config = await post<{ projects_directory: string }>("/app/settings/save", { projects_directory: projectsDirectory.trim() });
+      setProjectsDirectory(config.projects_directory);
+      setSavedDirectory(config.projects_directory);
+      Message.success("项目存储路径已保存");
+    } catch (error) { Message.error(String(error)); }
+    finally { setSavingDirectory(false); }
+  };
+  const save = async () => {
+    if (savingRef.current || !dirty) return;
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await post("/settings", { project_id: data.project.id, settings });
+      await reload();
+      setDirty(false);
+      Message.success("接口配置已保存");
+    } catch (error) { Message.error(String(error)); }
+    finally { savingRef.current = false; setSaving(false); }
+  };
+  const selectCategory = (next: Category) => {
+    setCategory(next);
+    if (next === "skills") setSkillsVisited(true);
+  };
+  const changed = (kind: GenerationKind) => dirty && JSON.stringify(settings[kind]) !== JSON.stringify(data.settings[kind]);
+
+  return <section className="studio-settings-page">
+    <div className="section-title page-actions settings-page-heading">
+      <div className="page-intro"><h1>工作室设置</h1><p>管理 AI 创作服务与工作室偏好。</p></div>
+      <div className="settings-save-actions">
+        <span className="settings-save-state" data-dirty={dirty || directoryDirty} role="status">{dirty || directoryDirty ? <><i />有未保存的更改</> : <><Check size={14} />所有更改已保存</>}</span>
+        <Button type="primary" icon={<Save size={15} />} loading={saving} disabled={!dirty} onClick={() => void save()}>保存配置</Button>
+      </div>
+    </div>
+    <div ref={tabsRef} className="settings-category-tabs" role="tablist" aria-label="设置分类">
+      {categories.map(({ id, label, icon: Icon }, index) => {
+        const service = serviceKinds.includes(id as GenerationKind);
+        const pending = service ? changed(id as GenerationKind) : id === "storage" && directoryDirty;
+        return <button key={id} id={`settings-tab-${id}`} type="button" role="tab" aria-selected={category === id} aria-controls={`settings-panel-${id}`} tabIndex={category === id ? 0 : -1} onClick={() => selectCategory(id)} onKeyDown={event => {
+          const next = event.key === "ArrowRight" ? (index + 1) % categories.length : event.key === "ArrowLeft" ? (index + categories.length - 1) % categories.length : event.key === "Home" ? 0 : event.key === "End" ? categories.length - 1 : null;
+          if (next === null) return;
+          event.preventDefault();
+          selectCategory(categories[next].id);
+          document.getElementById(`settings-tab-${categories[next].id}`)?.focus();
+        }}><Icon size={16} /><span>{label}</span>{pending && <i className="settings-pending-dot" aria-label="有未保存修改" />}</button>;
+      })}
+    </div>
+    {serviceKinds.map(kind => <div key={kind} id={`settings-panel-${kind}`} role="tabpanel" aria-labelledby={`settings-tab-${kind}`} className="studio-settings-panel settings-service-panel" hidden={category !== kind}>
+      <GenerationChannelsSettings kind={kind} settings={settings} disabled={saving} onChange={next => { setSettings(next); setDirty(true); }} />
+    </div>)}
+    <div id="settings-panel-skills" role="tabpanel" aria-labelledby="settings-tab-skills" className="studio-settings-panel settings-shared-panel" hidden={category !== "skills"}>{skillsVisited && <SkillsSettings />}</div>
+    <div id="settings-panel-storage" role="tabpanel" aria-labelledby="settings-tab-storage" className="studio-settings-panel settings-shared-panel" hidden={category !== "storage"}>
+      <div className="setting-block settings-storage">
+        <div className="setting-heading"><div className="settings-panel-title"><h3>项目存储</h3><span className="settings-scope">工作室共享</span></div><p>设置新建和恢复项目的默认保存位置。</p></div>
+        <Form layout="vertical" disabled={loadingDirectory || savingDirectory || savedDirectory === null}>
+          <Form.Item label="项目存储路径" extra={`每个项目使用独立子文件夹。修改后，已有项目仍保留在原位置。${isLocalDesktop ? "" : "请填写后端服务器上的绝对路径。"}`}>
+            <div className="project-directory-input"><Input value={projectsDirectory} onChange={setProjectsDirectory} placeholder="输入项目存储目录的完整路径" aria-label="项目存储路径" />{isLocalDesktop && <Button onClick={() => void chooseDirectory()}>选择文件夹</Button>}</div>
+          </Form.Item>
+          <Space><Button type="primary" loading={savingDirectory} disabled={!directoryDirty || loadingDirectory} onClick={() => void saveDirectory()}>保存项目路径</Button>{directoryDirty && <span className="settings-directory-pending">路径有未保存修改</span>}{savedDirectory === null && !loadingDirectory && <Button onClick={() => void loadDirectory()} disabled={false}>重新加载</Button>}</Space>
+        </Form>
+      </div>
+    </div>
+  </section>;
+}

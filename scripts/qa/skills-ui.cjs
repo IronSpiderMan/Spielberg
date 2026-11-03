@@ -61,6 +61,7 @@ const { chromium } = require(playwrightPath);
     page.on('pageerror', error => failures.push(error.message));
     await page.goto(base);
     await page.getByRole('button', { name: '设置', exact: true }).click();
+    await page.getByRole('tab', { name: 'Skills 技能', exact: true }).click();
     const panel = page.getByTestId('skills-settings');
     await panel.waitFor();
     const singleInput = page.getByTestId('skills-file-input');
@@ -96,6 +97,7 @@ const { chromium } = require(playwrightPath);
     await until(list, values => values.find(item => item.id === installedFolder.id)?.enabled === false, 'disable Skill');
     await page.reload();
     await page.getByRole('button', { name: '设置', exact: true }).click();
+    await page.getByRole('tab', { name: 'Skills 技能', exact: true }).click();
     await page.getByTestId(`skill-toggle-${installedFolder.id}`).waitFor();
     assert.equal((await list()).find(item => item.id === installedFolder.id).enabled, false);
     // Reimport a full local folder while disabled, then a standalone file while enabled.
@@ -152,9 +154,11 @@ const { chromium } = require(playwrightPath);
       await page.screenshot({ path: path.join(screenshots, `width-${width}.png`), fullPage: true, animations: 'disabled' });
       if (width === 390) {
         await page.getByTestId(`skill-delete-${installedSingle.id}`).evaluate(element => element.scrollIntoView({ block: 'center' }));
-        const action = await page.getByTestId(`skill-delete-${installedSingle.id}`).boundingBox();
-        const nav = await page.locator('.side').boundingBox();
-        assert(action && nav && action.y + action.height < nav.y, 'Skill actions are hidden under mobile navigation');
+        assert(await page.getByTestId(`skill-delete-${installedSingle.id}`).evaluate(element => {
+          const bounds = element.getBoundingClientRect();
+          const top = document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+          return bounds.top >= 0 && bounds.bottom <= innerHeight && top && element.contains(top);
+        }), 'Skill actions must be visible and unobstructed on mobile');
       }
     }
     await page.setViewportSize({ width: 1440, height: 1000 });

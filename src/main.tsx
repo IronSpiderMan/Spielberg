@@ -74,7 +74,7 @@ const Episodes=lazy(()=>import("./workspace").then(m=>({default:m.Episodes})));
 const SceneEditor=lazy(()=>import("./workspace").then(m=>({default:m.SceneEditor})));
 const Roles=lazy(()=>import("./workspace").then(m=>({default:m.Roles})));
 const Prompts=lazy(()=>import("./workspace").then(m=>({default:m.Prompts})));
-const SettingsPage=lazy(()=>import("./workspace").then(m=>({default:m.SettingsPage})));
+const SettingsPage=lazy(()=>import("./SettingsPage"));
 
 function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("spielberg-sidebar-collapsed") === "true");
