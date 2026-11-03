@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Form, Trigger } from "@arco-design/web-react";
-import { Check, ChevronDown, ChevronRight, Film, Image, Layers, Mic } from "lucide-react";
+import { Bot, Check, ChevronDown, ChevronRight, Film, Image, Layers, Mic } from "lucide-react";
 import type { ModelSettings } from "../../core";
 import { channelsFor, generationChoice, modelFamily, selectableModels, MODEL_PROFILES, type GenerationKind, type GenerationSelection } from "../../generation-channels";
 import "../../generation-channels.css";
 
-const MODE_LABELS: Record<string, string> = { tts: "语音合成", t2i: "文生图", i2i: "图生图", t2v: "文生视频", fl2v: "首尾帧", ref2v: "参考生视频" };
+const MODE_LABELS: Record<string, string> = { chat: "对话", tts: "语音合成", t2i: "文生图", i2i: "图生图", t2v: "文生视频", fl2v: "首尾帧", ref2v: "参考生视频" };
 
-export function GenerationSelector({settings,kind,value,onChange,disabled,operation}: {settings:ModelSettings;kind:GenerationKind;value:GenerationSelection;onChange:(value:GenerationSelection)=>void;disabled?:boolean;operation?:string}) {
+export function GenerationSelector({settings,kind,value,onChange,disabled,operation,compact=false}: {settings:ModelSettings;kind:GenerationKind;value:GenerationSelection;onChange:(value:GenerationSelection)=>void;disabled?:boolean;operation?:string;compact?:boolean}) {
   const channels = channelsFor(settings,kind), choice = generationChoice(settings,kind,value,operation);
   const [open,setOpen] = useState(false), [browsing,setBrowsing] = useState<string>(), [filter,setFilter] = useState("");
   const trigger = useRef<HTMLButtonElement>(null);
@@ -24,11 +24,9 @@ export function GenerationSelector({settings,kind,value,onChange,disabled,operat
   const modesFor = (channelId: string, model: string) => generationChoice(settings,kind,{channel_id:channelId,model})?.capabilities.modes || [];
   const modes = [...new Set(channels.flatMap(c=>modelsFor(c.id).flatMap(m=>modesFor(c.id,m.id))))];
   const models = active ? modelsFor(active.id).filter(m=>!filter || modesFor(active.id,m.id).includes(filter)) : [];
-  const label = kind === "image" ? "图片" : kind === "tts" ? "TTS" : "视频", Icon = kind === "image" ? Image : kind === "tts" ? Mic : Film;
+  const label = kind === "llm" ? "Agent" : kind === "image" ? "图片" : kind === "tts" ? "TTS" : "视频", Icon = kind === "llm" ? Bot : kind === "image" ? Image : kind === "tts" ? Mic : Film;
   const close = () => {setOpen(false);trigger.current?.focus({preventScroll:true});};
-  return <div className="generation-channel-fields">
-    <Form.Item label="渠道 / 模型" layout="vertical">
-      <Trigger escToClose updateOnScroll trigger="click" position="bl" popupVisible={open && !disabled} onVisibleChange={visible=>{
+  const picker = <Trigger escToClose updateOnScroll trigger="click" position={compact ? "tr" : "bl"} popupVisible={open && !disabled} onVisibleChange={visible=>{
         setOpen(visible); if(visible){setBrowsing(choice?.channel.id || value.channel_id);setFilter("");}
       }} popup={()=> <div ref={menu} className={`generation-cascade generation-cascade-${kind}`} role="dialog" tabIndex={-1} aria-label={`${label}渠道与模型`} onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();close();}}}>
         {modes.length>1 && <div className="generation-model-filters" aria-label="按生成方式筛选">
@@ -58,7 +56,8 @@ export function GenerationSelector({settings,kind,value,onChange,disabled,operat
           <Icon size={17}/><span className="generation-picker-value"><strong>{choice ? selectableModels([choice.model])[0].name || choice.model.id : channels.length ? "选择渠道与模型" : "请先在设置中添加渠道"}</strong>{choice && <small>{choice.channel.name}</small>}</span><ChevronDown size={15}/>
         </button>
         </span>
-      </Trigger>
-    </Form.Item>
+      </Trigger>;
+  return <div className={`generation-channel-fields${compact ? " generation-channel-fields-compact" : ""}`}>
+    {compact ? picker : <Form.Item label="渠道 / 模型" layout="vertical">{picker}</Form.Item>}
   </div>;
 }

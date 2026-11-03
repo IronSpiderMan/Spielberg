@@ -109,10 +109,6 @@
 .agent-workspace .arco-switch { background: var(--agent-border); }
 .agent-workspace .arco-switch-checked { background: var(--agent-accent); }
 .agent-web-toggle .arco-switch { margin-left: 2px; }
-.agent-workspace .agent-model-button.arco-btn { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 45%; height: 32px; margin-left: auto; padding-inline: 9px; background: transparent; border-color: transparent; border-radius: 7px; color: var(--agent-muted); font-size: 11px; }
-.agent-model-button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.agent-model-button svg { flex-shrink: 0; }
-.agent-workspace .agent-model-button.arco-btn:hover { background: var(--agent-soft); color: var(--agent-text); }
 .agent-composer-actions > .arco-btn:last-child { flex-shrink: 0; height: 34px; min-width: 34px; padding-inline: 8px; border-radius: 10px; }
 .agent-workspace .agent-composer-actions > .arco-btn-primary:not(.arco-btn-disabled) { background: var(--agent-accent); border-color: var(--agent-accent); color: var(--ui-on-primary); box-shadow: 0 2px 4px #a14e3718; }
 .agent-workspace .agent-composer-actions > .arco-btn-primary:not(.arco-btn-disabled):hover { background: var(--agent-accent-hover); border-color: var(--agent-accent-hover); }
@@ -184,8 +180,6 @@
 .agent-mobile-history, .agent-history-backdrop { display: none; }
 .agent-workspace button:focus-visible { outline: 2px solid var(--agent-accent); outline-offset: 3px; }
 @media (min-width: 601px) { .agent-page .topbar { display: none; } }
-html[data-theme=dark] .agent-workspace .agent-model-button.arco-btn:not(.arco-btn-disabled) { background: transparent; border-color: transparent; color: var(--agent-muted); }
-html[data-theme=dark] .agent-workspace .agent-model-button.arco-btn:not(.arco-btn-disabled):hover { background: var(--agent-soft); border-color: transparent; color: var(--agent-text); }
 @media (max-width: 1100px) {
   .agent-layout { grid-template-columns: 210px minmax(0, 1fr); }
   .agent-history { padding-inline: 13px; }
@@ -236,7 +230,8 @@ html[data-theme=dark] .agent-workspace .agent-model-button.arco-btn:not(.arco-bt
   .agent-composer textarea { font-size: 13px; }
   .agent-composer-actions { gap: 6px; }
   .agent-web-toggle { gap: 5px; font-size: 10px; }
-  .agent-workspace .agent-model-button.arco-btn { max-width: 39%; gap: 5px; padding-inline: 5px; font-size: 10px; }
+  .agent-composer-actions .generation-picker-trigger { gap: 5px; padding-inline: 5px; }
+  .agent-composer-actions .generation-picker-trigger > svg:first-child { display: none; }
   .agent-composer-actions > .arco-btn:last-child { min-height: 40px; min-width: 40px; }
   .agent-starters-heading { margin-top: 21px; }
   .agent-starters { grid-template-columns: minmax(0, 1fr); gap: 8px; }

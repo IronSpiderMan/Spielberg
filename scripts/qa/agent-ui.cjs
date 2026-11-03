@@ -13,6 +13,7 @@ const tool = (name, args, id) => ({id,type:'function',function:{name,arguments:J
  const screenshots = path.join(temp, 'screenshots'); fs.mkdirSync(screenshots);
  let speechAudio;
  const speechRequests=[];
+ const modelSelections=[];
  const model = http.createServer(async (req,res) => {
   const chunks=[];for await(const chunk of req) chunks.push(chunk);
   const body=JSON.parse(Buffer.concat(chunks).toString());
@@ -26,6 +27,9 @@ const tool = (name, args, id) => ({id,type:'function',function:{name,arguments:J
   let message;
   if(body.tool_choice==='none') {
    message={role:'assistant',content:'本轮执行已暂停，已完成的操作已保留。'};
+  } else if(prompt.includes('渠道切换测试')) {
+   modelSelections.push({url:req.url,model:body.model,authorization:req.headers.authorization});
+   message={role:'assistant',content:`渠道切换测试完成：${body.model}`};
   } else if(prompt.includes('TTS 测试')) {
    assert(body.tools.find(item=>item.function.name==='app_action').function.parameters.properties.operation.enum.includes('generations/tts'));
    const selected=prompt.includes('指定');
@@ -188,7 +192,7 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
   await page.getByTestId('agent-plan').waitFor();
   await page.getByTestId('agent-settings').click();
   await page.getByRole('dialog').getByText('Agent 设置',{exact:true}).waitFor();
-  await page.getByRole('switch',{name:'沿用项目 LLM 配置',exact:true}).click();
+  await page.getByRole('switch',{name:'沿用统一渠道配置',exact:true}).click();
   assert.equal(await page.getByRole('dialog').locator('input[type=password]').first().inputValue(),'');
   await page.screenshot({path:path.join(screenshots,'settings.png'),fullPage:true});
   await page.keyboard.press('Escape');
@@ -287,8 +291,66 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
   await page.screenshot({path:path.join(screenshots,'agent-tts.png'),fullPage:true});
   await page.reload();await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
   await page.locator('.agent-media-results audio').waitFor();
+  // The composer uses the same channel/model cascade as image/video generation.
+  // Verify actual endpoint, model and credentials, without changing shared defaults.
+  const modelBase=`http://127.0.0.1:${model.address().port}`;
+  await api('/actions/settings',{project_id:project.id,settings:{llm:{default_channel_id:'llm-default',channels:[
+   {id:'llm-default',name:'默认渠道',provider:'openai',base_url:modelBase+'/default/v1',api_key:'default-model-key',models:[{id:'qa-default',name:'默认模型',profile:'openai-chat'}]},
+   {id:'llm-other',name:'备用渠道',provider:'deepseek',base_url:modelBase+'/other/v1',api_key:'selected-model-key',default_model_id:'qa-first',models:[
+    {id:'qa-first',name:'备用模型',profile:'deepseek-chat'},
+    {id:'qa-selected',name:'指定模型',profile:'deepseek-chat',base_url:modelBase+'/model/v1'},
+   ]},
+  ]}}});
+  await page.reload();await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
+  const picker=page.getByRole('button',{name:'Agent渠道与模型',exact:true});
+  const cascade=page.getByRole('dialog',{name:'Agent渠道与模型',exact:true});
+  await picker.getByText('默认模型',{exact:true}).waitFor();
+  for(const width of [1440,390,320]) {
+   await page.setViewportSize({width,height:900});
+   await picker.click();await cascade.waitFor();
+   await cascade.getByRole('button',{name:'备用渠道',exact:true}).click();
+   await cascade.getByText('指定模型',{exact:true}).waitFor();
+   await page.screenshot({path:path.join(screenshots,`model-cascade-${width}.png`),fullPage:true,animations:'disabled'});
+   const bounds=await cascade.boundingBox();assert(bounds && bounds.x>=0 && bounds.x+bounds.width<=width+1 && bounds.y>=0 && bounds.y+bounds.height<=901,`model picker outside viewport at ${width}`);
+   assert(await picker.evaluate(button=>{const rect=button.getBoundingClientRect();return rect.x>=0 && rect.right<=innerWidth;}));
+   assert.equal(await page.locator('.agent-settings-modal:visible').count(),0);
+   await cascade.press('Escape');await cascade.waitFor({state:'hidden'});
+   assert(await picker.evaluate(button=>button===document.activeElement));
+  }
+  await page.setViewportSize({width:1440,height:1000});
+  const pickModel=async(channel,name)=>{
+   await picker.click();await cascade.getByRole('button',{name:channel,exact:true}).click();
+   await cascade.getByRole('button').filter({has:page.getByText(name,{exact:true})}).click();
+   await cascade.waitFor({state:'hidden'});await picker.getByText(name,{exact:true}).waitFor();
+  };
+  const runSelection=async(model)=>{
+   await page.getByTestId('agent-new-session').click();
+   await page.getByTestId('agent-composer').fill('渠道切换测试');
+   await page.getByTestId('agent-send').click();
+   await page.getByText(`渠道切换测试完成：${model}`,{exact:true}).waitFor();
+   assert.equal(await picker.isDisabled(),false);
+  };
+  await pickModel('备用渠道','指定模型');
+  await page.getByTestId('agent-settings').click();
+  await page.getByLabel('模型请求等待时间（秒）',{exact:true}).fill('120');
+  await page.getByRole('button',{name:'保存设置',exact:true}).click();
+  await picker.getByText('指定模型',{exact:true}).waitFor();
+  await runSelection('qa-selected');
+  assert.equal((await api('/actions/agent/config',{project_id:project.id})).model,'qa-default');
+  await pickModel('默认渠道','默认模型');await runSelection('qa-default');
+  await api('/actions/agent/config/save',{project_id:project.id,config:{inherit_llm:false,base_url:modelBase+'/independent/v1',model:'qa-own',api_key:'own-model-key'}});
+  await page.reload();await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
+  await picker.getByText('Agent 独立配置',{exact:true}).waitFor();
+  await pickModel('备用渠道','备用模型');await runSelection('qa-first');
+  await pickModel('Agent 独立配置','qa-own');await runSelection('qa-own');
+  assert.deepEqual(modelSelections,[
+   {url:'/model/v1/chat/completions',model:'qa-selected',authorization:'Bearer selected-model-key'},
+   {url:'/default/v1/chat/completions',model:'qa-default',authorization:'Bearer default-model-key'},
+   {url:'/other/v1/chat/completions',model:'qa-first',authorization:'Bearer selected-model-key'},
+   {url:'/independent/v1/chat/completions',model:'qa-own',authorization:'Bearer own-model-key'},
+  ]);
   assert.deepEqual(failures,[]);
-  console.log('PASS: Only successful image/audio/video generation adds tool previews; media queries/tasks/exports/merges/frame extraction and ordinary links do not; Agent TTS default and selected channels/playback/persistence/reload; video modal; image fallback; migrated paths; SVG previews; session order, plans, cancellation and desktop/mobile/dark themes');
+  console.log('PASS: Agent channel/model cascade and real request routing, shared defaults, independent config, keyboard dismissal and mobile bounds; generation previews; TTS playback/persistence; SVG; session order, plans, cancellation and desktop/mobile/dark themes');
   console.log('Screenshots: '+screenshots);
  } finally {
   if(browser)await browser.close();

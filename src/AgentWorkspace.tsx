@@ -3,7 +3,7 @@ import { ArrowUp, ArrowUpRight, Clapperboard, Folder, PencilLine, Search, Bot, C
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { imageUrl, post, type Media, type Snapshot } from "./core";
+import { imageUrl, post, type Media, type ModelSettings, type Snapshot } from "./core";
 import "./agent.css";
 import { uploadMedia } from "./api";
 import { localId } from "./id";
@@ -12,6 +12,8 @@ import { VideoPreviewModal } from "./components/VideoPreviewModal";
 import { AgentMediaPreview } from "./components/AgentMediaPreview";
 import { toolMedia, conversationImages, attachmentImage, mediaFromUrl } from "./agentImages";
 import { backendUrl } from "./transport";
+import { GenerationSelector } from "./components/generation/GenerationSelector";
+import { channelsFor, selectionPayload, useGenerationSelection } from "./generation-channels";
 
 type AgentMessage = { role: "user" | "assistant" | "tool"; content: string; images?: string[]; image_media_ids?: number[]; tool_name?: string; tool_call_id?: string; arguments?: unknown; status?: string; tool_calls?: unknown[] };
 type ConversationContext = { total_turns: number; recent_turns: number; summarized_turns: number; total_images: number; retained_images: number };
@@ -20,6 +22,7 @@ type Execution = { phase?: string; tool_calls?: number; max_steps?: number; retr
 type Session = { id: string; title: string; status: string; messages: AgentMessage[]; error?: string; updated_at: string; context?: ConversationContext; execution?: Execution };
 type Config = { inherit_llm: boolean; base_url: string; model: string; has_api_key: boolean; search_provider: string; has_search_api_key: boolean; max_steps: number; request_timeout_seconds: number };
 const initialConfig: Config = { inherit_llm: true, base_url: "", model: "", has_api_key: false, search_provider: "duckduckgo", has_search_api_key: false, max_steps: 16, request_timeout_seconds: 600 };
+const INDEPENDENT_CHANNEL = "__agent_independent__";
 const statusText: Record<string, string> = { idle: "准备就绪", running: "执行中", completed: "本轮结束", limited: "已暂停，可继续", failed: "执行失败", cancelled: "已停止" };
 const toolText: Record<string, string> = { update_plan: "更新任务计划", get_project: "读取项目", search_conversation: "检索对话记录", list_skills: "查找技能", read_skill: "读取技能", app_describe: "查看操作说明", app_request: "操作项目数据", app_action: "执行创作操作", web_search: "联网搜索", fetch_webpage: "读取网页" };
 const toolTargetText: Record<string, string> = {
@@ -63,6 +66,17 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   const [creating, setCreating] = useState(false);
   const [online, setOnline] = useState(true);
   const [config, setConfig] = useState<Config>(initialConfig);
+  const modelSettings = useMemo<ModelSettings>(() => {
+    if (config.inherit_llm || !config.base_url.trim() || !config.model.trim()) return data.settings;
+    // Offer the existing independent Agent service alongside the shared channels.
+    // Its credentials stay in the backend; choosing it uses the saved Agent config.
+    return { ...data.settings, llm: { ...data.settings.llm, default_channel_id: INDEPENDENT_CHANNEL, channels: [
+      { id: INDEPENDENT_CHANNEL, name: "Agent 独立配置", provider: "openai", base_url: config.base_url, api_key: "", default_model_id: config.model, models: [{ id: config.model, name: config.model, profile: "openai-chat" }] },
+      ...channelsFor(data.settings, "llm"),
+    ] } };
+  }, [data.settings, config.inherit_llm, config.base_url, config.model]);
+  const modelSelection = useGenerationSelection(modelSettings, "llm", "chat");
+  useEffect(() => modelSelection.setValue({}), [pid]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [form, setForm] = useState<Config>(initialConfig);
   const [apiKey, setApiKey] = useState("");
@@ -102,7 +116,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   };
   const running = selected?.status === "running";
   const execution = selected?.execution;
-  const configured = !!(config.base_url.trim() && config.model.trim());
+  const configured = !!modelSelection.choice;
   const anyRunning = sessions.some(item => item.status === "running");
   const updateDraft = (text: string) => setDrafts(items => ({ ...items, [draftKey]: text }));
   const call = useCallback(<T,>(action: string, payload: object = {}) => post<T>(`/agent/${action}`, { project_id: pid, ...payload }), [pid]);
@@ -181,11 +195,12 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   };
   const send = async () => {
     const text = draft.trim(); if ((!text && !images.length) || readingImages || pasting.current || busy.current || running || loading || creating) return;
-    if (!configured) { openSettings(); return; }
+    if (!configured) { if (channelsFor(modelSettings, "llm").length) Message.warning("请选择渠道与模型"); else openSettings(); return; }
     busy.current = true; setSending(true); setError(""); const version = ++selectionVersion.current; const key = draftKey;
     try {
       const session = selectedRef.current || await call<Session>("create");
-      const result = await call<Session>("run", { session_id: session.id, message: text, images: images.map(image => image.url), image_media_ids: images.map(image => image.mediaId), web_enabled: online });
+      const model = modelSelection.choice?.channel.id === INDEPENDENT_CHANNEL ? {} : selectionPayload(modelSelection.choice);
+      const result = await call<Session>("run", { session_id: session.id, message: text, images: images.map(image => image.url), image_media_ids: images.map(image => image.mediaId), web_enabled: online, ...model });
       if (!mounted.current) return;
       setImageDrafts(items => ({ ...items, [key]: [] }));
       setDrafts(items => ({ ...items, [key]: items[key] === text || items[key]?.trim() === text ? "" : items[key] }));
@@ -208,7 +223,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
     if (saving) return;
     if (!form.inherit_llm && (!form.base_url.trim() || !form.model.trim())) { Message.warning("请填写 Base URL 和模型名称"); return; }
     setSaving(true);
-    try { const saved = await call<Config>("config/save", { config: { ...form, api_key: apiKey, search_api_key: searchKey } }); if (mounted.current) { setConfig(saved); setSettingsOpen(false); setApiKey(""); setSearchKey(""); Message.success("Agent 设置已保存"); } }
+    try { const saved = await call<Config>("config/save", { config: { ...form, api_key: apiKey, search_api_key: searchKey } }); if (mounted.current) { if (saved.inherit_llm !== config.inherit_llm || saved.base_url !== config.base_url || saved.model !== config.model) modelSelection.setValue({}); setConfig(saved); setSettingsOpen(false); setApiKey(""); setSearchKey(""); Message.success("Agent 设置已保存"); } }
     catch (e) { Message.error(String(e)); } finally { if (mounted.current) setSaving(false); }
   };
 
@@ -269,7 +284,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
             <div className="agent-composer-context"><Folder size={12} /><span>{data.project.name}</span><span className="agent-context-label">项目上下文</span></div>
             {!!images.length && <div className="agent-image-previews">{images.map((image, i) => <div key={i}><img src={image.url} alt={`待发送图片 ${i + 1}（已加入素材）`} /><button type="button" aria-label={`移除图片 ${i + 1}`} disabled={sending} onClick={() => setImageDrafts(items => ({ ...items, [draftKey]: images.filter((_, index) => index !== i) }))}><X size={14} /></button></div>)}</div>}
             <textarea ref={composer} data-testid="agent-composer" aria-label="向 Agent 发送消息" value={draft} maxLength={16000} disabled={loading || sending || creating} placeholder="写下一个灵感，或粘贴图片告诉我你想完成什么…" onPaste={event => { if (readingImages) return; const files = Array.from(event.clipboardData.items).filter(item => item.type.startsWith("image/")).map(item => item.getAsFile()).filter((file): file is File => !!file); if (files.length) { event.preventDefault(); void pasteImages(files); } }} onChange={event => updateDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} />
-            <div className="agent-composer-actions"><label className={`agent-web-toggle${online ? " is-online" : ""}`}><Globe size={14} /><span>联网搜索</span><Switch size="small" checked={online} onChange={setOnline} disabled={running || sending} aria-label="联网搜索" /></label><Button className="agent-model-button" title={config.model || "配置模型"} onClick={openSettings}><span>{config.model || "配置模型"}</span><ChevronDown size={13} /></Button>{running ? <Button data-testid="agent-stop" aria-label="停止执行" status="danger" icon={<Square size={14} />} loading={stopping} onClick={() => void stop()}>停止</Button> : <Button type="primary" data-testid="agent-send" aria-label="发送消息" icon={<ArrowUp size={19} />} loading={sending} disabled={(!draft.trim() && !images.length) || readingImages || loading || creating} onClick={() => void send()} />}</div>
+            <div className="agent-composer-actions"><label className={`agent-web-toggle${online ? " is-online" : ""}`}><Globe size={14} /><span>联网搜索</span><Switch size="small" checked={online} onChange={setOnline} disabled={running || sending} aria-label="联网搜索" /></label><GenerationSelector compact settings={modelSettings} kind="llm" operation="chat" value={modelSelection.value} onChange={modelSelection.setValue} disabled={loading || running || sending || creating || saving} />{running ? <Button data-testid="agent-stop" aria-label="停止执行" status="danger" icon={<Square size={14} />} loading={stopping} onClick={() => void stop()}>停止</Button> : <Button type="primary" data-testid="agent-send" aria-label="发送消息" icon={<ArrowUp size={19} />} loading={sending} disabled={(!draft.trim() && !images.length) || readingImages || loading || creating} onClick={() => void send()} />}</div>
           </div>
           {empty && <>
             <div className="agent-starters-heading">也可以从这里开始</div>

@@ -55,10 +55,12 @@ fn install(c:&Connection)->Result<(),String>{
  Ok(())
 }
 fn setting(c:&Connection,key:&str)->Result<Value,String>{let raw=c.query_row("SELECT value FROM settings WHERE key=?",[key],|r|r.get::<_,String>(0)).optional().map_err(|e|e.to_string())?;Ok(raw.and_then(|x|serde_json::from_str(&x).ok()).unwrap_or_else(||json!({})))}
-fn config(c:&Connection)->Result<Value,String>{
+fn config(c:&Connection)->Result<Value,String>{config_with_selection(c,&json!({}))}
+fn config_with_selection(c:&Connection,selection:&Value)->Result<Value,String>{
  let saved=setting(c,"agent")?;let mut result=json!({"inherit_llm":true,"base_url":"","model":"","api_key":"","search_provider":"duckduckgo","search_api_key":"","max_steps":16,"request_timeout_seconds":600});
  for key in ["inherit_llm","base_url","model","api_key","search_provider","search_api_key","max_steps","request_timeout_seconds"]{if let Some(v)=saved.get(key){result[key]=v.clone();}}
- if result["inherit_llm"].as_bool().unwrap_or(true){let models=setting(c,"models")?;let selected=generation_channels::llm_config(&models)?;let llm=&selected;result["provider"]=llm["provider"].clone();result["base_url"]=json!(llm["base_url"].as_str().filter(|s|!s.trim().is_empty()).or_else(||llm["url"].as_str()).unwrap_or(""));result["model"]=json!(llm["model"].as_str().unwrap_or(""));result["api_key"]=json!(llm["api_key"].as_str().unwrap_or(""));}
+ let explicit=["channel_id","model"].iter().any(|key|selection.get(key).is_some_and(|v|!v.is_null()));
+ if explicit||result["inherit_llm"].as_bool().unwrap_or(true){let models=setting(c,"models")?;let selected=if explicit{generation_channels::resolve(&models,selection,"llm","chat")?}else{generation_channels::llm_config(&models)?};let llm=&selected;result["provider"]=llm["provider"].clone();result["base_url"]=json!(llm["base_url"].as_str().filter(|s|!s.trim().is_empty()).or_else(||llm["url"].as_str()).unwrap_or(""));result["model"]=json!(llm["model"].as_str().unwrap_or(""));result["api_key"]=json!(llm["api_key"].as_str().unwrap_or(""));}
  Ok(result)
 }
 fn public_config(c:&Connection)->Result<Value,String>{let mut cfg=config(c)?;for (key,flag) in [("api_key","has_api_key"),("search_api_key","has_search_api_key")]{cfg[flag]=json!(!cfg[key].as_str().unwrap_or("").is_empty());cfg.as_object_mut().unwrap().remove(key);}cfg.as_object_mut().unwrap().remove("provider");Ok(cfg)}
@@ -104,7 +106,7 @@ pub(super) fn command(s:&AppState,path:&str,v:&Value)->Result<Value,String>{
   "/agent/session"=>read_session(&c,&strv(v,"session_id")?),
   "/agent/delete"=>{let id=strv(v,"session_id")?;read_session(&c,&id)?;if runs().lock().map_err(|_|"Agent 运行锁不可用")?.contains_key(&run_key(s,&pid,&id)){return Err("Agent 仍在执行或停止中，请稍后删除会话".into())}c.execute("DELETE FROM agent_sessions WHERE id=?",[id]).map_err(|e|e.to_string())?;Ok(json!({"ok":true}))},
   "/agent/cancel"=>{let id=strv(v,"session_id")?;let mut session=read_session(&c,&id)?;if let Some(flag)=runs().lock().map_err(|_|"Agent 运行锁不可用")?.get(&run_key(s,&pid,&id)){flag.store(true,Ordering::SeqCst);}if session["status"]=="running"{session["status"]=json!("cancelled");session["execution"]["phase"]=json!("cancelled");session["error"]=json!("执行已取消，已完成的操作已保留。");close_pending(&mut session,"用户已取消执行");save_session(&c,&mut session)?;}Ok(session)},
-  "/agent/run"=>{let id=strv(v,"session_id")?;let message=strv(v,"message")?;let images=input_images(v)?;let image_media_ids=input_image_media_ids(&c,v,images.len())?;if message.trim().is_empty()&&images.is_empty(){return Err("请输入消息或粘贴图片".into())}if message.chars().count()>16_000{return Err("消息过长，请限制在 16000 字以内".into())}let mut session=read_session(&c,&id)?;if session["messages"].as_array().unwrap().len()>MAX_MESSAGES-100||session["messages"].to_string().len()+images.iter().map(String::len).sum::<usize>()+message.len()>MAX_SESSION-100_000{return Err("此会话记录已达上限，请创建新对话".into())}let cfg=config(&c)?;endpoint(&cfg)?;let mut secrets=Vec::new();collect_secrets(&setting(&c,"models")?,&mut secrets);collect_secrets(&cfg,&mut secrets);let key=run_key(s,&pid,&id);let flag=Arc::new(AtomicBool::new(false));{let mut all=runs().lock().map_err(|_|"Agent 运行锁不可用")?;if all.contains_key(&key){return Err("此 Agent 会话仍在执行或停止中".into())}if all.len()>=8{return Err("Agent 并发会话已达上限，请稍后重试".into())}all.insert(key.clone(),flag.clone());}
+  "/agent/run"=>{let id=strv(v,"session_id")?;let message=strv(v,"message")?;let images=input_images(v)?;let image_media_ids=input_image_media_ids(&c,v,images.len())?;if message.trim().is_empty()&&images.is_empty(){return Err("请输入消息或粘贴图片".into())}if message.chars().count()>16_000{return Err("消息过长，请限制在 16000 字以内".into())}let mut session=read_session(&c,&id)?;if session["messages"].as_array().unwrap().len()>MAX_MESSAGES-100||session["messages"].to_string().len()+images.iter().map(String::len).sum::<usize>()+message.len()>MAX_SESSION-100_000{return Err("此会话记录已达上限，请创建新对话".into())}let cfg=config_with_selection(&c,v)?;endpoint(&cfg)?;let mut secrets=Vec::new();collect_secrets(&setting(&c,"models")?,&mut secrets);collect_secrets(&cfg,&mut secrets);let key=run_key(s,&pid,&id);let flag=Arc::new(AtomicBool::new(false));{let mut all=runs().lock().map_err(|_|"Agent 运行锁不可用")?;if all.contains_key(&key){return Err("此 Agent 会话仍在执行或停止中".into())}if all.len()>=8{return Err("Agent 并发会话已达上限，请稍后重试".into())}all.insert(key.clone(),flag.clone());}
    if session["title"]=="新对话"{session["title"]=json!(clipped(if message.trim().is_empty(){"图片创作"}else{message.trim()},40));}session["status"]=json!("running");session["error"]=Value::Null;execution::start(&mut session,cfg["max_steps"].as_u64().unwrap_or(16).clamp(1,64)as usize);session["messages"].as_array_mut().unwrap().push(json!({"role":"user","content":message.trim(),"images":images,"image_media_ids":image_media_ids,"created_at":now()}));if let Err(e)=save_session(&c,&mut session){runs().lock().unwrap().remove(&key);return Err(e)}session["context"]=conversation_context::metadata(&session);let state=s.clone();let saved=session.clone();let web=v["web_enabled"].as_bool().unwrap_or(false);
    if std::thread::Builder::new().name("spielberg-agent".into()).spawn(move||{let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||run_loop(&state,&pid,saved.clone(),&cfg,web,&flag,&secrets)));let error=match result{Ok(Ok(()))=>None,Ok(Err(e))=>Some(e),Err(_)=>Some("Agent 执行意外中断，请重试。已完成的操作已保留。".into())};finish(&state,&pid,&saved["id"].as_str().unwrap_or(""),&flag,error.as_deref(),&secrets);if let Ok(mut all)=runs().lock(){all.remove(&key);}}).is_err(){runs().lock().unwrap().remove(&run_key(s,&project_id(v)?,&id));session["status"]=json!("failed");session["error"]=json!("无法启动 Agent 后台任务");save_session(&c,&mut session)?;return Err("无法启动 Agent 后台任务".into())}Ok(session)
   },_=>Err("未知 Agent 操作".into())
@@ -265,6 +267,27 @@ mod tests{
   save_settings(&f.state,&json!({"project_id":f.pid,"settings":{"llm":{"channels":[],"default_channel_id":""}}})).unwrap();
   save_config(&c,&json!({"config":{"inherit_llm":true}})).unwrap();
   let empty=config(&c).unwrap();assert_eq!(empty["api_key"],"");assert!(endpoint(&empty).is_err());
+ }
+ #[test]
+ fn agent_selection_routes_to_channel_and_model_without_changing_defaults() {
+  let f=Fixture::new();let c=db(&f.state,&f.pid).unwrap();
+  let settings=json!({"llm":{"default_channel_id":"default","channels":[
+   {"id":"default","name":"Default","provider":"openai","base_url":"https://default.example/v1","api_key":"default-key","models":[{"id":"default-model","profile":"openai-chat"}]},
+   {"id":"other","name":"Other","provider":"deepseek","base_url":"https://other.example/v1","api_key":"other-key","default_model_id":"first","models":[{"id":"first","profile":"deepseek-chat"},{"id":"second","profile":"deepseek-chat","base_url":"https://second.example/v1"}]}
+  ]}});
+  save_settings(&f.state,&json!({"project_id":f.pid,"settings":settings})).unwrap();
+  save_config(&c,&json!({"config":{"search_provider":"brave","search_api_key":"search-key","max_steps":7,"request_timeout_seconds":90}})).unwrap();
+  let selected=config_with_selection(&c,&json!({"channel_id":"other","model":"second"})).unwrap();
+  assert_eq!(endpoint(&selected).unwrap(),"https://second.example/v1/chat/completions");
+  assert_eq!(selected["provider"],"deepseek");assert_eq!(selected["api_key"],"other-key");assert_eq!(selected["model"],"second");
+  assert_eq!(selected["search_api_key"],"search-key");assert_eq!(selected["max_steps"],7);assert_eq!(selected["request_timeout_seconds"],90);
+  assert_eq!(config(&c).unwrap()["model"],"default-model");assert_eq!(setting(&c,"models").unwrap(),settings);
+  for invalid in [json!({"channel_id":"missing","model":"second"}),json!({"channel_id":"default","model":"second"}),json!({"channel_id":42}),json!({"channel_id":"other","model":42})] {
+   assert!(config_with_selection(&c,&invalid).is_err());
+  }
+  save_config(&c,&json!({"config":{"inherit_llm":false,"base_url":"https://own.example/v1","model":"own","api_key":"own-key"}})).unwrap();
+  assert_eq!(config_with_selection(&c,&json!({"channel_id":"other","model":"second"})).unwrap()["api_key"],"other-key");
+  let independent=config(&c).unwrap();assert_eq!(independent["model"],"own");assert_eq!(independent["api_key"],"own-key");
  }
  #[test]
  fn session_order_is_fixed_by_creation_even_after_activity_and_reload(){
