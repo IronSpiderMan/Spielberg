@@ -3,8 +3,8 @@ import catalog from "./generation-models.json";
 import { GENERATION_SIZES } from "./generation-sizes";
 import type { ModelSettings } from "./core";
 
-export type GenerationKind = "image" | "video" | "tts";
-export type ChannelProvider = "openai" | "cast" | "qianwen-token-plan";
+export type GenerationKind = "image" | "video" | "tts" | "llm";
+export type ChannelProvider = "openai" | "cast" | "qianwen-token-plan" | "deepseek";
 export type GenerationModel = { id: string; name: string; profile: string; base_url?: string; send_model?: boolean };
 export type GenerationChannel = { id: string; name: string; provider: ChannelProvider; base_url: string; api_key: string; models: GenerationModel[]; default_model_id?: string; resolution?: string; operation_urls?: Record<string,string>; operation_api_keys?: Record<string,string> };
 export type GenerationSelection = { channel_id?: string; model?: string };
@@ -15,10 +15,19 @@ export type GenerationChoice = { channel: GenerationChannel; model: GenerationMo
 export const profilesFor = (kind: GenerationKind, provider: ChannelProvider) => Object.entries(MODEL_PROFILES).filter(([,p]) => p.kind === kind && p.providers.includes(provider));
 export const presetsFor = (kind: GenerationKind, provider: ChannelProvider) => MODEL_PRESETS.filter(m => profilesFor(kind,provider).some(([id]) => id === m.profile));
 
+export const channelBaseUrl = (kind: GenerationKind, provider: ChannelProvider) => provider === "deepseek" ? "https://api.deepseek.com" : provider === "qianwen-token-plan" ? `https://token-plan.maas.qianwenaiapi.com${kind === "llm" ? "/compatible-mode/v1" : ""}` : provider === "openai" ? "https://api.openai.com/v1" : "";
+
 // Older projects are presented as one channel until settings are next saved.
 export function channelsFor(settings: ModelSettings, kind: GenerationKind): GenerationChannel[] {
   if (settings[kind]?.channels) return settings[kind].channels!;
   if (kind === "tts") return [];
+  if (kind === "llm") {
+    const config = settings.llm;
+    if (!config || !(config.base_url || config.url || config.model || config.api_key)) return [];
+    const provider = config.provider === "deepseek" || config.provider === "qianwen-token-plan" ? config.provider : "openai";
+    const id = config.model || presetsFor(kind, provider)[0].id;
+    return [{id:"legacy-llm",name:"原 LLM 渠道",provider,base_url:config.base_url || config.url || channelBaseUrl(kind,provider),api_key:config.api_key || "",models:[{id,name:id,profile:profilesFor(kind,provider)[0][0]}],default_model_id:id}];
+  }
   const operations = kind === "image" ? ["t2i","i2i"] : ["t2v","i2v","ref2v","fl2v"];
   const legacy = operations.map(op => settings[op]).find(c => c?.url);
   const shared = settings[kind];

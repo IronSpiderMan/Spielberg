@@ -73,6 +73,9 @@ pub(super) async fn completion(
     }
     let finalizing = tools.as_array().is_some_and(Vec::is_empty);
     let mut body = json!({"model":cfg["model"],"messages":messages,"tool_choice":if finalizing {"none"} else {"auto"}});
+    // DeepSeek requires complete reasoning_content round-tripping in thinking mode.
+    // The Agent stores bounded public messages, so use ordinary tool calling.
+    if cfg["provider"] == "deepseek" { body["thinking"] = json!({"type":"disabled"}); }
     if !finalizing { body["tools"] = tools.clone(); body["parallel_tool_calls"] = json!(false); }
     if body.to_string().len() > MAX_SESSION + 100_000 {
         return Err("本次执行上下文已达上限。请创建新对话，或拆分任务后继续。".into());

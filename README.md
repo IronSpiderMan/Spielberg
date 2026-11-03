@@ -78,6 +78,8 @@ VITE_API_BASE_URL=https://api.example.com npm run build
 
 「工作室设置」可分别管理多个图片、视频和 TTS 渠道。每个渠道有独立名称、接口地址、API Key、模型列表和默认模型；也可设置默认渠道。旧项目的单组配置会兼容转换为「原图片渠道」「原视频渠道」，保留原地址、Key 和不同生成方式的旧接口。
 
+- 统一渠道配置：LLM 支持 OpenAI、DeepSeek 和 Qwen Token Plan，可添加多个渠道及预设/自定义模型，分别设置默认渠道与默认模型。分镜生成、Prompt 优化及沿用项目配置的 Agent 共用默认选择；旧版 LLM 地址、密钥和模型自动兼容为「原 LLM 渠道」。切换渠道类型会重置该渠道的地址、密钥和模型，保存后生效。
+- LLM 接口使用 [OpenAI Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)；[DeepSeek](https://api-docs.deepseek.com/) 默认地址为 `https://api.deepseek.com`；[Qwen Token Plan](https://platform.qianwenai.com/docs/token-plan/overview) 使用专属 Key 和 `https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1`。可修改地址接入兼容代理；模型的视觉输入和工具调用能力以实际服务为准。DeepSeek 渠道的 Agent 使用普通模式，以兼容连续工具调用。
 - 图片渠道：OpenAI 兼容图片接口、千问 Token Plan；已有 CAST 图片配置继续兼容。OpenAI 可添加自定义模型 ID 与名称；千问预设包含 `qwen-image-3.0-pro`、`wan2.7-image` 和 `wan2.7-image-pro`。
 - 视频渠道：RunningHub / ComfyUI 兼容接口、千问 Token Plan。千问预设包含 `wan3.0-video`、`happyhorse-1.1-t2v`、`happyhorse-1.1-i2v` 和 `happyhorse-1.1-r2v`，每个 ID 是独立可选模型。
 - TTS 渠道：OpenAI 兼容语音接口、QwenTokenPlan（千问 Token Plan）。OpenAI 预设 `gpt-4o-mini-tts`、`tts-1`、`tts-1-hd`，支持自定义模型；千问预设 `qwen-audio-3.0-tts-plus`。在工作台「语音合成」输入文本，选择渠道、模型、音色 ID 和 MP3/WAV 格式；OpenAI 可设置语速，GPT-4o mini TTS 可设置风格指令。生成音频自动保存到素材库，可试听、用于资产音频参考和剪辑，任务及失败原因显示在后台任务中。默认音色分别为 `alloy`、`longanhuan_v3.6`，千问固定使用 24000 Hz。当前单次文本上限为 4096 字符。
@@ -212,7 +214,7 @@ PLAYWRIGHT_PATH=/path/to/playwright node scripts/qa-screenplay-layout.cjs
 
 打开项目，在侧栏选择「Agent 助手」，即可用自然语言安排创作工作，例如「根据这段故事创建剧本、角色和第一集场景」或「搜索雨夜车站的摄影参考，再整理成 Prompt」。Agent 会读取当前项目、调用业务工具并继续处理结果，界面显示每一步的参数和执行结果。
 
-- 默认复用「设置」中的 LLM（分镜与 Prompt）配置。也可以在 Agent 配置中填写独立的 Base URL、模型名称和 API Key。模型服务须支持 OpenAI Chat Completions 的函数工具调用。
+- 默认复用「工作室设置 → 统一渠道配置」中的默认渠道与模型。也可以在 Agent 配置中填写独立的 Base URL、模型名称和 API Key。模型服务须支持 OpenAI Chat Completions 的函数工具调用。
 - 支持当前项目的剧本、六类创作资产、图片/视频/音频素材、Prompt、剧集和场景增删改查，以及资产类别和启用状态管理、按类别/启用状态/名称查询、资产图片及命名音频参考关联、脚本发布、画布、分镜规划、图片与视频生成、TTS 语音合成、剪辑保存与导出、剧集合并、任务查询和项目备份等业务工具。生成和导出仍需对应服务或 FFmpeg 可用。
 - 配置 TTS 渠道后，可以直接说「把这段台词生成配音」。Agent 使用 `generations/tts`，沿用默认渠道或按要求选择渠道、模型、音色及 MP3/WAV 格式；支持模型允许的语速、风格指令，单次正文最多 4096 字符。音频自动保存到素材库，并在聊天中显示试听播放器。
 - 图片、TTS 音频和视频生成成功后，对话自动显示预览：图片可点击放大，音频可直接试听，视频支持播放与放大预览。素材查询、任务查询、剪辑导出等其他工具操作不附带预览，普通媒体链接保持为链接。失败或仍在运行的生成结果不显示预览，媒体加载失败时可打开原文件。

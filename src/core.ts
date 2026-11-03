@@ -81,7 +81,7 @@ export type Project = { id: string; name: string; path: string; updated_at: stri
 export type ModelSettings = Record<
   string,
   {
-    provider?: "cast" | "openai" | "qianwen-token-plan";
+    provider?: import("./generation-channels").ChannelProvider;
     url: string;
     base_url?: string;
     api_key: string;

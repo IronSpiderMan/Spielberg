@@ -63,6 +63,9 @@ class Model(BaseHTTPRequestHandler):
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        assert body.get("thinking") == {"type": "disabled"}, "DeepSeek tool calls must use ordinary mode"
+        assert self.headers.get("Authorization") == "Bearer " + SECRET
+        assert body["model"] == "qa-model"
         self.requests.append(body)
         assert SECRET not in json.dumps(body, ensure_ascii=False), "Credential leaked into model context"
         messages = body["messages"]
@@ -135,9 +138,10 @@ class Model(BaseHTTPRequestHandler):
                 }}, "library-create-" + category) for category in ["person", "location", "object", "creature", "vehicle", "other"]]
             elif len(tools) == 9:
                 location = json.loads(tools[4]["content"])
+                creature = json.loads(tools[6]["content"])
                 calls = [
                     call("app_action", {"operation": "assets/media/add", "data": {"asset_id": location["id"], "media_id": refs["image_id"]}}, "library-image"),
-                    call("app_action", {"operation": "assets/audio/save", "data": {"asset_id": location["id"], "media_id": refs["audio_id"], "name": "车站环境音"}}, "library-audio"),
+                    call("app_action", {"operation": "assets/audio/save", "data": {"asset_id": creature["id"], "media_id": refs["audio_id"], "name": "参考叫声"}}, "library-audio"),
                     call("app_request", {"resource": "assets", "method": "PATCH", "id": location["id"], "data": {"enabled": False}}, "library-disable"),
                 ]
             elif len(tools) == 12:
@@ -265,6 +269,15 @@ def main():
             api("/actions/settings", {"project_id": pid, "settings": {"llm": {"base_url": f"http://127.0.0.1:{model.server_port}/v1", "model": "qa-model", "api_key": SECRET}}})
             configured = agent("config")
             assert SECRET not in json.dumps(configured)
+            # The same default-channel resolver must feed every model request, including retries.
+            api("/actions/settings", {"project_id": pid, "settings": {"llm": {
+                "base_url": "http://127.0.0.1:9", "model": "stale", "api_key": "stale-key",
+                "default_channel_id": "deepseek", "channels": [{
+                    "id": "deepseek", "name": "DeepSeek fixture", "provider": "deepseek",
+                    "base_url": f"http://127.0.0.1:{model.server_port}/v1", "api_key": SECRET,
+                    "default_model_id": "qa-model", "models": [{"id": "qa-model", "profile": "deepseek-chat"}]
+                }]
+            }}})
             created = agent("create", title="实际创建内容")
             running = agent("run", session_id=created["id"], message="CREATE", web_enabled=True)
             assert running["status"] == "running"
@@ -325,7 +338,9 @@ def main():
             assert {subject["category"] for subject in subjects} == {"person", "location", "object", "creature", "vehicle", "other"}
             location = next(subject for subject in subjects if subject["category"] == "location")
             assert location["enabled"] is False and location["images"][0]["id"] == image_media["id"]
-            assert location["audios"][0]["name"] == "车站环境音"
+            assert location["audios"] == []
+            creature = next(subject for subject in subjects if subject["category"] == "creature")
+            assert creature["audios"][0]["name"] == "参考叫声"
             assert api(f"/projects/{pid}/media/{audio_media['id']}", method="GET")["name"] == "station.wav"
             assert api(f"/projects/{pid}/assets?category=location&enabled=false&query=Agent%20category", method="GET") == [location]
             assert api(f"/projects/{pid}/assets?category=location&enabled=true&query=Agent%20category", method="GET") == []

@@ -13,8 +13,31 @@ fn builtin(id: &str) -> Option<Value> {
     catalog()["models"].as_array()?.iter().find(|m| m["id"] == id).cloned()
 }
 
+fn llm_defaults(provider: &str) -> (&'static str, &'static str, &'static str) {
+    match provider {
+        "deepseek" => ("deepseek-chat", "deepseek-flash", "https://api.deepseek.com"),
+        "qianwen-token-plan" => ("qwen-chat", "qwen3.8-max", "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1"),
+        _ => ("openai-chat", "gpt-4o-mini", "https://api.openai.com/v1"),
+    }
+}
+
+// Empty configuration remains readable so the Agent settings dialog can open before setup.
+pub(super) fn llm_config(settings: &Value) -> Result<Value, String> {
+    if settings["llm"]["channels"].as_array().is_some_and(Vec::is_empty) { return Ok(json!({})); }
+    resolve(settings, &json!({}), "llm", "chat")
+}
+
 pub(super) fn normalize(settings: &Value) -> Value {
     let mut result = settings.clone();
+    let llm = &settings["llm"];
+    if llm.is_object() && llm.get("channels").is_none() && ["base_url", "url", "model", "api_key"].iter().any(|key| llm[*key].as_str().is_some_and(|s| !s.is_empty())) {
+        let provider = llm["provider"].as_str().filter(|p| ["openai", "deepseek", "qianwen-token-plan"].contains(p)).unwrap_or("openai");
+        let (profile, default_model, default_base) = llm_defaults(provider);
+        let id = llm["model"].as_str().filter(|s| !s.is_empty()).unwrap_or(default_model);
+        let base = llm["base_url"].as_str().filter(|s| !s.is_empty()).or_else(|| llm["url"].as_str().filter(|s| !s.is_empty())).unwrap_or(default_base);
+        result["llm"]["channels"] = json!([{"id":"legacy-llm","name":"原 LLM 渠道","provider":provider,"base_url":base,"api_key":llm["api_key"].as_str().unwrap_or(""),"models":[{"id":id,"name":id,"profile":profile}],"default_model_id":id}]);
+        result["llm"]["default_channel_id"] = json!("legacy-llm");
+    }
     for (kind, operations) in [("image", vec!["t2i", "i2i"]), ("video", vec!["t2v", "i2v", "ref2v", "fl2v"])] {
         if settings[kind].get("channels").is_some() { continue }
         let shared = &settings[kind];
@@ -53,7 +76,7 @@ pub(super) fn normalize(settings: &Value) -> Value {
 }
 
 pub(super) fn validate_settings(settings: &Value) -> Result<(), String> {
-    for kind in ["image", "video", "tts"] {
+    for kind in ["llm", "image", "video", "tts"] {
         let Some(channels) = settings[kind].get("channels") else {continue};
         let channels = channels.as_array().ok_or("channels 必须为数组")?;
         let mut ids = std::collections::HashSet::new();
@@ -69,7 +92,7 @@ pub(super) fn validate_settings(settings: &Value) -> Result<(), String> {
                 if id.trim().is_empty() || !model_ids.insert(id.clone()) {return Err("同一渠道内的模型 ID 不能为空或重复".into())}
                 let p = profile(&strv(model,"profile")?)?;
                 if p["kind"]!=kind || !p["providers"].as_array().is_some_and(|xs|xs.contains(&json!(provider))) {return Err("模型能力配置与渠道类型不匹配".into())}
-                if provider=="qianwen-token-plan" && !builtin(&id).is_some_and(|b| b["profile"]==model["profile"]) {return Err(format!("Token Plan 模型 ID 与能力不匹配：{id}"))}
+                if kind!="llm" && provider=="qianwen-token-plan" && !builtin(&id).is_some_and(|b| b["profile"]==model["profile"]) {return Err(format!("Token Plan 模型 ID 与能力不匹配：{id}"))}
             }
             if let Some(default) = channel["default_model_id"].as_str().filter(|s|!s.is_empty()) {
                 if !model_ids.contains(default) {return Err("默认模型不在渠道模型列表中".into())}
@@ -104,7 +127,16 @@ pub(super) fn resolve(settings: &Value, v: &Value, kind: &str, operation: &str) 
     if let Some(url)=channel["operation_urls"][operation].as_str() {config["base_url"]=json!(url);config["api_key"]=channel["operation_api_keys"][operation].clone();}
     if let Some(url)=model["base_url"].as_str().filter(|s|!s.trim().is_empty()){config["base_url"]=json!(url.trim());}
     config["send_model"]=model["send_model"].clone();
-    validate_request(&config,v,operation)?;
+    if kind == "llm" {
+        let (_, _, default_base) = llm_defaults(config["provider"].as_str().unwrap_or("openai"));
+        let mut base = config["base_url"].as_str().filter(|s| !s.trim().is_empty()).unwrap_or(default_base).trim().trim_end_matches('/').to_string();
+        if config["provider"] == "qianwen-token-plan" && reqwest::Url::parse(&base).is_ok_and(|u| u.path().is_empty() || u.path() == "/") {
+            base.push_str("/compatible-mode/v1");
+        }
+        config["base_url"] = json!(base);
+    } else {
+        validate_request(&config,v,operation)?;
+    }
     Ok(config)
 }
 
@@ -157,6 +189,78 @@ mod tests {
         {"id":"happyhorse-1.1-i2v","name":"First","profile":"happyhorse-i2v"},
         {"id":"happyhorse-1.1-r2v","name":"Refs","profile":"happyhorse-r2v"}
     ]))]}})}
+
+    #[test]
+    fn llm_migration_selection_and_deletion_preserve_channel_boundaries() {
+        let old=json!({"llm":{"url":"http://local.example/v1/chat/completions","model":"my-model","api_key":"old-key"}});
+        let normalized=normalize(&old);
+        assert_eq!(normalize(&normalized),normalized);
+        validate_settings(&normalized).unwrap();
+        let legacy=llm_config(&old).unwrap();
+        assert_eq!(legacy["base_url"],old["llm"]["url"]);
+        assert_eq!(legacy["model"],"my-model");assert_eq!(legacy["api_key"],"old-key");
+        let mut settings=json!({"llm":{"default_channel_id":"deepseek","channels":[
+            channel("openai","openai",json!([{"id":"custom","profile":"openai-chat"}])),
+            channel("deepseek","deepseek",json!([{"id":"deepseek-flash","profile":"deepseek-chat"}])),
+            channel("qwen","qianwen-token-plan",json!([{"id":"custom-qwen","profile":"qwen-chat"}]))
+        ]}});
+        validate_settings(&settings).unwrap();
+        assert_eq!(llm_config(&settings).unwrap()["api_key"],"fixture-deepseek");
+        settings["llm"]["channels"][2]["base_url"]=json!("https://token-plan.maas.qianwenaiapi.com/");
+        let selected=resolve(&settings,&json!({"channel_id":"qwen"}),"llm","chat").unwrap();
+        assert_eq!(selected["base_url"],"https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1");
+        assert_eq!(selected["api_key"],"fixture-qwen");assert_eq!(selected["model"],"custom-qwen");
+        assert!(resolve(&settings,&json!({"channel_id":"missing"}),"llm","chat").is_err());
+        assert!(resolve(&settings,&json!({"channel_id":"qwen","model":"custom"}),"llm","chat").is_err());
+        settings["llm"]["channels"][1]["models"][0]["profile"]=json!("openai-chat");
+        assert!(validate_settings(&settings).is_err());
+        let deleted=json!({"llm":{"base_url":"https://old.example/v1","api_key":"old-key","model":"old","channels":[],"default_channel_id":""}});
+        assert!(llm_config(&deleted).unwrap()["api_key"].is_null());
+        assert!(resolve(&deleted,&json!({}),"llm","chat").is_err());
+    }
+
+    #[test]
+    fn prompt_requests_use_the_default_llm_channel_credentials_and_model() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        for (provider, profile, model) in [("openai","openai-chat","custom-openai"),("deepseek","deepseek-chat","deepseek-flash"),("qianwen-token-plan","qwen-chat","qwen3.8-max")] {
+            let root=std::env::temp_dir().join(format!("spielberg-llm-{}",Uuid::new_v4()));
+            storage::initialize_root(&root).unwrap();
+            let state=AppState{root:root.clone(),guard:std::sync::Arc::new(Mutex::new(()))};
+            let project=create_project(&state,&json!({"name":"LLM routing"})).unwrap();
+            let listener=TcpListener::bind("127.0.0.1:0").unwrap();
+            let address=listener.local_addr().unwrap();
+            let server=std::thread::spawn(move || {
+                let (mut stream,_)=listener.accept().unwrap();
+                stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+                let mut bytes=Vec::new();let mut buffer=[0;4096];
+                let (headers,body)=loop {
+                    let count=stream.read(&mut buffer).unwrap();assert!(count>0);bytes.extend_from_slice(&buffer[..count]);
+                    if let Some(end)=bytes.windows(4).position(|s|s==b"\r\n\r\n") {
+                        let headers=String::from_utf8_lossy(&bytes[..end]).to_string();
+                        let len:usize=headers.lines().find_map(|line|line.to_ascii_lowercase().strip_prefix("content-length:").map(|s|s.trim().parse().unwrap())).unwrap();
+                        if bytes.len()>=end+4+len {break (headers,serde_json::from_slice::<Value>(&bytes[end+4..end+4+len]).unwrap());}
+                    }
+                };
+                let response=json!({"choices":[{"message":{"content":"optimized prompt"}}]}).to_string();
+                write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",response.len(),response).unwrap();
+                (headers,body)
+            });
+            let base=if provider=="qianwen-token-plan" {format!("http://{address}/compatible-mode/v1")} else {format!("http://{address}/v1")};
+            let settings=json!({"llm":{"base_url":"http://127.0.0.1:9","api_key":"stale-key","model":"stale-model","default_channel_id":"selected","channels":[
+                {"id":"unused","name":"Unused","provider":"openai","base_url":"http://127.0.0.1:9","api_key":"unused-key","models":[{"id":"unused","profile":"openai-chat"}]},
+                {"id":"selected","name":"Selected","provider":provider,"base_url":base,"api_key":"selected-key","default_model_id":model,"models":[{"id":model,"profile":profile}]}
+            ]}});
+            save_settings(&state,&json!({"project_id":project["id"],"settings":settings})).unwrap();
+            let result=optimize_prompt(&state,&json!({"project_id":project["id"],"prompt":"test"}));
+            let (headers,body)=server.join().unwrap();
+            assert_eq!(result.unwrap()["prompt"],"optimized prompt");
+            assert!(headers.starts_with(if provider=="qianwen-token-plan" {"POST /compatible-mode/v1/chat/completions "} else {"POST /v1/chat/completions "}));
+            assert!(headers.to_ascii_lowercase().contains("authorization: bearer selected-key"));
+            assert_eq!(body["model"],model);assert_eq!(body["messages"][1]["content"],"test");
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
 
     #[test]
     fn routes_only_to_the_selected_channel_and_model() {

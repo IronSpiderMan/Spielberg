@@ -1,5 +1,8 @@
 {
   "profiles": {
+    "openai-chat": {"label":"OpenAI 对话模型","kind":"llm","providers":["openai"],"modes":["chat"],"size_mode":"text"},
+    "deepseek-chat": {"label":"DeepSeek 对话模型","kind":"llm","providers":["deepseek"],"modes":["chat"],"size_mode":"text"},
+    "qwen-chat": {"label":"Qwen Token Plan 对话模型","kind":"llm","providers":["qianwen-token-plan"],"modes":["chat"],"size_mode":"text"},
     "openai-image": {"label":"OpenAI 图片接口","kind":"image","providers":["openai"],"modes":["t2i","i2i"],"mask":true,"max_images":16,"size_mode":"openai","ratios":["1:1","3:2","2:3"]},
     "cast-image": {"label":"CAST 图片兼容接口","kind":"image","providers":["cast"],"modes":["t2i","i2i"],"mask":true,"max_images":16,"size_mode":"pixels"},
     "qwen-image": {"label":"Qwen Image 3.0","kind":"image","providers":["qianwen-token-plan"],"modes":["t2i","i2i"],"mask":false,"max_images":3,"size_mode":"qianwen","min_pixels":262144,"max_pixels":4194304},
@@ -15,6 +18,13 @@
     "qwen-tts": {"label":"QwenTokenPlan TTS","kind":"tts","providers":["qianwen-token-plan"],"modes":["tts"],"size_mode":"audio","default_voice":"longanhuan_v3.6","formats":["mp3","wav"],"max_text":4096}
   },
   "models": [
+    {"id":"gpt-4o-mini","name":"GPT-4o mini","profile":"openai-chat"},
+    {"id":"gpt-4.1","name":"GPT-4.1","profile":"openai-chat"},
+    {"id":"deepseek-flash","name":"DeepSeek Flash","profile":"deepseek-chat"},
+    {"id":"deepseek-v4-pro","name":"DeepSeek V4 Pro","profile":"deepseek-chat"},
+    {"id":"qwen3.8-max","name":"Qwen 3.8 Max","profile":"qwen-chat"},
+    {"id":"qwen3.8-flash","name":"Qwen 3.8 Flash","profile":"qwen-chat"},
+    {"id":"qwen3.7-plus","name":"Qwen 3.7 Plus","profile":"qwen-chat"},
     {"id":"gpt-image-1","name":"GPT Image 1","profile":"openai-image"},
     {"id":"default","name":"默认模型","profile":"cast-image"},
     {"id":"qwen-image-3.0-pro","name":"Qwen Image 3.0 Pro","profile":"qwen-image"},

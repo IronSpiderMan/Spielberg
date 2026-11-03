@@ -9,7 +9,7 @@ const assert=require('node:assert/strict');
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.addInitScript(()=>{
    const project={id:'qa-channels',name:'渠道测试',path:'/fixture',updated_at:'1'};
-   const data={project,assets:[],episodes:[],prompts:[],media:[1,2].map(id=>({id,name:`图片 ${id}`,kind:'image',path:'/spielberg-logo-s.png',created_at:'1'})),settings:{image:{provider:'openai',base_url:'https://old.example.com/v1',api_key:'fixture-old',model:'gpt-image-1'},video:{provider:'cast',base_url:'http://fixture:8190',api_key:'',model:'minimax-h3'}}};
+   const data={project,assets:[],episodes:[],prompts:[],media:[1,2].map(id=>({id,name:`图片 ${id}`,kind:'image',path:'/spielberg-logo-s.png',created_at:'1'})),settings:{llm:{url:"https://legacy-llm.example/v1",api_key:"fixture-llm",model:"legacy-model"},image:{provider:'openai',base_url:'https://old.example.com/v1',api_key:'fixture-old',model:'gpt-image-1'},video:{provider:'cast',base_url:'http://fixture:8190',api_key:'',model:'minimax-h3'}}};
    window.__qaCalls=[];
    const original=window.fetch.bind(window);
    window.fetch=async(input,init={})=>{
@@ -55,6 +55,26 @@ const assert=require('node:assert/strict');
   const imageSettings=page.locator('.generation-channels-settings').filter({has:page.getByRole('heading',{name:'图片生成渠道',exact:true})});
   const videoSettings=page.locator('.generation-channels-settings').filter({has:page.getByRole('heading',{name:'视频生成渠道',exact:true})});
   const ttsSettings=page.locator('.generation-channels-settings').filter({has:page.getByRole('heading',{name:'TTS生成渠道',exact:true})});
+  const llmSettings=page.locator('.generation-channels-settings').filter({has:page.getByRole('heading',{name:'统一渠道配置',exact:true})});
+  assert.equal(await page.getByRole('heading',{name:'LLM（分镜与 Prompt）',exact:true}).count(),0);
+  assert.equal(await llmSettings.getByLabel('LLM渠道地址',{exact:true}).inputValue(),'https://legacy-llm.example/v1');
+  assert.equal(await llmSettings.getByLabel('LLM模型 ID',{exact:true}).inputValue(),'legacy-model');
+  for (const provider of ['DeepSeek','Qwen Token Plan']) {
+   await llmSettings.getByRole('button',{name:'添加LLM渠道',exact:true}).click();
+   const llmCard=llmSettings.locator('.generation-channel-card').last();
+   await select(llmCard,'LLM渠道接口类型',provider);
+   await llmCard.getByLabel('LLM渠道名称',{exact:true}).fill(provider);
+   assert.equal(await llmCard.getByLabel('LLM渠道地址',{exact:true}).inputValue(),provider==='DeepSeek'?'https://api.deepseek.com':'https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1');
+   assert.equal(await llmCard.getByLabel('LLM渠道 API Key',{exact:true}).inputValue(),'');
+   await llmCard.getByLabel('LLM渠道 API Key',{exact:true}).fill('fixture-'+provider);
+   if(provider==='Qwen Token Plan') {
+    await llmCard.getByRole('button',{name:'添加自定义模型',exact:true}).click();
+    const model=llmCard.locator('.generation-channel-model').last();
+    await model.getByLabel('LLM模型 ID',{exact:true}).fill('custom-qwen');
+    await model.getByRole('button',{name:'设为默认',exact:true}).click();
+    await llmCard.locator('.generation-channel-heading').getByRole('button',{name:'设为默认',exact:true}).click();
+   }
+  }
   assert.equal(await imageSettings.locator('.generation-channel-card').count(),1);
   assert.equal(await imageSettings.getByLabel('图片渠道地址',{exact:true}).inputValue(),'https://old.example.com/v1');
   await imageSettings.getByRole('button',{name:'添加图片渠道',exact:true}).click();
@@ -85,6 +105,11 @@ const assert=require('node:assert/strict');
   await card.getByRole('button',{name:'设为默认',exact:true}).click();
   await page.getByRole('button',{name:'保存配置',exact:true}).click();await page.getByText('接口配置已保存',{exact:true}).waitFor();
   const saved=(await calls('/settings')).at(-1).payload.settings;
+  assert.equal(saved.llm.channels.length,3);
+  assert.equal(saved.llm.channels[0].api_key,'fixture-llm');
+  assert.equal(saved.llm.channels[1].models[0].id,'deepseek-flash');
+  assert.equal(saved.llm.default_channel_id,saved.llm.channels[2].id);
+  assert.equal(saved.llm.channels[2].default_model_id,'custom-qwen');
   assert.equal(saved.image.channels.length,3);assert.equal(saved.image.channels[1].models[1].id,'custom-image-v2');assert.equal(saved.video.channels.length,2);
   assert.equal(saved.tts.channels.length,2);assert.equal(saved.tts.default_channel_id,saved.tts.channels[1].id);
   assert.equal(saved.tts.channels[1].models[0].id,'qwen-audio-3.0-tts-plus');
@@ -233,7 +258,13 @@ const assert=require('node:assert/strict');
   const widths=await imageSettings.locator('.generation-channel-card').evaluateAll(cards=>cards.map(c=>Math.round(c.getBoundingClientRect().width)));
   assert(widths.every(width=>width===widths[0] && width>650),JSON.stringify(widths));
   await imageSettings.screenshot({animations:'disabled',path:'/tmp/spielberg-generation-settings.png'});
+  assert.equal(await llmSettings.getByLabel('LLM渠道地址',{exact:true}).first().inputValue(),'https://legacy-llm.example/v1');
+  await llmSettings.scrollIntoViewIfNeeded();
+  await llmSettings.screenshot({animations:'disabled',path:'/tmp/spielberg-llm-settings.png'});
+  await page.setViewportSize({width:390,height:844});
+  assert(await llmSettings.evaluate(el=>el.scrollWidth<=el.clientWidth));
+  await llmSettings.screenshot({animations:'disabled',path:'/tmp/spielberg-llm-settings-mobile.png'});
   assert.deepEqual(errors,[]);
-  console.log('PASS: legacy configuration, multiple channels/models, settings round-trip, image/video/TTS routing, TTS defaults/parameters/preview/errors/mobile, model-specific sizes/modes/duration/resolution/audio');
+  console.log('PASS: unified LLM providers/defaults/custom models/mobile, legacy configuration, multiple channels/models, settings round-trip, image/video/TTS routing, TTS defaults/parameters/preview/errors/mobile, model-specific sizes/modes/duration/resolution/audio');
  } catch(error) { console.error(error); for (const p of browser.contexts().flatMap(c=>c.pages())) { await p.screenshot({animations:'disabled',path:"/tmp/spielberg-generation-test-failure.png",fullPage:true}).catch(()=>{}); } throw error; } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1);});

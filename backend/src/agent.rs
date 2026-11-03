@@ -58,10 +58,10 @@ fn setting(c:&Connection,key:&str)->Result<Value,String>{let raw=c.query_row("SE
 fn config(c:&Connection)->Result<Value,String>{
  let saved=setting(c,"agent")?;let mut result=json!({"inherit_llm":true,"base_url":"","model":"","api_key":"","search_provider":"duckduckgo","search_api_key":"","max_steps":16,"request_timeout_seconds":600});
  for key in ["inherit_llm","base_url","model","api_key","search_provider","search_api_key","max_steps","request_timeout_seconds"]{if let Some(v)=saved.get(key){result[key]=v.clone();}}
- if result["inherit_llm"].as_bool().unwrap_or(true){let models=setting(c,"models")?;let llm=&models["llm"];result["base_url"]=json!(llm["base_url"].as_str().filter(|s|!s.trim().is_empty()).or_else(||llm["url"].as_str()).unwrap_or(""));result["model"]=json!(llm["model"].as_str().unwrap_or(""));result["api_key"]=json!(llm["api_key"].as_str().unwrap_or(""));}
+ if result["inherit_llm"].as_bool().unwrap_or(true){let models=setting(c,"models")?;let selected=generation_channels::llm_config(&models)?;let llm=&selected;result["provider"]=llm["provider"].clone();result["base_url"]=json!(llm["base_url"].as_str().filter(|s|!s.trim().is_empty()).or_else(||llm["url"].as_str()).unwrap_or(""));result["model"]=json!(llm["model"].as_str().unwrap_or(""));result["api_key"]=json!(llm["api_key"].as_str().unwrap_or(""));}
  Ok(result)
 }
-fn public_config(c:&Connection)->Result<Value,String>{let mut cfg=config(c)?;for (key,flag) in [("api_key","has_api_key"),("search_api_key","has_search_api_key")]{cfg[flag]=json!(!cfg[key].as_str().unwrap_or("").is_empty());cfg.as_object_mut().unwrap().remove(key);}Ok(cfg)}
+fn public_config(c:&Connection)->Result<Value,String>{let mut cfg=config(c)?;for (key,flag) in [("api_key","has_api_key"),("search_api_key","has_search_api_key")]{cfg[flag]=json!(!cfg[key].as_str().unwrap_or("").is_empty());cfg.as_object_mut().unwrap().remove(key);}cfg.as_object_mut().unwrap().remove("provider");Ok(cfg)}
 fn save_config(c:&Connection,v:&Value)->Result<Value,String>{
  let incoming=v.get("config").filter(|v|v.is_object()).ok_or("缺少 Agent 配置")?;let mut saved=setting(c,"agent")?;if !saved.is_object(){saved=json!({});}
  for (key,item) in incoming.as_object().unwrap(){match key.as_str(){
@@ -93,7 +93,7 @@ fn recover(s:&AppState,pid:&str,c:&Connection)->Result<(),String>{
  for id in ids{let active=runs().lock().map_err(|_|"Agent 运行锁不可用")?.contains_key(&run_key(s,pid,&id));if !active{let mut session=read_session(c,&id)?;let reason="应用已重启，上次 Agent 执行已中断。已完成的操作和记录已保留，可继续发送消息。";session["status"]=json!("failed");session["execution"]["phase"]=json!("failed");session["error"]=json!(reason);close_pending(&mut session,reason);save_session(c,&mut session)?;}}
  Ok(())
 }
-fn endpoint(cfg:&Value)->Result<String,String>{let base=cfg["base_url"].as_str().unwrap_or("").trim().trim_end_matches('/');if base.is_empty(){return Err("请先在 Agent 设置或项目 LLM 设置中配置 Base URL".into())}if cfg["model"].as_str().unwrap_or("").trim().is_empty(){return Err("请先配置支持工具调用的 Agent 模型名称".into())}let url=reqwest::Url::parse(base).map_err(|_|"Agent Base URL 无效")?;if !["http","https"].contains(&url.scheme())||!url.username().is_empty()||url.password().is_some()||url.query().is_some()||url.fragment().is_some(){return Err("Agent Base URL 必须为不含账号、查询参数和片段的 HTTP(S) 地址".into())}Ok(if base.ends_with("/chat/completions"){base.into()}else{format!("{base}/chat/completions")})}
+fn endpoint(cfg:&Value)->Result<String,String>{let base=cfg["base_url"].as_str().unwrap_or("").trim().trim_end_matches('/');if base.is_empty(){return Err("请先在 Agent 设置或统一渠道配置中配置 Base URL".into())}if cfg["model"].as_str().unwrap_or("").trim().is_empty(){return Err("请先配置支持工具调用的 Agent 模型名称".into())}let url=reqwest::Url::parse(base).map_err(|_|"Agent Base URL 无效")?;if !["http","https"].contains(&url.scheme())||!url.username().is_empty()||url.password().is_some()||url.query().is_some()||url.fragment().is_some(){return Err("Agent Base URL 必须为不含账号、查询参数和片段的 HTTP(S) 地址".into())}Ok(if base.ends_with("/chat/completions"){base.into()}else{format!("{base}/chat/completions")})}
 
 pub(super) fn command(s:&AppState,path:&str,v:&Value)->Result<Value,String>{
  let pid=project_id(v)?;let _lock=s.guard.lock().map_err(|_|"项目数据锁不可用")?;let c=db(s,&pid)?;install(&c)?;recover(s,&pid,&c)?;
@@ -251,6 +251,21 @@ fn run_loop(s:&AppState,pid:&str,mut session:Value,cfg:&Value,web:bool,cancel:&A
 #[cfg(test)]
 mod tests{
  use super::*;
+ #[test]
+ fn inherited_agent_uses_default_channel_and_keeps_independent_config() {
+  let f=Fixture::new();let c=db(&f.state,&f.pid).unwrap();
+  let settings=json!({"llm":{"base_url":"https://stale.example/v1","api_key":"stale-key","model":"stale-model","default_channel_id":"chosen","channels":[{"id":"chosen","name":"Chosen","provider":"deepseek","base_url":"https://api.deepseek.com","api_key":"chosen-key","default_model_id":"model-b","models":[{"id":"model-a","profile":"deepseek-chat"},{"id":"model-b","profile":"deepseek-chat"}]}]}});
+  save_settings(&f.state,&json!({"project_id":f.pid,"settings":settings})).unwrap();
+  let inherited=config(&c).unwrap();assert_eq!(inherited["model"],"model-b");assert_eq!(inherited["api_key"],"chosen-key");
+  assert_eq!(endpoint(&inherited).unwrap(),"https://api.deepseek.com/chat/completions");
+  let public=public_config(&c).unwrap();assert!(public.get("api_key").is_none());assert_eq!(public["has_api_key"],true);
+  save_config(&c,&json!({"config":public})).unwrap();
+  save_config(&c,&json!({"config":{"inherit_llm":false,"base_url":"https://own.example/v1","model":"own","api_key":"own-key"}})).unwrap();
+  let independent=config(&c).unwrap();assert_eq!(independent["model"],"own");assert_eq!(independent["api_key"],"own-key");
+  save_settings(&f.state,&json!({"project_id":f.pid,"settings":{"llm":{"channels":[],"default_channel_id":""}}})).unwrap();
+  save_config(&c,&json!({"config":{"inherit_llm":true}})).unwrap();
+  let empty=config(&c).unwrap();assert_eq!(empty["api_key"],"");assert!(endpoint(&empty).is_err());
+ }
  #[test]
  fn session_order_is_fixed_by_creation_even_after_activity_and_reload(){
   let f=Fixture::new();

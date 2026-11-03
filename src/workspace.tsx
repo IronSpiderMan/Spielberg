@@ -2384,17 +2384,6 @@ export function SettingsPage({
     },
     [data.settings, dirty],
   );
-  const methods = [["llm", "LLM（分镜与 Prompt）", "OpenAI Chat Completions"]];
-  const set = (key: string, field: string, value: string) => {
-    setDirty(true);
-    setSettings((s) => ({
-      ...s,
-      [key]: {
-        ...(s[key] || { url: "", api_key: "", description: "" }),
-        [field]: value,
-      },
-    }));
-  };
   const save = async () => {
     if (saving) return;
     setSaving(true);
@@ -2437,19 +2426,11 @@ export function SettingsPage({
       </div>
       <SkillsSettings />
       <GenerationChannelsSettings settings={settings} disabled={saving} onChange={next=>{setSettings(next);setDirty(true);}}/>
-      {methods.map(([key,label,sub])=><div className="setting-block" key={key}>
-        <div className="setting-heading"><h3>{label}</h3><p>{sub}</p></div>
-        <Form layout="vertical" disabled={saving}><div className="settings-fields">
-          <Form.Item label="服务地址（Base URL）"><Input value={settings[key]?.base_url || settings[key]?.url || ""} onChange={v=>set(key,"base_url",v)} placeholder="https://api.openai.com/v1"/></Form.Item>
-          <Form.Item label="API Key"><Input.Password value={settings[key]?.api_key || ""} onChange={v=>set(key,"api_key",v)}/></Form.Item>
-          <Form.Item label="模型名称"><Input value={settings[key]?.model || ""} onChange={v=>set(key,"model",v)} placeholder="例如 gpt-4o-mini"/></Form.Item>
-        </div></Form>
-      </div>)}
       <Card className="connection-help" title="接口约定" bordered={false}>
         <Typography.Paragraph style={{ margin: 0 }}>
           图片配置共用一组 URL 与 API Key；OpenAI 模式会根据 Base URL 自动调用 <code>/images/generations</code>
           （t2i）或 <code>/images/edits</code>
-          （i2i），并将画面比例映射为官方支持的尺寸。千问 Token Plan 使用专属视频接口，自动查询进度并下载入库；CAST 视频 Base URL 会按生成方式补全接口路径。Prompt 优化使用 OpenAI 格式的{" "}
+          （i2i），并将画面比例映射为官方支持的尺寸。千问 Token Plan 使用专属视频接口，自动查询进度并下载入库；CAST 视频 Base URL 会按生成方式补全接口路径。LLM 统一渠道供分镜、Prompt 优化及 Agent 使用，按默认渠道和模型调用 OpenAI 兼容的{" "}
           <code>/chat/completions</code>。CAST 图片接口也会按生成方式补全路径。{" "}
           <code>
             POST /v1/generations/{"{"}t2i | i2i | t2v | ref2v | fl2v{"}"}
