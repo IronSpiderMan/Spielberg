@@ -3,6 +3,8 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Route target="_blank" links to the system browser from the WebView.
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let root=spielberg_backend::default_data_dir();
             let backend=spielberg_backend::Backend::start(root,"0.0.0.0:8080")?;
