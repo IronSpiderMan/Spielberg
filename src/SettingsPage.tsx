@@ -125,7 +125,7 @@ export default function SettingsPage({ data, reload }: { data: Snapshot; reload:
     </div>)}
     <div id="settings-panel-skills" role="tabpanel" aria-labelledby="settings-tab-skills" className="studio-settings-panel settings-shared-panel" hidden={category !== "skills"}>{skillsVisited && <SkillsSettings />}</div>
     <div id="settings-panel-storage" role="tabpanel" aria-labelledby="settings-tab-storage" className="studio-settings-panel settings-shared-panel" hidden={category !== "storage"}>
-      <div className="setting-block settings-storage">
+      <div className="settings-shared-section settings-storage">
         <div className="setting-heading"><div className="settings-panel-title"><h3>项目存储</h3><span className="settings-scope">工作室共享</span></div><p>设置新建和恢复项目的默认保存位置。</p></div>
         <Form layout="vertical" disabled={loadingDirectory || savingDirectory || savedDirectory === null}>
           <Form.Item label="项目存储路径" extra={`每个项目使用独立子文件夹。修改后，已有项目仍保留在原位置。${isLocalDesktop ? "" : "请填写后端服务器上的绝对路径。"}`}>

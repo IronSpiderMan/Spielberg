@@ -145,8 +145,8 @@ export function SkillsSettings() {
     finally { setBusy(null); }
   };
   const filtered = items.filter(skill => `${skill.name} ${skill.description} ${skill.source}`.toLowerCase().includes(query.trim().toLowerCase()));
-  return <div className="setting-block skills-settings" data-testid="skills-settings">
-    <div className="setting-heading"><h3>Skills 技能</h3><p>安装与管理 Agent 技能，全工作室共享。</p></div>
+  return <div className="settings-shared-section skills-settings" data-testid="skills-settings">
+    <div className="setting-heading"><div className="settings-panel-title"><h3>Skills 技能</h3><span className="settings-scope">工作室共享</span></div><p>安装与管理 Agent 技能。</p></div>
     <div className="skills-body">
       <p className="skills-explanation">Agent 会根据任务按需读取已启用的 Skill 说明和参考文件。Skill 中的 Shell 脚本不会被执行。</p>
       <div className="skills-install-form">
@@ -160,7 +160,7 @@ export function SkillsSettings() {
       </div>
       {actionError && <div className="skills-error" role="alert">{actionError}</div>}
       <div className="skills-list-heading"><strong>已安装技能 <span>{items.length}</span></strong><div className="skills-list-tools"><Input data-testid="skills-search" aria-label="搜索已安装技能" value={query} onChange={setQuery} allowClear placeholder="搜索名称、描述或来源" prefix={<Search size={14} />} /><Button aria-label="刷新技能列表" title="刷新技能列表" icon={<RefreshCw size={15} />} loading={loading} disabled={locked} onClick={() => void loadSkills()} /></div></div>
-      {listError ? <div className="skills-error skills-load-error" role="alert"><div><strong>技能列表加载失败</strong><p>{listError}</p></div><Button onClick={() => void loadSkills()} loading={loading}>重新加载</Button></div> : <Spin loading={loading} style={{ display: "block" }}>
+      {listError ? <div className="skills-error skills-load-error" role="alert"><div><strong>技能列表加载失败</strong><p>{listError}</p></div><Button onClick={() => void loadSkills()} loading={loading}>重新加载</Button></div> : <Spin className="skills-results" loading={loading} style={{ display: "block" }}>
         {!filtered.length ? <EmptyState
           icon={<Sparkles size={22} strokeWidth={1.4} />}
           title={loading ? "正在读取技能…" : query.trim() ? "没有匹配的技能" : "还没有安装技能"}
