@@ -1,9 +1,10 @@
+import { ConfirmPopover } from "./components/ConfirmAction";
 import { GenerationSelector } from "./components/generation/GenerationSelector";
 import { modelImageSize, modelRatio, selectionPayload, useGenerationSelection } from "./generation-channels";
 import { Form } from "@arco-design/web-react";
 import { PreviewImage } from "./components/ImagePreviewModal";
 import {useRef, useState} from 'react';
-import {Button, Input, Message, Popconfirm, Select} from '@arco-design/web-react';
+import {Button, Input, Message, Select} from '@arco-design/web-react';
 import {Snapshot, Media, Scene, post, imageUrl, defaultOptions} from './core';
 import {PromptInput} from './PromptInput';
 import {resolvePromptReferences} from './prompt-mentions';
@@ -18,11 +19,11 @@ export function StoryboardEditor({data,episodeId,script,onScript,board,onChange,
  const [busy,setBusy]=useState(''),[error,setError]=useState(''),[target,setTarget]=useState<Record<number,number>>({});
  const boardRef=useRef(board);boardRef.current=board;
  const [batchProgress,setBatchProgress]=useState<{current:number;total:number}|null>(null);
- const run=async(key:string,work:()=>Promise<void>)=>{setBusy(key);onBusy(true);setError('');try{await work();}catch(e){setError(String(e));Message.error(String(e));}finally{setBusy('');onBusy(false);}};
+ const run=async(key:string,work:()=>Promise<void>,propagateError=false)=>{setBusy(key);onBusy(true);setError('');try{await work();}catch(e){setError(String(e));Message.error(String(e));if(propagateError)throw e;}finally{setBusy('');onBusy(false);}};
  const locked=disabled||!!busy;
  const editShot=(scene:BoardScene,index:number,i:number,patch:Partial<Shot>)=>{const shots=scene.shots.map((s,n)=>n===i?{...s,...patch}:s);update(index,{...scene,shots,duration:Math.round(shots.reduce((sum,s)=>sum+s.duration,0)*1000)/1000,plan:undefined});};
  const update=(index:number,scene:BoardScene)=>{const next={...boardRef.current!,scenes:boardRef.current!.scenes.map((s,i)=>i===index?scene:s)};boardRef.current=next;onChange(next);};
- const generate=()=>run('board',async()=>{const result=await post<Storyboard>('/storyboard/generate',{project_id:data.project.id,script:resolvePromptReferences(script,data.prompts)});onChange({...result,source_script:script});});
+ const generate=(propagateError=false)=>run('board',async()=>{const result=await post<Storyboard>('/storyboard/generate',{project_id:data.project.id,script:resolvePromptReferences(script,data.prompts)});onChange({...result,source_script:script});},propagateError);
  const saveScene=async(scene:BoardScene,index:number)=>{
   const plan=scene.plan!;await post('/storyboard/validate',{project_id:data.project.id,scene,plan});if(plan.image_tasks.some(t=>!t.media_id))throw new Error('请先生成所有补图，确保 Picture 编号与实际参考图一致');
   const ids=[...plan.reference_media_ids,...plan.image_tasks.map(t=>t.media_id!)];if(!ids.length)throw new Error('场景至少需要一张参考图');
@@ -63,11 +64,11 @@ export function StoryboardEditor({data,episodeId,script,onScript,board,onChange,
   update(index,prepared);
   if(prepared.plan.image_tasks.every(t=>t.media_id))await saveScene(prepared,index);else await reload();
  });
- const apply=(scene:BoardScene,index:number)=>run(`apply-${index}`,()=>saveScene(scene,index));
+ const apply=(scene:BoardScene,index:number)=>run(`apply-${index}`,()=>saveScene(scene,index),true);
  return <div className="storyboard-columns">
   <div className="storyboard-source"><div className="storyboard-panel-heading"><span className="editor-step">01</span><h3>剧本</h3><small>故事起点</small></div>{readOnlySource ? <pre className="storyboard-script-preview">{script || "请先在剧本页新建或导入剧本，保存后即可生成分镜。"}</pre> : <PromptInput value={script} onChange={onScript} roles={data.assets} data={data} prompts={data.prompts} disabled={locked} placeholder="填写剧本，输入 @ 引用已有资产、造型、图片资源或 Prompt；输入 @prompt 搜索 Prompt 库"/>}
    <p className="subtle">生成前检查所有 @ 引用；每个场景最长 15 秒。</p>
-   {board?.scenes.length?<Popconfirm title="重新生成将替换当前分镜及补图计划，继续？" onOk={generate} disabled={locked}><Button type="primary" disabled={locked||!script.trim()} loading={busy==='board'}>一键生成分镜头剧本</Button></Popconfirm>:<Button type="primary" disabled={locked||!script.trim()} loading={busy==='board'} onClick={generate}>一键生成分镜头剧本</Button>}
+   {board?.scenes.length?<ConfirmPopover intent="warning" title="重新生成分镜？" content="将替换当前分镜及补图计划，请确认已保留需要的内容。" okText="重新生成" onOk={()=>generate(true)} disabled={locked}><Button type="primary" disabled={locked||!script.trim()} loading={busy==='board'}>一键生成分镜头剧本</Button></ConfirmPopover>:<Button type="primary" disabled={locked||!script.trim()} loading={busy==='board'} onClick={()=>generate()}>一键生成分镜头剧本</Button>}
    {error&&<p role="alert" className="storyboard-error">{error}</p>}
   </div>
   <div className="storyboard-results"><div className="storyboard-panel-heading"><span className="editor-step">02</span><h3>分镜头剧本</h3><small>{board?.scenes.length ? `${board.scenes.length} 个场景` : '镜头规划'}</small></div>{board?.source_script!==undefined&&board.source_script!==script&&<p className="storyboard-error">剧本已修改，当前分镜来自之前的剧本。</p>}
@@ -82,7 +83,7 @@ export function StoryboardEditor({data,episodeId,script,onScript,board,onChange,
      {scene.plan.image_tasks.map((task,i)=><div className="storyboard-task" key={i}><b>Picture {scene.plan!.reference_media_ids.length+i+1} · {task.name} · {task.operation}</b>{task.media_id&&data.media.find(m=>m.id===task.media_id)&&<PreviewImage media={data.media.find(m=>m.id===task.media_id)!} alt={task.name}/>}<Input.TextArea value={task.prompt} disabled={locked} autoSize onChange={prompt=>update(index,{...scene,plan:{...scene.plan!,image_tasks:scene.plan!.image_tasks.map((t,n)=>n===i?{...t,prompt,media_id:undefined}:t)}})}/><Button disabled={locked} loading={busy===`image-${index}-${i}`} onClick={()=>supplement(scene,index,task,i)}>{task.media_id?'重新生成补图':'生成补图'}</Button></div>)}
      <h4>MiniMax-H3 · 全能参考 Prompt</h4><Input.TextArea value={scene.plan.prompt} disabled={locked} rows={8} onChange={prompt=>update(index,{...scene,plan:{...scene.plan!,prompt}})}/>
      <Select disabled={locked} value={target[index]??scene.scene_id??0} onChange={id=>setTarget({...target,[index]:id})}><Select.Option value={0}>创建新场景</Select.Option>{data.episodes.find(e=>e.id===episodeId)?.scenes.map(s=><Select.Option key={s.id} value={s.id}>更新：{s.title}</Select.Option>)}</Select>
-     <Popconfirm title="将参考图与 Prompt 写入所选场景，立即保存，继续？" onOk={()=>apply(scene,index)} disabled={locked}><Button type="primary" disabled={locked||scene.plan.image_tasks.some(t=>!t.media_id)} loading={busy===`apply-${index}`}>写入本集场景</Button></Popconfirm>
+     <ConfirmPopover intent="warning" title="写入本集场景？" content="将参考图与 Prompt 写入所选场景并立即保存；选择已有场景时会覆盖对应内容。" okText="写入场景" onOk={()=>apply(scene,index)} disabled={locked}><Button type="primary" disabled={locked||scene.plan.image_tasks.some(t=>!t.media_id)} loading={busy===`apply-${index}`}>写入本集场景</Button></ConfirmPopover>
     </div>}
    </div>)}
   </div>

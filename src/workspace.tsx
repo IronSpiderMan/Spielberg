@@ -1,3 +1,4 @@
+import { ConfirmPopover, confirmAction } from "./components/ConfirmAction";
 import { GenerationSelector } from "./components/generation/GenerationSelector";
 import { ImageModelFields, VideoModelFields } from "./components/generation/ModelGenerationFields";
 import { channelsFor, generationChoice, modelImageSize, modelRatio, selectionPayload, useGenerationSelection, validateGeneration } from "./generation-channels";
@@ -28,7 +29,6 @@ Form,
 Input,
 Message,
 Modal,
-Popconfirm,
 Pagination,
 Select,
 Space,
@@ -352,10 +352,10 @@ function VideoAsset({video, scene, projectId, reload}: {video:Media;scene?:Scene
             Message.success("已设为主视频");
           } catch(e){Message.error(String(e));} finally {setSelecting(false);}
         }}>{scene.video_media_id === video.id ? "主视频" : "设为主视频"}</Button>}
-      {scene && <Popconfirm title="删除这个场景视频版本？" onOk={async()=>{
+      {scene && <ConfirmPopover title="移除这个视频版本？" content={scene.video_media_id === video.id ? "将从场景中移除当前主视频，并选用剩余版本（如有）。素材库中的视频文件会保留。" : "将从场景中移除此视频版本，素材库中的视频文件会保留。"} okText="移除版本" disabled={selecting || deleting} onOk={async()=>{
         setDeleting(true);
-        try {await post("/scenes/delete-video",{project_id:projectId,scene_id:scene.id,media_id:video.id});await reload?.();Message.success("视频版本已删除");} catch(e){Message.error(String(e));} finally {setDeleting(false);}
-      }}><Button size="mini" status="danger" disabled={selecting || deleting} loading={deleting} icon={<Trash2 size={14}/>}>删除</Button></Popconfirm>}
+        try {await post("/scenes/delete-video",{project_id:projectId,scene_id:scene.id,media_id:video.id});await reload?.();Message.success("视频版本已移除");} catch(e){Message.error(String(e));throw e;} finally {setDeleting(false);}
+      }}><Button size="mini" status="danger" disabled={selecting || deleting} loading={deleting} icon={<Trash2 size={14}/>}>删除</Button></ConfirmPopover>}
     </Space>
     <VideoPreviewModal media={preview?video:null} projectId={projectId} initialTime={previewTime} onClose={()=>setPreview(false)} />
   </div>;
@@ -612,21 +612,24 @@ export function Episodes({
                 <Button type="text" onClick={() => setEpisode(ep)}>
                   编辑
                 </Button>
-                <Popconfirm
-                  title="确认删除这集及全部剧本、分镜和场景？"
+                <ConfirmPopover
+                  title="删除这集？"
+                  content={`将删除「${ep.title}」及其全部剧本、分镜和场景，素材库中的文件会保留。删除后无法撤销。`}
+                  okText="删除剧集"
                   onOk={() =>
                     post("/episodes/delete", {
                       project_id: data.project.id,
                       id: ep.id,
-                    }).then(reload)
+                    }).then(reload).catch(error => { Message.error(String(error)); throw error; })
                   }
                 >
                   <Button
                     type="text"
                     status="danger"
+                    aria-label={`删除剧集 ${ep.title}`}
                     icon={<Trash2 size={15} />}
                   />
-                </Popconfirm>
+                </ConfirmPopover>
               </div>
 
             </Card>
@@ -907,7 +910,7 @@ function EpisodeEditor({
                 {scene.creation_mode === "canvas" && <Tag>画布</Tag>}
               </Space><span className="episode-scene-edit-link">编辑场景 <ChevronRight size={14}/></span></div>
             </div>
-          </button><div className="episode-scene-item-actions"><Button size="mini" disabled={editorLocked || !sceneVideos(scene).length} icon={<Play size={13}/>} onClick={() => openScenePreview(scene)}>预览</Button><SceneOrderControls episode={currentEpisode} index={index} project={project} reload={reload}/><Button size="mini" disabled={editorLocked || copyingScene !== null || inserting !== null} loading={copyingScene === scene.id} onClick={() => void copyScene(scene)}>复制</Button><Popconfirm title="确认删除这个场景？" onOk={async () => {try {await post("/scenes/delete", {project_id:project.id,id:scene.id});await reload();Message.success("场景已删除");}catch(error){Message.error(String(error));}}}><Button size="mini" status="danger" disabled={editorLocked} icon={<Trash2 size={14}/>}>删除</Button></Popconfirm></div></div>)}
+          </button><div className="episode-scene-item-actions"><Button size="mini" disabled={editorLocked || !sceneVideos(scene).length} icon={<Play size={13}/>} onClick={() => openScenePreview(scene)}>预览</Button><SceneOrderControls episode={currentEpisode} index={index} project={project} reload={reload}/><Button size="mini" disabled={editorLocked || copyingScene !== null || inserting !== null} loading={copyingScene === scene.id} onClick={() => void copyScene(scene)}>复制</Button><ConfirmPopover title="删除这个场景？" content={`将从剧集中删除「${scene.title}」及其场景设置，素材库中的文件会保留。删除后无法撤销。`} okText="删除场景" disabled={editorLocked} onOk={async () => {try {await post("/scenes/delete", {project_id:project.id,id:scene.id});await reload();Message.success("场景已删除");}catch(error){Message.error(String(error));throw error;}}}><Button size="mini" status="danger" disabled={editorLocked} icon={<Trash2 size={14}/>}>删除</Button></ConfirmPopover></div></div>)}
         </div> : <Empty description="本集暂无场景，点击右上角“新建场景”开始创作"/>}
       </div>
       <Modal title="新建场景" visible={sceneCreation!==null} confirmLoading={inserting!==null} onCancel={()=>{if(inserting===null)setSceneCreation(null);}} onOk={()=>sceneCreation!==null?makeScene(sceneCreation).catch(e=>{Message.error(String(e));throw e;}):undefined}>
@@ -1741,10 +1744,11 @@ export function SceneEditor({
   );
 }
 function confirmDisableRole(name: string): Promise<boolean> {
-  return new Promise(resolve => Modal.confirm({
-    title: `禁用资产“${name}”？`,
-    content: "禁用后，该资产及其命名图片无法被 @ 引用，并从默认资产列表中隐藏。可勾选“显示已禁用资产”后重新启用。",
-    okText: "确认禁用",
+  return new Promise(resolve => confirmAction({
+    intent: "warning",
+    title: "禁用这个资产？",
+    content: `「${name}」及其命名图片将无法被 @ 引用，并从默认资产列表中隐藏。可勾选「显示已禁用资产」后重新启用。`,
+    okText: "禁用资产",
     cancelText: "取消",
     onOk: () => { resolve(true); },
     onCancel: () => { resolve(false); },
@@ -1795,8 +1799,8 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
       await post("/assets/media/delete", {project_id: data.project.id, asset_id: role.id, media_id: media.id});
       if (previewRoleId === role.id && roleImagePreview?.id === media.id) setRoleImagePreview(null);
       await reload();
-      Message.success("已从资产中删除图片，素材文件已保留");
-    } catch (e) { Message.error(String(e)); }
+      Message.success("已从资产中移除图片，素材文件已保留");
+    } catch (e) { Message.error(String(e)); throw e; }
     finally { setUnlinkingImageId(null); }
   };
   const setPrimaryImage = async (role: Asset, media: Media) => {
@@ -1865,9 +1869,9 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
             <figcaption title={media.name}>{media.name}</figcaption>
             <div className="role-detail-image-actions">
               <Button className="role-detail-image-rename" type="text" size="mini" icon={<Pencil size={13}/>} disabled={imageActionBusy} aria-label={`重命名 ${media.name}`} onClick={() => setRenamingMedia({id:media.id,name:media.name})}>重命名</Button>
-              <Popconfirm title="从资产中删除这张图片？" content={media.id === detail.design_media_id ? "素材库中的原文件会保留，同时清除该资产的主图设置。" : "素材库中的原文件会保留。"} okText="删除" okButtonProps={{status:"danger"}} onOk={() => unlinkImage(detail, media)}>
+              <ConfirmPopover title="移除这张资产图片？" content={media.id === detail.design_media_id ? "将立即解除图片关联并清除该资产的主图设置，素材库中的原文件会保留。" : "将立即解除图片关联，素材库中的原文件会保留。"} okText="移除图片" disabled={imageActionBusy} onOk={() => unlinkImage(detail, media)}>
                 <Button type="text" size="mini" status="danger" icon={<Trash2 size={13}/>} loading={unlinkingImageId === media.id} disabled={imageActionBusy} aria-label={`删除 ${media.name}`}>删除</Button>
-              </Popconfirm>
+              </ConfirmPopover>
             </div>
           </figure>)}</div> : <Empty description="添加参考图片，记录资产的外观与细节" />}
         </section>
@@ -1925,19 +1929,21 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
                 onClick={() => void changeRoleEnabled(r, r.enabled === false)}>
                 {r.enabled === false ? "启用" : "禁用"}
               </Button>
-              <Popconfirm
-                title="删除资产？"
+              <ConfirmPopover
+                title="删除这个资产？"
+                content={`将删除「${r.name}」及其关联关系，素材库中的图片和音频文件会保留。删除后无法撤销。`}
+                okText="删除资产"
                 onOk={() =>
                   post("/assets/delete", {
                     project_id: data.project.id,
                     id: r.id,
-                  }).then(reload)
+                  }).then(reload).catch(error => { Message.error(String(error)); throw error; })
                 }
               >
                 <Button type="text" size="mini" status="danger">
                   删除
                 </Button>
-              </Popconfirm>
+              </ConfirmPopover>
               </div>
             </div>
           </Card>
@@ -2172,12 +2178,11 @@ function RoleEditor({
                     <button type="button" className="role-image-rename" aria-label={`编辑图片名称 ${m.name}`} title="编辑图片名称" onClick={(e) => { e.stopPropagation(); setRenamingImage({id:m.id,name:m.name}); }}><Pencil size={12}/></button>
                     {design !== m.id && <button type="button" className="role-image-primary" onClick={(e) => { e.stopPropagation(); setDesign(m.id); }}>设为主图</button>}
                     <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                    <Popconfirm
-                      title="从资产中删除这张图片？"
-                      content="素材库中的原文件会保留。删除立即生效。"
-                      okText="删除"
-                      okButtonProps={{status:"danger"}}
-                      onOk={() => removeImage(m.id).catch((e) => Message.error(String(e)))}
+                    <ConfirmPopover
+                      title="移除这张资产图片？"
+                      content="将立即解除图片关联，素材库中的原文件会保留。"
+                      okText="移除图片"
+                      onOk={() => removeImage(m.id).catch((e) => { Message.error(String(e)); throw e; })}
                     >
                       <button
                         type="button"
@@ -2188,7 +2193,7 @@ function RoleEditor({
                       >
                         <Trash2 size={13} /> 删除
                       </button>
-                    </Popconfirm>
+                    </ConfirmPopover>
                     </div>
                   </div>
                 ))}

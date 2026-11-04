@@ -1,5 +1,6 @@
+import { confirmAction } from "./components/ConfirmAction";
 import { localId } from "./id";
-import { Input, Modal } from "@arco-design/web-react";
+import { Input } from "@arco-design/web-react";
 import { createElement } from "react";
 import { isLocalDesktop } from "./transport";
 type DialogOptions = { title?: string; directory?: boolean; multiple?: boolean; defaultPath?: string; filters?: { name: string; extensions: string[] }[] };
@@ -12,7 +13,7 @@ export async function open(options: DialogOptions = {}): Promise<string | string
   if (options.directory) {
     return new Promise(resolve => {
       let path = "";
-      Modal.confirm({ title: options.title || "打开服务器目录", content: createElement("div", null,
+      confirmAction({ intent: "info", okText: "打开目录", title: options.title || "打开服务器目录", content: createElement("div", null,
         createElement("p", null, "填写后端服务器上已有项目或备份文件夹的完整路径。导入此电脑的项目请使用备份压缩包恢复。"),
         createElement(Input, { placeholder: "服务器上的完整目录路径", onChange: (value: string) => { path = value; } })),
         onOk: () => { if (!path.trim()) throw new Error("请输入目录路径"); resolve(path.trim()); }, onCancel: () => resolve(null) });

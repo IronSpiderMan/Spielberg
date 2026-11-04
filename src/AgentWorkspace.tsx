@@ -1,3 +1,4 @@
+import { confirmAction } from "./components/ConfirmAction";
 import { Button, Input, Message, Modal, Select, Spin, Switch } from "@arco-design/web-react";
 import { ArrowUp, ArrowUpRight, Clapperboard, Folder, PencilLine, Search, Bot, Check, ChevronDown, Globe, MessageSquare, Plus, Settings2, Sparkles, Square, Trash2, Wrench, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -225,9 +226,9 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
     } catch (e) { if (mounted.current && version === selectionVersion.current) { setError(String(e)); setLoading(false); setLoadFailed(loading); } }
     finally { if (mounted.current) setStopping(false); }
   };
-  const remove = (session: Session) => Modal.confirm({ title: "删除此会话？", content: "删除对话和执行记录，已完成的项目操作会保留。", okText: "删除会话", cancelText: "取消", okButtonProps: { status: "danger" }, onOk: async () => {
+  const remove = (session: Session) => confirmAction({ intent: "danger", title: "删除此会话？", content: "将删除此会话的对话和执行记录，已完成的项目操作会保留。", okText: "删除会话", onOk: async () => {
     try { await call("delete", { session_id: session.id }); if (!mounted.current) return; setSessions(items => items.filter(item => item.id !== session.id)); if (selectedRef.current?.id === session.id) { selectionVersion.current++; selectedRef.current = null; setSelected(null); localStorage.removeItem(`spielberg-agent-session-${pid}`); } }
-    catch (e) { Message.error(String(e)); }
+    catch (e) { Message.error(String(e)); throw e; }
   } });
   const openSettings = () => { setForm({ ...config }); setSearchKey(""); setSettingsOpen(true); };
   const saveSettings = async () => {

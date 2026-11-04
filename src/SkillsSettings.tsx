@@ -1,3 +1,4 @@
+import { ConfirmDialog } from "./components/ConfirmAction";
 import { useEffect, useRef, useState } from "react";
 import { Button, Input, Message, Modal, Spin, Switch, Tabs, Tag } from "@arco-design/web-react";
 import { Download, FileText, FolderOpen, RefreshCw, Search, Sparkles, Trash2, Upload } from "lucide-react";
@@ -185,8 +186,8 @@ export function SkillsSettings() {
       <div className="skills-upload-row"><Button type="primary" data-testid="skills-reinstall-file" icon={<Upload size={15} />} disabled={locked} loading={installing === "file"} onClick={() => chooseFiles("file", reinstallTarget)}>选择 SKILL.md 重装</Button><Button data-testid="skills-reinstall-folder" icon={<FolderOpen size={15} />} disabled={locked} loading={installing === "folder"} onClick={() => chooseFiles("folder", reinstallTarget)}>选择文件夹重装</Button></div>
       {actionError && <div className="skills-error" role="alert">{actionError}</div>}
     </Modal>
-    <Modal visible={!!removeTarget} title="卸载此 Skill？" okText="卸载" cancelText="取消" okButtonProps={{ status: "danger" }} confirmLoading={busy?.action === "delete"} closable={!busy} maskClosable={!busy} cancelButtonProps={{ disabled: !!busy }} onCancel={() => !busy && setRemoveTarget(null)} onOk={() => void removeSkill()}>
+    <ConfirmDialog intent="danger" visible={!!removeTarget} title="卸载此 Skill？" okText="卸载技能" cancelText="取消" okButtonProps={{ status: "danger" }} confirmLoading={busy?.action === "delete"} closable={!busy} maskClosable={!busy} cancelButtonProps={{ disabled: !!busy }} onCancel={() => !busy && setRemoveTarget(null)} onOk={() => void removeSkill()}>
       <p>卸载「{removeTarget?.name}」后，所有项目的 Agent 将无法继续加载此技能。你可以随时重新安装。</p>{removeError && <div className="skills-error" role="alert">{removeError}</div>}
-    </Modal>
+    </ConfirmDialog>
   </div>;
 }

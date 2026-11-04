@@ -1,3 +1,4 @@
+import { confirmAction } from "./components/ConfirmAction";
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Button, Checkbox, Empty, Form, Input, Message, Modal, Select, Space, Spin, Tag } from "@arco-design/web-react";
 import { ArrowLeft, ArrowRight, GitBranch, Maximize, Minus, Pencil, Plus, RotateCcw, Save, Trash2, Users } from "lucide-react";
@@ -132,8 +133,8 @@ export default function AssetRelationships({ data, onClose }: { data: Snapshot; 
     } catch (e) { setFormError(errorText(e)); }
     finally { setRelationBusy(false); }
   };
-  const deleteRelation = (relation: AssetRelation) => Modal.confirm({
-    title: "删除这条资产关系？", content: `${assetMap.get(relation.source_asset_id)?.name || "资产"} — ${relation.label} — ${assetMap.get(relation.target_asset_id)?.name || "资产"}`, okText: "删除关系", okButtonProps: { status: "danger" },
+  const deleteRelation = (relation: AssetRelation) => confirmAction({
+    intent: "danger", title: "删除这条资产关系？", content: `将移除「${assetMap.get(relation.source_asset_id)?.name || "资产"} — ${relation.label} — ${assetMap.get(relation.target_asset_id)?.name || "资产"}」这条关系，两侧资产会保留。`, okText: "删除关系",
     onOk: async () => {
       mutationEpoch.current += 1;
       try { await jsonRequest(`${base}/asset-relations/${relation.id}`, "DELETE"); setRelations(current => current.filter(item => item.id !== relation.id)); Message.success("关系已删除"); }

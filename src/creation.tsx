@@ -1,3 +1,4 @@
+import { ConfirmPopover } from "./components/ConfirmAction";
 import { GenerationSelector } from "./components/generation/GenerationSelector";
 import { ImageModelFields } from "./components/generation/ModelGenerationFields";
 import { modelImageSize, modelRatio, selectionPayload, useGenerationSelection, validateGeneration } from "./generation-channels";
@@ -12,7 +13,7 @@ import { TtsStudio } from "./TtsStudio";
 import { VideoStudio } from "./VideoStudio";
 import { sceneGenerationOptions } from "./scene-generation";
 import { localId } from "./id";
-import { Button,Empty,Form,Input,Message,Popconfirm,Select,Space,Tabs,Tag } from "@arco-design/web-react";
+import { Button,Empty,Form,Input,Message,Select,Space,Tabs,Tag } from "@arco-design/web-react";
 import { ArrowDown,ArrowUp,CircleAlert,Image as ImageIcon,ImagePlus,LoaderCircle,Plus,Trash2,Undo2 } from "lucide-react";
 import React,{ lazy,startTransition,Suspense,useEffect,useRef,useState } from "react";
 import { defaultGenerationSize, Media,Scene,Snapshot,imageUrl,post } from "./core";
@@ -216,7 +217,7 @@ function ScriptStudio({data,reload,onCreated}: {data:Snapshot;reload:()=>void;on
     <Form layout="vertical" className="script-episode-picker"><Form.Item label="编辑剧集"><Select aria-label="选择编辑剧集" showSearch disabled={busy||(!loaded&&!status.startsWith("读取失败"))} value={episodeId??"new"} onChange={value=>void switchEpisode(value)} options={[{value:"new",label:"＋ 新建剧集"},...data.episodes.map(episode=>({value:episode.id,label:episode.title}))]}/><p className="helper">{episodeId===undefined?"创建新的剧集脚本。":"修改原剧集的标题、场景和帧描述；保留已有场景的图片与视频。"}</p></Form.Item></Form>
     <fieldset disabled={!loaded||busy}><Form layout="vertical" disabled={!loaded||busy}><Form.Item label="剧集标题" required><Input value={draft.title} onChange={title=>update({...draft,title})} placeholder="为这一集命名"/></Form.Item>
     {draft.scenes.map((scene,i)=><article className="script-scene" key={scene.id}>
-      <div className="script-scene-head"><b>SCENE {String(i+1).padStart(3,"0")}</b><Space><Button aria-label="上移场景" size="mini" disabled={!i||busy} onClick={()=>move(i,-1)} icon={<ArrowUp size={14}/>}/><Button aria-label="下移场景" size="mini" disabled={i===draft.scenes.length-1||busy} onClick={()=>move(i,1)} icon={<ArrowDown size={14}/>}/><Button size="mini" onClick={()=>update({...draft,scenes:[...draft.scenes,{...scene,id:localId(),scene_id:undefined,title:undefined}]})}>复制</Button><Popconfirm title="删除此脚本场景？" content={scene.scene_id?"保存修改后，该场景会从剧集中移除，素材文件仍保留在素材库。":undefined} onOk={()=>update({...draft,scenes:draft.scenes.filter(s=>s.id!==scene.id)})}><Button aria-label="删除脚本场景" size="mini" status="danger" icon={<Trash2 size={14}/>}/></Popconfirm></Space></div>
+      <div className="script-scene-head"><b>SCENE {String(i+1).padStart(3,"0")}</b><Space><Button aria-label="上移场景" size="mini" disabled={!i||busy} onClick={()=>move(i,-1)} icon={<ArrowUp size={14}/>}/><Button aria-label="下移场景" size="mini" disabled={i===draft.scenes.length-1||busy} onClick={()=>move(i,1)} icon={<ArrowDown size={14}/>}/><Button size="mini" onClick={()=>update({...draft,scenes:[...draft.scenes,{...scene,id:localId(),scene_id:undefined,title:undefined}]})}>复制</Button><ConfirmPopover title="删除此脚本场景？" okText="删除场景" content={scene.scene_id?"保存修改后，该场景会从剧集中移除，素材文件仍保留在素材库。":"该场景将从当前脚本草稿中移除，保存修改后生效。"} onOk={()=>update({...draft,scenes:draft.scenes.filter(s=>s.id!==scene.id)})}><Button aria-label="删除脚本场景" size="mini" status="danger" icon={<Trash2 size={14}/>}/></ConfirmPopover></Space></div>
       <Form.Item label="场景描述" required><PromptInput disabled={!loaded||busy} value={scene.description} onChange={v=>patch(scene.id,"description",v)} roles={data.assets} placeholder="描述场景中的动作、环境和镜头运动（必填）"/></Form.Item>
       <Tabs className="script-mode-tabs" activeTab={scene.mode} onChange={mode=>patch(scene.id,"mode",mode)}>
         <Tabs.TabPane key="t2v" title="文生视频" disabled={!loaded||busy}><p className="helper">使用场景描述生成视频，不传入参考素材。</p></Tabs.TabPane><Tabs.TabPane key="fl2v" title="首尾帧" disabled={!loaded||busy}><div className="script-frames script-frames-pair">{([['first','首帧描述'],['last','尾帧描述']] as const).map(([key,label])=><Form.Item key={key} label={`${label} · 选填`}><PromptInput disabled={!loaded||busy} value={scene[key]} onChange={v=>patch(scene.id,key,v)} roles={data.assets}/></Form.Item>)}</div></Tabs.TabPane>

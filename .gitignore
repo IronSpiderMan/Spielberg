@@ -63,3 +63,5 @@ src-tauri/gen/
 # Standalone backend
 backend/target/
 target-linux-arm64/
+
+!/scripts/qa/confirmation-dialogs.cjs

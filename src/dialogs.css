@@ -65,18 +65,148 @@ html .arco-modal-simple .arco-modal-footer > .arco-btn {
   border-radius: 8px;
 }
 
-/* Preserve destructive intent over the global brand-primary override. */
-html .arco-modal .arco-btn-primary.arco-btn-status-danger:not(.arco-btn-disabled) {
-  color: #fff;
-  background: #b55248;
-  border-color: #b55248;
+/* Confirmation portals use the same tokens as the studio, in both themes. */
+:root, body {
+  --confirm-danger: #b55248;
+  --confirm-danger-hover: #9f443b;
+  --confirm-on-danger: #fff;
+  --confirm-shadow: 0 16px 48px #30281d24, 0 3px 10px #30281d12;
 }
 
-html .arco-modal .arco-btn-primary.arco-btn-status-danger:not(.arco-btn-disabled):hover {
-  background: #a4473e;
-  border-color: #a4473e;
+html[data-theme="dark"], html[data-theme="dark"] body {
+  --confirm-danger: #e99b90;
+  --confirm-danger-hover: #f1aea4;
+  --confirm-on-danger: #301c19;
+  --confirm-shadow: 0 18px 56px #0006, 0 3px 12px #0003;
+}
+
+html .studio-confirm-popover .arco-popconfirm-content {
+  padding: 20px;
+  border: 1px solid var(--studio-control-border);
+  border-radius: 14px;
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  box-shadow: var(--confirm-shadow);
+}
+
+html .studio-confirm-popover .arco-trigger-arrow {
+  background: var(--ui-surface);
+  border-color: var(--studio-control-border);
+}
+
+html .studio-confirm-popover .arco-popconfirm-title {
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0;
+  color: var(--ui-text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+html .studio-confirm-popover .arco-popconfirm-title-icon {
+  height: auto;
+  flex: none;
+  margin: 0;
+}
+
+.studio-confirm-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  box-sizing: border-box;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: var(--ui-warning);
+  background: color-mix(in srgb, var(--ui-warning) 12%, var(--ui-surface));
+}
+
+.studio-confirm-icon.is-danger {
+  color: var(--ui-error);
+  background: color-mix(in srgb, var(--ui-error) 12%, var(--ui-surface));
+}
+
+.studio-confirm-icon.is-info {
+  color: var(--ui-primary);
+  background: var(--ui-accent-soft);
+}
+
+html .studio-confirm-popover .arco-popconfirm-title-text {
+  min-width: 0;
+  padding-top: 4px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+html .studio-confirm-popover .arco-popconfirm-inner-content {
+  margin: 6px 0 0;
+  padding-left: 44px;
+  color: var(--ui-secondary-text);
+  font-size: 13px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  max-height: min(280px, 40dvh);
+  overflow-y: auto;
+}
+
+html .studio-confirm-popover .arco-popconfirm-btn {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ui-border);
+}
+
+html .studio-confirm-popover .arco-popconfirm-btn > .arco-btn {
+  height: 36px;
+  min-width: 76px;
+  max-width: 100%;
+  margin: 0;
+  padding-inline: 14px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+html .studio-confirm-modal .arco-modal-title > span {
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.studio-confirm-title { min-width: 0; padding-top: 3px; overflow-wrap: anywhere; }
+html .studio-confirm-modal .arco-modal-content { padding-left: 44px; }
+html .studio-confirm-modal .arco-modal-content p { margin: 0 0 12px; }
+html .studio-confirm-modal .arco-modal-content p:last-child { margin-bottom: 0; }
+
+/* Preserve destructive intent over the global brand-primary override. */
+html :is(.arco-modal, .studio-confirm-popover) .arco-btn-primary.arco-btn-status-danger:not(.arco-btn-disabled) {
+  color: var(--confirm-on-danger);
+  background: var(--confirm-danger);
+  border-color: var(--confirm-danger);
+}
+
+html :is(.arco-modal, .studio-confirm-popover) .arco-btn-primary.arco-btn-status-danger:not(.arco-btn-disabled):hover {
+  background: var(--confirm-danger-hover);
+  border-color: var(--confirm-danger-hover);
+}
+
+html :is(.studio-confirm-modal, .studio-confirm-popover) .arco-btn:focus-visible {
+  outline: 2px solid var(--ui-primary);
+  outline-offset: 3px;
 }
 
 @media (max-width: 480px) {
   html .arco-modal.arco-modal-simple { padding: 22px; }
+  /* Arco's horizontal correction can still land flush against a phone edge.
+     A centered card keeps a reliable gutter regardless of the trigger column. */
+  html .studio-confirm-popover { left: 16px !important; width: calc(100vw - 32px) !important; }
+  html .studio-confirm-popover .arco-trigger-arrow { display: none; }
+  html .studio-confirm-popover .arco-popconfirm-content { padding: 16px; }
+  html .studio-confirm-popover .arco-popconfirm-inner-content,
+  html .studio-confirm-modal .arco-modal-content { padding-left: 0; }
+  html .studio-confirm-popover .arco-popconfirm-btn > .arco-btn { height: 40px; }
 }

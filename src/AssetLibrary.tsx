@@ -1,3 +1,4 @@
+import { confirmAction } from "./components/ConfirmAction";
 import { VideoPreviewModal } from "./components/VideoPreviewModal";
 import { ImagePreviewModal } from "./components/ImagePreviewModal";
 import { AssetAssignmentModal } from "./components/AssetAssignmentModal";
@@ -67,12 +68,13 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
     for(const source of typeof files==="string"?[files]:files)await post("/media/import",{project_id:pid,source_path:source});
     await refresh();
   }catch(e){Message.error(String(e));await refresh();}finally{setBusy(false);}};
-  const action=async(path:string,m:Media)=>{setBusy(true);try{await post(path,{project_id:pid,id:m.id});await refresh();}catch(e){Message.error(String(e));}finally{setBusy(false);}};
-  const confirmDelete=(m:Asset)=>Modal.confirm({
+  const action=async(path:string,m:Media,propagateError=false)=>{setBusy(true);try{await post(path,{project_id:pid,id:m.id});await refresh();}catch(e){Message.error(String(e));if(propagateError)throw e;}finally{setBusy(false);}};
+  const confirmDelete=(m:Asset)=>confirmAction({
+    intent:"danger",
     title:filter==="trash"?"永久删除这个文件？":"移入回收站？",
-    content:filter==="trash"?`${m.name} 将从磁盘删除，无法撤销。`:`${m.name} 可以随时从回收站恢复。被使用的素材不能移入回收站。`,
-    okText:filter==="trash"?"永久删除":"移入回收站",okButtonProps:{status:"danger"},
-    onOk:()=>action(filter==="trash"?"/media/purge":"/media/delete",m),
+    content:filter==="trash"?`「${m.name}」将从磁盘删除，无法撤销。`:`「${m.name}」可以随时从回收站恢复。被使用的素材不能移入回收站。`,
+    okText:filter==="trash"?"永久删除":"移入回收站",
+    onOk:()=>action(filter==="trash"?"/media/purge":"/media/delete",m,true),
   });
   const exportAsset=async(m:Media)=>{try{const path=await save({defaultPath:m.name});if(path)await post("/media/export",{project_id:pid,media_id:m.id,destination_path:path});}catch(e){Message.error(String(e));}};
   const inspectDisk=async()=>{setScanning(true);try{setScan(await post<DiskScan>("/storage/scan",{project_id:pid}));}catch(e){Message.error(String(e));}finally{setScanning(false);}};

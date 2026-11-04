@@ -1,5 +1,6 @@
+import { ConfirmPopover } from "./components/ConfirmAction";
 import { useEffect, useRef, useState } from "react";
-import { Button, Card, Empty, Form, Input, Message, Popconfirm, Space, Tag } from "@arco-design/web-react";
+import { Button, Card, Empty, Form, Input, Message, Space, Tag } from "@arco-design/web-react";
 import { FileText, Plus, Save, Upload } from "lucide-react";
 import { post, type Project, type ProjectDocument } from "./core";
 import { useEditGuard } from "./edit-guard";
@@ -69,7 +70,7 @@ export default function ProjectConfig({ project, reload }: { project: Project; r
       <input ref={input} type="file" hidden accept=".md,.markdown,.txt" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void importDoc(file); }} />
       <p className="helper">保存世界观、人物关系与创作笔记。支持导入 Markdown / TXT，修改后点击「保存配置」。</p>
       {draft.documents.length ? <div className="project-document-layout"><nav aria-label="项目文档列表">{draft.documents.map(doc => <button type="button" key={doc.id} aria-pressed={selected === doc.id} onClick={() => setSelected(doc.id)}><FileText size={16} /><span>{doc.title || "未命名文档"}</span></button>)}</nav>
-        <div className="project-document-editor">{current ? <><Form layout="vertical" disabled={busy}><Form.Item label="文档标题" required><Input aria-label="文档标题" value={current.title} onChange={title => updateDoc({ title })} /></Form.Item></Form><div className="screenplay-workspace"><div className="screenplay-editor"><MarkdownEditor key={current.id} value={current.content} onChange={content => updateDoc({ content })} disabled={busy} onExport={exportDoc} label="文档正文" /></div></div><Space><Popconfirm title="删除这份项目文档？保存配置后生效。" onOk={() => { setDraft(value => ({ ...value, documents: value.documents.filter(doc => doc.id !== selected) })); setSelected(null); }}><Button status="danger" disabled={busy}>删除文档</Button></Popconfirm></Space></> : <Empty description="选择一份文档开始编辑" />}</div>
+        <div className="project-document-editor">{current ? <><Form layout="vertical" disabled={busy}><Form.Item label="文档标题" required><Input aria-label="文档标题" value={current.title} onChange={title => updateDoc({ title })} /></Form.Item></Form><div className="screenplay-workspace"><div className="screenplay-editor"><MarkdownEditor key={current.id} value={current.content} onChange={content => updateDoc({ content })} disabled={busy} onExport={exportDoc} label="文档正文" /></div></div><Space><ConfirmPopover title="删除这份项目文档？" content={`「${current.title || "未命名文档"}」将从项目文档中移除，点击「保存配置」后生效。`} okText="删除文档" onOk={() => { setDraft(value => ({ ...value, documents: value.documents.filter(doc => doc.id !== selected) })); setSelected(null); }}><Button status="danger" disabled={busy}>删除文档</Button></ConfirmPopover></Space></> : <Empty description="选择一份文档开始编辑" />}</div>
       </div> : <Empty description="还没有项目文档，创建一份世界观或创作笔记吧" />}
     </Card>
   </div>;

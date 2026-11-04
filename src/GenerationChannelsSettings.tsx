@@ -1,5 +1,6 @@
+import { ConfirmPopover } from "./components/ConfirmAction";
 import { useEffect, useRef, useState } from "react";
-import { Button, Dropdown, Form, Input, Menu, Popconfirm, Select, Space, Switch } from "@arco-design/web-react";
+import { Button, Dropdown, Form, Input, Menu, Select, Space, Switch } from "@arco-design/web-react";
 import { ChevronDown, Cpu, Plus, Search, Server, Star, Trash2 } from "lucide-react";
 import type { ModelSettings } from "./core";
 import { localId } from "./id";
@@ -118,7 +119,7 @@ function ChannelEditor({ kind, channel, isDefault, disabled, onChange, onDefault
   return <article className="generation-channel-card settings-channel-editor" ref={editorRef}>
     <div className="generation-channel-heading"><div className="settings-channel-identity"><ProviderMark provider={channel.provider} /><div><div className="settings-channel-title"><h3>{channel.name || "未命名渠道"}</h3>{isDefault && <span className="settings-default-badge"><Star size={11} />默认渠道</span>}</div><p>{providerLabels[channel.provider]}<span>·</span>{channel.models.length} 个可用模型</p></div></div><Space>
       {!isDefault && <Button size="small" disabled={disabled} onClick={onDefault}>设为默认</Button>}
-      <Popconfirm title={`删除渠道「${channel.name}」？`} content={kind === "llm" ? "删除默认渠道后将使用剩余的第一个渠道。" : "已有素材会保留，使用此渠道的场景需重新选择。"} onOk={onRemove}><Button aria-label={`删除渠道 ${channel.name}`} title="删除渠道" type="text" size="small" icon={<Trash2 size={15} />} disabled={disabled} /></Popconfirm>
+      <ConfirmPopover title="删除这个渠道？" content={`「${channel.name}」将在保存配置后删除。${kind === "llm" ? "删除默认渠道后将使用剩余的第一个渠道。" : "已有素材会保留，使用此渠道的场景需重新选择。"}`} okText="删除渠道" disabled={disabled} onOk={onRemove}><Button aria-label={`删除渠道 ${channel.name}`} title="删除渠道" type="text" status="danger" size="small" icon={<Trash2 size={15} />} disabled={disabled} /></ConfirmPopover>
     </Space></div>
     <Form layout="vertical" disabled={disabled}>
       <div className="settings-connection-card">

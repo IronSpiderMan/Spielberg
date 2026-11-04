@@ -1,5 +1,6 @@
+import { confirmAction } from "./components/ConfirmAction";
 import { forwardRef, useImperativeHandle, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Empty, Input, Message, Modal, Select, Space } from "@arco-design/web-react";
+import { Button, Empty, Input, Message, Select, Space } from "@arco-design/web-react";
 import { Download, Trash2 } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -125,7 +126,7 @@ const ScreenplayManager = forwardRef<ScreenplayEditorHandle, Props>(function Scr
       description: `${scene.title} · ${shot.duration} 秒\n${shot.description}${shot.camera ? `\n镜头：${shot.camera}` : ""}${shot.sound ? `\n声音与对白：${shot.sound}` : ""}`,
     }))).map((shot, index) => ({ ...shot, number: String(index + 1).padStart(3, "0") }));
     const apply = () => editShots(next);
-    if (shots.length || csvError) Modal.confirm({ title: "替换当前分镜表？", content: "当前镜头表将替换为 AI 分镜，保存后生效。", okText: "替换", cancelText: "取消", onOk: apply });
+    if (shots.length || csvError) confirmAction({ intent: "warning", title: "替换当前分镜表？", content: "当前镜头表将替换为 AI 分镜，保存后生效。", okText: "替换分镜表", onOk: apply });
     else apply();
   };
   return <section className="screenplay-page episode-single-script">

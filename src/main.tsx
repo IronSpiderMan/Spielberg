@@ -1,3 +1,4 @@
+import { confirmAction } from "./components/ConfirmAction";
 import {
 Button,
 Card,
@@ -263,7 +264,7 @@ function App() {
   });
   const openRestored=async(id:string)=>{
     if(editorDirty.current){
-      const confirmed=await new Promise<boolean>(resolve=>Modal.confirm({title:"打开恢复的项目？",content:"当前修改尚未保存，切换后将丢失。恢复的项目已保存在最近项目中。",okText:"放弃修改并打开",cancelText:"留在当前项目",onOk:()=>resolve(true),onCancel:()=>resolve(false)}));
+      const confirmed=await new Promise<boolean>(resolve=>confirmAction({intent:"danger",title:"打开恢复的项目？",content:"当前修改尚未保存，切换后将丢失。恢复的项目已保存在最近项目中。",okText:"放弃修改并打开",cancelText:"留在当前项目",onOk:()=>resolve(true),onCancel:()=>resolve(false)}));
       if(!confirmed)return;
     }
     await load(id);
@@ -636,7 +637,7 @@ function ProjectPage({
     try {
       const path=await open({directory:true,title:"选择迁移目标文件夹"});
       if(typeof path!=="string")return;
-      Modal.confirm({title:`迁移「${p.name}」`,content:`将数据库和素材复制到 ${path}，完成后使用新位置。原目录保留，可在确认后自行清理。`,okText:"迁移",onOk:()=>run(()=>post("/projects/migrate",{id:p.id,path}))});
+      confirmAction({intent:"info",title:"迁移这个项目？",content:`将「${p.name}」的数据库和素材复制到 ${path}，完成后使用新位置。原目录保留，可在确认后自行清理。`,okText:"迁移",onOk:()=>run(()=>post("/projects/migrate",{id:p.id,path}))});
     }catch(e){Message.error(String(e));}
   };
   return (
@@ -674,10 +675,10 @@ function ProjectPage({
               <Space size="mini">
                 <Button size="small" disabled={pending} onClick={()=>{setEditing(p);setName(p.name);}}>重命名</Button>
                 <Button size="small" disabled={pending} onClick={()=>void relocate(p)}>迁移</Button>
-                <Button size="small" status="danger" disabled={pending} onClick={()=>Modal.confirm({
-                  title:`删除「${p.name}」？`,content:"将从最近项目列表移除，本地项目文件保留，之后可通过「打开项目」重新添加。",okText:"删除",okButtonProps:{status:"danger"},
+                <Button size="small" status="danger" disabled={pending} onClick={()=>confirmAction({
+                  intent:"danger",title:"移除这个最近项目？",content:`「${p.name}」将从最近项目列表移除，本地项目文件保留，之后可通过「打开项目」重新添加。`,okText:"移除项目",
                   onOk:()=>run(()=>post("/projects/delete",{id:p.id})),
-                })}>删除</Button>
+                })}>移除</Button>
               </Space>
             </div>
           </Card>
