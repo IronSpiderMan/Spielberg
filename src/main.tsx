@@ -335,7 +335,6 @@ function App() {
         <button type="button" title={`切换项目：${active?.name}`} aria-label={`切换项目：${active?.name}`} aria-current={page === "projects" ? "page" : undefined} className="project-switch" onClick={() => navigate("projects")}>
           <span className="project-dot" />
           <div>
-            <small>当前项目</small>
             <strong>{active?.name}</strong>
           </div>
           <ChevronRight size={15} />
