@@ -103,6 +103,8 @@
 .agent-composer-context > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
 .agent-context-label { flex-shrink: 0; padding-left: 7px; border-left: 1px solid var(--agent-border); opacity: .8; }
 .agent-composer textarea { display: block; width: 100%; min-height: 64px; max-height: 180px; resize: none; padding: 0; border: 0; outline: none; color: var(--agent-text); background: transparent; font: inherit; font-size: 14px; line-height: 1.9; }
+/* The rounded composer supplies the focus indicator, including keyboard navigation. */
+.agent-composer textarea[data-keyboard-region]:focus-visible { outline: none; }
 .agent-conversation.is-empty .agent-composer textarea { min-height: 88px; }
 .agent-composer textarea::placeholder { color: var(--agent-muted); opacity: .8; }
 .agent-composer-actions { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
