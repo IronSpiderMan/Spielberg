@@ -4,6 +4,7 @@ import { ImageModelFields, VideoModelFields } from "./components/generation/Mode
 import { channelsFor, generationChoice, modelImageSize, modelRatio, selectionPayload, useGenerationSelection, validateGeneration } from "./generation-channels";
 import { RoleAudioReferences } from "./components/RoleAudioReferences";
 import AssetRelationships from "./AssetRelationships";
+import AssetThumbnail from "./AssetThumbnail";
 import { ASSET_CATEGORIES, assetCategoryLabel, supportsAudioReferences, type AssetCategory } from "./asset-categories";
 import { PreviewVideo, VideoPreviewModal } from "./components/VideoPreviewModal";
 import { sceneVideoPrompt } from "./core";
@@ -298,7 +299,7 @@ export function Studio({
                 ))}
               </Select>
               {scene.video_media && (
-                <VideoAsset video={scene.video_media} scene={scene} projectId={data.project.id} reload={reload} />
+                <VideoAsset video={scene.video_media} scene={scene} projectId={data.project.id} reload={reload} thumbnail />
               )}
             </div>
           </div>
@@ -323,7 +324,7 @@ function EpisodeCover({episode}: {episode: {cover_media?: Media; scenes?: Scene[
   const video = scene && (sceneVideos(scene).find(video => video.id === scene.video_media_id) || sceneVideos(scene)[0]);
   return <div className="episode-cover">{episode.cover_media ? <img src={imageUrl(episode.cover_media)} alt="剧集封面"/> : video ? <video src={`${imageUrl(video)}#t=0.001`} muted preload="auto" aria-label="默认剧集封面"/> : <Film size={28}/>}</div>;
 }
-function VideoAsset({video, scene, projectId, reload}: {video:Media;scene?:Scene;projectId:string;reload?:()=>void}) {
+function VideoAsset({video, scene, projectId, reload, thumbnail=false}: {video:Media;scene?:Scene;projectId:string;reload?:()=>void;thumbnail?:boolean}) {
   const [preview,setPreview] = useState(false);
   const [deleting,setDeleting] = useState(false);
   const [selecting,setSelecting] = useState(false);
@@ -337,7 +338,10 @@ function VideoAsset({video, scene, projectId, reload}: {video:Media;scene?:Scene
     } catch(e){Message.error(String(e));}
   };
   return <div className="video-asset">
-    <video ref={inlinePlayer} src={imageUrl(video)} controls muted playsInline preload="metadata" onLoadedData={event=>{const el=event.currentTarget;if(el.duration>0)el.currentTime=Math.min(.1,el.duration/2);}} onDoubleClick={event=>{event.preventDefault();openPreview();}}/>
+    {thumbnail ? <button type="button" className="video-asset-thumbnail" aria-label={`预览视频 ${video.name}`} onClick={openPreview}>
+      <AssetThumbnail key={`${projectId}:${video.id}:${video.path}`} media={video} projectId={projectId}/>
+      <span className="video-asset-thumbnail-play" aria-hidden="true"><Play size={24} fill="currentColor"/></span>
+    </button> : <video ref={inlinePlayer} src={imageUrl(video)} controls muted playsInline preload="metadata" onLoadedData={event=>{const el=event.currentTarget;if(el.duration>0)el.currentTime=Math.min(.1,el.duration/2);}} onDoubleClick={event=>{event.preventDefault();openPreview();}}/>}
     <Space wrap>
       <Button size="mini" icon={<ZoomIn size={14}/>} onClick={openPreview}>放大预览</Button>
       <Button size="mini" icon={<Download size={14}/>} onClick={download}>下载</Button>
