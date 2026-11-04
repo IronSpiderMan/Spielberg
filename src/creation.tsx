@@ -14,7 +14,7 @@ import { sceneGenerationOptions } from "./scene-generation";
 import { localId } from "./id";
 import { Button,Empty,Form,Input,Message,Popconfirm,Select,Space,Tabs,Tag } from "@arco-design/web-react";
 import { ArrowDown,ArrowUp,ImagePlus,Plus,Trash2,Undo2 } from "lucide-react";
-import React,{ lazy,Suspense,useEffect,useRef,useState } from "react";
+import React,{ lazy,startTransition,Suspense,useEffect,useRef,useState } from "react";
 import { defaultGenerationSize, Media,Scene,Snapshot,imageUrl,post } from "./core";
 import { findMentions,promptMentions,resolvePromptReferences } from "./prompt-mentions";
 import { PromptInput } from "./PromptInput";
@@ -25,7 +25,14 @@ import { resolvePrompt, resolveReferencePrompt } from "./resolve-prompt";
 import type { Person } from "./PoseStudio";
 const PoseStudio=lazy(()=>import("./PoseStudio"));
 export function CreationDesk({data,reload,renderSequence,changePage,activeTab,onTabChange,imageSource,onImageUse,initialPrompt,initialRatio}: {data:Snapshot;reload:()=>void;renderSequence:()=>React.ReactNode;changePage:(v:string)=>void;editScene:(s:Scene)=>void;activeTab:string;onTabChange:(tab:string)=>void;imageSource?:Media;onImageUse?:(media:Media)=>void;initialPrompt?:string;initialRatio?:string}) {
-  return <section className={`creation-desk${(activeTab==="images"||activeTab==="videos")?" images-active":activeTab==="sequence"?" sequence-active":""}`}><div className="section-title page-actions"><div className="page-intro"><h1>工作台</h1><p>从画面构思，到镜头成片。</p></div><div className="workbench-links"><Button type="text" onClick={()=>changePage("assets")}>素材库 <span>{data.media.length}</span></Button><Button type="text" onClick={()=>changePage("tasks")}>查看任务</Button></div></div><Tabs activeTab={activeTab} onChange={onTabChange} destroyOnHide={false}><Tabs.TabPane key="images" title="图片生成"><ImageStudio key={imageSource?.id||"default"} data={data} reload={reload} source={imageSource} onUse={onImageUse} initialPrompt={initialPrompt} initialRatio={initialRatio}/></Tabs.TabPane><Tabs.TabPane key="videos" title="视频生成"><VideoStudio key={data.project.id} data={data} reload={reload}/></Tabs.TabPane><Tabs.TabPane key="tts" title="语音合成"><TtsStudio key={data.project.id} data={data} reload={reload}/></Tabs.TabPane><Tabs.TabPane key="sequence" title="剧集编排">{renderSequence()}</Tabs.TabPane><Tabs.TabPane key="script" title="脚本编排"><ScriptStudio key={data.project.id} data={data} reload={reload} onCreated={()=>changePage("episodes")}/></Tabs.TabPane></Tabs></section>;
+  const [sequenceVisited,setSequenceVisited]=useState(false);
+  // Arco remembers attempted tab renders even when React suspends them. Only
+  // keep the lazy panel mounted after a successful commit, so typing/polling
+  // on the current tab cannot expose an unfinished panel to an urgent update.
+  useEffect(()=>{if(activeTab==="sequence")setSequenceVisited(true);},[activeTab]);
+  // Keep the current workbench visible until the requested lazy tab is ready.
+  const changeTab=(tab:string)=>startTransition(()=>onTabChange(tab));
+  return <section className={`creation-desk${(activeTab==="images"||activeTab==="videos")?" images-active":activeTab==="sequence"?" sequence-active":""}`}><div className="section-title page-actions"><div className="page-intro"><h1>工作台</h1><p>从画面构思，到镜头成片。</p></div><div className="workbench-links"><Button type="text" onClick={()=>changePage("assets")}>素材库 <span>{data.media.length}</span></Button><Button type="text" onClick={()=>changePage("tasks")}>查看任务</Button></div></div><Tabs activeTab={activeTab} onChange={changeTab} destroyOnHide={false}><Tabs.TabPane key="images" title="图片生成"><ImageStudio key={imageSource?.id||"default"} data={data} reload={reload} source={imageSource} onUse={onImageUse} initialPrompt={initialPrompt} initialRatio={initialRatio}/></Tabs.TabPane><Tabs.TabPane key="videos" title="视频生成"><VideoStudio key={data.project.id} data={data} reload={reload}/></Tabs.TabPane><Tabs.TabPane key="tts" title="语音合成"><TtsStudio key={data.project.id} data={data} reload={reload}/></Tabs.TabPane><Tabs.TabPane key="sequence" title="剧集编排">{(activeTab==="sequence"||sequenceVisited)&&renderSequence()}</Tabs.TabPane><Tabs.TabPane key="script" title="脚本编排"><ScriptStudio key={data.project.id} data={data} reload={reload} onCreated={()=>changePage("episodes")}/></Tabs.TabPane></Tabs></section>;
 }
 function MaskPainter({source,value,onChange}:{source:Media;value?:string;onChange:(value:string|undefined)=>void}) {
   const canvas=useRef<HTMLCanvasElement>(null),maskCanvas=useRef<HTMLCanvasElement>(null),drawing=useRef(false),origin=useRef<{x:number;y:number}>({x:0,y:0}),points=useRef<{x:number;y:number}[]>([]),[loaded,setLoaded]=useState(false),[tool,setTool]=useState<"rect"|"circle"|"free">("rect");
