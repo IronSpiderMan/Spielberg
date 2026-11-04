@@ -1753,6 +1753,8 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
   const [graphOpen, setGraphOpen] = useState(false);
   const [showDisabled, setShowDisabled] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<AssetCategory | "all">("all");
+  const [assetPage, setAssetPage] = useState(1);
+  const roleLibraryRef = useRef<HTMLElement>(null);
   const [query, setQuery] = useState("");
   const [updatingRoleId, setUpdatingRoleId] = useState<number | null>(null);
   const [unlinkingImageId, setUnlinkingImageId] = useState<number | null>(null);
@@ -1766,6 +1768,15 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
     (categoryFilter === "all" || (role.category || "person") === categoryFilter) &&
     (!search || role.name.toLowerCase().includes(search) || role.description.toLowerCase().includes(search))
   );
+  const assetPageCount = Math.max(1, Math.ceil(visibleRoles.length / 24));
+  const currentAssetPage = Math.min(assetPage, assetPageCount);
+  const pagedRoles = visibleRoles.slice((currentAssetPage - 1) * 24, currentAssetPage * 24);
+  useEffect(() => { setAssetPage(1); }, [data.project.id, search, categoryFilter, showDisabled]);
+  useEffect(() => { setAssetPage(page => Math.min(page, assetPageCount)); }, [assetPageCount]);
+  const changeAssetPage = (page: number) => {
+    setAssetPage(page);
+    roleLibraryRef.current?.closest<HTMLElement>(".content")?.scrollTo({ top: 0 });
+  };
   const [roleImagePreview, setRoleImagePreview] = useState<Media | null>(null);
   const [previewRoleId, setPreviewRoleId] = useState<number | null>(null);
   const openRoleImage = (role: Asset, media: Media) => { setPreviewRoleId(role.id); setRoleImagePreview(media); };
@@ -1840,7 +1851,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
   };
   if (graphOpen) return <AssetRelationships key={data.project.id} data={data} onClose={() => setGraphOpen(false)}/>;
   return (
-    <section className="role-library" aria-label="资产库" >
+    <section ref={roleLibraryRef} className="role-library" aria-label="资产库" >
       {detail ? <div className="role-detail-page">
         <div className="role-detail-topbar">
           <Button  type="text" icon={<ArrowLeft size={16} />} onClick={closeRoleDetail}>资产列表</Button>
@@ -1897,10 +1908,10 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
         </Space>
       </div>
       <div className="role-toolbar">
-        <Input.Search aria-label="搜索资产名称或描述" placeholder="搜索资产名称或描述" value={query} onChange={setQuery} allowClear />
         <Select aria-label="资产类别筛选" value={categoryFilter} onChange={setCategoryFilter} style={{width: 132}}
           options={[{value: "all", label: "全部类别"}, ...ASSET_CATEGORIES]} />
         <Checkbox checked={showDisabled} onChange={setShowDisabled}>显示已禁用资产</Checkbox>
+        <Input.Search aria-label="搜索资产名称或描述" placeholder="搜索资产名称或描述" value={query} onChange={setQuery} allowClear />
         <span className="helper role-total" role="status">共 {visibleRoles.length} 项资产</span>
       </div>
       {(search || data.assets.length > 0) && !visibleRoles.length && <div className="role-search-empty">
@@ -1908,7 +1919,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
         {search && <Button type="text" size="small" onClick={() => setQuery("")}>清空搜索</Button>}
       </div>}
       <div className="role-grid" >
-        {visibleRoles.map((r, index) => (
+        {pagedRoles.map((r, index) => (
           <Card key={r.id} className={`role-card${r.enabled === false ? " role-card-disabled" : ""}`} bodyStyle={{ padding: 16 }}
 
             role="group" aria-label={r.name}
@@ -1958,25 +1969,11 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
             </div>
           </Card>
         ))}
-        <Card
-          className="role-card role-create"
-          bodyStyle={{ padding: 16 }}
-          role="button"
-          tabIndex={0}
-          aria-label="创建资产"
-          onClick={() => void make().catch((e) => Message.error(String(e)))}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault();
-              void make().catch((e) => Message.error(String(e)));
-            }
-          }}
-        >
-          <div className="role-pic"><Plus size={28} strokeWidth={1.4} /></div>
-          <h3>创建资产</h3>
-          <p>{data.assets.length ? "继续添加人物、地点或物品等资产" : "记录第一个资产，让镜头保持视觉一致。"}</p>
-        </Card>
       </div>
+      {visibleRoles.length > 0 && <div className="asset-library-footer role-library-footer">
+        <span className="asset-page-announcement" role="status" aria-live="polite">第 {currentAssetPage} 页，共 {assetPageCount} 页，当前 {pagedRoles.length} 项资产</span>
+        <Pagination className="asset-pagination" current={currentAssetPage} pageSize={24} total={visibleRoles.length} onChange={changeAssetPage} showTotal />
+      </div>}
       </>}
       <Modal visible={!!renamingMedia} title="重命名素材" okText="保存名称" confirmLoading={renamingMediaBusy}
         okButtonProps={{disabled:!renamingMedia?.name.trim()}} cancelButtonProps={{disabled:renamingMediaBusy}}

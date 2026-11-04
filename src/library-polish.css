@@ -215,7 +215,8 @@ html .app .content:has(> .asset-library) {
   border-top: 1px solid var(--ui-border);
 }
 
-.asset-library .asset-pagination {
+.asset-library .asset-pagination,
+.role-library .asset-pagination {
   margin: 0 0 0 auto;
   padding: 0;
   border: 0;
@@ -318,16 +319,20 @@ html .app .content:has(> .asset-library) {
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  margin-bottom: 24px;
+  padding: 0 0 16px;
+  margin: 0 0 24px;
+  border-bottom: 1px solid var(--ui-border);
 }
-
 .role-toolbar > .arco-input-search {
-  flex: 1 1 240px;
+  flex: 1 1 180px;
   min-width: 0;
-  max-width: 360px;
+  max-width: 380px;
 }
-
-.role-total { margin-left: auto; }
+.role-total { margin-left: auto; white-space: nowrap; }
+@media (max-width: 600px) {
+  .role-toolbar > .arco-input-search { flex-basis: 100%; max-width: none; order: 2; }
+  .role-total { flex-basis: 100%; margin-left: 0; order: 3; }
+}
 .role-search-empty { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; }
 .role-search-empty p { margin: 0; }
 
