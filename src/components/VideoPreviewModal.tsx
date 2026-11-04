@@ -9,6 +9,7 @@ import "./video-preview.css";
 type Props = {
   media: Media | null;
   onClose: () => void;
+  afterClose?: () => void;
   visible?: boolean;
   title?: string;
   videos?: Media[];
@@ -29,10 +30,10 @@ function time(value: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export function VideoPreviewModal({ visible, ...props }: Props) {
+export function VideoPreviewModal({ visible, afterClose, ...props }: Props) {
   const open = !!props.media && (visible ?? true);
   return <Modal className="image-preview-modal video-preview-modal is-fullscreen" wrapClassName="image-preview-wrapper" alignCenter={false}
-    visible={open} title={props.media?.name || props.title || "视频预览"} closable={false} footer={null} onCancel={props.onClose} unmountOnExit>
+    visible={open} title={props.media?.name || props.title || "视频预览"} closable={false} footer={null} onCancel={props.onClose} afterClose={afterClose} unmountOnExit>
     {open && props.media && <VideoPreview key={`${props.playbackKey ?? ""}:${props.media.id}:${props.media.path}`} {...props} media={props.media} />}
   </Modal>;
 }

@@ -102,7 +102,7 @@ function keyboardRegions() {
   return [
     { region: nav, target: nav?.querySelector<HTMLElement>('[aria-current="page"]') || nav?.querySelector<HTMLElement>('[data-workspace-nav]') || null },
     { region: sessions, target: sessions?.querySelector<HTMLElement>('.agent-session-select[aria-current="page"]:not(:disabled)') || sessions?.querySelector<HTMLElement>('.agent-session-select:not(:disabled), [data-testid="agent-new-session"]:not(:disabled)') || null },
-    ...(conversation ? [{ region: conversation, target: conversation }, { region: composer, target: composer }] : [{ region: content, target: content }]),
+    ...(conversation ? [{ region: conversation, target: conversation }, { region: composer, target: composer }] : [{ region: content, target: content?.querySelector<HTMLElement>("[data-keyboard-entry]") || content }]),
   ].filter(item => isKeyboardTargetVisible(item.region) && isKeyboardTargetVisible(item.target) && !item.target.matches(':disabled, [aria-disabled="true"]'));
 }
 
@@ -621,10 +621,16 @@ function App() {
             <div><dt>对话 → 会话 → 侧栏</dt><dd><kbd>←</kbd></dd></div>
             <div><dt>列表第一项 / 最后一项</dt><dd><kbd>Home</kbd> / <kbd>End</kbd></dd></div>
           </dl></div>
+          <div><h3>资产库与素材库</h3><dl>
+            <div><dt>从侧栏选中第一张卡片</dt><dd><kbd>→</kbd></dd></div>
+            <div><dt>按网格位置选择卡片</dt><dd><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></dd></div>
+            <div><dt>最左列返回侧栏</dt><dd><kbd>←</kbd></dd></div>
+            <div><dt>查看资产详情 / 预览素材</dt><dd><kbd>Enter</kbd></dd></div>
+            <div><dt>选择当前列表第一张 / 最后一张</dt><dd><kbd>Home</kbd> / <kbd>End</kbd></dd></div>
+            <div><dt>素材库翻页</dt><dd>底部分页控件</dd></div>
+          </dl></div>
           <div><h3>素材库与对话</h3><dl>
-            <div><dt>素材库上一页 / 下一页</dt><dd><kbd>←</kbd> <kbd>→</kbd></dd></div>
-            <div><dt>上下滚动 / 整屏滚动</dt><dd><kbd>↑</kbd> <kbd>↓</kbd> / <kbd>PageUp</kbd> <kbd>PageDown</kbd></dd></div>
-            <div><dt>滚动到顶部 / 底部</dt><dd><kbd>Home</kbd> / <kbd>End</kbd></dd></div>
+            <div><dt>整屏滚动</dt><dd><kbd>PageUp</kbd> <kbd>PageDown</kbd></dd></div>
             <div><dt>搜索素材 / 输入消息</dt><dd><kbd>/</kbd></dd></div>
             <div><dt>离开搜索框或消息输入框</dt><dd><kbd>Esc</kbd></dd></div>
           </dl></div>

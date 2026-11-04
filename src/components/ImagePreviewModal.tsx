@@ -4,11 +4,12 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { imageUrl, type Media } from "../core";
 import "./image-preview.css";
 
-export function ImagePreviewModal({ media, onClose, title = "参考图片预览", visible = !!media, footer = null, className = "", images = [], onMediaChange }: {
+export function ImagePreviewModal({ media, onClose, afterClose, title = "参考图片预览", visible = !!media, footer = null, className = "", images = [], onMediaChange }: {
   media: Media | null;
   images?: Media[];
   onMediaChange?: (media: Media) => void;
   onClose: () => void;
+  afterClose?: () => void;
   title?: string;
   visible?: boolean;
   footer?: ReactNode;
@@ -173,7 +174,7 @@ export function ImagePreviewModal({ media, onClose, title = "参考图片预览"
     document.addEventListener("keydown", keydown);
     return () => document.removeEventListener("keydown", keydown);
   }, [visible, zoom, reset, actualSize]);
-  return <Modal className={`image-preview-modal is-fullscreen ${className}`} wrapClassName="image-preview-wrapper" alignCenter={false} title={<div className="image-preview-heading"><span className="image-preview-file-icon"><ImageIcon size={20} /></span><div><strong title={media?.name || title}>{media?.name || title}</strong><span>{ready ? `${imageSize.width} × ${imageSize.height}` : "图片预览"} · {sizeLabel} · {format}</span></div></div>} visible={visible} footer={footer} onCancel={onClose}>
+  return <Modal className={`image-preview-modal is-fullscreen ${className}`} wrapClassName="image-preview-wrapper" alignCenter={false} title={<div className="image-preview-heading"><span className="image-preview-file-icon"><ImageIcon size={20} /></span><div><strong title={media?.name || title}>{media?.name || title}</strong><span>{ready ? `${imageSize.width} × ${imageSize.height}` : "图片预览"} · {sizeLabel} · {format}</span></div></div>} visible={visible} footer={footer} onCancel={onClose} afterClose={afterClose}>
     <div className="image-preview-toolbar" role="toolbar" aria-label="图片预览工具">
       <div className="image-preview-tools">
       <Button aria-label="切换缩略图" aria-pressed={showThumbnails} title="切换缩略图" onClick={() => setShowThumbnails(value => !value)} icon={showThumbnails ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />} />

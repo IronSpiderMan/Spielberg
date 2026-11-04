@@ -43,6 +43,45 @@ export function focusKeyboardTarget(element: HTMLElement | null) {
   return true;
 }
 
+export function moveCardGridFocus(
+  key: string,
+  current: HTMLElement,
+  cards: HTMLElement[],
+  leaveLeft: () => void,
+) {
+  if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(key)) return false;
+  const visible = cards.filter(isKeyboardTargetVisible);
+  if (!visible.includes(current)) return false;
+  // Layout offsets ignore hover transforms and follow the current responsive grid.
+  const rows: HTMLElement[][] = [];
+  for (const card of visible) {
+    const row = rows.find(items => Math.abs(items[0].offsetTop - card.offsetTop) < 2);
+    if (row) row.push(card);
+    else rows.push([card]);
+  }
+  rows.sort((a, b) => a[0].offsetTop - b[0].offsetTop);
+  rows.forEach(row => row.sort((a, b) => a.offsetLeft - b.offsetLeft));
+  const rowIndex = rows.findIndex(row => row.includes(current));
+  const row = rows[rowIndex];
+  const column = row.indexOf(current);
+  let next: HTMLElement | undefined;
+  if (key === "ArrowLeft") {
+    if (column === 0) leaveLeft();
+    else next = row[column - 1];
+  } else if (key === "ArrowRight") next = row[column + 1];
+  else if (key === "Home") next = visible[0];
+  else if (key === "End") next = visible[visible.length - 1];
+  else {
+    const nextRow = rows[rowIndex + (key === "ArrowUp" ? -1 : 1)];
+    // A short final row lands on its closest available column.
+    next = nextRow?.reduce((closest, card) =>
+      Math.abs(card.offsetLeft - current.offsetLeft) < Math.abs(closest.offsetLeft - current.offsetLeft) ? card : closest,
+    );
+  }
+  if (next) focusKeyboardTarget(next);
+  return true;
+}
+
 export function scrollWithKeyboard(event: { key: string; preventDefault: () => void }, element: HTMLElement | null) {
   if (!element || !["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(event.key)) return false;
   const page = Math.max(80, element.clientHeight * .85);

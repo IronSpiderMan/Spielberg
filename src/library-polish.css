@@ -71,6 +71,7 @@ html .app .content:has(> .asset-library) {
 .asset-library .library-grid {
   grid-template-columns: repeat(auto-fill, minmax(min(236px, 100%), 1fr));
   gap: 20px;
+  padding: 5px;
 }
 
 .asset-library .library-card {
@@ -371,6 +372,18 @@ html .app .content:has(> .asset-library) {
   min-width: 0;
   border-radius: var(--ui-radius-panel) !important;
   transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.content .role-card[data-asset-card],
+.asset-library .library-card[data-media-card] {
+  scroll-margin-block: 8px;
+}
+
+.content .role-card[data-asset-card]:focus-visible,
+.asset-library .library-card[data-media-card]:focus-visible {
+  outline: 2px solid var(--ui-primary);
+  outline-offset: 3px;
+  border-color: var(--ui-primary);
 }
 
 .content .role-card:not(.role-create) > .arco-card-body {

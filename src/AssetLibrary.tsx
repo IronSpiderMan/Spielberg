@@ -9,7 +9,7 @@ import { useEffect,useId,useRef,useState } from "react";
 import AssetThumbnail from "./AssetThumbnail";
 import { Media,Snapshot,imageUrl,post } from "./core";
 import { EmptyState } from "./ui";
-import { focusKeyboardTarget, isKeyboardEventBlocked, scrollWithKeyboard } from "./keyboard";
+import { focusKeyboardTarget, hasOpenKeyboardLayer, isKeyboardEventBlocked, moveCardGridFocus, scrollWithKeyboard } from "./keyboard";
 import "./creation.css";
 
 export type AssetUsage = {kind:"asset"|"episode"|"scene"|"canvas";target_id:number;title:string;episode_id?:number;episode_title?:string;purpose:string};
@@ -44,6 +44,24 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
   const request=useRef(0);
   const paging=useRef(false);
   const libraryRef=useRef<HTMLElement>(null);
+  const [selectedMediaId,setSelectedMediaId]=useState<number|null>(null);
+  const selectedVisibleMediaId=items.find(item=>item.id===selectedMediaId)?.id??items[0]?.id;
+  const focusSelectedCard=()=>focusKeyboardTarget(libraryRef.current?.querySelector<HTMLElement>(`[data-media-card="${selectedVisibleMediaId}"]`)||null);
+  const previewReturn=useRef<HTMLElement|null>(null);
+  const openPreview=(media:Media)=>{
+    previewReturn.current=document.activeElement instanceof HTMLElement?document.activeElement:null;
+    setPreview(media);
+  };
+  const restorePreviewFocus=()=>{
+    const target=previewReturn.current;previewReturn.current=null;
+    // Arco hides its modal wrapper after afterClose; wait for that DOM update.
+    requestAnimationFrame(()=>{
+      if(target && libraryRef.current && !hasOpenKeyboardLayer() && !focusKeyboardTarget(target))focusSelectedCard();
+    });
+  };
+  const returnToMediaTab=()=>{
+    if(!focusKeyboardTarget(document.querySelector<HTMLElement>('[data-workspace-nav="assets"]')))focusKeyboardTarget(document.querySelector<HTMLElement>(".sidebar-toggle"));
+  };
   const keyboardHintId=useId();
   const pid=data.project.id;
   const refresh=async()=>{await reload();setVersion(v=>v+1);};
@@ -54,6 +72,8 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
   },[query,search]);
   useEffect(()=>{
     const id=++request.current;paging.current=true;setLoading(true);setError("");
+    const active=document.activeElement;
+    if(active instanceof HTMLElement && active.closest("[data-media-card]") && libraryRef.current?.contains(active) && !hasOpenKeyboardLayer())focusKeyboardTarget(libraryRef.current);
     void post<{items:Asset[];total:number}>("/media/list",{project_id:pid,kind,query:search,usage:filter,page,limit:24}).then(result=>{
       if(id!==request.current)return;
       if(page>1 && result.total <= (page-1)*24){setPage(Math.max(1,Math.ceil(result.total/24)));return;}
@@ -104,10 +124,15 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
     // The current card disappears after a page load. Keep keyboard focus in a
     // stable region instead of dropping it onto document.body.
     focusKeyboardTarget(libraryRef.current);
+    setSelectedMediaId(null);
     setPage(target);
     scrollContainer()?.scrollTo({top:0});
   };
   useEffect(()=>{scrollContainer()?.scrollTo({top:0});},[page,kind,search,filter]);
+  useEffect(()=>{
+    // Entering while a page is loading keeps a stable target, then selects its first card.
+    if(!loading && !paging.current && query===search && document.activeElement===libraryRef.current)focusSelectedCard();
+  },[loading,items,query,search]);
   useEffect(()=>{
     const keydown=(event:KeyboardEvent)=>{
       const library=libraryRef.current;
@@ -122,16 +147,33 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
         if(focusKeyboardTarget(searchInput)){event.preventDefault();searchInput?.select();}
         return;
       }
-      if(event.key==="ArrowLeft" || event.key==="ArrowRight"){
-        event.preventDefault();
-        if(!event.repeat && !error)changePage(page+(event.key==="ArrowRight"?1:-1));
+      const card=target.closest<HTMLElement>("[data-media-card]");
+      if(card && library.contains(card)){
+        if(loading || paging.current || query!==search)return;
+        if(target===card && (event.key==="Enter" || event.key===" ")){
+          event.preventDefault();
+          const media=items.find(item=>item.id===Number(card.dataset.mediaCard));
+          if(!event.repeat && media)openPreview(media);
+          return;
+        }
+        if(moveCardGridFocus(event.key,card,Array.from(library.querySelectorAll<HTMLElement>("[data-media-card]")),returnToMediaTab)){
+          event.preventDefault();return;
+        }
+      }else if(target===library || target===document.body || target.id==="workspace-content"){
+        if(event.key==="ArrowLeft"){
+          event.preventDefault();returnToMediaTab();return;
+        }
+        if(event.key==="ArrowRight"){
+          event.preventDefault();if(!loading && query===search)focusSelectedCard();return;
+        }
+      }else{
         return;
       }
       scrollWithKeyboard(event,scrollContainer());
     };
     document.addEventListener("keydown",keydown);
     return()=>document.removeEventListener("keydown",keydown);
-  },[page,pageCount,loading,error,query,search]);
+  },[items,loading,selectedVisibleMediaId,query,search]);
   return <section ref={libraryRef} className="asset-library" aria-label="素材库" aria-busy={loading} tabIndex={0} data-keyboard-region="content" aria-describedby={keyboardHintId}>
     <div className="section-title page-actions"><div className="page-intro"><h1>素材库</h1><p>管理项目中的图片、视频与音频。</p></div><Space wrap>
       <Button loading={scanning} icon={<HardDrive size={16}/>} onClick={inspectDisk}>磁盘清理</Button>
@@ -142,7 +184,7 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
       <Select aria-label="使用状态" value={filter} onChange={value=>{setFilter(value);setPage(1);}} options={[{label:"全部素材",value:"all"},{label:"使用中",value:"used"},{label:"未使用",value:"unused"},{label:"回收站",value:"trash"}]}/>
       <Input.Search aria-label="搜索素材名称" value={query} onChange={setQuery} placeholder="搜索素材名称" allowClear onKeyDown={event=>{
         if(event.key==="Escape" && !event.defaultPrevented && !event.nativeEvent.isComposing && event.nativeEvent.keyCode!==229 && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey){
-          event.preventDefault();event.stopPropagation();focusKeyboardTarget(libraryRef.current);
+          event.preventDefault();event.stopPropagation();if(loading||query!==search||!focusSelectedCard())focusKeyboardTarget(libraryRef.current);
         }
       }}/>
       {filtered&&<Button className="asset-clear-filters" type="text" size="small" onClick={clearFilters}>清除筛选</Button>}
@@ -150,8 +192,12 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
     </div>
     {filter==="trash"&&<p className="helper">回收站保留原文件；永久删除才会释放磁盘空间。</p>}
     {error?<div className="library-status" role="alert"><div><b>素材暂时未能加载</b><p>{error}</p></div><Button onClick={()=>setVersion(v=>v+1)}>重新加载</Button></div>:<Spin loading={loading} style={{display:"block"}}>
-      <div className="library-grid">{items.map(m=><article className="library-card" key={m.id}>
-        <button type="button" className="library-thumbnail" onClick={()=>setPreview(m)} aria-label={`预览 ${m.name}`}><AssetThumbnail media={m} projectId={pid}/><span className="library-preview-hint"><Eye size={15}/>预览</span><Tag>{m.kind==="video"?"视频":m.kind==="image"?"图片":m.kind==="audio"?"音频":"文件"}</Tag></button>
+      <div className="library-grid">{items.map((m,index)=><article className="library-card" key={m.id}
+        data-media-card={m.id} data-keyboard-entry={!loading&&query===search&&index===0?"":undefined}
+        tabIndex={m.id===selectedVisibleMediaId?0:-1} aria-label={m.name}
+        aria-description="方向键选择素材，最左列按左键返回侧栏，Enter 预览"
+        onFocusCapture={()=>setSelectedMediaId(m.id)}>
+        <button type="button" className="library-thumbnail" onClick={()=>openPreview(m)} aria-label={`预览 ${m.name}`}><AssetThumbnail media={m} projectId={pid}/><span className="library-preview-hint"><Eye size={15}/>预览</span><Tag>{m.kind==="video"?"视频":m.kind==="image"?"图片":m.kind==="audio"?"音频":"文件"}</Tag></button>
         <div className="library-card-copy"><b title={m.name}>{m.name}</b>{(m.kind==="image"||m.kind==="video")&&<MediaDimensions media={m}/>}<small>{new Date(Number(m.created_at)*1000).toLocaleString()}</small></div>
         {filter!=="trash"&&m.kind!=="file"&&<button type="button" className="asset-usage-link" data-used={m.usage_count>0} onClick={()=>setTracking(m)}>{m.usage_count?`使用中 · ${m.usage_count} 处用途`:"未使用 · 查看用途"}</button>}
         <div className="asset-card-actions">
@@ -168,7 +214,7 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
       /></div>}
     </Spin>}
     <div className="asset-library-footer">
-      <p id={keyboardHintId} className="asset-keyboard-hint"><span><kbd>←</kbd><kbd>→</kbd> 翻页</span><span><kbd>↑</kbd><kbd>↓</kbd> 滚动</span><span><kbd>/</kbd> 搜索</span></p>
+      <p id={keyboardHintId} className="asset-keyboard-hint"><span><kbd>↑↓←→</kbd> 选择素材</span><span><kbd>Enter</kbd> 预览</span><span>最左列 <kbd>←</kbd> 返回侧栏</span><span><kbd>/</kbd> 搜索</span></p>
       <span className="asset-page-announcement" role="status" aria-live="polite" aria-atomic="true">{!loading&&!error&&`第 ${page} 页，共 ${pageCount} 页，当前 ${items.length} 项素材`}</span>
       {total>0&&!error&&<Pagination className="asset-pagination" current={page} pageSize={24} total={total} onChange={changePage} showTotal disabled={loading||query!==search}/>}
     </div>
@@ -177,9 +223,9 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
         {usageError?<p role="alert">{usageError}</p>:uses.length?uses.map((use,index)=><div className="usage-record" key={index}><Tag>{use.purpose}</Tag><b>{use.episode_title&&use.kind==="scene"?`${use.episode_title} / `:""}{use.title}</b><Button size="small" onClick={()=>{setTracking(null);onLocate(use);}}>前往{use.kind==="asset"?"资产":use.kind==="episode"?"剧集":use.kind==="canvas"?"画布":"场景"}</Button></div>):!usageLoading&&<Empty description="尚未被资产、剧集或场景使用"/>}
       </Spin>
     </Drawer>
-    <ImagePreviewModal media={preview?.kind==="image"?preview:null} images={items.filter(item=>item.kind==="image")} onMediaChange={setPreview} onClose={()=>setPreview(null)} footer={filter==="trash"?null:<Button type="primary" onClick={()=>preview&&beginAssignment(preview)}>设置用途</Button>}/>
-    <VideoPreviewModal media={preview?.kind==="video"?preview:null} videos={items.filter(item=>item.kind==="video")} projectId={pid} onMediaChange={setPreview} onClose={()=>setPreview(null)} footer={filter==="trash"?null:<Button type="primary" onClick={()=>preview&&beginAssignment(preview)}>设置用途</Button>}/>
-    <Modal visible={!!preview && (preview.kind==="audio"||preview.kind==="file")} title={preview?.name} footer={null} unmountOnExit onCancel={()=>setPreview(null)}>{preview?.kind==="audio"?<audio controls src={imageUrl(preview)} style={{width:"100%"}}/>:<Empty description="此文件不支持预览，可通过更多操作导出查看"/>}</Modal>
+    <ImagePreviewModal media={preview?.kind==="image"?preview:null} images={items.filter(item=>item.kind==="image")} onMediaChange={setPreview} onClose={()=>setPreview(null)} afterClose={restorePreviewFocus} footer={filter==="trash"?null:<Button type="primary" onClick={()=>preview&&beginAssignment(preview)}>设置用途</Button>}/>
+    <VideoPreviewModal media={preview?.kind==="video"?preview:null} videos={items.filter(item=>item.kind==="video")} projectId={pid} onMediaChange={setPreview} onClose={()=>setPreview(null)} afterClose={restorePreviewFocus} footer={filter==="trash"?null:<Button type="primary" onClick={()=>preview&&beginAssignment(preview)}>设置用途</Button>}/>
+    <Modal visible={!!preview && (preview.kind==="audio"||preview.kind==="file")} title={preview?.name} footer={null} unmountOnExit onCancel={()=>setPreview(null)} afterClose={restorePreviewFocus}>{preview?.kind==="audio"?<audio controls src={imageUrl(preview)} style={{width:"100%"}}/>:<Empty description="此文件不支持预览，可通过更多操作导出查看"/>}</Modal>
     <Modal visible={!!rename} title="重命名素材" onCancel={()=>setRename(null)} onOk={async()=>{if(!rename?.name.trim())throw Error("请输入素材名称");await post("/media/rename",{project_id:pid,id:rename.id,name:rename.name.trim()});setRename(null);await refresh();}}><Input aria-label="素材名称" value={rename?.name||""} onChange={name=>setRename(m=>m?{...m,name}:null)}/></Modal>
     <Modal visible={!!scan} title="磁盘清理" okText="执行清理" confirmLoading={busy} onCancel={()=>{if(!busy)setScan(null);}} onOk={async()=>{
       if(!scan)return;setBusy(true);try{await post("/storage/cleanup",{project_id:pid,files:scan.files.map(f=>f.path),clear_cache:true});setScan(null);await refresh();Message.success("缓存已清理，未登记文件已移入回收站");}catch(e){Message.error(String(e));throw e;}finally{setBusy(false);}
