@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button, Input } from "@arco-design/web-react";
-import { ArrowDown, ArrowUp, Clock3, GitBranch, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Clock3, GitBranch, Pencil, Plus, Trash2, ZoomIn, ZoomOut } from "lucide-react";
 import type { ProjectTimeline, ProjectTimelineEntry } from "../core";
 import { localId } from "../id";
 import { ConfirmPopover } from "./ConfirmAction";
@@ -17,13 +17,15 @@ const eventCount = (timeline: ProjectTimeline) => timeline.entries.reduce((count
 
 export default function ProjectTimelineEditor({ timelines, onChange, disabled = false, revealTimeline }: Props) {
   const controlPrefix = useId();
+  const [editing, setEditing] = useState(false);
+  const [zoom, setZoom] = useState(100);
   const [selectedId, setSelectedId] = useState<string | null>(timelines[0]?.id ?? null);
   const root = useRef<HTMLDivElement>(null);
   const pendingFocus = useRef<{ kind: "point" | "event"; id: string } | null>(null);
   const current = timelines.find(timeline => timeline.id === selectedId) ?? timelines[0];
 
   useEffect(() => {
-    if (revealTimeline) setSelectedId(revealTimeline.id);
+    if (revealTimeline) { setSelectedId(revealTimeline.id); setEditing(true); }
   }, [revealTimeline]);
 
   useEffect(() => {
@@ -57,6 +59,7 @@ export default function ProjectTimelineEditor({ timelines, onChange, disabled = 
     }
     onChange([...timelines, { id, title, description: "", entries: [] }]);
     setSelectedId(id);
+    setEditing(true);
   };
   const removeTimeline = () => {
     if (!current || disabled) return;
@@ -88,7 +91,7 @@ export default function ProjectTimelineEditor({ timelines, onChange, disabled = 
     <aside className="project-timeline-sidebar" aria-label="项目时间线列表">
       <div className="project-timeline-list-heading"><span>时间线 <small>{timelines.length}</small></span><Button type="text" size="small" icon={<Plus size={16} />} aria-label="新建时间线" title="新建时间线" disabled={disabled} onClick={addTimeline} /></div>
       <nav aria-label="选择时间线">
-        {timelines.map(timeline => <button type="button" key={timeline.id} aria-pressed={current?.id === timeline.id} className="project-timeline-option" onClick={() => setSelectedId(timeline.id)}>
+        {timelines.map(timeline => <button type="button" key={timeline.id} aria-pressed={current?.id === timeline.id} className="project-timeline-option" onClick={() => { setSelectedId(timeline.id); setEditing(false); }}>
           <GitBranch size={17} aria-hidden="true" />
           <span><strong>{timeline.title || "未命名时间线"}</strong><small>{timeline.entries.length} 个时间点 · {eventCount(timeline)} 个事件</small></span>
         </button>)}
@@ -98,6 +101,11 @@ export default function ProjectTimelineEditor({ timelines, onChange, disabled = 
     </aside>
 
     {current ? <div className="project-timeline-workspace" key={current.id}>
+      <div className="project-timeline-view-toolbar">
+        <span>{editing ? "编辑时间线" : "时间轴"}</span>
+        <Button icon={editing ? <GitBranch size={15} /> : <Pencil size={15} />} onClick={() => setEditing(value => !value)}>{editing ? "查看时间轴" : "编辑时间线"}</Button>
+      </div>
+      {editing ? <>
       <div className="project-timeline-details">
         <div className="project-timeline-title-row"><label className="project-timeline-title-field"><span>时间线名称 <i aria-hidden="true">*</i></span><Input aria-label="时间线名称" value={current.title} disabled={disabled} placeholder="例如：故事主线、人物成长线" onChange={title => updateTimeline({ title })} /></label>
           <ConfirmPopover title="删除这条时间线？" content={`「${current.title || "未命名时间线"}」及其中的 ${eventCount(current)} 个事件将被移除，保存配置后生效。`} okText="删除时间线" onOk={removeTimeline}><Button className="project-timeline-delete" type="text" status="danger" icon={<Trash2 size={16} />} aria-label="删除时间线" title="删除时间线" disabled={disabled} /></ConfirmPopover>
@@ -127,6 +135,23 @@ export default function ProjectTimelineEditor({ timelines, onChange, disabled = 
           <Button className="project-timeline-add-point" long icon={<Plus size={15} />} disabled={disabled} onClick={addEntry}>继续添加时间点</Button>
         </div> : <div className="project-timeline-empty"><span className="project-timeline-empty-icon"><Clock3 size={28} strokeWidth={1.5} /></span><h3>从第一个时间点开始</h3><p>记录故事中的关键时刻，把同时发生的事件放在一起。</p><Button icon={<Plus size={15} />} disabled={disabled} onClick={addEntry}>添加第一个时间点</Button></div>}
       </div>
+      </> : <>
+        <header className="project-timeline-overview"><h2>{current.title || "未命名时间线"}</h2>{current.description && <p>{current.description}</p>}<small>{current.entries.length} 个时间点 · {eventCount(current)} 个事件 · 按编排顺序展示</small></header>
+        <div className="project-timeline-zoom" role="group" aria-label="时间轴缩放">
+          <Button size="small" icon={<ZoomOut size={16} />} aria-label="缩小时间轴" disabled={zoom <= 50} onClick={() => setZoom(value => Math.max(50, value - 25))} />
+          <input aria-label="时间轴缩放比例" type="range" min="50" max="200" step="10" value={zoom} onChange={event => setZoom(Number(event.target.value))} />
+          <Button size="small" icon={<ZoomIn size={16} />} aria-label="放大时间轴" disabled={zoom >= 200} onClick={() => setZoom(value => Math.min(200, value + 25))} />
+          <output>{zoom}%</output><Button size="small" type="text" onClick={() => setZoom(100)}>重置</Button>
+        </div>
+        {current.entries.length ? <div className="project-timeline-axis-scroll" tabIndex={0} aria-label="时间轴，左右滚动浏览时间点">
+          <div className="project-timeline-axis" style={{ gridTemplateColumns: `repeat(${current.entries.length}, ${280 * zoom / 100}px)` }}>
+            {current.entries.map((entry, index) => <section className="project-timeline-axis-point" key={entry.id}>
+              <div className="project-timeline-axis-time"><small>{String(index + 1).padStart(2, "0")}</small><h3>{entry.time || "未填写时间"}</h3></div>
+              <div className="project-timeline-axis-events">{entry.events.map((event, eventIndex) => <article key={event.id}><small>事件 {String(eventIndex + 1).padStart(2, "0")}</small><p>{event.content || "未填写事件"}</p></article>)}{!entry.events.length && <p className="project-timeline-no-events">暂无事件</p>}</div>
+            </section>)}
+          </div>
+        </div> : <div className="project-timeline-empty"><span className="project-timeline-empty-icon"><Clock3 size={28} /></span><h3>还没有时间点</h3><p>进入编辑界面，记录故事中的关键时刻。</p><Button icon={<Plus size={15} />} disabled={disabled} onClick={() => { setEditing(true); addEntry(); }}>添加第一个时间点</Button></div>}
+      </>}
     </div> : <div className="project-timeline-empty project-timeline-start"><span className="project-timeline-empty-icon"><GitBranch size={30} strokeWidth={1.5} /></span><h3>让故事的脉络更清晰</h3><p>一个项目可以拥有多条时间线。<br />分别梳理故事主线、人物经历与平行事件。</p><Button type="primary" icon={<Plus size={16} />} disabled={disabled} onClick={addTimeline}>创建第一条时间线</Button></div>}
   </div>;
 }
