@@ -132,9 +132,9 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
       <Button className="generation-submit" type="primary" long icon={<Film size={16} />} loading={busy} disabled={uploading || optimizing || uploadingReferences} onClick={() => void generate()}>{busy ? "视频生成中…" : "生成视频"}</Button>
     </div>
     <div className="creation-panel image-result video-result" aria-busy={busy}>
-      <div className="generation-preview-heading"><h2>生成预览</h2><span className={`generation-state${busy ? " is-busy" : result ? " is-ready" : ""}`}>{busy ? "生成中" : result ? "已完成" : "等待创作"}</span></div>
+      <div className="generation-preview-heading"><h2>生成预览</h2><span role="status" className={`generation-state${busy ? " is-busy" : error ? " is-error" : result ? " is-ready" : ""}`}>{busy ? "生成中" : error ? "生成失败" : result ? "已完成" : "等待创作"}</span></div>
       <div className="generation-preview-body">
-      {result ? <><PreviewVideo key={result.id} media={result} projectId={data.project.id} /><p className="helper">{result.name} · 已保存到素材库</p></> : <Empty icon={<Film size={28} />} description={<><b>{busy ? "视频正在生成" : "下一个精彩镜头，从这里开始"}</b><p>{busy ? "稍候片刻，完成后将自动展示" : "在左侧描述画面，生成的视频将自动存入素材库"}</p></>} />}
+      {result ? <><PreviewVideo key={result.id} media={result} projectId={data.project.id} /><p className="helper">{busy || error ? "上次生成 · " : ""}{result.name} · 已保存到素材库</p></> : <Empty icon={<Film size={28} />} description={<><b>{busy ? "视频正在生成" : error ? "本次未生成视频" : "下一个精彩镜头，从这里开始"}</b><p>{busy ? "稍候片刻，完成后将自动展示" : error ? "检查错误信息，调整描述或参数后重试。" : "描述画面，生成的视频将自动存入素材库"}</p></>} />}
       {error && <p className="image-generation-errors" role="alert">{error}</p>}
       </div>
       <p className="helper generation-result-note">生成任务可在「后台任务」中查看进度与错误信息。</p>

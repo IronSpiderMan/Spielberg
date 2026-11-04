@@ -159,6 +159,8 @@ STRICT_UI=1 node scripts/qa/ui-audit.cjs
 
 真实模型服务、系统文件对话框和原生视频解码仍需在桌面应用中验证。
 
+UI 细节回归：`PLAYWRIGHT_PATH=/path/to/playwright node scripts/qa/ui-details.cjs`。使用隔离数据检查 8 个页面在 5 种窗口尺寸、明暗主题下的布局，以及手机导航焦点、Prompt 搜索、取消草稿和保存失败重试。截图与报告输出到 `/tmp/spielberg-ui-details/`。
+
 ## 名称与旧项目兼容
 
 应用名称为 Spielberg，npm / Cargo 包名为 `spielberg-studio`，应用标识为 `com.spielberg.studio`，新数据库文件为 `spielberg.sqlite`。

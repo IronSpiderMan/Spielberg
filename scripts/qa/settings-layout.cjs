@@ -22,6 +22,7 @@ fs.mkdirSync(screenshots, { recursive: true });
       }));
       const data = { project, assets: [], episodes: [], prompts: [], media: [], settings: { llm: { channels, default_channel_id: channels[0].id } } };
       window.__qaCalls = [];
+      window.__qaFailDirectoryLoad = true;
       const original = window.fetch.bind(window);
       window.fetch = async (input, init = {}) => {
         const url = new URL(typeof input === 'string' ? input : input.url, location.href);
@@ -34,8 +35,14 @@ fs.mkdirSync(screenshots, { recursive: true });
         if (path === '/projects') result = [project];
         if (path === '/project' || path === '/project/changes') result = structuredClone(data);
         if (path === '/tasks') result = { items: [], has_more: false };
-        if (path === '/app/settings/load') result = { projects_directory: '/fixture/projects' };
-        if (path === '/app/settings/save') result = { projects_directory: payload.projects_directory };
+        if (path === '/app/settings/load') {
+          if (window.__qaFailDirectoryLoad) return new Response(JSON.stringify({ error: '模拟路径读取失败' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+          result = { projects_directory: '/fixture/projects' };
+        }
+        if (path === '/app/settings/save') {
+          if (window.__qaFailDirectorySave) return new Response(JSON.stringify({ error: '模拟路径保存失败' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+          result = { projects_directory: payload.projects_directory };
+        }
         if (path === '/skills/list') result = { items: [], directory: '/fixture/skills' };
         if (path === '/settings') {
           if (window.__qaFailSave) return new Response(JSON.stringify({ error: '模拟保存失败' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
@@ -59,6 +66,16 @@ fs.mkdirSync(screenshots, { recursive: true });
     assert.equal(await active().locator('.generation-channel-model').count(), 16);
     assert.equal(await active().getByLabel('LLM模型 ID', { exact: true }).count(), 0, 'Models start collapsed');
     await page.screenshot({ path: `${screenshots}/desktop.png`, animations: 'disabled' });
+
+    // A failed directory load has a persistent explanation and an enabled retry outside the form.
+    await tab('项目存储').click();
+    await active().getByRole('alert').getByText('无法读取项目存储路径', { exact: true }).waitFor();
+    assert(await active().getByLabel('项目存储路径', { exact: true }).isDisabled());
+    await page.evaluate(() => { window.__qaFailDirectoryLoad = false; });
+    await active().getByRole('button', { name: '重新加载', exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('input[aria-label="项目存储路径"]').value === '/fixture/projects');
+    assert.equal(await active().getByRole('alert').count(), 0);
+    await tab('文本与推理').click();
 
     // Both lists can grow while the category navigation and save action stay put.
     const list = active().locator('.settings-channel-list');
@@ -102,11 +119,13 @@ fs.mkdirSync(screenshots, { recursive: true });
     await page.evaluate(() => { window.__qaFailSave = true; });
     await save().click();
     await page.getByText('Error: 模拟保存失败', { exact: true }).waitFor();
+    assert(await settings.getByRole('alert').getByText('配置未能保存，修改已保留', { exact: true }).isVisible());
     assert(await save().isEnabled());
     assert.equal(await active().getByLabel('LLM渠道名称', { exact: true }).inputValue(), '修改后的渠道');
     await page.evaluate(() => { window.__qaFailSave = false; });
     await save().click();
     await page.getByText('接口配置已保存', { exact: true }).waitFor();
+    assert.equal(await settings.getByRole('alert').count(), 0, 'A successful retry clears the persistent failure');
     const saved = await page.evaluate(() => window.__qaCalls.filter(call => call.path === '/settings').at(-1).payload.settings);
     assert.equal(saved.llm.channels.length, 24);
     assert.equal(saved.llm.channels[19].default_model_id, 'model-19-0-renamed');
@@ -128,10 +147,17 @@ fs.mkdirSync(screenshots, { recursive: true });
     // Shared settings keep their own save behavior and input drafts across tabs.
     await tab('项目存储').click();
     await active().getByLabel('项目存储路径', { exact: true }).fill('/fixture/new-projects');
+    assert.equal(await settings.locator('.settings-save-state').getAttribute('data-dirty'), 'false', 'Storage drafts do not mark channel configuration dirty');
+    assert.equal(await active().locator('.settings-directory-state').getAttribute('data-dirty'), 'true');
     await tab('Skills 技能').click();
     await active().getByLabel('GitHub Skill 链接', { exact: true }).fill('https://github.com/fixture/skill');
     await tab('项目存储').click();
     assert.equal(await active().getByLabel('项目存储路径', { exact: true }).inputValue(), '/fixture/new-projects');
+    await page.evaluate(() => { window.__qaFailDirectorySave = true; });
+    await active().getByRole('button', { name: '保存项目路径', exact: true }).click();
+    await active().getByRole('alert').getByText('项目路径未能保存', { exact: true }).waitFor();
+    assert.equal(await active().getByLabel('项目存储路径', { exact: true }).inputValue(), '/fixture/new-projects');
+    await page.evaluate(() => { window.__qaFailDirectorySave = false; });
     await active().getByRole('button', { name: '保存项目路径', exact: true }).click();
     await page.getByText('项目存储路径已保存', { exact: true }).waitFor();
     await tab('Skills 技能').click();
@@ -175,11 +201,39 @@ fs.mkdirSync(screenshots, { recursive: true });
     assert.equal(await tab('项目存储').getAttribute('aria-selected'), 'true');
     await page.keyboard.press('Home');
     assert.equal(await tab('文本与推理').getAttribute('aria-selected'), 'true');
+
+    // The channel list is one tab stop and reveals keyboard selection in either layout.
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      assert.equal(await active().locator('.settings-channel-option[tabindex="0"]').count(), 1);
+      await options().first().focus();
+      await page.keyboard.press('End');
+      assert.equal(await options().last().getAttribute('aria-pressed'), 'true');
+      await page.waitForFunction(() => {
+        const list = document.querySelector('.studio-settings-panel:not([hidden]) .settings-channel-list');
+        const selected = list.querySelector('[aria-pressed="true"]').getBoundingClientRect();
+        const bounds = list.getBoundingClientRect();
+        return selected.left >= bounds.left - 1 && selected.right <= bounds.right + 1 && selected.top >= bounds.top - 1 && selected.bottom <= bounds.bottom + 1;
+      });
+      await page.keyboard.press('Home');
+      assert.equal(await options().first().getAttribute('aria-pressed'), 'true');
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await active().getByLabel('搜索LLM模型', { exact: true }).fill('no-such-model');
+    await active().getByRole('button', { name: '清空搜索', exact: true }).click();
+    assert.equal(await active().getByLabel('搜索LLM模型', { exact: true }).inputValue(), '');
+    await active().getByRole('button', { name: '添加模型', exact: true }).click();
+    await page.getByRole('menuitem', { name: '添加自定义模型', exact: true }).click();
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'LLM模型 ID');
+    const addedInput = await active().getByLabel('LLM模型 ID', { exact: true }).boundingBox();
+    assert(addedInput && addedInput.y >= 0 && addedInput.y + addedInput.height <= 900, 'New model editor is visible and ready for typing');
+    await save().click();
+    await page.getByText('接口配置已保存', { exact: true }).last().waitFor();
     await active().locator('.settings-channel-editor-scroll').evaluate(element => element.scrollTop = 0);
     await page.getByRole('button', { name: '切换到暗夜模式', exact: true }).click();
     await page.screenshot({ path: `${screenshots}/dark.png`, animations: 'disabled' });
     assert.deepEqual(errors, []);
-    console.log('PASS: 24 channels × 16 models, category and channel drafts, model accordion/search, default changes/deletion, save failure/retry, shared settings, keyboard navigation, five viewport sizes and dark mode');
+    console.log('PASS: 24 channels × 16 models, drafts, model accordion/search/add focus, defaults/deletion, persistent save failure/retry, separate storage status, category/channel keyboard navigation, five viewport sizes and dark mode');
   } catch (error) {
     await page.screenshot({ path: `${screenshots}/failure.png`, animations: 'disabled' }).catch(() => {});
     throw error;

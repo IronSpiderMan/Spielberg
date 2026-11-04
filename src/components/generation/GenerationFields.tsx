@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Form, Tabs, Trigger } from "@arco-design/web-react";
 import { ChevronDown, SlidersHorizontal } from "lucide-react";
 import { GENERATION_SIZES, normalizeGenerationSize } from "../../generation-sizes";
@@ -31,6 +31,16 @@ export function DurationSlider({value,onChange,min=3,max=15,smart,disabled}: Dur
 
 export function GenerationParameters({ratio,ratios,onRatio,size,sizes,onSize,disabled,ariaPrefix="",followsFrame,resolution,duration}: ParametersProps) {
   const [open,setOpen] = useState(false), trigger = useRef<HTMLButtonElement>(null);
+  const popup = useRef<HTMLDivElement>(null), popupId = useId();
+  useEffect(()=>{
+    if (disabled) { setOpen(false); return; }
+    if (!open) return;
+    const frame = requestAnimationFrame(()=>{
+      const target = popup.current?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]:not(:disabled)') || popup.current?.querySelector<HTMLButtonElement>('button:not(:disabled)');
+      (target || popup.current)?.focus({preventScroll:true});
+    });
+    return ()=>cancelAnimationFrame(frame);
+  },[open,disabled]);
   const ratioColumns = Math.min(5, Math.max(1, ratios.length));
   const sizeColumns = Math.min(3, Math.max(1, sizes.length));
   const popupWidth = Math.max(240, duration ? 360 : 0,
@@ -38,20 +48,20 @@ export function GenerationParameters({ratio,ratios,onRatio,size,sizes,onSize,dis
     52 + sizeColumns * 106 + (sizeColumns - 1) * 5);
   const summary = [followsFrame ? "跟随首帧" : ratioLabel(ratio), size.replace(/x/g," × "), ...(duration ? [duration.value===-1?"智能时长":`${duration.value} 秒`] : [])].join(" / ");
   return <Form.Item label="生成参数" className="generation-parameters-field">
-    <Trigger escToClose trigger="click" position="bl" popupVisible={open && !disabled} onVisibleChange={setOpen} popup={()=> <div className="generation-parameters" style={{width:popupWidth}} role="dialog" tabIndex={-1} aria-label={`${ariaPrefix}生成参数设置`} onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();setOpen(false);trigger.current?.focus();}}}>
+    <Trigger escToClose updateOnScroll trigger="click" position="bl" popupVisible={open && !disabled} onVisibleChange={setOpen} popup={()=> <div ref={popup} id={popupId} className="generation-parameters" style={{width:popupWidth}} role="dialog" tabIndex={-1} aria-label={`${ariaPrefix}生成参数设置`} onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();setOpen(false);trigger.current?.focus({preventScroll:true});}}}>
       <div className="generation-parameter-heading">比例</div>
       {followsFrame ? <p className="generation-frame-note">输出画面比例跟随首帧图片</p> : <div className="generation-ratio-grid" style={{gridTemplateColumns:`repeat(${ratioColumns}, minmax(0, 1fr))`}} role="group" aria-label={`${ariaPrefix}画幅`}>
-        {ratios.map(value=>{const [w,h]=value.split(":").map(Number);return <button type="button" key={value} autoFocus={ratio===value} aria-pressed={ratio===value} disabled={disabled} onClick={()=>onRatio(value)}>
+        {ratios.map(value=>{const [w,h]=value.split(":").map(Number);return <button type="button" key={value} aria-pressed={ratio===value} disabled={disabled} onClick={()=>onRatio(value)}>
           <span className="generation-ratio-icon" style={w && h ? {width:w>=h?26:26*w/h,height:h>=w?26:26*h/w} : {width:25,height:25,borderStyle:"dashed"}}/>{ratioLabel(value)}
         </button>;})}
       </div>}
       <div className="generation-parameter-heading">{resolution ? "分辨率" : "输出尺寸"}{!resolution && <small>宽 × 高 · 像素</small>}</div>
       <div className={`generation-resolution-grid${resolution?" is-resolution":""}`} style={{gridTemplateColumns:`repeat(${sizeColumns}, minmax(0, 1fr))`}} role="group" aria-label={`${ariaPrefix}${resolution?"分辨率":"输出尺寸"}`}>
-        {sizes.map(value=><button type="button" key={value} autoFocus={!!followsFrame && size===value} disabled={disabled} aria-pressed={size===value} onClick={()=>onSize(value)}>{value.replace(/x/g," × ")}</button>)}
+        {sizes.map(value=><button type="button" key={value} disabled={disabled} aria-pressed={size===value} onClick={()=>onSize(value)}>{value.replace(/x/g," × ")}</button>)}
       </div>
       {duration && <DurationSlider {...duration} disabled={disabled}/>}
     </div>}>
-      <button ref={trigger} type="button" className="generation-picker-trigger generation-parameters-trigger" aria-label={`${ariaPrefix}生成参数`} aria-haspopup="dialog" aria-expanded={open && !disabled} disabled={disabled} onKeyDown={event=>{if(event.key==="Escape"){event.stopPropagation();setOpen(false);}}}><SlidersHorizontal size={16}/><span>{summary}</span><ChevronDown size={15}/></button>
+      <button ref={trigger} type="button" className="generation-picker-trigger generation-parameters-trigger" aria-label={`${ariaPrefix}生成参数`} aria-haspopup="dialog" aria-controls={open ? popupId : undefined} aria-expanded={open && !disabled} title={summary} disabled={disabled} onKeyDown={event=>{if(event.key==="Escape"){event.stopPropagation();setOpen(false);}if(event.key==="ArrowDown"){event.preventDefault();setOpen(true);}}}><SlidersHorizontal size={16}/><span>{summary}</span><ChevronDown size={15}/></button>
     </Trigger>
   </Form.Item>;
 }

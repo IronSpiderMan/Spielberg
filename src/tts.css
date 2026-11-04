@@ -1,8 +1,16 @@
 .tts-studio{display:grid;grid-template-columns:minmax(280px,420px) minmax(0,1fr);gap:24px;align-items:start;padding:8px 0 24px}
 .tts-form,.tts-results{min-width:0;padding:20px;border:1px solid var(--color-border-2);border-radius:12px;background:var(--color-bg-2)}
-.tts-studio h2{display:flex;align-items:center;gap:8px;margin:0 0 20px;font-size:18px}
-.tts-results h2 span{font-size:13px;color:var(--color-text-3)}
+.tts-studio h2{display:flex;align-items:center;gap:8px;margin:0;font-size:16px}
+.tts-results h2 span{padding:2px 7px;border-radius:6px;background:var(--ui-subtle);font-size:11px;color:var(--ui-muted);font-variant-numeric:tabular-nums}
+.tts-parameter-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.tts-parameter-row>.arco-form-item:only-child{grid-column:1/-1}
+.tts-parameter-row .arco-input-number{width:100%}
+.tts-progress{margin:16px 0;padding:10px 12px;border-radius:8px;background:var(--ui-accent-soft);color:var(--ui-primary);font-size:12px;line-height:1.8}
 .tts-audio{display:flex;flex-direction:column;gap:12px;padding:16px 0;border-top:1px solid var(--color-border-2)}
+.tts-results>.tts-audio:first-of-type{border-top:0}
+.tts-audio-heading{display:flex;align-items:flex-start;gap:10px}
+.tts-audio-heading strong{min-width:0;flex:1;line-height:1.6}
+.tts-latest-badge{flex-shrink:0;padding:3px 7px;border-radius:5px;background:var(--ui-accent-soft);color:var(--ui-primary);font-size:10px;line-height:1.6}
 .tts-audio strong{overflow-wrap:anywhere;font-size:14px}
 .tts-audio audio{width:100%}
 .tts-error{color:rgb(var(--danger-6));overflow-wrap:anywhere}

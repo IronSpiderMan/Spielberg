@@ -31,7 +31,8 @@ Settings,
 Sun,
 Sparkles,
 Users,
-WandSparkles
+WandSparkles,
+X
 } from "lucide-react";
 import { lazy,Suspense,useCallback,useEffect,useRef,useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -79,16 +80,44 @@ const SettingsPage=lazy(()=>import("./SettingsPage"));
 function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("spielberg-sidebar-collapsed") === "true");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia("(max-width: 600px)").matches);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 600px)");
+    const update = () => { setIsMobile(media.matches); if (!media.matches) setMobileNavOpen(false); };
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
   useEffect(() => {
     if (!mobileNavOpen) return;
+    const sidebar = document.getElementById("studio-navigation");
+    const main = document.querySelector<HTMLElement>(".app-main");
+    const frame = requestAnimationFrame(() => {
+      sidebar?.querySelector<HTMLElement>(".arco-menu-selected, .mobile-nav-close")?.focus();
+      main?.setAttribute("inert", "");
+    });
     const close = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.preventDefault();
         setMobileNavOpen(false);
-        document.querySelector<HTMLButtonElement>(".sidebar-toggle")?.focus();
+      }
+      if (event.key === "Tab" && sidebar) {
+        const items = Array.from(sidebar.querySelectorAll<HTMLElement>('button:not(:disabled), [tabindex="0"], a[href]'))
+          .filter(element => element.getClientRects().length > 0);
+        const first = items[0], last = items[items.length - 1];
+        if (event.shiftKey && (document.activeElement === first || !sidebar.contains(document.activeElement))) {
+          event.preventDefault(); last?.focus();
+        } else if (!event.shiftKey && (document.activeElement === last || !sidebar.contains(document.activeElement))) {
+          event.preventDefault(); first?.focus();
+        }
       }
     };
     window.addEventListener("keydown", close);
-    return () => window.removeEventListener("keydown", close);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("keydown", close);
+      main?.removeAttribute("inert");
+      document.querySelector<HTMLButtonElement>(".sidebar-toggle")?.focus();
+    };
   }, [mobileNavOpen]);
   useEffect(() => {
     localStorage.setItem("spielberg-sidebar-collapsed", String(sidebarCollapsed));
@@ -266,6 +295,10 @@ function App() {
                 value={newName}
                 onChange={setNewName}
                 placeholder="为你的故事起个名字"
+                aria-label="项目名称"
+                maxLength={100}
+                disabled={creatingProject}
+                onPressEnter={create}
                 autoFocus
               />
             </Form.Item>
@@ -297,6 +330,8 @@ function App() {
       <a className="skip-to-content" href="#workspace-content">跳转到工作区</a>
       {mobileNavOpen && <button className="mobile-nav-backdrop" aria-label="关闭导航" onClick={() => setMobileNavOpen(false)} />}
       <Layout.Sider className={`side${sidebarCollapsed ? " side-collapsed" : ""}`} width={216}>
+        <div id="studio-navigation" className="side-navigation-body" role={isMobile && mobileNavOpen ? "dialog" : "navigation"} aria-modal={isMobile && mobileNavOpen ? true : undefined} aria-label="工作室导航">
+        <div className="mobile-nav-heading"><b>工作室导航</b><Button className="mobile-nav-close" type="text" aria-label="关闭导航" icon={<X size={18}/>} onClick={() => setMobileNavOpen(false)}/></div>
         <div className="logo">
           <img className="logo-mark" src={logoSrc} alt="Spielberg" />
           <div>
@@ -338,7 +373,7 @@ function App() {
         </Menu>
         <div className="mobile-project-actions">
           <Button icon={<FolderOpen size={16}/>} onClick={() => { setMobileNavOpen(false); openProject(); }}>打开项目</Button>
-          <Button icon={<Plus size={16}/>} onClick={() => leaveEditor(() => { setMobileNavOpen(false); setCreating(true); })}>新建项目</Button>
+          <Button icon={<Plus size={16}/>} onClick={() => { setMobileNavOpen(false); leaveEditor(() => setCreating(true)); }}>新建项目</Button>
         </div>
         <div className="side-bottom">
           <div className="studio-local-note"><span className="project-dot" /><span>故事与素材，保存在本地</span></div>
@@ -354,6 +389,7 @@ function App() {
           >
             <span>设置</span>
           </Button>
+        </div>
         </div>
       </Layout.Sider>
       <Layout className="app-main">
@@ -375,11 +411,12 @@ function App() {
               className="sidebar-toggle"
               title="切换导航"
               aria-label="切换导航"
-              aria-expanded={window.matchMedia("(max-width: 600px)").matches ? mobileNavOpen : !sidebarCollapsed}
-              icon={sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-              onClick={() => window.matchMedia("(max-width: 600px)").matches ? setMobileNavOpen(value => !value) : setSidebarCollapsed(value => !value)}
+              aria-controls="studio-navigation"
+              aria-expanded={isMobile ? mobileNavOpen : !sidebarCollapsed}
+              icon={(isMobile ? !mobileNavOpen : sidebarCollapsed) ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+              onClick={() => isMobile ? setMobileNavOpen(value => !value) : setSidebarCollapsed(value => !value)}
             />
-            <span className="crumb">{active?.name}</span>
+            <span className="crumb" title={active?.name}>{active?.name}</span>
             <span className="crumb-sep">/</span>
             <b>
               {sceneImageFlow
@@ -520,7 +557,7 @@ function App() {
       <Modal title="创建项目" visible={creating} onCancel={() => !creatingProject && setCreating(false)}
         onOk={create} okText="创建项目" confirmLoading={creatingProject} maskClosable={!creatingProject}>
         <Form layout="vertical"><Form.Item label="项目名称" required>
-          <Input value={newName} onChange={setNewName} placeholder="为你的故事起个名字" autoFocus
+          <Input value={newName} onChange={setNewName} placeholder="为你的故事起个名字" aria-label="项目名称" maxLength={100} autoFocus
             disabled={creatingProject} onPressEnter={create}/>
         </Form.Item></Form>
       </Modal>
@@ -630,8 +667,8 @@ function ProjectPage({
               <span className="project-art-initial">{p.name.slice(0, 1)}</span>
               {active?.id === p.id && <Tag className="project-active-tag">当前项目</Tag>}
             </div>
-            <h3>{p.name}</h3>
-            <p>{p.path}</p>
+            <h3 title={p.name}>{p.name}</h3>
+            <p title={p.path}>{p.path}</p>
             <small>最近更新 {p.updated_at}</small>
             <div className="project-card-actions" onClick={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}>
               <Space size="mini">

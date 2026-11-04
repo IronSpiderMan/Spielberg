@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Form, Trigger } from "@arco-design/web-react";
 import { Bot, Check, ChevronDown, ChevronRight, Film, Image, Layers, Mic } from "lucide-react";
 import type { ModelSettings } from "../../core";
@@ -12,8 +12,10 @@ export function GenerationSelector({settings,kind,value,onChange,disabled,operat
   const [open,setOpen] = useState(false), [browsing,setBrowsing] = useState<string>(), [filter,setFilter] = useState("");
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
+  const menuId = useId();
   useEffect(()=>{
-    if (!open || disabled) return;
+    if (disabled) { setOpen(false); return; }
+    if (!open) return;
     // Wait for Trigger to attach its portal, then focus without scrolling the
     // form away from the anchor. Run on reopen even if its exit is still animating.
     const frame = requestAnimationFrame(()=>menu.current?.querySelector<HTMLButtonElement>('.generation-cascade-channels button[aria-pressed="true"]')?.focus({preventScroll:true}));
@@ -28,7 +30,7 @@ export function GenerationSelector({settings,kind,value,onChange,disabled,operat
   const close = () => {setOpen(false);trigger.current?.focus({preventScroll:true});};
   const picker = <Trigger escToClose updateOnScroll trigger="click" position={compact ? "tr" : "bl"} popupVisible={open && !disabled} onVisibleChange={visible=>{
         setOpen(visible); if(visible){setBrowsing(choice?.channel.id || value.channel_id);setFilter("");}
-      }} popup={()=> <div ref={menu} className={`generation-cascade generation-cascade-${kind}`} role="dialog" tabIndex={-1} aria-label={`${label}渠道与模型`} onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();close();}}}>
+      }} popup={()=> <div ref={menu} id={menuId} className={`generation-cascade generation-cascade-${kind}`} role="dialog" tabIndex={-1} aria-label={`${label}渠道与模型`} onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();close();}}}>
         {modes.length>1 && <div className="generation-model-filters" aria-label="按生成方式筛选">
           {["",...modes].map(mode=><button type="button" key={mode} aria-pressed={filter===mode} onClick={()=>setFilter(mode)}>{MODE_LABELS[mode] || "全部"}</button>)}
         </div>}
@@ -52,7 +54,7 @@ export function GenerationSelector({settings,kind,value,onChange,disabled,operat
         </div>
       </div>}>
         <span className="generation-picker-anchor">
-        <button ref={trigger} type="button" className="generation-picker-trigger" aria-label={`${label}渠道与模型`} aria-haspopup="dialog" aria-expanded={open && !disabled} disabled={disabled || !channels.length} onKeyDown={event=>{if(event.key==="Escape"){event.stopPropagation();setOpen(false);}}}>
+        <button ref={trigger} type="button" className="generation-picker-trigger" aria-label={`${label}渠道与模型`} aria-haspopup="dialog" aria-controls={open ? menuId : undefined} aria-expanded={open && !disabled} title={choice ? `${choice.model.name || choice.model.id} · ${choice.channel.name}` : undefined} disabled={disabled || !channels.length} onKeyDown={event=>{if(event.key==="Escape"){event.stopPropagation();setOpen(false);}if(event.key==="ArrowDown"){event.preventDefault();setBrowsing(choice?.channel.id || value.channel_id);setFilter("");setOpen(true);}}}>
           <Icon size={17}/><span className="generation-picker-value"><strong>{choice ? selectableModels([choice.model])[0].name || choice.model.id : channels.length ? "选择渠道与模型" : "请先在设置中添加渠道"}</strong>{choice && <small>{choice.channel.name}</small>}</span><ChevronDown size={15}/>
         </button>
         </span>

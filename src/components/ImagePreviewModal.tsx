@@ -32,9 +32,10 @@ export function ImagePreviewModal({ media, onClose, title = "参考图片预览"
     document.addEventListener("keydown", keydown);
     return () => document.removeEventListener("keydown", keydown);
   }, [visible, canNavigate, currentIndex, images, onMediaChange]);
-  const [showThumbnails, setShowThumbnails] = useState(true);
-  const [showInfo, setShowInfo] = useState(true);
+  const [showThumbnails, setShowThumbnails] = useState(() => window.innerWidth > 760);
+  const [showInfo, setShowInfo] = useState(() => window.innerWidth > 1100);
   const [fileSize, setFileSize] = useState<number | null>(null);
+  const [retryVersion, setRetryVersion] = useState(0);
   const thumbnails = images.length ? images : media ? [media] : [];
   const format = media?.path.split(".").pop()?.toUpperCase() || "—";
   const createdDate = media?.created_at ? new Date(/^\d+(\.\d+)?$/.test(media.created_at) ? Number(media.created_at) * 1000 : media.created_at) : null;
@@ -49,7 +50,7 @@ export function ImagePreviewModal({ media, onClose, title = "参考图片预览"
       if (response.ok && length && Number.isFinite(Number(length))) setFileSize(Number(length));
     }).catch(() => {});
     return () => controller.abort();
-  }, [visible, media?.path]);
+  }, [visible, media?.path, retryVersion]);
   const copyPath = async () => {
     if (!media) return;
     try { await navigator.clipboard.writeText(media.path); Message.success("已复制文件路径"); }
@@ -118,7 +119,7 @@ export function ImagePreviewModal({ media, onClose, title = "参考图片预览"
     setFailed(false);
     setRotation(0);
     drag.current = null;
-  }, [media?.id, media?.path, visible]);
+  }, [media?.id, media?.path, visible, retryVersion]);
   useEffect(() => {
     if (!viewport) return;
     const observer = new ResizeObserver(([entry]) => {
@@ -181,7 +182,7 @@ export function ImagePreviewModal({ media, onClose, title = "参考图片预览"
       <span className="image-preview-scale" aria-live="polite">{ready ? `${Math.round(view.scale * 100)}%` : "—"}</span>
       <Button aria-label="放大" title="放大 (+)" disabled={!ready || view.scale >= 16} onClick={() => zoom(1.25)} icon={<Plus size={16} />} />
       </div>
-      <Button disabled={!ready} className={fit ? "is-active" : ""} onClick={reset} title="适应窗口 (0)" icon={<Maximize size={16} />}>适应窗口</Button>
+      <Button disabled={!ready} aria-pressed={fit} className={fit ? "is-active" : ""} onClick={reset} title="适应窗口 (0)" icon={<Maximize size={16} />}>适应窗口</Button>
       <Button disabled={!ready} onClick={actualSize} title="原始尺寸 (1)">1:1</Button>
       <span className="image-preview-divider" />
       <Button aria-label="重置图片" title="重置图片" disabled={!ready} onClick={() => { setRotation(0); reset(); }} icon={<Undo2 size={18} />} />
@@ -214,7 +215,7 @@ export function ImagePreviewModal({ media, onClose, title = "参考图片预览"
     <div className="image-preview-workspace">
     {showThumbnails && <aside className="image-preview-sidebar" aria-label="缩略图列表">
       <div className="image-preview-sidebar-heading"><span>缩略图 ({thumbnails.length})</span><ImageIcon size={17} /></div>
-      <div className="image-preview-thumbnails">{thumbnails.map((item, index) => <button type="button" key={item.id} title={item.name} aria-label={`查看第 ${index + 1} 张：${item.name}`} aria-pressed={item.id === media?.id} disabled={!onMediaChange && item.id !== media?.id} onClick={() => onMediaChange?.(item)} ref={element => { if (item.id === media?.id) element?.scrollIntoView({ block: "nearest" }); }}><img src={imageUrl(item)} alt={item.name} /><span>{String(index + 1).padStart(2, "0")}</span></button>)}</div>
+      <div className="image-preview-thumbnails">{thumbnails.map((item, index) => <button type="button" key={item.id} title={item.name} aria-label={`查看第 ${index + 1} 张：${item.name}`} aria-pressed={item.id === media?.id} disabled={!onMediaChange && item.id !== media?.id} onClick={() => onMediaChange?.(item)} ref={element => { if (item.id === media?.id) element?.scrollIntoView({ block: "nearest", inline: "nearest" }); }}><img key={`${item.id}:${retryVersion}`} src={imageUrl(item)} alt="" loading="lazy" decoding="async" /><span>{String(index + 1).padStart(2, "0")}</span></button>)}</div>
       <div className="image-preview-sidebar-foot">{canNavigate ? "← → 切换图片" : "图片预览"}</div>
     </aside>}
     <div className="image-preview-canvas-column">
@@ -238,15 +239,15 @@ export function ImagePreviewModal({ media, onClose, title = "参考图片预览"
       onPointerUp={() => { drag.current = null; }}
       onPointerCancel={() => { drag.current = null; }}
       onLostPointerCapture={() => { drag.current = null; }}>
-      {media && <img key={`${media.id}:${media.path}:${visible}`} src={imageUrl(media)} alt={media.name} draggable={false}
+      {media && <img key={`${media.id}:${media.path}:${visible}:${retryVersion}`} src={imageUrl(media)} alt={media.name} draggable={false}
         onLoad={event => { setImageSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight }); setFailed(false); }}
         onError={() => setFailed(true)}
         style={{ width: imageSize.width || undefined, height: imageSize.height || undefined, visibility: ready && !failed ? "visible" : "hidden", transform: `translate(-50%, -50%) translate(${view.x}px, ${view.y}px) scale(${view.scale}) rotate(${rotation}deg)` }} />}
-      {(!ready || failed) && <div className="image-preview-placeholder" role="status"><ImageIcon size={28} /><span>{failed ? "图片加载失败，请关闭后重试" : "正在加载图片…"}</span></div>}
+      {(!ready || failed) && <div className="image-preview-placeholder" role="status"><ImageIcon size={28} /><span>{failed ? "图片暂时无法加载" : "正在加载图片…"}</span>{failed && <Button onClick={() => setRetryVersion(version => version + 1)} icon={<RotateCw size={15} />}>重新加载图片</Button>}</div>}
     </div>
     {canNavigate && <button type="button" className="image-preview-nav is-next" aria-label="下一张图片" onClick={() => move(1)}><ChevronRight size={24} /></button>}
     </div>
-    <div className="image-preview-status"><span><Mouse size={14} />滚轮缩放 · 放大后拖动 · 双击适应窗口</span><span>{fit ? "适应窗口" : "自由缩放"}<i />Esc 关闭</span></div>
+    <div className="image-preview-status"><span className="image-preview-position" role="status">{currentIndex >= 0 ? `${currentIndex + 1} / ${images.length}` : "1 / 1"}</span><span className="image-preview-pointer-help"><Mouse size={14} />滚轮缩放 · 放大后拖动 · 双击适应窗口</span><span className="image-preview-view-status">{fit ? "适应窗口" : "自由缩放"}<i />Esc 关闭</span></div>
     </div>
     {showInfo && <aside className="image-preview-info" aria-label="图片信息">
       <div className="image-preview-info-tabs"><Info size={16} />图片信息</div>

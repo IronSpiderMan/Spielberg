@@ -8,8 +8,17 @@
 .settings-save-actions > .arco-btn { height: 38px; padding-inline: 16px; border-radius: 9px; font-size: 12px; }
 .settings-save-state { display: inline-flex; align-items: center; gap: 6px; color: var(--ui-muted); font-size: 11px; }
 .settings-save-state > svg { color: var(--ui-success); }
-.settings-save-state[data-dirty="true"], .settings-directory-pending { color: var(--ui-primary); }
+.settings-save-state[data-dirty="true"], .settings-directory-state[data-dirty="true"] { color: var(--ui-primary); }
 .settings-save-state i, .settings-pending-dot { width: 5px; height: 5px; flex-shrink: 0; border-radius: 50%; background: var(--ui-primary); }
+.settings-feedback { display: flex; align-items: flex-start; gap: 10px; flex-shrink: 0; max-height: 100px; overflow-y: auto; margin: 0 0 18px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--ui-error) 25%, var(--ui-border)); border-radius: 9px; background: color-mix(in srgb, var(--ui-error) 5%, var(--ui-surface)); color: var(--ui-error); font-size: 12px; line-height: 1.6; }
+.settings-feedback > svg { flex-shrink: 0; margin-top: 2px; }
+.settings-feedback > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.settings-feedback strong { font-weight: 550; }
+.settings-feedback p { margin: 4px 0 0; }
+.settings-feedback > .arco-btn { flex-shrink: 0; }
+.settings-directory-loading { display: flex; align-items: center; gap: 8px; color: var(--ui-muted); font-size: 12px; }
+.settings-saving-icon { animation: settings-spin 1s linear infinite; }
+@keyframes settings-spin { to { transform: rotate(360deg); } }
 .settings-category-tabs { display: flex; align-items: center; align-self: flex-start; max-width: 100%; gap: 3px; padding: 5px; margin-bottom: 28px; flex-shrink: 0; overflow-x: auto; border-radius: 12px; background: var(--ui-subtle); scrollbar-width: none; }
 .settings-category-tabs::-webkit-scrollbar { display: none; }
 .settings-category-tabs > button { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0; padding: 10px 17px; border: 0; border-radius: 8px; background: transparent; color: var(--ui-secondary-text); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: color .15s, background .15s, box-shadow .15s; }
@@ -35,7 +44,7 @@
 .studio-settings-page .arco-input-wrapper, .studio-settings-page .arco-input-group .arco-input-inner-wrapper, .studio-settings-page .arco-select-view { border-radius: 8px; }
 .studio-settings-page .arco-input-wrapper { border-color: var(--ui-border); }
 .settings-channel-sidebar > .arco-input-group-wrapper .arco-input-inner-wrapper, .settings-channel-sidebar > .arco-input-wrapper { background: var(--ui-surface); font-size: 12px; }
-.settings-channel-list { flex: 1; min-height: 0; overflow-y: auto; margin: 12px -5px; padding: 0 5px; scrollbar-width: thin; }
+.settings-channel-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 12px -5px; padding: 0 5px; scrollbar-width: thin; }
 .settings-channel-option { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 13px 11px; margin-bottom: 5px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--ui-text); font: inherit; text-align: left; cursor: pointer; transition: background .15s, border-color .15s; }
 .settings-channel-option:hover { background: var(--ui-subtle); }
 .settings-channel-option[aria-pressed="true"] { border-color: var(--ui-border); background: var(--ui-surface); box-shadow: 0 2px 5px #30291e04; }
@@ -111,6 +120,8 @@
 .settings-model-editor .generation-model-route > label { margin-top: 16px; }
 .settings-model-editor .generation-model-route p { color: var(--ui-muted); font-size: 11px; }
 .settings-model-empty { padding: 10px 22px 20px; color: var(--ui-muted); font-size: 12px; }
+.settings-model-empty p { margin: 0; }
+.settings-model-empty > .arco-btn { margin: 6px 0 -4px; }
 .settings-connection-help { margin: 18px 4px 0; color: var(--ui-muted); font-size: 11px; }
 .settings-connection-help summary { cursor: pointer; }
 .settings-connection-help p { padding-top: 5px; font-size: 11px; line-height: 1.9; }
@@ -126,7 +137,7 @@
 .studio-settings-page .settings-storage > .arco-form { padding: 26px; border: 1px solid var(--ui-border); border-radius: 13px; background: var(--ui-surface); }
 .settings-storage .arco-form-item { margin-bottom: 24px; }
 .settings-storage .arco-form-message { margin-top: 8px; color: var(--ui-muted); font-size: 12px; line-height: 1.7; }
-.settings-directory-pending { font-size: 12px; }
+.settings-directory-state { color: var(--ui-muted); font-size: 12px; }
 .studio-settings-page .skills-install-form { padding: 22px; border-radius: 13px; background: var(--ui-surface); }
 .studio-settings-page .skills-list { border-radius: 13px; background: var(--ui-surface); }
 .studio-settings-page .skills-results .empty-state { padding: 28px 20px 30px; border: 1px solid var(--ui-border); border-radius: 13px; background: var(--ui-surface); }
@@ -135,7 +146,7 @@
 .studio-settings-page .skills-item-buttons .arco-btn { background: transparent; }
 .studio-settings-page button:focus-visible, .settings-connection-help summary:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: -2px; }
 @media (hover: none) { .settings-model-actions { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .settings-category-tabs > button, .settings-channel-option, .settings-model-actions { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .settings-category-tabs > button, .settings-channel-option, .settings-model-actions { transition: none; } .settings-saving-icon { animation: none; } }
 
 @container (max-width: 1050px) {
   .settings-save-state { display: none; }

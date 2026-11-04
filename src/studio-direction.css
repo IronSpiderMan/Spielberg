@@ -28,6 +28,8 @@ html[data-theme="dark"] .arco-btn-primary.arco-btn-disabled { background: var(--
 .studio-local-note { display: flex; align-items: center; gap: 8px; padding: 0 12px 20px; color: var(--ui-muted); font-size: 11px; white-space: nowrap; }
 .studio-local-note .project-dot { width: 5px; height: 5px; border-radius: 50%; }
 .side-collapsed .studio-local-note { display: none; }
+.side-navigation-body { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.mobile-nav-heading { display: none; }
 html .app .topbar { min-height: 56px; height: 56px !important; padding: 0 28px !important; background: var(--studio-frame) !important; border-bottom: 1px solid var(--ui-border); }
 .topbar .arco-btn, .topbar b, .topbar .crumb { font-size: 12px; }
 html .app .content { margin: 0; border: 0; border-radius: 0; box-shadow: none; background: var(--ui-bg) !important; padding: 28px 28px 32px; }
@@ -271,6 +273,8 @@ html[data-theme="dark"] .task-state.task-failed { background: #ef8b8f; }
 .project-art::after { content: ""; position: absolute; inset: 10px; border: 1px solid color-mix(in srgb, var(--ui-surface) 70%, transparent); border-radius: 5px; pointer-events: none; }
 .project-art > .project-art-initial { color: var(--ui-secondary-text); font-size: 34px; font-weight: 500; }
 .project-card.selected { outline: 0; border-color: var(--studio-accent); box-shadow: 0 0 0 1px var(--studio-accent); }
+.project-card h3 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.project-card p { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .project-card-actions .arco-btn { border-color: transparent; background: transparent; color: var(--ui-secondary-text); }
 .project-card-actions .arco-btn:not(.arco-btn-disabled):hover { border-color: var(--ui-border); background: var(--ui-subtle); color: var(--ui-text); }
 .project-card-actions .arco-btn-status-danger { color: var(--ui-error); }
@@ -313,7 +317,11 @@ html[data-theme="dark"] .task-state.task-failed { background: #ef8b8f; }
 }
 @media (max-width: 600px) {
   html .app .side { display: none; }
-  html .app.mobile-nav-open .side { display: flex; position: fixed; z-index: 1001; inset: 56px auto 0 0; width: 232px !important; min-width: 232px !important; height: calc(100dvh - 56px) !important; max-height: none; padding: 20px 12px; border-radius: 0; flex-direction: column; overflow-y: auto; box-shadow: 8px 0 24px #00000012; }
+  html .app.mobile-nav-open .side { display: flex; position: fixed; z-index: 1001; inset: 0 auto 0 0; width: min(280px, calc(100vw - 48px)) !important; min-width: 0 !important; height: 100dvh !important; max-height: none; padding: max(12px, env(safe-area-inset-top)) 12px max(20px, env(safe-area-inset-bottom)); border-radius: 0; flex-direction: column; overflow-y: auto; box-shadow: 8px 0 24px #00000012; }
+  .mobile-nav-open .side-navigation-body { height: auto; min-height: 100%; }
+  .mobile-nav-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 4px 16px 12px; color: var(--ui-secondary-text); }
+  .mobile-nav-heading b { font-size: 12px; font-weight: 500; }
+  .mobile-nav-heading .arco-btn { width: 40px; height: 40px; padding: 0; color: var(--ui-secondary-text); }
   .mobile-nav-open .side .arco-layout-sider-children { width: 100%; height: auto; min-height: 100%; display: flex; flex-direction: column; overflow: visible; }
   .mobile-nav-open .side .logo { display: flex; }
   .mobile-nav-open .side .nav { width: 100%; height: auto !important; max-height: none; flex: 0 0 auto; overflow: visible; }
@@ -328,7 +336,7 @@ html[data-theme="dark"] .task-state.task-failed { background: #ef8b8f; }
   .mobile-nav-open .side .side-bottom .arco-btn { justify-content: flex-start; gap: 8px; padding: 0 12px; width: 100%; }
   .mobile-nav-open .mobile-project-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; }
   .mobile-project-actions .arco-btn { min-height: 44px; }
-  .mobile-nav-backdrop { display: block; position: fixed; z-index: 1000; inset: 56px 0 0; background: #00000040; border: 0; }
+  .mobile-nav-backdrop { display: block; position: fixed; z-index: 1000; inset: 0; background: #00000040; border: 0; }
   html .app .topbar { min-height: 56px; height: 56px !important; padding: 8px 12px !important; gap: 8px; flex-wrap: nowrap; }
   .app .topbar > div:first-child { flex: 1 1 0 !important; width: auto; }
   .app .topbar > .arco-space { flex: 0 0 auto; width: auto; }

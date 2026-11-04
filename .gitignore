@@ -55,6 +55,7 @@ npm-debug.log*
 !/scripts/qa/qianwen-video.cjs
 !/scripts/qa/generation-channels.cjs
 !/scripts/qa/settings-layout.cjs
+!/scripts/qa/ui-details.cjs
 
 # Tauri
 src-tauri/gen/

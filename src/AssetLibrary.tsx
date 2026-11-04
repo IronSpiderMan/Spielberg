@@ -17,10 +17,10 @@ const bytes = (value:number) => value < 1048576 ? `${(value/1024).toFixed(1)} KB
 function MediaDimensions({media}:{media:Media}) {
   const [size,setSize]=useState("");
   useEffect(()=>{
-    let active=true;
+    let active=true;setSize("");
     const url=imageUrl(media);
     if(media.kind==="image"){
-      const image=new Image();image.onload=()=>{if(active)setSize(`${image.naturalWidth} × ${image.naturalHeight} px`);};image.src=url;
+      const image=new Image();image.onload=()=>{if(active)setSize(`${image.naturalWidth} × ${image.naturalHeight} px`);};image.onerror=()=>{if(active)setSize("尺寸暂不可用");};image.src=url;
       return()=>{active=false;image.src="";};
     }
     if(media.kind==="video"){
@@ -29,7 +29,7 @@ function MediaDimensions({media}:{media:Media}) {
       return()=>{active=false;video.removeAttribute("src");video.load();};
     }
     return()=>{active=false;};
-  },[media]);
+  },[media.kind,media.path]);
   return <small className="asset-dimensions">{size||"读取尺寸中…"}</small>;
 }
 export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {data:Snapshot;reload:()=>void|Promise<void>;onLocate:(usage:AssetUsage)=>void;onImageToImage:(media:Media)=>void}) {
@@ -40,6 +40,7 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
   const [tracking,setTracking]=useState<Asset|null>(null),[uses,setUses]=useState<AssetUsage[]>([]),[usageError,setUsageError]=useState(""),[usageLoading,setUsageLoading]=useState(false);
   const [scan,setScan]=useState<DiskScan|null>(null),[scanning,setScanning]=useState(false);
   const request=useRef(0);
+  const libraryRef=useRef<HTMLElement>(null);
   const pid=data.project.id;
   const refresh=async()=>{await reload();setVersion(v=>v+1);};
   useEffect(()=>{const timer=setTimeout(()=>{setSearch(query);setPage(1);},250);return()=>clearTimeout(timer);},[query]);
@@ -77,7 +78,8 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
   const inspectDisk=async()=>{setScanning(true);try{setScan(await post<DiskScan>("/storage/scan",{project_id:pid}));}catch(e){Message.error(String(e));}finally{setScanning(false);}};
   const filtered=kind!=="all"||filter!=="all"||!!query.trim();
   const clearFilters=()=>{setQuery("");setSearch("");setKind("all");setFilter("all");setPage(1);};
-  return <section className="asset-library" aria-busy={loading}>
+  const changePage=(next:number)=>{setPage(next);libraryRef.current?.querySelector(".arco-spin")?.scrollTo({top:0});};
+  return <section ref={libraryRef} className="asset-library" aria-busy={loading}>
     <div className="section-title page-actions"><div className="page-intro"><h1>素材库</h1><p>管理项目中的图片、视频与音频。</p></div><Space wrap>
       <Button loading={scanning} icon={<HardDrive size={16}/>} onClick={inspectDisk}>磁盘清理</Button>
       <Button type="primary" loading={busy} icon={<Plus size={16}/>} onClick={importFiles}>导入素材</Button>
@@ -85,8 +87,9 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
     <div className="asset-toolbar">
       <Select aria-label="素材类型" value={kind} onChange={value=>{setKind(value);setPage(1);}} options={[{label:"全部类型",value:"all"},{label:"图片",value:"image"},{label:"视频",value:"video"},{label:"音频",value:"audio"}]}/>
       <Select aria-label="使用状态" value={filter} onChange={value=>{setFilter(value);setPage(1);}} options={[{label:"全部素材",value:"all"},{label:"使用中",value:"used"},{label:"未使用",value:"unused"},{label:"回收站",value:"trash"}]}/>
-      <Input.Search value={query} onChange={setQuery} placeholder="搜索素材名称" allowClear/>
-      <span className="helper asset-total" role="status">共 <b>{total}</b> 项素材</span>
+      <Input.Search aria-label="搜索素材名称" value={query} onChange={setQuery} placeholder="搜索素材名称" allowClear/>
+      {filtered&&<Button className="asset-clear-filters" type="text" size="small" onClick={clearFilters}>清除筛选</Button>}
+      <span className="helper asset-total" role="status">{loading?"正在加载素材…":<>共 <b>{total}</b> 项素材</>}</span>
     </div>
     {filter==="trash"&&<p className="helper">回收站保留原文件；永久删除才会释放磁盘空间。</p>}
     {error?<div className="library-status" role="alert"><div><b>素材暂时未能加载</b><p>{error}</p></div><Button onClick={()=>setVersion(v=>v+1)}>重新加载</Button></div>:<Spin loading={loading} style={{display:"block"}}>
@@ -107,8 +110,8 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
         action={<Button type={filtered?"secondary":"primary"} icon={filtered?undefined:<Plus size={16}/>} onClick={filtered?clearFilters:importFiles}>{filtered?"清除筛选":"导入素材"}</Button>}
       /></div>}
     </Spin>}
-    {total>0&&<Pagination className="asset-pagination" current={page} pageSize={24} total={total} onChange={setPage} showTotal/>}
-    <Drawer width={460} visible={!!tracking} title="素材用途" footer={null} onCancel={()=>setTracking(null)}>
+    {total>0&&!error&&<Pagination className="asset-pagination" current={page} pageSize={24} total={total} onChange={changePage} showTotal disabled={loading}/>}
+    <Drawer className="asset-usage-drawer" width={460} visible={!!tracking} title="素材用途" footer={null} onCancel={()=>setTracking(null)}>
       <h3>{tracking?.name}</h3><Spin loading={usageLoading} style={{display:"block"}}>
         {usageError?<p role="alert">{usageError}</p>:uses.length?uses.map((use,index)=><div className="usage-record" key={index}><Tag>{use.purpose}</Tag><b>{use.episode_title&&use.kind==="scene"?`${use.episode_title} / `:""}{use.title}</b><Button size="small" onClick={()=>{setTracking(null);onLocate(use);}}>前往{use.kind==="asset"?"资产":use.kind==="episode"?"剧集":use.kind==="canvas"?"画布":"场景"}</Button></div>):!usageLoading&&<Empty description="尚未被资产、剧集或场景使用"/>}
       </Spin>

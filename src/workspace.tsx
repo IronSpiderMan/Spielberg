@@ -70,6 +70,7 @@ import { findMentions, promptMentions, syncMentionReferences } from "./prompt-me
 import { EmptyState } from "./ui";
 import { STYLE_PRESETS } from "./prompt-presets";
 import { PROMPT_TEMPLATES } from "./prompt-templates";
+import "./prompts.css";
 const SequencePreview=lazy(()=>import("./creation").then(m=>({default:m.SequencePreview})));
 const ImageStudio=lazy(()=>import("./creation").then(m=>({default:m.ImageStudio})));
 
@@ -424,8 +425,8 @@ export function Tasks({projectId}:{projectId:string}) {
   return <section><div className="section-title page-actions">
     <div className="page-intro"><h1>后台任务</h1><p>在这里追踪生成进度，查看结果与运行记录。</p></div>
     <Select aria-label="任务状态" value={filter} onChange={setFilter} style={{width:160}}><Select.Option value="all">全部状态</Select.Option>{Object.entries(labels).map(([k,v])=><Select.Option key={k} value={k}>{v}</Select.Option>)}</Select></div>
-    {error && <p role="alert">{error}</p>}
-    <div className="task-list">{jobs.map(job=><Card key={`${job.project_id}-${job.id}`} className="task-card">
+    {error && <div className="task-load-error" role="alert"><b>任务记录加载失败</b><p>{error}</p><span>已有记录会保留，可点击下方「重试」重新加载。</span></div>}
+    <div className="task-list" aria-busy={loading}>{jobs.map(job=><Card key={`${job.project_id}-${job.id}`} className="task-card">
       <div className="task-head">
         <span className={`task-state task-${job.status}`} aria-hidden="true" />
         <b>{job.project_name}</b>
@@ -447,6 +448,7 @@ export function Tasks({projectId}:{projectId:string}) {
     {!jobs.length&&!loading&&!error&&<EmptyState
       title={filter==="all"?"暂无后台任务":"暂无符合此状态的任务"}
       description={filter==="all"?"生成图片、视频、语音或合并剧集后，进度和结果会按时间出现在这里。":"切换到「全部状态」查看其他运行记录。"}
+      action={filter!=="all"?<Button onClick={()=>setFilter("all")}>查看全部任务</Button>:undefined}
     />}</section>;
 }
 function SceneThumb({ scene, media, onPreview }: { scene: Scene; media: Media[]; onPreview?: () => void }) {
@@ -2225,106 +2227,147 @@ function RoleEditor({
   );
 }
 export function Prompts({ data, reload }: { data: Snapshot; reload: () => void }) {
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("all");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [editorTitle, setEditorTitle] = useState("新建 Prompt");
   const [editing, setEditing] = useState<{
     id?: number;
     name: string;
     content: string;
     category: string;
   } | null>(null);
-  const add = async () => {
-    const p = await post<typeof editing>("/prompts", {
-      project_id: data.project.id,
-      name: "新 Prompt",
-      content: "",
-      category: "通用",
-    });
-    await reload();
-    setEditing(p);
+  const openEditor = (value: NonNullable<typeof editing>, title: string) => {
+    setSaveError(""); setEditorTitle(title); setEditing({...value});
   };
+  const add = () => openEditor({name: "", content: "", category: "通用"}, "新建 Prompt");
+  const savePrompt = async () => {
+    if (!editing || saving || !editing.name.trim() || !editing.content.trim()) return;
+    setSaving(true); setSaveError("");
+    try {
+      await post(editing.id == null ? "/prompts" : "/prompts/update", {
+        project_id: data.project.id, ...editing, name: editing.name.trim(), content: editing.content.trim(),
+      });
+      setEditing(null);
+      Message.success("Prompt 已保存");
+      await Promise.resolve(reload()).catch(error => Message.error(`Prompt 已保存，刷新列表失败：${String(error)}`));
+    } catch (error) { setSaveError(String(error)); }
+    finally { setSaving(false); }
+  };
+  const search = query.trim().toLocaleLowerCase();
+  const matches = (prompt: {name: string; content: string; category: string}) =>
+    (category === "all" || prompt.category === category) &&
+    (!search || [prompt.name, prompt.content, prompt.category].some(value => value.toLocaleLowerCase().includes(search)));
+  const presets = STYLE_PRESETS.filter(matches);
+  const prompts = data.prompts.filter(matches);
+  const filtering = !!search || category !== "all";
+  const resetFilters = () => { setQuery(""); setCategory("all"); };
+  const categories = Array.from(new Set(["通用", "资产", "场景", "风格", ...data.prompts.map(prompt => prompt.category)])).filter(Boolean);
   return (
-    <section>
+    <section className="prompt-library">
       <div className="section-title page-actions">
         <div className="page-intro"><h1>Prompt 库</h1><p>管理常用提示词，在资产与场景生成时复用。</p></div>
         <Button
           type="primary"
           className="prompt-create-button"
           icon={<Plus size={16} />}
-          onClick={() => add().catch((e) => Message.error(String(e)))}
+          onClick={add}
         >
           新建 Prompt
         </Button>
       </div>
-      <div className="prompt-library-heading">
-        <h2>预设风格</h2>
+      <div className="prompt-library-toolbar">
+        <Input.Search aria-label="搜索 Prompt" placeholder="搜索名称、内容或分类" value={query} onChange={setQuery} allowClear />
+        <Select aria-label="Prompt 分类筛选" value={category} onChange={setCategory}>
+          <Select.Option value="all">全部分类</Select.Option>
+          {categories.map(value => <Select.Option key={value} value={value}>{value}</Select.Option>)}
+        </Select>
+        <span className="helper" role="status">{filtering ? `找到 ${presets.length + prompts.length} 条` : `共 ${STYLE_PRESETS.length + data.prompts.length} 条`}</span>
+        {filtering && <Button type="text" size="small" onClick={resetFilters}>清除筛选</Button>}
+      </div>
+      {(!filtering || presets.length > 0) && <><div className="prompt-library-heading">
+        <h2>预设风格 <span className="prompt-section-count">{presets.length}</span></h2>
         <p>生成图片时可直接选用，也可另存后调整为自己的风格。</p>
       </div>
       <div className="prompt-grid prompt-presets">
-        {STYLE_PRESETS.map((preset) => (
-          <Card key={preset.id} className="prompt-card" title={preset.name}>
+        {presets.map((preset) => (
+          <Card key={preset.id} className="prompt-card" title={<span title={preset.name}>{preset.name}</span>}>
             <p>{preset.content}</p>
-            <div className="prompt-card-actions"><Button size="small" onClick={() => setEditing({ name: preset.name, content: preset.content, category: preset.category })}>另存为我的 Prompt</Button></div>
+            <div className="prompt-card-actions"><Button size="small" onClick={() => openEditor({ name: preset.name, content: preset.content, category: preset.category }, "另存 Prompt")}>另存为我的 Prompt</Button></div>
           </Card>
         ))}
-      </div>
-      <div className="prompt-library-heading"><h2>我的 Prompt</h2></div>
-      {!data.prompts.length && <EmptyState
+      </div></>}
+      {(!filtering || prompts.length > 0) && <div className="prompt-library-heading"><h2>我的 Prompt <span className="prompt-section-count">{prompts.length}</span></h2></div>}
+      {!data.prompts.length && !filtering && <EmptyState
         title="还没有自定义 Prompt"
         description="新建一条提示词，或从上方预设风格中另存为你自己的版本。"
-        action={<Button type="primary" icon={<Plus size={16} />} onClick={() => void add().catch((e) => Message.error(String(e)))}>新建 Prompt</Button>}
+        action={<Button type="primary" icon={<Plus size={16} />} onClick={add}>新建 Prompt</Button>}
       />}
+      {filtering && !presets.length && !prompts.length && <EmptyState title="没有找到匹配的 Prompt" description="试试其他关键词，或清除筛选查看全部提示词。" action={<Button onClick={resetFilters}>清除筛选</Button>} />}
       <div className="prompt-grid">
-        {data.prompts.map((p) => (
+        {prompts.map((p) => (
           <Card
             key={p.id}
             className="prompt-card"
-            title={p.name}
+            title={<span title={p.name}>{p.name}</span>}
           >
             <Tag>{p.category}</Tag>
             <p>{p.content || "尚未填写内容"}</p>
-            <div className="prompt-card-actions"><Button size="small" onClick={() => setEditing(p)} icon={<Pencil size={14} />}>编辑</Button></div>
+            <div className="prompt-card-actions"><Button size="small" onClick={() => openEditor(p, "编辑 Prompt")} icon={<Pencil size={14} />}>编辑</Button></div>
           </Card>
         ))}
       </div>
       <Modal
-        title={editing?.id == null ? "另存 Prompt" : "编辑 Prompt"}
+        title={editorTitle}
+        className="prompt-editor-modal"
         visible={!!editing}
-        onCancel={() => setEditing(null)}
-        onOk={() =>
-          post(editing?.id == null ? "/prompts" : "/prompts/update", { project_id: data.project.id, ...editing })
-            .then(reload)
-            .then(() => setEditing(null))
-        }
+        onCancel={() => !saving && setEditing(null)}
+        onOk={savePrompt}
+        okText="保存 Prompt"
+        confirmLoading={saving}
+        okButtonProps={{disabled: !editing?.name.trim() || !editing?.content.trim()}}
+        cancelButtonProps={{disabled: saving}}
+        maskClosable={!saving}
+        escToExit={!saving}
+        unmountOnExit
       >
         <Form layout="vertical">
-          <Form.Item label="名称">
+          <Form.Item label="名称" required>
             <Input
+              aria-label="Prompt 名称"
+              placeholder="为这条提示词起个名字"
+              autoFocus
+              disabled={saving}
               value={editing?.name}
               onChange={(v) => setEditing((x) => (x ? { ...x, name: v } : x))}
             />
           </Form.Item>
           <Form.Item label="分类">
             <Select
+              aria-label="Prompt 分类"
+              disabled={saving}
               value={editing?.category}
               onChange={(v) =>
                 setEditing((x) => (x ? { ...x, category: v } : x))
               }
             >
-              <Select.Option value="通用">通用</Select.Option>
-              <Select.Option value="资产">资产</Select.Option>
-              <Select.Option value="场景">场景</Select.Option>
-              <Select.Option value="风格">风格</Select.Option>
+              {categories.map(value => <Select.Option key={value} value={value}>{value}</Select.Option>)}
             </Select>
           </Form.Item>
-          <Form.Item label="Prompt 内容">
+          <Form.Item label="Prompt 内容" required>
             <Input.TextArea
+              aria-label="Prompt 内容"
+              disabled={saving}
               value={editing?.content}
               onChange={(v) =>
                 setEditing((x) => (x ? { ...x, content: v } : x))
               }
-              autoSize={{ minRows: 7 }}
+              autoSize={{ minRows: 5, maxRows: 12 }}
               placeholder="用自然语言描述镜头、画风、光线与主体…"
             />
           </Form.Item>
+          {saveError && <p className="prompt-save-error" role="alert">保存失败：{saveError}</p>}
         </Form>
       </Modal>
     </section>
