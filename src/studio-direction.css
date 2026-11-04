@@ -78,10 +78,52 @@ html .image-mode-tabs .arco-radio-button-checked, html .generation-mode-tabs .ar
 @keyframes generation-status-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .generation-state.is-busy::before { animation: none; } }
 .generation-preview-body { min-height: 260px; flex: 1 1 auto; gap: 20px; }
-.generation-preview-body .viewfinder-empty { position: relative; width: 100%; max-width: 620px; aspect-ratio: 16 / 9; min-height: 180px; display: grid; align-content: center; padding: 24px; border: 1px solid var(--studio-control-border); border-radius: 4px; background: var(--ui-subtle); }
-.viewfinder-empty::before, .viewfinder-empty::after { content: ""; position: absolute; inset: 12px; pointer-events: none; border: solid var(--studio-control-border); border-width: 1px 0; }
-.viewfinder-empty::after { inset: 24px 12px; border-width: 0 1px; }
-.viewfinder-empty .arco-empty-image { display: none; }
+/* A quiet canvas, with all decoration scoped to the image empty state. */
+.image-preview-empty {
+  box-sizing: border-box;
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 620px;
+  min-width: 0;
+  min-height: 220px;
+  aspect-ratio: 16 / 10;
+  padding: 32px 20px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--ui-bg) 55%, var(--ui-surface));
+}
+.image-preview-empty::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--ui-muted) 24%, transparent) .7px, transparent .9px);
+  background-size: 18px 18px;
+  mask-image: radial-gradient(ellipse at center, #000 10%, transparent 72%);
+}
+.image-preview-empty-content { display: grid; justify-items: center; gap: 24px; text-align: center; }
+.image-preview-empty-art { position: relative; width: 112px; height: 88px; color: var(--ui-primary); }
+.image-preview-empty-sheet {
+  box-sizing: border-box;
+  position: absolute;
+  inset: 10px 8px;
+  border: 1px solid color-mix(in srgb, var(--ui-primary) 12%, var(--ui-border));
+  border-radius: 12px;
+  background: var(--ui-surface);
+}
+.image-preview-empty-sheet:first-child { transform: translate(-8px, -4px) rotate(-12deg); background: var(--ui-subtle); }
+.image-preview-empty-sheet:nth-child(2) { transform: translate(8px, -2px) rotate(10deg); background: color-mix(in srgb, var(--ui-accent-soft) 45%, var(--ui-surface)); }
+.image-preview-empty-front { display: grid; place-items: center; box-shadow: 0 8px 20px color-mix(in srgb, var(--ui-text) 6%, transparent); }
+.image-preview-empty-caption { color: var(--ui-muted); font-size: 13px; line-height: 1.6; }
+.image-preview-empty-caption p { max-width: 260px; margin: 8px 0 0; font-size: 12px; }
+.image-preview-empty.is-busy .image-preview-empty-front svg { animation: generation-status-spin 1.6s linear infinite; }
+.image-preview-empty.is-error .image-preview-empty-art { color: var(--ui-error); }
+@media (prefers-reduced-motion: reduce) { .image-preview-empty.is-busy .image-preview-empty-front svg { animation: none; } }
 .generation-preview-body .arco-empty-description b { font-size: 16px; font-weight: 500; color: var(--ui-text); }
 .generation-preview-body .arco-empty-description p { max-width: 280px; margin-top: 12px; font-size: 13px; line-height: 1.8; }
 .image-result .generation-result-note { font-size: 12px; padding-top: 16px; }
