@@ -2,6 +2,7 @@ import { GenerationSelector } from "./components/generation/GenerationSelector";
 import { VideoModelFields } from "./components/generation/ModelGenerationFields";
 import { generationChoice, modelRatio, selectionPayload, useGenerationSelection, validateGeneration } from "./generation-channels";
 import { PreviewVideo } from "./components/VideoPreviewModal";
+import { StudioMediaLibrary, useStudioMedia } from "./components/StudioMediaLibrary";
 import { ReferenceMediaPicker } from "./components/generation/ReferenceMediaPicker";
 import { buildVideoRequest, type VideoMode } from "./generation-request";
 import { GenerationModeTabs, MediaSizeFields, VideoDurationField } from "./components/generation/GenerationFields";
@@ -37,6 +38,7 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
   const [uploaded, setUploaded] = useState<Media[]>([]);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Media>();
+  const videoLibrary = useStudioMedia(data.media, "video");
   const [error, setError] = useState("");
   const generating = useRef(false);
   const { uploading, inProgress: importing, uploadImages } = useImageUpload({ projectId:data.project.id,reload,refreshError:"刷新素材失败" });
@@ -95,7 +97,7 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
     generating.current = true; setBusy(true); setError("");
     try {
       const media = await post<Media>("/generations/video", {project_id:data.project.id,...request,...selectionPayload(generation.choice),...(cap?.size_mode==="resolution"?{resolution}:{}),...(cap?.audio?{audio}:{})});
-      setResult(media); Message.success("视频已保存到素材库");
+      setResult(media); videoLibrary.remember(media); Message.success("视频已保存到素材库");
       try { await reload(); } catch (e) { Message.error(`视频已入库，但刷新素材失败：${String(e)}`); }
     } catch (e) { setError(String(e)); Message.error(String(e)); }
     finally { generating.current = false; setBusy(false); }
@@ -136,6 +138,7 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
       {error && <p className="image-generation-errors" role="alert">{error}</p>}
       </div>
       <p className="helper generation-result-note">生成任务可在「后台任务」中查看进度与错误信息。</p>
+      <StudioMediaLibrary kind="video" items={videoLibrary.items} projectId={data.project.id} />
     </div>
   </div>;
 }
