@@ -7,31 +7,45 @@
 }
 .agent-float-button:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: 5px; }
 .agent-float-button.is-dragging { cursor: grabbing; }
+/* A soft cyan light suspended inside a fine glass boundary. */
 .agent-float-aura {
-  position: absolute; inset: 7px; z-index: -1; border-radius: 50%; opacity: .55;
-  background: conic-gradient(from 40deg, #91cfff, #ae95ff, #ed9fd3, #f6b598, #8ce2cf, #91cfff);
-  filter: blur(13px); animation: agent-aura-breathe 5s ease-in-out infinite;
+  position: absolute; inset: 6px; z-index: -1; border-radius: 50%;
+  background: radial-gradient(circle, #9fdcdb66, #7ec4ce25 48%, transparent 72%);
+  filter: blur(9px); opacity: .7; animation: agent-aura-breathe 5s ease-in-out infinite;
+  pointer-events: none; transition: opacity .4s;
 }
 .agent-float-orb {
-  position: relative; display: block; width: 100%; height: 100%; overflow: hidden;
-  border-radius: 46% 54% 51% 49% / 49% 44% 56% 51%;
-  background: radial-gradient(ellipse at 35% 22%, #fcf4ff 0%, #bdb7ed 25%, #6a74b8 56%, #36416e 100%);
-  box-shadow: inset 0 0 0 1px #ffffff70, inset 2px 3px 9px #ffffff9c, inset -4px -6px 12px #36296860, 0 5px 15px #25213935;
-  animation: agent-orb-shape 7s ease-in-out infinite; transition: transform .25s ease, box-shadow .25s ease;
+  position: relative; display: block; box-sizing: border-box; width: 100%; height: 100%;
+  border-radius: 50%; border: 1px solid #b4e4e54d;
+  background: radial-gradient(circle at 47% 44%, #8dcfd41a, #4b818b0a 66%, #a9dfe512);
+  box-shadow: inset 0 0 9px #a5e0e51a, 0 0 1px #b9edf233, 0 0 15px #83c6cf1a;
+  transition: transform .4s ease, border-color .4s ease;
 }
-.agent-float-flow {
-  position: absolute; inset: -35%; border-radius: 43%; opacity: .95;
-  background: radial-gradient(ellipse at 28% 65%, #87f1e5 0%, #71cce8 16%, transparent 43%), radial-gradient(ellipse at 75% 64%, #e597e6 0%, #c29bf5 22%, transparent 48%), radial-gradient(ellipse at 52% 20%, #ffdabd 0%, #f9b8ce 14%, transparent 44%);
-  filter: blur(4px); animation: agent-orb-flow 9s linear infinite;
+.agent-float-core, .agent-float-core-light {
+  position: absolute; pointer-events: none;
+  border-radius: 44% 56% 48% 52% / 43% 41% 59% 57%;
 }
-.agent-float-gloss { position: absolute; inset: 0; border-radius: inherit; background: radial-gradient(ellipse at 38% 17%, #ffffffd9, #ffffff30 23%, transparent 48%), radial-gradient(ellipse at 70% 85%, #b8ffff80, transparent 48%); }
-.agent-float-button:hover .agent-float-orb { transform: scale(1.08); }
+.agent-float-core {
+  inset: 9px 8px 8px 9px;
+  background: radial-gradient(ellipse at 37% 31%, #d1f0e9 0%, #b0e4de 28%, #8acdd0 58%, #6aa9bb99 82%, transparent 100%);
+  filter: blur(3px); box-shadow: 0 0 9px #a2dfde66;
+  animation: agent-light-morph 6s ease-in-out infinite;
+}
+.agent-float-core-light {
+  inset: 12px 14px 15px 11px;
+  background: radial-gradient(ellipse at 40% 40%, #e0f7edb3, #b9eee573 45%, transparent 75%);
+  filter: blur(4px); animation: agent-light-drift 7s ease-in-out infinite;
+}
+.agent-float-button:hover .agent-float-orb { transform: scale(1.07); border-color: #c2eff080; }
+.agent-float-button:hover .agent-float-aura { opacity: 1; }
 .agent-float-button.is-dragging .agent-float-orb { transform: scale(.94); }
-.agent-float-button[data-state="listening"] .agent-float-orb { animation-duration: 1.4s; box-shadow: inset 0 0 0 1px #ffffffa0, inset 2px 3px 9px #ffffff9c, 0 0 22px #8cbfe670; }
-.agent-float-button[data-state="listening"] .agent-float-flow { animation-duration: 2.3s; }
-.agent-float-button[data-state="listening"] .agent-float-aura { animation-duration: 1.3s; opacity: .9; inset: 0; }
-.agent-float-button[data-state="working"] .agent-float-flow { animation-duration: 3.2s; }
-.agent-float-busy-dot { position: absolute; right: 7px; bottom: 8px; width: 9px; height: 9px; background: #92e1c6; border: 2px solid var(--ui-surface); border-radius: 50%; }
+.agent-float-button[data-state="listening"] .agent-float-core { animation-duration: 1.6s; }
+.agent-float-button[data-state="listening"] .agent-float-core-light { animation-duration: 2s; }
+.agent-float-button[data-state="listening"] .agent-float-aura { animation-duration: 1.6s; opacity: 1; }
+.agent-float-button[data-state="listening"] .agent-float-orb { border-color: #c2eff099; }
+.agent-float-button[data-state="working"] .agent-float-core { animation: agent-light-morph 2.8s ease-in-out infinite, agent-light-turn 8s linear infinite; }
+.agent-float-button[data-state="error"] .agent-float-orb { border-color: #c3a6a280; }
+.agent-float-busy-dot { position: absolute; right: 8px; bottom: 9px; width: 5px; height: 5px; background: #a6d5cf; border: 2px solid var(--ui-surface); border-radius: 50%; }
 .agent-float-tooltip { position: absolute; right: 0; bottom: calc(100% + 8px); width: max-content; max-width: 220px; padding: 7px 11px; background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: 9px; color: var(--ui-secondary-text); font-size: 11px; font-weight: 500; box-shadow: var(--ui-shadow-soft); opacity: 0; transform: translateY(3px); transition: opacity .2s, transform .2s; pointer-events: none; }
 .agent-float-button:hover .agent-float-tooltip, .agent-float-button:focus-visible .agent-float-tooltip { opacity: 1; transform: translateY(0); }
 .agent-float-button[aria-expanded="true"] .agent-float-tooltip, .agent-float-button.is-dragging .agent-float-tooltip { display: none; }
@@ -80,8 +94,15 @@
 .agent-float-settings { margin: -5px 0 10px; color: var(--ui-primary); }
 /* Keep the existing image shortcut clear of the assistant's default position. */
 .floating-image-generator.arco-btn { right: 108px; }
-@keyframes agent-orb-shape { 0%, 100% { border-radius: 46% 54% 51% 49% / 49% 44% 56% 51%; } 50% { border-radius: 55% 45% 47% 53% / 44% 54% 46% 56%; } }
-@keyframes agent-orb-flow { to { transform: rotate(360deg); } }
+@keyframes agent-light-morph {
+  0%, 100% { border-radius: 44% 56% 48% 52% / 43% 41% 59% 57%; transform: scale(.95) translate(-1px, 0); }
+  50% { border-radius: 56% 44% 59% 41% / 54% 61% 39% 46%; transform: scale(1.06) translate(1px, -1px); }
+}
+@keyframes agent-light-drift {
+  0%, 100% { transform: translate(-2px, -1px); opacity: .65; }
+  50% { transform: translate(3px, 2px); opacity: 1; }
+}
+@keyframes agent-light-turn { to { rotate: 360deg; } }
 @keyframes agent-aura-breathe { 0%, 100% { transform: scale(.91); } 50% { transform: scale(1.12); } }
 @keyframes agent-wave { to { transform: scaleY(.35); } }
 @keyframes agent-panel-appear { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }

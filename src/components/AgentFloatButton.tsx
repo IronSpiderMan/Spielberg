@@ -278,6 +278,9 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings }:
       event.preventDefault(); const step = event.shiftKey ? 40 : 12;
       const next = clampPosition({ x: position.x + (event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0), y: position.y + (event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0) });
       setPosition(next); writeStorage(POSITION_KEY, JSON.stringify(next));
-    }}><span className="agent-float-aura" aria-hidden="true" /><span className="agent-float-orb" aria-hidden="true"><span className="agent-float-flow" /><span className="agent-float-gloss" /></span>{(running || sending) && <span className="agent-float-busy-dot" aria-hidden="true" />}<span className="agent-float-tooltip">{listening ? "点击结束" : running || sending ? "执行中" : "说一声，交给 Agent"}</span></button>
+    }}><span className="agent-float-aura" aria-hidden="true" /><span className="agent-float-orb" aria-hidden="true">
+      <span className="agent-float-core" />
+      <span className="agent-float-core-light" />
+    </span>{(running || sending) && <span className="agent-float-busy-dot" aria-hidden="true" />}<span className="agent-float-tooltip">{listening ? "点击结束" : running || sending ? "执行中" : "说一声，交给 Agent"}</span></button>
   </div>, document.body);
 }
