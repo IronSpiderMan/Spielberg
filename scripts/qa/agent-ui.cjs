@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const tool = (name, args, id) => ({id,type:'function',function:{name,arguments:JSON.stringify(args)}});
+const deferred = () => { let resolve; const promise=new Promise(done=>{resolve=done;}); return {promise,resolve}; };
 
 (async () => {
  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'spielberg-agent-ui-'));
@@ -14,6 +15,7 @@ const tool = (name, args, id) => ({id,type:'function',function:{name,arguments:J
  let speechAudio;
  const speechRequests=[];
  const modelSelections=[];
+ const streamGates=new Map();
  const model = http.createServer(async (req,res) => {
   const chunks=[];for await(const chunk of req) chunks.push(chunk);
   const body=JSON.parse(Buffer.concat(chunks).toString());
@@ -24,6 +26,17 @@ const tool = (name, args, id) => ({id,type:'function',function:{name,arguments:J
   const lastUser=body.messages.findLastIndex(m=>m.role==='user');
   const prompt=body.messages[lastUser].content;
   const results=body.messages.slice(lastUser+1).filter(m=>m.role==='tool');
+  if(prompt.includes('流式回复测试')) {
+   assert.equal(body.stream,true,'Agent did not request streamed model output');
+   const gate=deferred();streamGates.set(prompt,gate);
+   res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache'});
+   const event=delta=>res.write(`data: ${JSON.stringify({choices:[{index:0,delta,finish_reason:null}]})}\n\n`);
+   event({role:'assistant',content:'正在逐步整理雨夜故事。'});
+   await gate.promise;
+   event({content:'故事已整理完成。'});
+   res.write(`data: ${JSON.stringify({choices:[{index:0,delta:{},finish_reason:'stop'}],usage:{prompt_tokens:10,completion_tokens:8,total_tokens:18}})}\n\n`);
+   res.end('data: [DONE]\n\n');return;
+  }
   let message;
   if(body.tool_choice==='none') {
    message={role:'assistant',content:'本轮执行已暂停，已完成的操作已保留。'};
@@ -64,7 +77,7 @@ const tool = (name, args, id) => ({id,type:'function',function:{name,arguments:J
  await new Promise(resolve=>model.listen(0,'127.0.0.1',resolve));
  const binary=process.env.SPIELBERG_TEST_BINARY || path.resolve(__dirname,'../../backend/target/debug/spielberg-backend');
  const server=spawn(binary,[],{env:{...process.env,SPIELBERG_DATA_DIR:path.join(temp,'data'),SPIELBERG_BIND:'127.0.0.1:0'},stdio:['ignore','pipe','pipe']});
- let browser;
+ let browser,page;
  try {
   const base=await new Promise((resolve,reject)=>{
    const timeout=setTimeout(()=>reject(Error('Backend startup timed out')),15000);
@@ -78,11 +91,25 @@ const tool = (name, args, id) => ({id,type:'function',function:{name,arguments:J
   const project=await api('/projects',{name:'Agent 浏览器验证'});
   await api('/actions/settings',{project_id:project.id,settings:{llm:{base_url:`http://127.0.0.1:${model.address().port}/v1`,model:'qa-tool-model',api_key:'ui-test-private-key'}}});
   browser=await chromium.launch({headless:true});
-  const page=await browser.newPage({viewport:{width:1440,height:1000}});
+  page=await browser.newPage({viewport:{width:1440,height:1000}});
   const failures=[];page.on('pageerror',error=>failures.push(error.message));
+  // A failed initial read must be retryable without losing the composer's draft.
+  let failInitialRead=true;
+  await page.route('**/api/v1/actions/agent/sessions',async route=>{
+   if(failInitialRead){failInitialRead=false;await route.fulfill({status:503,json:{error:'会话读取暂时不可用'}});}
+   else await route.continue();
+  });
   await page.goto(base);
   await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
   await page.getByTestId('agent-workspace').waitFor();
+  await page.getByTestId('agent-reload').waitFor();
+  await page.getByTestId('agent-composer').fill('恢复后保留的草稿');
+  assert(await page.getByTestId('agent-send').isDisabled());
+  await page.screenshot({path:path.join(screenshots,'load-retry.png'),fullPage:true});
+  await page.getByTestId('agent-reload').click();
+  await page.waitForFunction(()=>!document.querySelector('[data-testid="agent-send"]')?.disabled);
+  assert.equal(await page.getByTestId('agent-composer').inputValue(),'恢复后保留的草稿');
+  await page.unroute('**/api/v1/actions/agent/sessions');
   await page.getByTestId('agent-composer').fill('请创建雨夜故事的主角和剧本');
   await page.getByTestId('agent-send').click();
   await page.getByRole('link',{name:'参考资料',exact:true}).waitFor({timeout:15000});
@@ -212,6 +239,33 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
   await page.getByTestId('agent-send').click();
   await page.locator('.agent-limit-notice').waitFor();
   assert.equal(await page.locator('.agent-tool-status.skipped').textContent(),'未执行');
+  // Text is visible before the model finishes; cancelled partial output remains
+  // visibly interrupted, and typing a follow-up never discards that draft.
+  for(const cancelStream of [false,true]) {
+   const prompt=`流式回复测试${cancelStream?'中断':'完成'}`;
+   await page.getByTestId('agent-new-session').click();
+   await page.getByTestId('agent-composer').fill(prompt);
+   await page.getByTestId('agent-send').click();
+   const partial=page.locator('.agent-message.is-assistant[data-status="streaming"]');
+   await partial.getByText('正在逐步整理雨夜故事。',{exact:true}).waitFor({timeout:15000});
+   await partial.getByText('正在回复',{exact:true}).waitFor();
+   if(!cancelStream)await page.screenshot({path:path.join(screenshots,'streaming.png'),fullPage:true});
+   await page.getByTestId('agent-composer').fill('下一轮继续使用这份草稿');
+   if(cancelStream) {
+    await page.getByTestId('agent-stop').click();
+    await page.locator('.agent-message[data-status="interrupted"]').getByText('回复已中断',{exact:true}).waitFor();
+    streamGates.get(prompt).resolve();
+    await page.getByTestId('agent-send').waitFor();
+    assert.equal(await page.getByText('故事已整理完成。',{exact:true}).count(),0);
+    await page.screenshot({path:path.join(screenshots,'stream-interrupted.png'),fullPage:true});
+   } else {
+    streamGates.get(prompt).resolve();
+    await page.locator('.agent-message[data-status="completed"]').getByText('正在逐步整理雨夜故事。故事已整理完成。',{exact:true}).waitFor();
+    await page.getByTestId('agent-send').waitFor();
+   }
+   assert.equal(await page.getByTestId('agent-composer').inputValue(),'下一轮继续使用这份草稿');
+   assert.equal(await page.locator('.agent-message[data-status="streaming"]').count(),0);
+  }
   const sessionOrder=()=>page.locator('.agent-session-select').evaluateAll(items=>items.map(item=>item.dataset.testid));
   const beforeSelection=await sessionOrder();
   assert.notEqual(beforeSelection[0],`agent-session-${originalSession.id}`);
@@ -333,7 +387,10 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
   await pickModel('备用渠道','指定模型');
   await page.getByTestId('agent-settings').click();
   await page.getByLabel('模型请求等待时间（秒）',{exact:true}).fill('120');
+  const settingsResponse=page.waitForResponse(response=>response.url().endsWith('/agent/config/save'));
   await page.getByRole('button',{name:'保存设置',exact:true}).click();
+  const savedSettings=await settingsResponse;assert(savedSettings.ok(),await savedSettings.text());
+  await page.locator('.agent-settings-modal:visible').waitFor({state:'hidden'});
   await picker.getByText('指定模型',{exact:true}).waitFor();
   await runSelection('qa-selected');
   assert.equal((await api('/actions/agent/config',{project_id:project.id})).model,'qa-default');
@@ -349,10 +406,61 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
    {url:'/other/v1/chat/completions',model:'qa-first',authorization:'Bearer selected-model-key'},
    {url:'/independent/v1/chat/completions',model:'qa-own',authorization:'Bearer own-model-key'},
   ]);
+  // Hold a session read across cancellation. This reproduces the loading race
+  // deterministically and keeps the tool active until its final result arrives.
+  const idle={id:'ui-idle',title:'空闲会话',status:'idle',messages:[],updated_at:'1',execution:{active:false}};
+  const active={id:'ui-active',title:'停止竞态会话',status:'running',messages:[{role:'user',content:'请执行操作'},{role:'tool',tool_name:'get_project',tool_call_id:'late-result',status:'running',content:''}],updated_at:'2',execution:{active:true,phase:'tool',active_tool:'get_project'}};
+  const stopped={...active,status:'cancelled',execution:{active:true,phase:'stopping'}};
+  let current=active,holdFirstRead=true,unexpectedRuns=0;
+  const heldRead=deferred(),readStarted=deferred();
+  const fixtureRoute=async route=>{
+   const action=new URL(route.request().url()).pathname.split('/').at(-1);
+   const request=route.request().postDataJSON();
+   if(action==='sessions')return route.fulfill({json:{data:{items:[idle,{...current,messages:[]}]}}});
+   if(action==='session') {
+    if(request.session_id===idle.id)return route.fulfill({json:{data:idle}});
+    if(holdFirstRead){holdFirstRead=false;readStarted.resolve();await heldRead.promise;return route.fulfill({json:{data:active}});}
+    return route.fulfill({json:{data:current}});
+   }
+   if(action==='cancel'){current=stopped;return route.fulfill({json:{data:stopped}});}
+   if(action==='run'){unexpectedRuns++;return route.fulfill({status:409,json:{error:'此会话仍在停止中'}});}
+   return route.continue();
+  };
+  await page.route('**/api/v1/actions/agent/*',fixtureRoute);
+  await page.evaluate(({pid,id})=>localStorage.setItem(`spielberg-agent-session-${pid}`,id),{pid:project.id,id:idle.id});
+  await page.reload();await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
+  await page.getByTestId(`agent-session-${active.id}`).click();await readStarted.promise;
+  await page.getByText('正在读取会话',{exact:true}).waitFor();
+  await page.getByTestId('agent-stop').click();
+  await page.getByText('正在读取会话',{exact:true}).waitFor({state:'hidden'});
+  assert(await page.getByTestId('agent-stop').isDisabled());
+  assert(await page.getByRole('button',{name:`删除会话 ${active.title}`,exact:true}).isDisabled());
+  await page.getByTestId('agent-composer').fill('停止完成后继续');
+  await page.getByTestId('agent-composer').press('Enter');
+  assert.equal(unexpectedRuns,0,'A new run was sent while cancellation was draining');
+  await page.screenshot({path:path.join(screenshots,'stopping.png'),fullPage:true});
+  heldRead.resolve();
+  await page.getByText('正在停止，等待当前操作结束',{exact:true}).waitFor();
+  current={...stopped,messages:[active.messages[0],{...active.messages[1],status:'completed',content:'工具最终完成'}],execution:{active:false,phase:'cancelled'}};
+  await page.getByTestId('agent-send').waitFor();
+  await page.getByText('工具最终完成',{exact:true}).waitFor({state:'attached'});
+  assert.equal(await page.getByTestId('agent-composer').inputValue(),'停止完成后继续');
+  assert.equal(await page.getByTestId('agent-send').isDisabled(),false);
+  assert.equal(await page.getByRole('button',{name:`删除会话 ${active.title}`,exact:true}).isDisabled(),false);
+  assert.equal(await page.locator('.agent-loading').count(),0);
+  await page.unroute('**/api/v1/actions/agent/*',fixtureRoute);
   assert.deepEqual(failures,[]);
-  console.log('PASS: Agent channel/model cascade and real request routing, shared defaults, independent config, keyboard dismissal and mobile bounds; generation previews; TTS playback/persistence; SVG; session order, plans, cancellation and desktop/mobile/dark themes');
+  console.log('PASS: Agent streaming and interrupted replies; load recovery and draft retention; cancellation during selection, draining and final tool results; channel/model routing; generation previews; TTS; SVG; session order, plans and desktop/mobile/dark themes');
   console.log('Screenshots: '+screenshots);
+ } catch(error) {
+  if(page && !page.isClosed()) {
+   await page.screenshot({path:path.join(screenshots,'failure.png'),fullPage:true}).catch(()=>{});
+   console.error('Visible dialogs:',await page.getByRole('dialog').allTextContents());
+   console.error('Failure screenshot: '+path.join(screenshots,'failure.png'));
+  }
+  throw error;
  } finally {
+  for(const gate of streamGates.values())gate.resolve();
   if(browser)await browser.close();
   server.kill('SIGTERM');await new Promise(resolve=>server.exitCode!==null?resolve():server.once('exit',resolve));
   model.closeAllConnections();await new Promise(resolve=>model.close(resolve));

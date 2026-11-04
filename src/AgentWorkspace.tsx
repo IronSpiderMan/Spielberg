@@ -16,9 +16,9 @@ import { GenerationSelector } from "./components/generation/GenerationSelector";
 import { channelsFor, selectionPayload, useGenerationSelection } from "./generation-channels";
 
 type AgentMessage = { role: "user" | "assistant" | "tool"; content: string; images?: string[]; image_media_ids?: number[]; tool_name?: string; tool_call_id?: string; arguments?: unknown; status?: string; tool_calls?: unknown[] };
-type ConversationContext = { total_turns: number; recent_turns: number; summarized_turns: number; total_images: number; retained_images: number };
+type ConversationContext = { total_turns: number; recent_turns: number; summarized_turns: number; total_images: number; retained_images: number; active_compacted_messages?: number; estimated_text_bytes?: number };
 type PlanStep = { step: string; status: "pending" | "in_progress" | "completed" };
-type Execution = { phase?: string; tool_calls?: number; max_steps?: number; retries?: number; active_tool?: string; plan?: PlanStep[]; stop_reason?: string };
+type Execution = { active?: boolean; phase?: string; tool_calls?: number; max_steps?: number; retries?: number; active_tool?: string; plan?: PlanStep[]; stop_reason?: string };
 type Session = { id: string; title: string; status: string; messages: AgentMessage[]; error?: string; updated_at: string; context?: ConversationContext; execution?: Execution };
 type Config = { inherit_llm: boolean; base_url: string; model: string; has_api_key: boolean; search_provider: string; has_search_api_key: boolean; max_steps: number; request_timeout_seconds: number };
 const initialConfig: Config = { inherit_llm: true, base_url: "", model: "", has_api_key: false, search_provider: "duckduckgo", has_search_api_key: false, max_steps: 16, request_timeout_seconds: 600 };
@@ -37,9 +37,10 @@ function toolTarget(args: unknown): string {
   const target = String(fields.operation || fields.resource || "");
   return toolTargetText[target] || target;
 }
-const phaseText: Record<string, string> = { thinking: "正在整理下一步", retrying: "模型服务暂时不可用，正在重试", finalizing: "正在整理执行结果", tool: "正在执行操作" };
+const phaseText: Record<string, string> = { thinking: "正在整理下一步", streaming: "正在回复", stopping: "正在停止，等待当前操作结束", retrying: "模型服务暂时不可用，正在重试", finalizing: "正在整理执行结果", tool: "正在执行操作" };
 function displayJson(value: unknown) { if (typeof value === "string") { try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; } } return JSON.stringify(value, null, 2); }
-
+function hasActiveRun(session: Session | null): boolean { return session?.execution?.active ?? session?.status === "running"; }
+function sessionStatus(session: Session): string { return hasActiveRun(session) && session.status === "cancelled" ? "正在停止" : statusText[session.status] || session.status; }
 
 function updateSession(items: Session[], session: Session): Session[] {
   return items.some(item => item.id === session.id)
@@ -57,6 +58,8 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   useEffect(() => setPreview(null), [selected?.id]);
   const selectedRef = useRef<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [error, setError] = useState("");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [imageDrafts, setImageDrafts] = useState<Record<string, { url: string; mediaId: number }[]>>({});
@@ -114,15 +117,16 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
       if (count) Message.success(`已将 ${count} 张图片加入素材`);
     } catch (e) { Message.error(String(e)); } finally { if (count) { try { await reload(); } catch { Message.error("图片已加入素材，但列表刷新失败，请刷新页面"); } } pasting.current = false; if (mounted.current) setReadingImages(false); }
   };
-  const running = selected?.status === "running";
+  const running = hasActiveRun(selected);
+  const cancelling = running && (selected?.status === "cancelled" || selected?.execution?.phase === "stopping");
   const execution = selected?.execution;
   const configured = !!modelSelection.choice;
-  const anyRunning = sessions.some(item => item.status === "running");
+  const anyRunning = sessions.some(hasActiveRun);
   const updateDraft = (text: string) => setDrafts(items => ({ ...items, [draftKey]: text }));
   const call = useCallback(<T,>(action: string, payload: object = {}) => post<T>(`/agent/${action}`, { project_id: pid, ...payload }), [pid]);
   const accept = useCallback((session: Session) => {
     if (!mounted.current) return;
-    if (selectedRef.current?.id === session.id && selectedRef.current.status === "running" && session.status !== "running") void reload().catch(() => {});
+    if (selectedRef.current?.id === session.id && hasActiveRun(selectedRef.current) && !hasActiveRun(session)) void reload().catch(() => {});
     selectedRef.current = session; setSelected(session);
     setSessions(items => updateSession(items, session));
     localStorage.setItem(`spielberg-agent-session-${pid}`, session.id);
@@ -130,26 +134,28 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   const choose = async (summary: Session) => {
     if (selectedRef.current?.id === summary.id && !error) return;
     const version = ++selectionVersion.current;
-    selectedRef.current = summary; setSelected(summary); setLoading(true); setError(""); setMobileSessions(false); followBottom.current = true;
+    selectedRef.current = summary; setSelected(summary); setLoading(true); setLoadFailed(false); setError(""); setMobileSessions(false); followBottom.current = true;
     try { const session = await call<Session>("session", { session_id: summary.id }); if (mounted.current && version === selectionVersion.current) accept(session); }
-    catch (e) { if (mounted.current && version === selectionVersion.current) setError(String(e)); }
+    catch (e) { if (mounted.current && version === selectionVersion.current) { setError(String(e)); setLoadFailed(true); } }
     finally { if (mounted.current && version === selectionVersion.current) setLoading(false); }
   };
   useEffect(() => {
     mounted.current = true;
     let disposed = false;
     const version = selectionVersion.current;
+    setLoading(true); setLoadFailed(false); setError("");
     void Promise.all([call<{ items: Session[] }>("sessions"), call<Config>("config")]).then(async ([list, cfg]) => {
       if (disposed || !mounted.current || version !== selectionVersion.current) return;
       setSessions(list.items); setConfig(cfg);
       const previous = localStorage.getItem(`spielberg-agent-session-${pid}`);
       const summary = list.items.find(item => item.id === previous) || list.items[0];
-      if (summary) { selectedRef.current = summary; const detail = await call<Session>("session", { session_id: summary.id }); if (!disposed && mounted.current && version === selectionVersion.current) accept(detail); }
-    }).catch(e => { if (!disposed && mounted.current && version === selectionVersion.current) setError(String(e)); }).finally(() => { if (!disposed && mounted.current && version === selectionVersion.current) setLoading(false); });
+      if (summary) { selectedRef.current = summary; setSelected(summary); const detail = await call<Session>("session", { session_id: summary.id }); if (!disposed && mounted.current && version === selectionVersion.current) accept(detail); }
+      else { selectedRef.current = null; setSelected(null); }
+    }).catch(e => { if (!disposed && mounted.current && version === selectionVersion.current) { setError(String(e)); setLoadFailed(true); } }).finally(() => { if (!disposed && mounted.current && version === selectionVersion.current) setLoading(false); });
     return () => { disposed = true; mounted.current = false; selectionVersion.current++; };
-  }, [call, pid, accept]);
+  }, [call, pid, accept, loadAttempt]);
   useEffect(() => {
-    if (!anyRunning && !running) return;
+    if ((!anyRunning && !running) || loading || loadFailed) return;
     let disposed = false; let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       const current = selectedRef.current?.id;
@@ -161,12 +167,12 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
           setError(""); setSessions(list.items);
           if (detail && selectedRef.current?.id === current) accept(detail);
         }
-      } catch (e) { if (!disposed && mounted.current) setError(String(e)); }
+      } catch (e) { if (!disposed && mounted.current && version === selectionVersion.current) setError(String(e)); }
       if (!disposed) timer = setTimeout(poll, 1200);
     };
     timer = setTimeout(poll, 500);
     return () => { disposed = true; clearTimeout(timer); };
-  }, [anyRunning, running, call, accept]);
+  }, [anyRunning, running, loading, loadFailed, call, accept]);
   useEffect(() => { if (followBottom.current && log.current) log.current.scrollTop = log.current.scrollHeight; }, [selected?.messages, selected?.id, running]);
   useEffect(() => {
     if (!mobileSessions) return;
@@ -187,14 +193,14 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   }, [mobileSessions]);
 
   const createSession = async () => {
-    if (busy.current || creating) return;
+    if (busy.current || creating || loading || loadFailed) return;
     setCreating(true); setError(""); const version = ++selectionVersion.current;
     try { const session = await call<Session>("create"); if (mounted.current && version === selectionVersion.current) { accept(session); setMobileSessions(false); followBottom.current = true; composer.current?.focus(); } }
-    catch (e) { if (mounted.current) setError(String(e)); }
+    catch (e) { if (mounted.current && version === selectionVersion.current) setError(String(e)); }
     finally { if (mounted.current) setCreating(false); }
   };
   const send = async () => {
-    const text = draft.trim(); if ((!text && !images.length) || readingImages || pasting.current || busy.current || running || loading || creating) return;
+    const text = draft.trim(); if ((!text && !images.length) || readingImages || pasting.current || busy.current || running || loading || loadFailed || creating) return;
     if (!configured) { if (channelsFor(modelSettings, "llm").length) Message.warning("请选择渠道与模型"); else openSettings(); return; }
     busy.current = true; setSending(true); setError(""); const version = ++selectionVersion.current; const key = draftKey;
     try {
@@ -206,13 +212,19 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
       setDrafts(items => ({ ...items, [key]: items[key] === text || items[key]?.trim() === text ? "" : items[key] }));
       if (version === selectionVersion.current) { followBottom.current = true; accept(result); }
       else setSessions(items => updateSession(items, result));
-    } catch (e) { if (mounted.current) setError(String(e)); }
+    } catch (e) { if (mounted.current && version === selectionVersion.current) setError(String(e)); }
     finally { busy.current = false; if (mounted.current) setSending(false); }
   };
   const stop = async () => {
-    const id = selectedRef.current?.id; if (!id || stopping) return; selectionVersion.current++; setStopping(true);
-    try { const result = await call<Session>("cancel", { session_id: id }); if (mounted.current && selectedRef.current?.id === id) accept(result); }
-    catch (e) { if (mounted.current) setError(String(e)); } finally { if (mounted.current) setStopping(false); }
+    const id = selectedRef.current?.id; if (!id || stopping || cancelling) return;
+    const version = ++selectionVersion.current; setStopping(true); setError("");
+    try {
+      const result = await call<Session>("cancel", { session_id: id });
+      if (!mounted.current) return;
+      if (version === selectionVersion.current && selectedRef.current?.id === id) { accept(result); setLoading(false); setLoadFailed(false); }
+      else setSessions(items => updateSession(items, result));
+    } catch (e) { if (mounted.current && version === selectionVersion.current) { setError(String(e)); setLoading(false); setLoadFailed(loading); } }
+    finally { if (mounted.current) setStopping(false); }
   };
   const remove = (session: Session) => Modal.confirm({ title: "删除此会话？", content: "删除对话和执行记录，已完成的项目操作会保留。", okText: "删除会话", cancelText: "取消", okButtonProps: { status: "danger" }, onOk: async () => {
     try { await call("delete", { session_id: session.id }); if (!mounted.current) return; setSessions(items => items.filter(item => item.id !== session.id)); if (selectedRef.current?.id === session.id) { selectionVersion.current++; selectedRef.current = null; setSelected(null); localStorage.removeItem(`spielberg-agent-session-${pid}`); } }
@@ -234,19 +246,19 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
       {mobileSessions && <button className="agent-history-backdrop" tabIndex={-1} aria-label="关闭会话列表" onClick={() => setMobileSessions(false)} />}
       <aside ref={history} id="agent-history" className={`agent-history${mobileSessions ? " is-open" : ""}`} aria-label="Agent 会话" role={mobileSessions ? "dialog" : undefined} aria-modal={mobileSessions || undefined}>
         <button className="agent-project-picker" title={`切换项目：${data.project.name}`} onClick={() => onNavigate?.("projects")}><span className="agent-project-icon"><Folder size={19} /></span><span className="agent-project-copy"><strong>{data.project.name}</strong><small><i className="agent-status-dot" />本地项目</small></span><ChevronDown size={14} /></button>
-        <Button long data-testid="agent-new-session" icon={<Plus size={16} />} loading={creating} disabled={loading || sending} onClick={() => void createSession()}>新建会话</Button>
+        <Button long data-testid="agent-new-session" icon={<Plus size={16} />} loading={creating} disabled={loading || loadFailed || sending} onClick={() => void createSession()}>新建会话</Button>
         <div className="agent-history-heading"><span>项目会话 <small>{sessions.length}</small></span><Button size="mini" type="text" className="agent-mobile-history" aria-label="关闭会话列表" icon={<X size={16} />} onClick={() => setMobileSessions(false)} /></div>
         <div className="agent-session-list">{sessions.length === 0 && <div className="agent-history-empty"><MessageSquare size={28} /><b>暂无会话</b><p>开始创作后，会话将保存在这里</p></div>}{sessions.map(session => <div className={`agent-session${selected?.id === session.id ? " is-selected" : ""}`} key={session.id}>
-          <button data-testid={`agent-session-${session.id}`} className="agent-session-select" title={session.title} aria-current={selected?.id === session.id ? "page" : undefined} onClick={() => void choose(session)} disabled={creating}><MessageSquare size={15} /><span><strong>{session.title}</strong><small data-status={session.status}>{statusText[session.status] || session.status}</small></span></button>
-          <button type="button" className="agent-delete" aria-label={`删除会话 ${session.title}`} disabled={session.status === "running" || sending} onClick={() => remove(session)}><Trash2 size={14} /></button>
+          <button data-testid={`agent-session-${session.id}`} className="agent-session-select" title={session.title} aria-current={selected?.id === session.id ? "page" : undefined} onClick={() => void choose(session)} disabled={creating}><MessageSquare size={15} /><span><strong>{session.title}</strong><small data-status={hasActiveRun(session) ? "running" : session.status}>{sessionStatus(session)}</small></span></button>
+          <button type="button" className="agent-delete" aria-label={`删除会话 ${session.title}`} disabled={hasActiveRun(session) || sending} onClick={() => remove(session)}><Trash2 size={14} /></button>
         </div>)}</div>
         <div className="agent-history-footer"><Clapperboard size={15} /><span>每个好故事，都始于一次对话</span></div>
       </aside>
       <div className={`agent-conversation${empty ? " is-empty" : ""}`}>
-        <div className="agent-conversation-bar"><div><Button ref={historyTrigger} className="agent-mobile-history" aria-label="打开会话列表" aria-controls="agent-history" aria-expanded={mobileSessions} icon={<MessageSquare size={16} />} onClick={() => setMobileSessions(value => !value)} /><span className="agent-bar-label">创作助手</span><span className="agent-bar-separator">/</span><b>{selected?.title || "新对话"}</b></div><div className="agent-conversation-actions">{running && <span><i className="agent-status-dot" />正在执行</span>}<Button type="text" data-testid="agent-settings" aria-label="Agent 设置" icon={<Settings2 size={15} />} onClick={openSettings}>Agent 设置</Button></div></div>
-        {!configured && !loading && <div className="agent-config-notice">配置支持工具调用的 LLM 后，即可开始使用。<button onClick={openSettings}>配置 Agent</button>{onNavigate && <button onClick={() => onNavigate("settings")}>打开项目设置</button>}</div>}
+        <div className="agent-conversation-bar"><div><Button ref={historyTrigger} className="agent-mobile-history" aria-label="打开会话列表" aria-controls="agent-history" aria-expanded={mobileSessions} icon={<MessageSquare size={16} />} onClick={() => setMobileSessions(value => !value)} /><span className="agent-bar-label">创作助手</span><span className="agent-bar-separator">/</span><b>{selected?.title || "新对话"}</b></div><div className="agent-conversation-actions">{running && <span><i className="agent-status-dot" />{cancelling ? "正在停止" : "正在执行"}</span>}<Button type="text" data-testid="agent-settings" aria-label="Agent 设置" icon={<Settings2 size={15} />} onClick={openSettings}>Agent 设置</Button></div></div>
+        {!configured && !loading && !loadFailed && <div className="agent-config-notice">配置支持工具调用的 LLM 后，即可开始使用。<button onClick={openSettings}>配置 Agent</button>{onNavigate && <button onClick={() => onNavigate("settings")}>打开项目设置</button>}</div>}
         <div className="agent-stage">
-        {!loading && !!selected?.context?.summarized_turns && <div className="agent-memory-notice" data-testid="agent-memory-notice"><MessageSquare size={14} aria-hidden="true" /><span>保留近期 {selected.context.recent_turns} 轮对话，较早 {selected.context.summarized_turns} 轮已整理为摘录；助手可按需检索原记录。</span></div>}
+        {!loading && selected?.context && (!!selected.context.summarized_turns || !!selected.context.active_compacted_messages) && <div className="agent-memory-notice" data-testid="agent-memory-notice"><MessageSquare size={14} aria-hidden="true" /><span>{!!selected.context.summarized_turns && <>保留近期 {selected.context.recent_turns} 轮对话，较早 {selected.context.summarized_turns} 轮已整理为摘录。</>}{!!selected.context.active_compacted_messages && <>本轮较早的 {selected.context.active_compacted_messages} 条执行记录已压缩。</>}助手可按需检索完整记录。</span></div>}
         <div className="agent-messages" ref={log} role="log" aria-label="Agent 对话记录" aria-busy={running || loading} onScroll={() => { const element = log.current; if (element) followBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100; }}>
           {loading ? <div className="agent-loading"><Spin /><span>正在读取会话</span></div> : !selected?.messages.length ? <div className="agent-empty">
             <div className="agent-empty-mark" aria-hidden="true"><Clapperboard size={28} strokeWidth={1.5} /><Sparkles size={13} /></div>
@@ -257,8 +269,8 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
             {message.arguments != null && <div><b>参数</b><pre>{displayJson(message.arguments)}</pre></div>}<div><b>结果</b><pre>{message.content ? displayJson(message.content) : "等待执行结果…"}</pre></div>
           </details>
           <div className="agent-generated-images agent-media-results">{toolMedia(message, currentMedia).map(media => <AgentMediaPreview key={media.id} media={media} onPreview={setPreview} onLoad={followMedia} />)}</div>
-          </div> : message.content || message.images?.length ? <article className={`agent-message is-${message.role}`} key={index}>
-            <div className="agent-message-label">{message.role === "user" ? "你" : <><Bot size={15} />Agent</>}</div><div className="agent-message-content">{message.role === "user" ? <>{message.images?.map((_, i) => {
+          </div> : message.content || message.images?.length || message.status === "streaming" || message.status === "interrupted" ? <article className={`agent-message is-${message.role}`} data-status={message.status} key={index}>
+            <div className="agent-message-label">{message.role === "user" ? "你" : <><Bot size={15} />Agent{message.status === "streaming" && <span className="agent-message-state" role="status">正在回复</span>}{message.status === "interrupted" && <span className="agent-message-state is-interrupted">回复已中断</span>}</>}</div><div className="agent-message-content">{message.role === "user" ? <>{message.images?.map((_, i) => {
               const media = attachmentImage(message, index, i, currentMedia);
               return <button type="button" key={i} className="agent-attachment-preview" aria-label={`预览附件图片 ${i + 1}`} onClick={() => setPreview(media)}><img className="agent-message-image" src={imageUrl(media)} alt={`附件图片 ${i + 1}`} onLoad={followMedia} /></button>;
             })}{message.content && <p>{message.content}</p>}</> : <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
@@ -275,16 +287,16 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
             <div className="agent-plan-heading"><b>任务计划</b><span>{execution.plan.filter(item => item.status === "completed").length}/{execution.plan.length}</span></div>
             <ol>{execution.plan.map((item, index) => <li key={index} data-status={item.status}><span aria-hidden="true">{item.status === "completed" ? <Check size={14} /> : item.status === "in_progress" ? "◉" : "○"}</span><span>{item.step}</span><small>{item.status === "completed" ? "已完成" : item.status === "in_progress" ? running ? "进行中" : "待继续" : "待处理"}</small></li>)}</ol>
           </section>}
-          {running && <div className="agent-working" role="status"><span className="agent-pulse" /><span>{execution?.phase === "tool" && execution.active_tool ? toolText[execution.active_tool] || "正在执行操作" : phaseText[execution?.phase || "thinking"] || "正在处理项目"}{execution?.max_steps != null && ` · ${execution.tool_calls || 0}/${execution.max_steps} 步`}</span></div>}
+          {running && <div className="agent-working" role="status"><span className="agent-pulse" /><span>{cancelling ? phaseText.stopping : execution?.phase === "tool" && execution.active_tool ? toolText[execution.active_tool] || "正在执行操作" : phaseText[execution?.phase || "thinking"] || "正在处理项目"}{execution?.max_steps != null && ` · ${execution.tool_calls || 0}/${execution.max_steps} 步`}</span></div>}
           {selected?.status === "limited" && <div className="agent-limit-notice" role="status">{execution?.stop_reason === "repeated_tool_failure" ? "相同操作连续失败，已暂停以便调整。" : "本轮已达到执行步数上限。"}已完成的操作已保留，可以补充要求或发送“继续”。</div>}
-          {(error || selected?.error) && <div className="agent-error" role="alert">{error || selected?.error}</div>}
+          {(error || selected?.error) && <div className="agent-error" role="alert"><span>{error || selected?.error}</span>{error && <Button size="mini" type="text" data-testid="agent-reload" disabled={loading || sending || creating || stopping} onClick={() => setLoadAttempt(value => value + 1)}>重新加载</Button>}</div>}
         </div>
         <div className="agent-composer-wrap">
           <div className="agent-composer">
             <div className="agent-composer-context"><Folder size={12} /><span>{data.project.name}</span><span className="agent-context-label">项目上下文</span></div>
             {!!images.length && <div className="agent-image-previews">{images.map((image, i) => <div key={i}><img src={image.url} alt={`待发送图片 ${i + 1}（已加入素材）`} /><button type="button" aria-label={`移除图片 ${i + 1}`} disabled={sending} onClick={() => setImageDrafts(items => ({ ...items, [draftKey]: images.filter((_, index) => index !== i) }))}><X size={14} /></button></div>)}</div>}
             <textarea ref={composer} data-testid="agent-composer" aria-label="向 Agent 发送消息" value={draft} maxLength={16000} disabled={loading || sending || creating} placeholder="写下一个灵感，或粘贴图片告诉我你想完成什么…" onPaste={event => { if (readingImages) return; const files = Array.from(event.clipboardData.items).filter(item => item.type.startsWith("image/")).map(item => item.getAsFile()).filter((file): file is File => !!file); if (files.length) { event.preventDefault(); void pasteImages(files); } }} onChange={event => updateDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} />
-            <div className="agent-composer-actions"><label className={`agent-web-toggle${online ? " is-online" : ""}`}><Globe size={14} /><span>联网搜索</span><Switch size="small" checked={online} onChange={setOnline} disabled={running || sending} aria-label="联网搜索" /></label><GenerationSelector compact settings={modelSettings} kind="llm" operation="chat" value={modelSelection.value} onChange={modelSelection.setValue} disabled={loading || running || sending || creating || saving} />{running ? <Button data-testid="agent-stop" aria-label="停止执行" status="danger" icon={<Square size={14} />} loading={stopping} onClick={() => void stop()}>停止</Button> : <Button type="primary" data-testid="agent-send" aria-label="发送消息" icon={<ArrowUp size={19} />} loading={sending} disabled={(!draft.trim() && !images.length) || readingImages || loading || creating} onClick={() => void send()} />}</div>
+            <div className="agent-composer-actions"><label className={`agent-web-toggle${online ? " is-online" : ""}`}><Globe size={14} /><span>联网搜索</span><Switch size="small" checked={online} onChange={setOnline} disabled={running || sending} aria-label="联网搜索" /></label><GenerationSelector compact settings={modelSettings} kind="llm" operation="chat" value={modelSelection.value} onChange={modelSelection.setValue} disabled={loading || loadFailed || running || sending || creating || saving} />{running ? <Button data-testid="agent-stop" aria-label={cancelling ? "正在停止" : "停止执行"} status="danger" icon={<Square size={14} />} loading={stopping || cancelling} disabled={cancelling} onClick={() => void stop()}>{cancelling ? "正在停止" : "停止"}</Button> : <Button type="primary" data-testid="agent-send" aria-label="发送消息" icon={<ArrowUp size={19} />} loading={sending} disabled={(!draft.trim() && !images.length) || readingImages || loading || loadFailed || creating} onClick={() => void send()} />}</div>
           </div>
           {empty && <>
             <div className="agent-starters-heading">也可以从这里开始</div>

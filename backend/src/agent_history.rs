@@ -28,6 +28,22 @@ fn message_text(message: &Value) -> String {
     text
 }
 
+// Map a case-insensitive UTF-8 match back to original character offsets. Some
+// letters (for example İ) expand during lowercasing, so byte offsets cannot be
+// reused directly for pagination of the original message.
+fn match_offset(text: &str, query: &str) -> Option<usize> {
+    if query.is_empty() { return None; }
+    let lowered = text.to_lowercase();
+    let byte_offset = lowered.find(query)?;
+    let mut lowered_bytes = 0;
+    for (offset,ch) in text.chars().enumerate() {
+        let len: usize = ch.to_lowercase().map(char::len_utf8).sum();
+        if lowered_bytes + len > byte_offset { return Some(offset); }
+        lowered_bytes += len;
+    }
+    None
+}
+
 pub(super) fn search(session: &Value, args: &Value) -> Result<Value, String> {
     let object = args.as_object().ok_or("检索参数必须为 JSON 对象")?;
     for key in object.keys() {
@@ -58,6 +74,9 @@ pub(super) fn search(session: &Value, args: &Value) -> Result<Value, String> {
     let mut bytes = 0;
     for (index, message, text) in matches.iter().skip(offset).take(limit) {
         let total_chars = text.chars().count();
+        let matched_at = match_offset(text,&query);
+        let content_offset = if args.get("content_offset").is_some() { content_offset }
+            else { matched_at.map_or(0,|position| position.saturating_sub((max_chars/4).min(160))) };
         let mut count = max_chars.min(total_chars.saturating_sub(content_offset));
         let item = loop {
             let end = content_offset.min(total_chars).saturating_add(count);
@@ -66,6 +85,7 @@ pub(super) fn search(session: &Value, args: &Value) -> Result<Value, String> {
                 "content": text.chars().skip(content_offset).take(count).collect::<String>(),
                 "content_offset": content_offset.min(total_chars), "total_chars": total_chars,
                 "content_next_offset": if end < total_chars { Some(end) } else { None },
+                "match_offset": matched_at,
                 "images_count": message["images"].as_array().map_or(0, Vec::len),
             });
             for key in ["tool_name", "tool_call_id", "status"] {
@@ -92,6 +112,33 @@ pub(super) fn search(session: &Value, args: &Value) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn search_excerpt_shows_middle_match_and_explicit_pagination_still_starts_at_requested_offset() {
+        let beginning = "原设定🎬".repeat(1_000);
+        let content = format!("{beginning}重要更正：人物穿蓝衣。{}","后续材料".repeat(1_000));
+        let session = json!({"messages":[{"role":"user","content":content}]});
+        let result = search(&session,&json!({"query":"人物穿蓝衣","max_chars":120})).unwrap();
+        let item = &result["items"][0];
+        assert!(item["content"].as_str().unwrap().contains("人物穿蓝衣"));
+        assert_eq!(item["match_offset"],beginning.chars().count()+5);
+        assert!(item["content_offset"].as_u64().unwrap() > 0);
+        assert!(item["content_next_offset"].as_u64().unwrap() > item["content_offset"].as_u64().unwrap());
+        let first = search(&session,&json!({"query":"人物穿蓝衣","content_offset":0,"max_chars":120})).unwrap();
+        assert_eq!(first["items"][0]["content_offset"],0);
+        assert_eq!(first["items"][0]["content"],content.chars().take(120).collect::<String>());
+    }
+
+    #[test]
+    fn case_insensitive_match_offsets_use_original_unicode_characters() {
+        let prefix = "İ🎬".repeat(400);
+        let content = format!("{prefix}MiXeD 约定");
+        let session = json!({"messages":[{"role":"user","content":content}]});
+        let result = search(&session,&json!({"query":"mixed","max_chars":40})).unwrap();
+        assert_eq!(result["items"][0]["match_offset"],800);
+        assert!(result["items"][0]["content"].as_str().unwrap().contains("MiXeD"));
+        assert_eq!(match_offset("aİb","i\u{0307}"),Some(1));
+    }
 
     #[test]
     fn retrieves_original_text_and_parameters_without_image_base64() {

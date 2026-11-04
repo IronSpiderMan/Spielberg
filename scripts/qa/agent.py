@@ -57,9 +57,45 @@ class Model(BaseHTTPRequestHandler):
     body_delayed = threading.Event()
     retry_delayed = threading.Event()
     retried_after_write = False
+    stream_release = threading.Event()
 
     def log_message(self, *_):
         pass
+
+    def stream_reply(self, prompt, tools):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.end_headers()
+
+        def event(delta=None, finish=None, usage=False):
+            value = {"choices": [{"index": 0, "delta": delta or {}, "finish_reason": finish}]}
+            if usage:
+                value = {"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}
+            raw = ("data: " + json.dumps(value, ensure_ascii=False) + "\r\n\r\n").encode()
+            for offset in range(0, len(raw), 7):
+                self.wfile.write(raw[offset:offset + 7])
+            self.wfile.flush()
+
+        try:
+            event({"content": "正在整理镜头。"})
+            if prompt in ("STREAM_PREVIEW", "STREAM_CANCEL"):
+                event({"content": "凭证：" + SECRET[:7]})
+                Model.stream_release.wait(timeout=8)
+                event({"content": SECRET[7:]})
+            if prompt in ("STREAM_TOOL", "STREAM_BROKEN") and not tools:
+                arguments = json.dumps({"resource": "assets", "method": "POST", "data": {"name": "Stream created once"}}, ensure_ascii=False)
+                event({"tool_calls": [{"index": 0, "id": "stream-write", "type": "function", "function": {"name": "app_request", "arguments": arguments[:23]}}]})
+                event({"tool_calls": [{"index": 0, "function": {"arguments": arguments[23:]}}]})
+                event(finish="tool_calls")
+            else:
+                event({"content": "已完成流式回复。"})
+                event(finish="stop")
+            event(usage=True)
+            if prompt != "STREAM_BROKEN":
+                self.wfile.write(b"data: [DONE]\r\n\r\n")
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -73,6 +109,10 @@ class Model(BaseHTTPRequestHandler):
         prompt = message_text(messages[last_user])
         tools = [m for m in messages[last_user + 1:] if m["role"] == "tool"]
         advertised = {tool["function"]["name"] for tool in body.get("tools", [])}
+        assert body.get("stream") is True
+        if prompt.startswith("STREAM_"):
+            self.stream_reply(prompt, tools)
+            return
         if body.get("tool_choice") != "none":
             assert "update_plan" in advertised
             if "WEB_DISABLED" in prompt:
@@ -216,7 +256,7 @@ class Model(BaseHTTPRequestHandler):
         self.end_headers()
         try:
             self.wfile.write(payload)
-        except BrokenPipeError:
+        except (BrokenPipeError, ConnectionResetError):
             pass
 
 
@@ -255,7 +295,7 @@ def main():
             def wait(session):
                 for _ in range(1200):
                     result = agent("session", session_id=session["id"])
-                    if result["status"] != "running":
+                    if result["status"] != "running" and not result.get("execution", {}).get("active", False):
                         return result
                     time.sleep(0.05)
                 raise AssertionError("Agent did not finish")
@@ -542,10 +582,59 @@ def main():
             assert len(agent("sessions")["items"]) >= 8
             agent("delete", session_id=session["id"])
             assert session["id"] not in [s["id"] for s in agent("sessions")["items"]]
+
+            # Real SSE arrives before completion, survives cancellation, and never
+            # dispatches an otherwise-valid mutation from an interrupted stream.
+            for prompt in ["STREAM_PREVIEW", "STREAM_CANCEL"]:
+                Model.stream_release.clear()
+                streamed = agent("create")
+                agent("run", session_id=streamed["id"], message=prompt)
+                deadline = time.monotonic() + 5
+                while True:
+                    preview = agent("session", session_id=streamed["id"])
+                    drafts = [m for m in preview["messages"] if m.get("status") == "streaming"]
+                    if drafts:
+                        break
+                    assert time.monotonic() < deadline, preview
+                    time.sleep(0.02)
+                assert preview["status"] == "running" and preview["execution"]["active"] is True
+                assert "正在整理镜头。" in drafts[0]["content"]
+                assert SECRET[:7] not in json.dumps(preview), "Partial credential exposed in streaming preview"
+                if prompt == "STREAM_CANCEL":
+                    stopping = agent("cancel", session_id=streamed["id"])
+                    assert stopping["execution"]["active"] is True and stopping["execution"]["phase"] == "stopping"
+                    stopped = wait(streamed)
+                    assert stopped["status"] == "cancelled" and stopped["execution"]["active"] is False
+                    assert stopped["messages"][-1]["status"] == "interrupted"
+                    Model.stream_release.set()
+                else:
+                    Model.stream_release.set()
+                    done = wait(streamed)
+                    assert done["status"] == "completed", done
+                    replies = [m for m in done["messages"] if m["role"] == "assistant"]
+                    assert len(replies) == 1 and replies[0]["status"] == "completed"
+                    assert "已完成流式回复。" in replies[0]["content"]
+                    assert SECRET not in json.dumps(done) and "已隐藏密钥" in replies[0]["content"]
+                    assert done["execution"]["usage"]["total_tokens"] == 15
+            before_assets = len(api(f"/projects/{pid}/assets", method="GET"))
+            broken = agent("create")
+            agent("run", session_id=broken["id"], message="STREAM_BROKEN")
+            rejected = wait(broken)
+            assert rejected["status"] == "failed" and rejected["execution"]["tool_calls"] == 0, rejected
+            assert rejected["messages"][1]["status"] == "interrupted"
+            assert len(api(f"/projects/{pid}/assets", method="GET")) == before_assets
+            streamed = agent("create")
+            agent("run", session_id=streamed["id"], message="STREAM_TOOL")
+            completed = wait(streamed)
+            assert completed["status"] == "completed", completed
+            assert completed["execution"]["tool_calls"] == 1
+            assert completed["execution"]["usage"]["total_tokens"] == 30
+            assert len(api(f"/projects/{pid}/assets", method="GET")) == before_assets + 1
+            assert len([m for m in completed["messages"] if m["role"] == "assistant"]) == 2
             assert all(SECRET not in json.dumps(request) for request in Model.requests)
             for request in Model.requests:
                 assert_tool_protocol(request["messages"])
-            print("PASS: real HTTP Agent CRUD; image/history context and isolation; durable plans; budget finalization/skipped calls; failure-loop guard; inference retries without duplicate writes; cancellable response reads/backoff; usage; credentials; restart persistence")
+            print("PASS: real HTTP Agent CRUD; image/history context and isolation; durable plans; budget finalization/skipped calls; failure-loop guard; inference retries without duplicate writes; cancellable response reads/backoff; SSE previews/tool arguments/usage; interrupted-stream safety; credential fragments; restart persistence")
         finally:
             stop()
             model.shutdown()
