@@ -509,6 +509,16 @@ export function Episodes({
   const [batchResult, setBatchResult] = useState<Media | null>(null);
   const [progress, setProgress] = useState("");
   const [running, setRunning] = useState(false);
+  const [episodeQuery,setEpisodeQuery]=useState("");
+  const [episodePage,setEpisodePage]=useState(1);
+  const episodeLibraryRef=useRef<HTMLElement>(null);
+  const filteredEpisodes=data.episodes.filter(ep=>`${ep.title} ${ep.description}`.toLocaleLowerCase().includes(episodeQuery.trim().toLocaleLowerCase()));
+  const episodePageCount=Math.max(1,Math.ceil(filteredEpisodes.length/24));
+  const currentEpisodePage=Math.min(episodePage,episodePageCount);
+  const pagedEpisodes=filteredEpisodes.slice((currentEpisodePage-1)*24,currentEpisodePage*24);
+  useEffect(()=>{setEpisodePage(1);setEpisodeQuery("");},[data.project.id]);
+  useEffect(()=>{setEpisodePage(page=>Math.min(page,episodePageCount));},[episodePageCount]);
+  useEffect(()=>{episodeLibraryRef.current?.querySelector(".episode-list")?.scrollTo({top:0});},[currentEpisodePage,episodeQuery]);
   const [reorderingEpisodes,setReorderingEpisodes]=useState(false);
   const moveEpisode=async(index:number,offset:number)=>{const ids=data.episodes.map(item=>item.id);[ids[index],ids[index+offset]]=[ids[index+offset],ids[index]];setReorderingEpisodes(true);try{await post("/episodes/reorder",{project_id:data.project.id,episode_ids:ids});reload();}catch(e){Message.error(String(e));}finally{setReorderingEpisodes(false);}};
   const [failures, setFailures] = useState<string[]>([]);
@@ -570,7 +580,7 @@ export function Episodes({
   };
   if (episode) return <EpisodeEditor episode={episode} initialView={episode.id === initialEpisodeId ? initialView : undefined} project={data.project} data={data} editScene={(scene, isNew = false) => editScene(scene, isNew, episode.id)} onClose={() => setEpisode(null)} reload={reload}/>;
   return (
-    <section>
+    <section ref={episodeLibraryRef} className="episode-library" aria-label="剧集管理">
       <div className="section-title page-actions">
         <div className="page-intro"><h1>剧集管理</h1><p>管理剧集、场景与生成素材。</p></div>
         <Button
@@ -581,9 +591,16 @@ export function Episodes({
           新建剧集
         </Button>
       </div>
+      <div className="asset-toolbar episode-toolbar">
+        <Input.Search aria-label="搜索剧集" placeholder="搜索剧集名称或简介" allowClear value={episodeQuery} onChange={value=>{setEpisodeQuery(value);setEpisodePage(1);}} />
+        {episodeQuery&&<Button type="text" size="small" onClick={()=>{setEpisodeQuery("");setEpisodePage(1);}}>清除搜索</Button>}
+        <span className="helper asset-total" role="status">共 <b>{filteredEpisodes.length}</b> 集</span>
+      </div>
       <div className="episode-list">
-        {data.episodes.length ? (
-          data.episodes.map((ep, n) => (
+        {filteredEpisodes.length ? (
+          pagedEpisodes.map(ep => {
+            const n=data.episodes.findIndex(item=>item.id===ep.id);
+            return (
             <Card key={ep.id} className="episode-card">
               <div className="episode-top">
                 <EpisodeCover episode={ep} />
@@ -637,15 +654,19 @@ export function Episodes({
               </div>
 
             </Card>
-          ))
+          );})
         ) : (
           <EmptyState
-            title="还没有剧集"
-            description="创建第一个剧集，把故事排成连续的场景与镜头。"
-            action={<Button type="primary" icon={<Plus size={16} />} onClick={() => void makeEpisode().catch((e) => Message.error(String(e)))}>新建剧集</Button>}
+            title={episodeQuery?"没有符合条件的剧集":"还没有剧集"}
+            description={episodeQuery?"调整搜索词，再试一次。":"创建第一个剧集，把故事排成连续的场景与镜头。"}
+            action={episodeQuery?<Button onClick={()=>{setEpisodeQuery("");setEpisodePage(1);}}>清除搜索</Button>:<Button type="primary" icon={<Plus size={16} />} onClick={() => void makeEpisode().catch((e) => Message.error(String(e)))}>新建剧集</Button>}
           />
         )}
       </div>
+      {filteredEpisodes.length>0&&<div className="asset-library-footer">
+        <span className="asset-page-announcement" role="status" aria-live="polite">第 {currentEpisodePage} 页，共 {episodePageCount} 页，当前 {pagedEpisodes.length} 集</span>
+        <Pagination className="asset-pagination" current={currentEpisodePage} pageSize={24} total={filteredEpisodes.length} onChange={setEpisodePage} showTotal />
+      </div>}
 
       <Modal
         className="batch-generation-modal"
