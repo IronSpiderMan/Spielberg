@@ -1754,13 +1754,19 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
   const [graphOpen, setGraphOpen] = useState(false);
   const [showDisabled, setShowDisabled] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<AssetCategory | "all">("all");
+  const [query, setQuery] = useState("");
   const [updatingRoleId, setUpdatingRoleId] = useState<number | null>(null);
   const [unlinkingImageId, setUnlinkingImageId] = useState<number | null>(null);
   const [settingPrimaryImageId, setSettingPrimaryImageId] = useState<number | null>(null);
   const imageActionBusy = unlinkingImageId !== null || settingPrimaryImageId !== null;
   const [renamingMedia, setRenamingMedia] = useState<{id:number;name:string} | null>(null);
   const [renamingMediaBusy, setRenamingMediaBusy] = useState(false);
-  const visibleRoles = data.assets.filter(role => (showDisabled || role.enabled !== false) && (categoryFilter === "all" || (role.category || "person") === categoryFilter));
+  const search = query.trim().toLowerCase();
+  const visibleRoles = data.assets.filter(role =>
+    (showDisabled || role.enabled !== false) &&
+    (categoryFilter === "all" || (role.category || "person") === categoryFilter) &&
+    (!search || role.name.toLowerCase().includes(search) || role.description.toLowerCase().includes(search))
+  );
   const [roleImagePreview, setRoleImagePreview] = useState<Media | null>(null);
   const [previewRoleId, setPreviewRoleId] = useState<number | null>(null);
   const openRoleImage = (role: Asset, media: Media) => { setPreviewRoleId(role.id); setRoleImagePreview(media); };
@@ -1870,9 +1876,6 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
         <div className="page-intro"><h1>资产库</h1><p>管理人物、地点、物品、生物、载具等创作资产，保持故事中的视觉与设定一致。</p></div>
         <Space wrap>
           <Button icon={<GitBranch size={16}/>} onClick={() => setGraphOpen(true)}>关系图</Button>
-          <Select aria-label="资产类别筛选" value={categoryFilter} onChange={setCategoryFilter} style={{width: 132}}
-            options={[{value: "all", label: "全部类别"}, ...ASSET_CATEGORIES]} />
-          <Checkbox checked={showDisabled} onChange={setShowDisabled}>显示已禁用资产</Checkbox>
           <Button
             className="role-create-button"
             type="primary"
@@ -1883,7 +1886,17 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
           </Button>
         </Space>
       </div>
-      {data.assets.length > 0 && !visibleRoles.length && <p className="helper">{categoryFilter !== "all" ? "当前类别下没有符合条件的资产，可切换类别、显示已禁用资产或创建新资产。" : "当前没有启用的资产，可勾选“显示已禁用资产”查看并重新启用。"}</p>}
+      <div className="role-toolbar">
+        <Input.Search aria-label="搜索资产名称或描述" placeholder="搜索资产名称或描述" value={query} onChange={setQuery} allowClear />
+        <Select aria-label="资产类别筛选" value={categoryFilter} onChange={setCategoryFilter} style={{width: 132}}
+          options={[{value: "all", label: "全部类别"}, ...ASSET_CATEGORIES]} />
+        <Checkbox checked={showDisabled} onChange={setShowDisabled}>显示已禁用资产</Checkbox>
+        <span className="helper role-total" role="status">共 {visibleRoles.length} 项资产</span>
+      </div>
+      {(search || data.assets.length > 0) && !visibleRoles.length && <div className="role-search-empty">
+        <p className="helper">{search ? "没有匹配的资产，可更换搜索词、切换类别或显示已禁用资产。" : categoryFilter !== "all" ? "当前类别下没有符合条件的资产，可切换类别、显示已禁用资产或创建新资产。" : "当前没有启用的资产，可勾选“显示已禁用资产”查看并重新启用。"}</p>
+        {search && <Button type="text" size="small" onClick={() => setQuery("")}>清空搜索</Button>}
+      </div>}
       <div className="role-grid">
         {visibleRoles.map((r) => (
           <Card key={r.id} className={`role-card${r.enabled === false ? " role-card-disabled" : ""}`} bodyStyle={{ padding: 16 }}>

@@ -290,6 +290,24 @@ html .app .content:has(> .asset-library) {
 }
 
 /* Character sheets retain the full image and reserve consistent text space. */
+.role-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.role-toolbar > .arco-input-search {
+  flex: 1 1 240px;
+  min-width: 0;
+  max-width: 360px;
+}
+
+.role-total { margin-left: auto; }
+.role-search-empty { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; }
+.role-search-empty p { margin: 0; }
+
 .content .role-grid {
   gap: 24px;
 }
