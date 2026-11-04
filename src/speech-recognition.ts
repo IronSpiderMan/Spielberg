@@ -12,7 +12,7 @@ export type SpeechRecognitionControl = { stop: () => void; cancel: () => void };
 
 type NativeSpeechEvent = {
   sessionId: string;
-  type: "started" | "result" | "ended" | "error";
+  type: "started" | "finishing" | "result" | "ended" | "error";
   text?: string;
   isFinal?: boolean;
   message?: string;
@@ -63,7 +63,7 @@ function speechError(error: unknown): string {
  */
 export async function startSpeechRecognition(
   callbacks: SpeechRecognitionCallbacks,
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; onFinishing?: () => void } = {},
 ): Promise<SpeechRecognitionControl> {
   const { signal } = options;
   const aborted = () => new DOMException("语音识别已取消", "AbortError");
@@ -107,6 +107,7 @@ export async function startSpeechRecognition(
       const stop = () => {
         if (done || stopping) return;
         stopping = true;
+        options.onFinishing?.();
         clearTimeout(silenceTimer); clearTimeout(durationTimer);
         finishTimer = setTimeout(() => fail("语音识别结束超时，请重试。"), 8000);
         void stopNative(false).catch(error => fail(speechError(error)));
@@ -118,12 +119,14 @@ export async function startSpeechRecognition(
           started = true;
           clearTimeout(durationTimer);
           durationTimer = setTimeout(stop, 60_000);
-          silenceTimer = setTimeout(() => fail(recognitionErrors["no-speech"]), 12_000);
+          // Native audio activity detection owns the no-speech timeout.
           callbacks.onStart();
+        } else if (payload.type === "finishing") {
+          options.onFinishing?.();
         } else if (payload.type === "result") {
           transcript = payload.text || "";
           clearTimeout(silenceTimer);
-          if (!stopping && transcript.trim()) silenceTimer = setTimeout(stop, 1800);
+          // The native recognizer owns silence detection from audio activity.
           callbacks.onResult(transcript, !!payload.isFinal);
         } else if (payload.type === "error") {
           fail(payload.message || "系统语音识别失败，请重试。");
@@ -187,6 +190,7 @@ export async function startSpeechRecognition(
   const stop = () => {
     if (done || stopping) return;
     stopping = true;
+    options.onFinishing?.();
     clearTimeout(durationTimer); clearTimeout(silenceTimer);
     finishTimer = setTimeout(() => fail("语音识别结束超时，请重试。"), 8000);
     try { recognition.stop(); } catch (error) { fail(speechError(error)); }

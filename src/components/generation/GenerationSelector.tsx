@@ -5,7 +5,7 @@ import type { ModelSettings } from "../../core";
 import { channelsFor, generationChoice, modelFamily, selectableModels, MODEL_PROFILES, type GenerationKind, type GenerationSelection } from "../../generation-channels";
 import "../../generation-channels.css";
 
-const MODE_LABELS: Record<string, string> = { chat: "对话", tts: "语音合成", t2i: "文生图", i2i: "图生图", t2v: "文生视频", fl2v: "首尾帧", ref2v: "参考生视频" };
+const MODE_LABELS: Record<string, string> = { asr: "语音识别", chat: "对话", tts: "语音合成", t2i: "文生图", i2i: "图生图", t2v: "文生视频", fl2v: "首尾帧", ref2v: "参考生视频" };
 
 export function GenerationSelector({settings,kind,value,onChange,disabled,operation,compact=false}: {settings:ModelSettings;kind:GenerationKind;value:GenerationSelection;onChange:(value:GenerationSelection)=>void;disabled?:boolean;operation?:string;compact?:boolean}) {
   const channels = channelsFor(settings,kind), choice = generationChoice(settings,kind,value,operation);
@@ -26,7 +26,7 @@ export function GenerationSelector({settings,kind,value,onChange,disabled,operat
   const modesFor = (channelId: string, model: string) => generationChoice(settings,kind,{channel_id:channelId,model})?.capabilities.modes || [];
   const modes = [...new Set(channels.flatMap(c=>modelsFor(c.id).flatMap(m=>modesFor(c.id,m.id))))];
   const models = active ? modelsFor(active.id).filter(m=>!filter || modesFor(active.id,m.id).includes(filter)) : [];
-  const label = kind === "llm" ? "Agent" : kind === "image" ? "图片" : kind === "tts" ? "TTS" : "视频", Icon = kind === "llm" ? Bot : kind === "image" ? Image : kind === "tts" ? Mic : Film;
+  const label = kind === "llm" ? "Agent" : kind === "image" ? "图片" : kind === "asr" ? "ASR" : kind === "tts" ? "TTS" : "视频", Icon = kind === "llm" ? Bot : kind === "image" ? Image : (kind === "tts" || kind === "asr") ? Mic : Film;
   const close = () => {setOpen(false);trigger.current?.focus({preventScroll:true});};
   const picker = <Trigger escToClose updateOnScroll trigger="click" position={compact ? "tr" : "bl"} popupVisible={open && !disabled} onVisibleChange={visible=>{
         setOpen(visible); if(visible){setBrowsing(choice?.channel.id || value.channel_id);setFilter("");}

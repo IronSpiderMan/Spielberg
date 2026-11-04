@@ -312,3 +312,15 @@ Private
 数据库版本 16 将创作资产表 `roles` 自动重命名为 `assets`，保留原资产 ID、类别、启用状态、主图及图片/音频关联。新增 `asset_relations` 保存资产之间的关系，`asset_graph` 保存节点位置和布局修订号。现有图片、音频关联表及 API 路径继续兼容；关系可通过项目 Agent 的 `app_request` 使用 `resource=asset-relations` 查询和维护。
 
 关系图验证（使用临时项目与真实 HTTP 接口）：`node scripts/qa/asset-relations.cjs`，可通过 `PLAYWRIGHT_PATH` 指定 Playwright 安装路径。
+
+### ASR 语音识别
+
+在项目设置的「语音识别」中配置 OpenAI 或 Qwen Token Plan 渠道与默认模型，然后在工作台「语音识别」选择素材库音频进行转写。结果可编辑、下载为 TXT，任务记录保留转写结果；Agent 也可通过 `generations/asr` 调用，参数为 `media_id`，可选 `channel_id`、`model`、`language`。
+
+- OpenAI：预置 `gpt-4o-mini-transcribe`、`gpt-4o-transcribe`、`whisper-1`，使用 `/v1/audio/transcriptions` 文件上传接口，支持自定义兼容模型与地址。
+- Qwen Token Plan：`qwen-audio-3.0-asr-flash`，使用 DashScope 接口与 `sk-sp-` 专属 Key，单次音频不超过 5 分钟。
+- 本地限制：音频最大 25 MB；支持 mp3、wav、m4a、mp4、mpeg、mpga、webm、ogg、flac。文件需先导入项目素材库。
+
+协议参考：[OpenAI 文件转写](https://developers.openai.com/api/docs/guides/speech-to-text)、[Qwen Token Plan 语音识别](https://platform.qianwenai.com/docs/token-plan/best-practices/speech-recognition)。
+
+悬浮语音助手默认使用系统自带识别（macOS 原生 Speech，浏览器使用 Web Speech）；也可在悬浮面板选择「项目 ASR 渠道」。系统模式无需配置 API Key；系统识别可能使用 Apple 网络服务。项目渠道模式点击悬浮球录音，停顿约 1.8 秒或手动结束后转写，再将文字发送给 Agent。单次最长 60 秒；关闭面板会取消本次输入。录音通过 `/speech/transcribe` 转写，不加入素材库或任务记录。

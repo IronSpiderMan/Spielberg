@@ -434,7 +434,7 @@ export function Tasks({projectId}:{projectId:string}) {
       <div className="task-head">
         <span className={`task-state task-${job.status}`} aria-hidden="true" />
         <b>{job.project_name}</b>
-        <Tag>{job.operation.includes("image")?"图片生成":job.operation.includes("video")?"视频生成":job.operation.includes("tts")?"语音合成":"剧集合并"}</Tag>
+        <Tag>{job.operation.includes("image")?"图片生成":job.operation.includes("video")?"视频生成":job.operation.includes("asr")?"语音识别":job.operation.includes("tts")?"语音合成":"剧集合并"}</Tag>
         <Tag className="task-status" color={job.status==="failed"?"red":job.status==="completed"?"green":"blue"}>{labels[job.status]||job.status}</Tag>
         <small className="task-time">{new Date(Number(job.created_at)*1000).toLocaleString()}</small>
       </div>

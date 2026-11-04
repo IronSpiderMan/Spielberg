@@ -8,6 +8,7 @@ mod generation_http;
 mod qianwen_video;
 mod generation_channels;
 mod tts;
+mod asr;
 mod qianwen_image;
 mod screenplays;
 pub use http::{Backend, default_data_dir, run};
@@ -534,9 +535,9 @@ fn list_jobs(s:&AppState,v:&Value)->Result<Value,String>{
 fn tracked_generation(s:&AppState,path:&str,v:&Value)->Result<Value,String>{
  let admission=s.guard.lock().map_err(|_|"本地数据锁不可用")?;
  let c=db(s,&project_id(v)?)?;let t=now();
- c.execute("INSERT INTO background_jobs(operation,status,prompt,created_at,updated_at,request_json) VALUES(?,'running',?,?,?,?)",params![path,v["prompt"].as_str().or_else(||v["text"].as_str()).unwrap_or("剧集合并"),t,t,v.to_string()]).map_err(|e|e.to_string())?;let id=c.last_insert_rowid();drop(admission);
+ c.execute("INSERT INTO background_jobs(operation,status,prompt,created_at,updated_at,request_json) VALUES(?,'running',?,?,?,?)",params![path,v["prompt"].as_str().or_else(||v["text"].as_str()).unwrap_or(if path=="/generations/asr" {"音频转写"} else {"剧集合并"}),t,t,v.to_string()]).map_err(|e|e.to_string())?;let id=c.last_insert_rowid();drop(admission);
  let mut payload=v.clone();payload["_job_id"]=json!(id);let v=&payload;
- let result=match path {"/generations/image"=>generate_image(s,v),"/generations/video"=>generate_video(s,v),"/generations/tts"=>tts::generate(s,v),_=>merge_episode(s,v)};
+ let result=match path {"/generations/image"=>generate_image(s,v),"/generations/video"=>generate_video(s,v),"/generations/tts"=>tts::generate(s,v),"/generations/asr"=>asr::transcribe(s,v),_=>merge_episode(s,v)};
  let (status,output,error)=match &result{Ok(value)=>("completed",Some(value.to_string()),None),Err(error)=>("failed",None,Some(error.clone()))};
  c.execute("UPDATE background_jobs SET status=?,result_json=?,error=?,updated_at=? WHERE id=?",params![status,output,error,now(),id]).map_err(|e|e.to_string())?;result
 }
@@ -644,7 +645,7 @@ fn manage_media(s:&AppState,v:&Value,delete:bool)->Result<Value,String>{
  }else{let name=strv(v,"name")?;if name.trim().is_empty(){return Err("名称不能为空".into())}tx.execute("UPDATE media SET name=? WHERE id=?",params![name.trim(),id]).map_err(|e|e.to_string())?;}
  tx.commit().map_err(|e|e.to_string())?;Ok(json!({"ok":true}))
 }
-fn dispatch(state:&AppState,method:String,path:String,payload:Option<Value>)->Result<Value,String>{let v=payload.unwrap_or(Value::Null);if method=="POST" && ["/canvas/load","/canvas/save"].contains(&path.as_str()){let _lock=state.guard.lock().map_err(|_|"本地数据锁不可用")?;return canvas::command(state,&v,path=="/canvas/save")}if method=="POST" && ["/editor/projects","/editor/save"].contains(&path.as_str()){let _lock=state.guard.lock().map_err(|_|"本地数据锁不可用")?;return editor::projects(state,&v,path=="/editor/save")}if method=="POST" && path=="/editor/probe"{return editor::command(state,&v,false)}if method=="POST" && path=="/editor/export"{return editor::command(state,&v,true)}if method=="POST" && path=="/storyboard/validate"{return storyboard::validate(state,&v)}if method=="POST" && path=="/storyboard/generate"{return storyboard::generate(state,&v)}if method=="POST" && path=="/storyboard/plan"{return storyboard::plan(state,&v)}if method=="POST" && path=="/prompts/optimize"{return optimize_prompt(state,&v)}if method=="POST" && ["/generations/image","/generations/video","/generations/tts","/episodes/merge"].contains(&path.as_str()){return tracked_generation(state,&path,&v)}if method=="POST" && path=="/media/create-svg"{return svg::create(state,&v)}if method=="POST" && path=="/media/thumbnail" {return thumbnails::get(state,&v)}if method=="POST" && path=="/media/video-frame" {return video_frame(state,&v)}let _lock=state.guard.lock().map_err(|_|"本地数据锁不可用")?;match(method.as_str(),path.as_str()){("POST","/project/changes")=>snapshot_changes(state,&strv(&v,"id")?,&v["revisions"]),
+fn dispatch(state:&AppState,method:String,path:String,payload:Option<Value>)->Result<Value,String>{let v=payload.unwrap_or(Value::Null);if method=="POST" && ["/canvas/load","/canvas/save"].contains(&path.as_str()){let _lock=state.guard.lock().map_err(|_|"本地数据锁不可用")?;return canvas::command(state,&v,path=="/canvas/save")}if method=="POST" && ["/editor/projects","/editor/save"].contains(&path.as_str()){let _lock=state.guard.lock().map_err(|_|"本地数据锁不可用")?;return editor::projects(state,&v,path=="/editor/save")}if method=="POST" && path=="/editor/probe"{return editor::command(state,&v,false)}if method=="POST" && path=="/editor/export"{return editor::command(state,&v,true)}if method=="POST" && path=="/storyboard/validate"{return storyboard::validate(state,&v)}if method=="POST" && path=="/storyboard/generate"{return storyboard::generate(state,&v)}if method=="POST" && path=="/storyboard/plan"{return storyboard::plan(state,&v)}if method=="POST" && path=="/speech/transcribe"{return asr::transcribe(state,&v)}if method=="POST" && path=="/prompts/optimize"{return optimize_prompt(state,&v)}if method=="POST" && ["/generations/image","/generations/video","/generations/tts","/generations/asr","/episodes/merge"].contains(&path.as_str()){return tracked_generation(state,&path,&v)}if method=="POST" && path=="/media/create-svg"{return svg::create(state,&v)}if method=="POST" && path=="/media/thumbnail" {return thumbnails::get(state,&v)}if method=="POST" && path=="/media/video-frame" {return video_frame(state,&v)}let _lock=state.guard.lock().map_err(|_|"本地数据锁不可用")?;match(method.as_str(),path.as_str()){("POST","/project/changes")=>snapshot_changes(state,&strv(&v,"id")?,&v["revisions"]),
 ("POST","/projects/migrate")=>project_backup::relocate(state,&v),
 ("POST","/app/settings/load")=>app_settings::load(state),
 ("POST","/app/settings/save")=>app_settings::save(state,&v),

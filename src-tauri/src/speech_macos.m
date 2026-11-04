@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 #import <AVFoundation/AVFoundation.h>
 #import <Speech/Speech.h>
+#import <math.h>
 
 typedef void (*SpielbergSpeechCallback)(const char *);
 
@@ -20,6 +21,8 @@ API_AVAILABLE(macos(10.15))
 @property(nonatomic) BOOL finishing;
 @property(nonatomic) NSTimeInterval startedAt;
 @property(nonatomic) NSTimeInterval changedAt;
+@property(nonatomic) NSTimeInterval voiceAt;
+@property(nonatomic) BOOL heardAudio;
 @property(nonatomic) NSTimeInterval finishAt;
 - (void)start:(NSString *)session locale:(NSString *)locale callback:(SpielbergSpeechCallback)callback;
 - (void)stop:(BOOL)cancel;
@@ -59,6 +62,7 @@ API_AVAILABLE(macos(10.15))
     if (cancel || !self.request) { [self complete:NO]; return; }
     if (self.finishing) return;
     self.finishing = YES;
+    [self emit:@"finishing" fields:nil];
     self.finishAt = [NSDate timeIntervalSinceReferenceDate];
     [self haltAudio];
     [self.request endAudio];
@@ -70,17 +74,34 @@ API_AVAILABLE(macos(10.15))
     self.engine = [[AVAudioEngine alloc] init];
     self.request = [[SFSpeechAudioBufferRecognitionRequest alloc] init];
     self.request.shouldReportPartialResults = YES;
-    // Prefer the OS's on-device recognizer when that language is installed.
-    self.request.requiresOnDeviceRecognition = self.recognizer.supportsOnDeviceRecognition;
+    // Let the system choose its recognition service instead of requiring the
+    // on-device model merely because the language advertises support.
+    self.request.requiresOnDeviceRecognition = NO;
+    self.request.taskHint = SFSpeechRecognitionTaskHintDictation;
+    if (@available(macOS 13.0, *)) self.request.addsPunctuation = YES;
     AVAudioInputNode *input = self.engine.inputNode;
     AVAudioFormat *format = [input outputFormatForBus:0];
     if (format.sampleRate <= 0 || format.channelCount == 0) { [self fail:@"没有可用的麦克风，请检查系统声音输入设置"]; return; }
     SFSpeechAudioBufferRecognitionRequest *request = self.request;
+    __weak SpielbergSpeech *weakSelf = self;
     [input installTapOnBus:0 bufferSize:1024 format:format block:^(AVAudioPCMBuffer *buffer, AVAudioTime *when) {
         [request appendAudioPCMBuffer:buffer];
+        // Text can arrive late or remain unchanged while the user is speaking.
+        // Detect pauses from captured audio, not partial-transcript cadence.
+        float *const *channels = buffer.floatChannelData;
+        if (channels && buffer.frameLength) {
+            double energy = 0;
+            for (AVAudioFrameCount i = 0; i < buffer.frameLength; i++) energy += channels[0][i] * channels[0][i];
+            if (sqrt(energy / buffer.frameLength) > 0.015) {
+                NSTimeInterval capturedAt = [NSDate timeIntervalSinceReferenceDate];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    SpielbergSpeech *owner = weakSelf;
+                    if ([owner.session isEqualToString:session] && !owner.finishing) {owner.voiceAt = capturedAt; owner.heardAudio = YES;}
+                });
+            }
+        }
     }];
     self.hasTap = YES;
-    __weak SpielbergSpeech *weakSelf = self;
     self.task = [self.recognizer recognitionTaskWithRequest:request resultHandler:^(SFSpeechRecognitionResult *result, NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
             SpielbergSpeech *owner = weakSelf;
@@ -94,22 +115,23 @@ API_AVAILABLE(macos(10.15))
             }
             if (error) {
                 if (owner.finishing && owner.transcript.length) [owner complete:YES];
-                else [owner fail:@"语音识别已中断，请检查麦克风、网络后重试"];
+                else [owner fail:[NSString stringWithFormat:@"系统语音识别失败（%@ / %ld）：%@。请检查系统语音识别权限、中文听写和网络；也可选择项目 ASR 渠道重试", error.domain, (long)error.code, error.localizedDescription]];
             }
         });
     }];
     [self.engine prepare];
     NSError *error = nil;
     if (![self.engine startAndReturnError:&error]) { [self fail:@"无法启动麦克风，请检查系统声音输入设置"]; return; }
-    self.startedAt = self.changedAt = [NSDate timeIntervalSinceReferenceDate];
+    self.startedAt = self.changedAt = self.voiceAt = [NSDate timeIntervalSinceReferenceDate];
+    self.heardAudio = NO;
     [self emit:@"started" fields:nil];
     self.timer = [NSTimer scheduledTimerWithTimeInterval:0.2 repeats:YES block:^(NSTimer *timer) {
         SpielbergSpeech *owner = weakSelf;
         if (!owner || ![owner.session isEqualToString:session]) { [timer invalidate]; return; }
         NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
         if (owner.finishing) { if (now - owner.finishAt >= 2.5) [owner complete:YES]; return; }
-        if (!owner.transcript.length && now - owner.startedAt >= 10) { [owner fail:@"没有听到声音，请点击悬浮球重试"]; return; }
-        if (now - owner.startedAt >= 45 || (owner.transcript.length && now - owner.changedAt >= 1.8)) [owner stop:NO];
+        if (!owner.heardAudio && !owner.transcript.length && now - owner.startedAt >= 12) { [owner fail:@"没有听到声音，请点击悬浮球重试"]; return; }
+        if (now - owner.startedAt >= 60 || (owner.transcript.length && now - MAX(owner.voiceAt, owner.changedAt) >= 2.5)) [owner stop:NO];
     }];
 }
 - (void)start:(NSString *)session locale:(NSString *)locale callback:(SpielbergSpeechCallback)callback {

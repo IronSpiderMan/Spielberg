@@ -32,7 +32,7 @@ const toolTargetText: Record<string, string> = {
   assets: "资产库", media: "素材库", episodes: "剧集", scenes: "场景", prompts: "提示词", screenplays: "剧本",
   "assets/media/add": "关联资产图片", "assets/media/delete": "解除资产图片关联",
   "assets/audio/save": "保存资产音频引用", "assets/audio/delete": "解除资产音频关联",
-  "generations/image": "生成图片", "generations/video": "生成视频", "generations/tts": "合成配音",
+  "generations/image": "生成图片", "generations/video": "生成视频", "generations/tts": "合成配音", "generations/asr": "识别语音",
 };
 function toolTarget(args: unknown): string {
   if (!args || typeof args !== "object") return "";

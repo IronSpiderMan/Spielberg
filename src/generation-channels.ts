@@ -3,7 +3,7 @@ import catalog from "./generation-models.json";
 import { GENERATION_SIZES } from "./generation-sizes";
 import type { ModelSettings } from "./core";
 
-export type GenerationKind = "image" | "video" | "tts" | "llm";
+export type GenerationKind = "image" | "video" | "tts" | "asr" | "llm";
 export type ChannelProvider = "openai" | "cast" | "qianwen-token-plan" | "deepseek";
 export type GenerationModel = { id: string; name: string; profile: string; base_url?: string; send_model?: boolean };
 export type GenerationChannel = { id: string; name: string; provider: ChannelProvider; base_url: string; api_key: string; models: GenerationModel[]; default_model_id?: string; resolution?: string; operation_urls?: Record<string,string>; operation_api_keys?: Record<string,string> };
@@ -20,7 +20,7 @@ export const channelBaseUrl = (kind: GenerationKind, provider: ChannelProvider) 
 // Older projects are presented as one channel until settings are next saved.
 export function channelsFor(settings: ModelSettings, kind: GenerationKind): GenerationChannel[] {
   if (settings[kind]?.channels) return settings[kind].channels!;
-  if (kind === "tts") return [];
+  if (kind === "tts" || kind === "asr") return [];
   if (kind === "llm") {
     const config = settings.llm;
     if (!config || !(config.base_url || config.url || config.model || config.api_key)) return [];

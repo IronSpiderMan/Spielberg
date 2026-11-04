@@ -76,7 +76,7 @@ pub(super) fn normalize(settings: &Value) -> Value {
 }
 
 pub(super) fn validate_settings(settings: &Value) -> Result<(), String> {
-    for kind in ["llm", "image", "video", "tts"] {
+    for kind in ["llm", "image", "video", "tts", "asr"] {
         let Some(channels) = settings[kind].get("channels") else {continue};
         let channels = channels.as_array().ok_or("channels 必须为数组")?;
         let mut ids = std::collections::HashSet::new();

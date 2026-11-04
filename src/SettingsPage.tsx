@@ -14,12 +14,13 @@ const categories = [
   { id: "llm", label: "文本与推理", icon: MessageSquare },
   { id: "image", label: "图片生成", icon: Image },
   { id: "video", label: "视频生成", icon: Video },
+  { id: "asr", label: "语音识别", icon: Mic },
   { id: "tts", label: "语音合成", icon: Mic },
   { id: "skills", label: "Skills 技能", icon: Sparkles },
   { id: "storage", label: "项目存储", icon: FolderOpen },
 ] as const;
 type Category = typeof categories[number]["id"];
-const serviceKinds: GenerationKind[] = ["llm", "image", "video", "tts"];
+const serviceKinds: GenerationKind[] = ["llm", "image", "video", "tts", "asr"];
 
 export default function SettingsPage({ data, reload }: { data: Snapshot; reload: () => void | Promise<void> }) {
   const [category, setCategory] = useState<Category>("llm");

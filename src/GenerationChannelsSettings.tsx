@@ -8,12 +8,13 @@ import { channelBaseUrl, channelsFor, MODEL_PROFILES, presetsFor, profilesFor, t
 import { EmptyState } from "./ui";
 import "./generation-channels.css";
 
-const labels = { llm: "LLM", image: "图片", video: "视频", tts: "TTS" };
+const labels = { llm: "LLM", image: "图片", video: "视频", tts: "TTS", asr: "ASR" };
 const providerLabels = { openai: "OpenAI", deepseek: "DeepSeek", "qianwen-token-plan": "Qwen Token Plan", cast: "RunningHub / ComfyUI" };
 const descriptions = {
   llm: "默认模型用于分镜、Prompt 优化与 Agent。",
   image: "创作时可按需选择图片模型。",
   video: "按模型能力选择视频生成方式。",
+  asr: "将音频转写为文字。Qwen Token Plan 单次音频不超过 5 分钟。",
   tts: "用于台词、配音与旁白的语音模型。",
 };
 
@@ -121,7 +122,7 @@ function ChannelEditor({ kind, channel, isDefault, disabled, onChange, onDefault
       <div className="generation-channel-config">
         <Form.Item label="渠道名称"><Input aria-label={`${label}渠道名称`} value={channel.name} onChange={name => change({ name })} /></Form.Item>
         <Form.Item label="接口类型"><Select aria-label={`${label}渠道接口类型`} value={channel.provider} options={[
-          { label: kind === "llm" ? "OpenAI" : kind === "image" ? "OpenAI 兼容图片接口" : kind === "tts" ? "OpenAI 兼容语音接口" : "RunningHub / ComfyUI 兼容接口", value: kind === "video" ? "cast" : "openai" },
+          { label: kind === "llm" ? "OpenAI" : kind === "image" ? "OpenAI 兼容图片接口" : (kind === "tts" || kind === "asr") ? "OpenAI 兼容语音接口" : "RunningHub / ComfyUI 兼容接口", value: kind === "video" ? "cast" : "openai" },
           ...(kind === "llm" ? [{ label: "DeepSeek", value: "deepseek" }] : []),
           { label: kind === "llm" ? "Qwen Token Plan" : "千问 Token Plan", value: "qianwen-token-plan" },
           ...(kind === "image" && channel.provider === "cast" ? [{ label: "CAST 图片接口（旧配置）", value: "cast" }] : []),

@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { post, type Project } from "../core";
 import { AGENT_SESSION_CHANGED, notifyAgentSessionChanged, type AgentSessionChange } from "../agent-session-events";
 import { startSpeechRecognition } from "../speech-recognition";
+import { startSpeechRecognition as startCloudSpeechRecognition } from "../asr-recognition";
 import "./agent-float.css";
 
 type Position = { x: number; y: number };
@@ -40,6 +41,7 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings }:
   const [position, setPosition] = useState(initialPosition);
   const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [open, setOpen] = useState(false);
+  const [speechProvider, setSpeechProvider] = useState<"system" | "cloud">("system");
   const [speechState, setSpeechState] = useState<ListeningState>("idle");
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
@@ -175,7 +177,8 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings }:
     transcript.current = ""; setError(""); setSpeechState("starting");
     const current = () => mounted.current && version === speechVersion.current && !controller.signal.aborted;
     try {
-      const recognition = await startSpeechRecognition({
+      const startRecognition = speechProvider === "system" ? startSpeechRecognition : startCloudSpeechRecognition;
+      const recognition = await startRecognition({
         onStart: () => { if (current()) setSpeechState("listening"); },
         onResult: text => {
           if (current() && text.trim()) {
@@ -194,7 +197,7 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings }:
           if (transcript.current.trim()) void send(transcript.current);
           else { setError("没有听到内容，请再试一次，或直接输入指令。"); input.current?.focus(); }
         },
-      }, { signal: controller.signal });
+      }, { signal: controller.signal, projectId: pid, onFinishing: () => { if (current()) setSpeechState("finishing"); } });
       if (current()) speech.current = recognition;
       else recognition.cancel();
     } catch (e) {
@@ -242,7 +245,7 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings }:
   const panelLeft = Math.max(12, Math.min(position.x + SIZE - panelWidth, viewport.width - panelWidth - 12));
   const panelTop = Math.max(12, Math.min(position.y >= panelHeight + 24 ? position.y - panelHeight - 14 : position.y + SIZE + 14, viewport.height - panelHeight - 12));
   const state = listening ? "listening" : sending || running ? "working" : error || session?.status === "failed" ? "error" : "idle";
-  const status = speechState === "starting" ? "正在打开麦克风" : speechState === "finishing" ? "正在整理语音" : listening ? "我在听，说完即可" : sending ? "正在发送指令" : cancelling ? "正在停止操作" : running ? (session?.execution?.phase === "streaming" ? "正在回复" : "Agent 正在执行") : restoring ? "正在恢复会话" : session?.status === "completed" ? "已完成" : session?.status === "limited" ? "已暂停，可继续" : session?.status === "cancelled" ? "已停止" : "有什么我可以帮你？";
+  const status = speechState === "starting" ? "正在打开麦克风" : speechState === "finishing" ? "正在识别语音" : listening ? "我在听，说完即可（最长 60 秒）" : sending ? "正在发送指令" : cancelling ? "正在停止操作" : running ? (session?.execution?.phase === "streaming" ? "正在回复" : "Agent 正在执行") : restoring ? "正在恢复会话" : session?.status === "completed" ? "已完成" : session?.status === "limited" ? "已暂停，可继续" : session?.status === "cancelled" ? "已停止" : "有什么我可以帮你？";
   const lastUserIndex = session?.messages.map(message => message.role).lastIndexOf("user") ?? -1;
   const lastUser = lastUserIndex >= 0 ? session?.messages[lastUserIndex].content : "";
   const reply = session?.messages.slice(lastUserIndex + 1).filter(message => message.role === "assistant" && message.content).map(message => message.content).join("\n\n");
@@ -250,6 +253,7 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings }:
   return createPortal(<div className="agent-float" data-state={state} >
     {open && <section ref={panel} className="agent-float-panel" data-testid="agent-float-panel" role="dialog" aria-label="语音 Agent 助手" tabIndex={-1} style={{ left: panelLeft, top: panelTop, width: panelWidth }}>
       <header><div className="agent-float-heading"><span className="agent-float-indicator" /><strong>Agent</strong><span>随时，说一声</span></div><button type="button" className="agent-float-icon" aria-label="收起语音助手" title="收起 · Esc" onClick={close}><X size={17} /></button></header>
+      <label className="agent-float-project">语音识别 <select aria-label="语音识别方式" value={speechProvider} disabled={listening} onChange={e => setSpeechProvider(e.target.value as "system" | "cloud")}><option value="system">系统自带（默认）</option><option value="cloud">项目 ASR 渠道</option></select></label>
       <div className="agent-float-project" title={project?.name}>{project?.name || "请先打开或创建一个项目"}</div>
       <div className="agent-float-status" role="status">{listening && <span className="agent-float-wave" aria-hidden="true">{[0, 1, 2, 3, 4].map(i => <i key={i} />)}</span>}{session?.status === "completed" && !listening && !sending && <Check size={15} />}<span>{status}</span></div>
       {lastUser && !listening && <p className="agent-float-request">{lastUser}</p>}
