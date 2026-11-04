@@ -1,3 +1,4 @@
+import { PreviewKeyboardNavigation } from "./PreviewKeyboardNavigation";
 import { Button, Message, Modal, Select } from "@arco-design/web-react";
 import { ChevronLeft, ChevronRight, Download, Film, Maximize, Repeat, RotateCcw, Volume2, VolumeX } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode, type VideoHTMLAttributes } from "react";
@@ -32,7 +33,11 @@ function time(value: number) {
 
 export function VideoPreviewModal({ visible, afterClose, ...props }: Props) {
   const open = !!props.media && (visible ?? true);
-  return <Modal className="image-preview-modal video-preview-modal is-fullscreen" wrapClassName="image-preview-wrapper" alignCenter={false}
+  const videos = props.videos || noVideos;
+  const index = videos.findIndex(item => item.id === props.media?.id);
+  const canNavigate = open && videos.length > 1 && index >= 0 && !!props.onMediaChange;
+  const move = (offset: number) => {if (canNavigate) props.onMediaChange?.(videos[(index + offset + videos.length) % videos.length]);};
+  return <Modal modalRender={node => <PreviewKeyboardNavigation enabled={canNavigate} move={move}>{node}</PreviewKeyboardNavigation>} className="image-preview-modal video-preview-modal is-fullscreen" wrapClassName="image-preview-wrapper" alignCenter={false}
     visible={open} title={props.media?.name || props.title || "视频预览"} closable={false} footer={null} onCancel={props.onClose} afterClose={afterClose} unmountOnExit>
     {open && props.media && <VideoPreview key={`${props.playbackKey ?? ""}:${props.media.id}:${props.media.path}`} {...props} media={props.media} />}
   </Modal>;
@@ -119,7 +124,7 @@ function VideoPreview({ media, onClose, title = "视频预览", videos = noVideo
     <Button className="video-preview-close" aria-label="关闭视频预览" onClick={onClose}>关闭</Button>
     </div>
     <div className="image-preview-stage video-preview-stage">
-      {canNavigate && <button type="button" className="image-preview-nav is-previous" aria-label="上一个视频" onClick={() => move(-1)}><ChevronLeft size={24} /></button>}
+      {canNavigate && <button type="button" className="image-preview-nav is-previous" aria-label="上一个视频" title="上一个视频（←）" onClick={() => move(-1)}><ChevronLeft size={24} /></button>}
       <div className={`video-preview-viewport${fit ? "" : " is-actual-size"}`} aria-label="视频画布">
         <video ref={player} src={`${imageUrl(media)}#t=0.001`} poster={!hasFrame ? poster || undefined : undefined} aria-label={media.name} controls playsInline preload="auto" autoPlay={autoPlay} loop={allowLoop && loop}
           style={!fit && ready ? { width: metadata.width, height: metadata.height } : undefined}
@@ -139,9 +144,9 @@ function VideoPreview({ media, onClose, title = "视频预览", videos = noVideo
         <Film size={28} /><span>{failed ? "视频加载失败，请检查文件或更换版本" : "正在加载视频…"}</span>
         {failed && <Button onClick={() => { setFailed(false); setLoading(true); setHasFrame(false); setMetadata({ width: 0, height: 0, duration: 0 }); player.current?.load(); }}>重新加载</Button>}
       </div>}
-      {canNavigate && <button type="button" className="image-preview-nav is-next" aria-label="下一个视频" onClick={() => move(1)}><ChevronRight size={24} /></button>}
+      {canNavigate && <button type="button" className="image-preview-nav is-next" aria-label="下一个视频" title="下一个视频（→）" onClick={() => move(1)}><ChevronRight size={24} /></button>}
     </div>
-    <div className="image-preview-status"><span>{time(currentTime)} / {time(metadata.duration)}<i />{fit ? "适应窗口" : "原始尺寸"}<i />Esc 关闭</span></div>
+    <div className="image-preview-status"><span>{time(currentTime)} / {time(metadata.duration)}<i />{fit ? "适应窗口" : "原始尺寸"}<i />{canNavigate && <>← / → 切换<i /></>}Esc 关闭</span></div>
     {(canNavigate || footer) && <div className="video-preview-bottom-bar">
     {canNavigate && <div className="image-preview-filmstrip video-preview-filmstrip" aria-label="视频列表">
       <span className="image-preview-position" aria-live="polite">{currentIndex + 1} / {videos.length}</span>

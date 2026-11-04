@@ -1,3 +1,4 @@
+import { PreviewKeyboardNavigation } from "./PreviewKeyboardNavigation";
 import { Button, Message, Modal } from "@arco-design/web-react";
 import { ChevronLeft, ChevronRight, Copy, Download, FolderOpen, Image as ImageIcon, Info, Maximize, Minus, Mouse, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, RotateCw, Undo2, WandSparkles } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -149,7 +150,7 @@ export function ImagePreviewModal({ media, onClose, afterClose, title = "参考�
     return () => viewport.removeEventListener("wheel", wheel);
   }, [visible, viewport, zoom]);
 
-  return <Modal className={`image-preview-modal is-fullscreen ${className}`} wrapClassName="image-preview-wrapper" alignCenter={false} title={<div className="image-preview-heading"><span className="image-preview-file-icon"><ImageIcon size={20} /></span><div><strong title={media?.name || title}>{media?.name || title}</strong><span>{ready ? `${imageSize.width} × ${imageSize.height}` : "图片预览"} · {sizeLabel} · {format}</span></div></div>} visible={visible} footer={footer} onCancel={onClose} afterClose={afterClose}>
+  return <Modal modalRender={node => <PreviewKeyboardNavigation enabled={visible && canNavigate} move={move}>{node}</PreviewKeyboardNavigation>} className={`image-preview-modal is-fullscreen ${className}`} wrapClassName="image-preview-wrapper" alignCenter={false} title={<div className="image-preview-heading"><span className="image-preview-file-icon"><ImageIcon size={20} /></span><div><strong title={media?.name || title}>{media?.name || title}</strong><span>{ready ? `${imageSize.width} × ${imageSize.height}` : "图片预览"} · {sizeLabel} · {format}</span></div></div>} visible={visible} footer={footer} onCancel={onClose} afterClose={afterClose}>
     <div className="image-preview-toolbar" role="toolbar" aria-label="图片预览工具">
       <div className="image-preview-tools">
       <Button aria-label="切换缩略图" aria-pressed={showThumbnails} title="切换缩略图" onClick={() => setShowThumbnails(value => !value)} icon={showThumbnails ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />} />
@@ -196,7 +197,7 @@ export function ImagePreviewModal({ media, onClose, afterClose, title = "参考�
     </aside>}
     <div className="image-preview-canvas-column">
     <div className="image-preview-stage">
-    {canNavigate && <button type="button" className="image-preview-nav is-previous" aria-label="上一张图片" onClick={() => move(-1)}><ChevronLeft size={24} /></button>}
+    {canNavigate && <button type="button" className="image-preview-nav is-previous" aria-label="上一张图片" title="上一张图片（←）" onClick={() => move(-1)}><ChevronLeft size={24} /></button>}
     <div ref={setViewport} className={`image-preview-full${canDrag ? " is-zoomed" : ""}`} aria-label="图片画布"
       onDoubleClick={reset}
       onPointerDown={event => {
@@ -221,9 +222,9 @@ export function ImagePreviewModal({ media, onClose, afterClose, title = "参考�
         style={{ width: imageSize.width || undefined, height: imageSize.height || undefined, visibility: ready && !failed ? "visible" : "hidden", transform: `translate(-50%, -50%) translate(${view.x}px, ${view.y}px) scale(${view.scale}) rotate(${rotation}deg)` }} />}
       {(!ready || failed) && <div className="image-preview-placeholder" role="status"><ImageIcon size={28} /><span>{failed ? "图片暂时无法加载" : "正在加载图片…"}</span>{failed && <Button onClick={() => setRetryVersion(version => version + 1)} icon={<RotateCw size={15} />}>重新加载图片</Button>}</div>}
     </div>
-    {canNavigate && <button type="button" className="image-preview-nav is-next" aria-label="下一张图片" onClick={() => move(1)}><ChevronRight size={24} /></button>}
+    {canNavigate && <button type="button" className="image-preview-nav is-next" aria-label="下一张图片" title="下一张图片（→）" onClick={() => move(1)}><ChevronRight size={24} /></button>}
     </div>
-    <div className="image-preview-status"><span className="image-preview-position" role="status">{currentIndex >= 0 ? `${currentIndex + 1} / ${images.length}` : "1 / 1"}</span><span className="image-preview-pointer-help"><Mouse size={14} />滚轮缩放 · 放大后拖动 · 双击适应窗口</span><span className="image-preview-view-status">{fit ? "适应窗口" : "自由缩放"}<i />Esc 关闭</span></div>
+    <div className="image-preview-status"><span className="image-preview-position" role="status">{currentIndex >= 0 ? `${currentIndex + 1} / ${images.length}` : "1 / 1"}</span><span className="image-preview-pointer-help"><Mouse size={14} />{canNavigate ? "← / → 切换 · " : ""}滚轮缩放 · 放大后拖动 · 双击适应窗口</span><span className="image-preview-view-status">{fit ? "适应窗口" : "自由缩放"}<i />Esc 关闭</span></div>
     </div>
     {showInfo && <aside className="image-preview-info" aria-label="图片信息">
       <div className="image-preview-info-tabs"><Info size={16} />图片信息</div>
