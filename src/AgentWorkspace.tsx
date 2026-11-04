@@ -82,7 +82,6 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   useEffect(() => modelSelection.setValue({}), [pid]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [form, setForm] = useState<Config>(initialConfig);
-  const [apiKey, setApiKey] = useState("");
   const [searchKey, setSearchKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [mobileSessions, setMobileSessions] = useState(false);
@@ -201,7 +200,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   };
   const send = async () => {
     const text = draft.trim(); if ((!text && !images.length) || readingImages || pasting.current || busy.current || running || loading || loadFailed || creating) return;
-    if (!configured) { if (channelsFor(modelSettings, "llm").length) Message.warning("请选择渠道与模型"); else openSettings(); return; }
+    if (!configured) { if (channelsFor(modelSettings, "llm").length) Message.warning("请选择渠道与模型"); else { Message.warning("请先在统一渠道配置中添加支持工具调用的模型"); onNavigate?.("settings"); } return; }
     busy.current = true; setSending(true); setError(""); const version = ++selectionVersion.current; const key = draftKey;
     try {
       const session = selectedRef.current || await call<Session>("create");
@@ -230,12 +229,11 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
     try { await call("delete", { session_id: session.id }); if (!mounted.current) return; setSessions(items => items.filter(item => item.id !== session.id)); if (selectedRef.current?.id === session.id) { selectionVersion.current++; selectedRef.current = null; setSelected(null); localStorage.removeItem(`spielberg-agent-session-${pid}`); } }
     catch (e) { Message.error(String(e)); }
   } });
-  const openSettings = () => { setForm({ ...config }); setApiKey(""); setSearchKey(""); setSettingsOpen(true); };
+  const openSettings = () => { setForm({ ...config }); setSearchKey(""); setSettingsOpen(true); };
   const saveSettings = async () => {
     if (saving) return;
-    if (!form.inherit_llm && (!form.base_url.trim() || !form.model.trim())) { Message.warning("请填写 Base URL 和模型名称"); return; }
     setSaving(true);
-    try { const saved = await call<Config>("config/save", { config: { ...form, api_key: apiKey, search_api_key: searchKey } }); if (mounted.current) { if (saved.inherit_llm !== config.inherit_llm || saved.base_url !== config.base_url || saved.model !== config.model) modelSelection.setValue({}); setConfig(saved); setSettingsOpen(false); setApiKey(""); setSearchKey(""); Message.success("Agent 设置已保存"); } }
+    try { const saved = await call<Config>("config/save", { config: { search_provider: form.search_provider, search_api_key: searchKey, max_steps: form.max_steps, request_timeout_seconds: form.request_timeout_seconds } }); if (mounted.current) { setConfig(saved); setSettingsOpen(false); setSearchKey(""); Message.success("Agent 设置已保存"); } }
     catch (e) { Message.error(String(e)); } finally { if (mounted.current) setSaving(false); }
   };
 
@@ -256,7 +254,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
       </aside>
       <div className={`agent-conversation${empty ? " is-empty" : ""}`}>
         <div className="agent-conversation-bar"><div><Button ref={historyTrigger} className="agent-mobile-history" aria-label="打开会话列表" aria-controls="agent-history" aria-expanded={mobileSessions} icon={<MessageSquare size={16} />} onClick={() => setMobileSessions(value => !value)} /><span className="agent-bar-label">创作助手</span><span className="agent-bar-separator">/</span><b>{selected?.title || "新对话"}</b></div><div className="agent-conversation-actions">{running && <span><i className="agent-status-dot" />{cancelling ? "正在停止" : "正在执行"}</span>}<Button type="text" data-testid="agent-settings" aria-label="Agent 设置" icon={<Settings2 size={15} />} onClick={openSettings}>Agent 设置</Button></div></div>
-        {!configured && !loading && !loadFailed && <div className="agent-config-notice">配置支持工具调用的 LLM 后，即可开始使用。<button onClick={openSettings}>配置 Agent</button>{onNavigate && <button onClick={() => onNavigate("settings")}>打开项目设置</button>}</div>}
+        {!configured && !loading && !loadFailed && <div className="agent-config-notice">请在统一渠道配置中添加支持工具调用的模型，并在输入框右下角选择渠道与模型。{onNavigate && <button onClick={() => onNavigate("settings")}>配置统一渠道</button>}</div>}
         <div className="agent-stage">
         {!loading && selected?.context && (!!selected.context.summarized_turns || !!selected.context.active_compacted_messages) && <div className="agent-memory-notice" data-testid="agent-memory-notice"><MessageSquare size={14} aria-hidden="true" /><span>{!!selected.context.summarized_turns && <>保留近期 {selected.context.recent_turns} 轮对话，较早 {selected.context.summarized_turns} 轮已整理为摘录。</>}{!!selected.context.active_compacted_messages && <>本轮较早的 {selected.context.active_compacted_messages} 条执行记录已压缩。</>}助手可按需检索完整记录。</span></div>}
         <div className="agent-messages" ref={log} role="log" aria-label="Agent 对话记录" aria-busy={running || loading} onScroll={() => { const element = log.current; if (element) followBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100; }}>
@@ -313,11 +311,8 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
     <ImagePreviewModal media={preview?.kind === "image" ? preview : null} images={gallery} title="对话图片预览" onMediaChange={setPreview} onClose={() => setPreview(null)} />
     <VideoPreviewModal media={preview?.kind === "video" ? preview : null} onClose={() => setPreview(null)} />
     <Modal title="Agent 设置" visible={settingsOpen} onCancel={() => !saving && setSettingsOpen(false)} onOk={() => void saveSettings()} okText="保存设置" cancelText="取消" confirmLoading={saving} maskClosable={!saving} style={{ width: 580 }} className="agent-settings-modal">
-      <div className="agent-settings-form"><label className="agent-inherit"><span><b>沿用统一渠道配置</b><small>使用「工作室设置 → 统一渠道配置」中的默认渠道与模型。</small></span><Switch aria-label="沿用统一渠道配置" checked={form.inherit_llm} onChange={value => setForm(item => ({ ...item, inherit_llm: value }))} disabled={saving} /></label>
-        <label>Base URL<Input aria-label="Base URL" value={form.base_url} disabled={form.inherit_llm || saving} placeholder="https://your-service.example/v1" onChange={value => setForm(item => ({ ...item, base_url: value }))} /></label>
-        <label>模型名称<Input aria-label="模型名称" value={form.model} disabled={form.inherit_llm || saving} placeholder="支持函数工具调用的模型名称" onChange={value => setForm(item => ({ ...item, model: value }))} /></label>
-        {!form.inherit_llm && <label>API Key<Input.Password aria-label="API Key" value={apiKey} disabled={saving} placeholder="独立服务 Key；留空保留 Agent 已存 Key" onChange={setApiKey} /></label>}
-        <div className="agent-settings-divider" /><label>搜索服务<Select aria-label="搜索服务" value={form.search_provider} disabled={saving} options={[{ label: "自动搜索 · DuckDuckGo / Bing（无需 Key）", value: "duckduckgo" }, { label: "Brave Search", value: "brave" }, { label: "Tavily", value: "tavily" }]} onChange={value => setForm(item => ({ ...item, search_provider: value }))} /></label>
+      <div className="agent-settings-form">
+        <label>搜索服务<Select aria-label="搜索服务" value={form.search_provider} disabled={saving} options={[{ label: "自动搜索 · DuckDuckGo / Bing（无需 Key）", value: "duckduckgo" }, { label: "Brave Search", value: "brave" }, { label: "Tavily", value: "tavily" }]} onChange={value => setForm(item => ({ ...item, search_provider: value }))} /></label>
         {form.search_provider !== "duckduckgo" && <label>搜索 API Key<Input.Password aria-label="搜索 API Key" value={searchKey} disabled={saving} placeholder={config.has_search_api_key ? "已保存，留空保留" : "输入搜索服务 API Key"} onChange={setSearchKey} /></label>}
         <label>模型请求等待时间（秒）<input aria-label="模型请求等待时间（秒）" type="number" min={30} max={1800} value={form.request_timeout_seconds ?? 600} disabled={saving} onChange={event => setForm(item => ({ ...item, request_timeout_seconds: Math.min(1800, Math.max(30, Number(event.target.value) || 30)) }))} /></label>
         <label>最多执行步数<input aria-label="最多执行步数" type="number" min={1} max={64} value={form.max_steps} disabled={saving} onChange={event => setForm(item => ({ ...item, max_steps: Math.min(64, Math.max(1, Number(event.target.value) || 1)) }))} /></label>

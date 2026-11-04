@@ -173,10 +173,7 @@
 .agent-error > .arco-btn { margin-left: 8px; }
 .agent-settings-form { display: grid; gap: 16px; }
 .agent-settings-form > label { display: grid; gap: 7px; color: var(--ui-text); font-size: 12px; }
-.agent-settings-form .agent-inherit { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
-.agent-inherit small { display: block; margin-top: 6px; color: var(--ui-muted); font-size: 11px; font-weight: 400; }
 .agent-settings-form > p { margin: 0; color: var(--ui-muted); font-size: 11px; line-height: 1.8; }
-.agent-settings-divider { height: 1px; background: var(--ui-border); }
 .agent-settings-form input[type=number] { padding: 7px 12px; border: 1px solid var(--ui-border); border-radius: 6px; background: var(--ui-surface); color: var(--ui-text); font: inherit; }
 .agent-settings-modal { max-width: calc(100vw - 32px); }
 .agent-settings-modal .arco-modal-body { max-height: calc(100dvh - 220px); overflow: auto; }

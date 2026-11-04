@@ -219,10 +219,9 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
   await page.getByTestId('agent-plan').waitFor();
   await page.getByTestId('agent-settings').click();
   await page.getByRole('dialog').getByText('Agent 设置',{exact:true}).waitFor();
-  await page.getByRole('switch',{name:'沿用统一渠道配置',exact:true}).click();
-  assert.equal(await page.getByRole('dialog').locator('input[type=password]').first().inputValue(),'');
-  await page.screenshot({path:path.join(screenshots,'settings.png'),fullPage:true});
-  await page.keyboard.press('Escape');
+  await page.screenshot({path:path.join(screenshots,'settings.png'),fullPage:true,animations:'disabled'});
+  await page.getByRole('dialog').getByRole('button',{name:'取消',exact:true}).click();
+  await page.locator('.agent-settings-modal:visible').waitFor({state:'hidden'});
   // A saved conversation remains usable after visiting the app's normal editors.
   await page.getByRole('menuitem',{name:'资产库',exact:true}).click();
   await page.locator('.role-card').getByText('Agent 主角',{exact:true}).waitFor();
