@@ -53,6 +53,19 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
   },[query,search]);
 
   useEffect(()=>{
+    const id=++request.current;
+    paging.current=true;setLoading(true);setError("");
+    void post<{items:Asset[];total:number}>("/media/list",{project_id:pid,kind,query:search,usage:filter,page,limit:24}).then(result=>{
+      if(id!==request.current)return;
+      if(page>1 && result.total <= (page-1)*24){setPage(Math.max(1,Math.ceil(result.total/24)));return;}
+      setItems(result.items);setTotal(result.total);
+    }).catch(e=>{if(id===request.current)setError(String(e));}).finally(()=>{
+      if(id===request.current){paging.current=false;setLoading(false);}
+    });
+    return()=>{request.current++;};
+  },[pid,kind,search,filter,page,version,data.revisions?.media,data.revisions?.assets,data.revisions?.episodes]);
+
+  useEffect(()=>{
     if(!tracking)return;
     let disposed=false;setUses([]);setUsageError("");setUsageLoading(true);
     void post<{items:AssetUsage[]}>("/media/usage",{project_id:pid,id:tracking.id}).then(result=>{if(!disposed)setUses(result.items);}).catch(e=>{if(!disposed)setUsageError(String(e));}).finally(()=>{if(!disposed)setUsageLoading(false);});
