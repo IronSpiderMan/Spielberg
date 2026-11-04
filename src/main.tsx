@@ -348,8 +348,6 @@ function App() {
           <Button icon={<Plus size={16}/>} onClick={() => { setMobileNavOpen(false); leaveEditor(() => setCreating(true)); }}>新建项目</Button>
         </div>
         <div className="side-bottom">
-          <div className="studio-local-note"><span className="project-dot" /><span>故事与素材，保存在本地</span></div>
-          <div className="nav-label">工作室设置</div>
           <Button
             type="text"
             long

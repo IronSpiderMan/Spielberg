@@ -1,6 +1,6 @@
 import { confirmAction } from "./components/ConfirmAction";
 import { Button, Input, Message, Modal, Select, Spin, Switch } from "@arco-design/web-react";
-import { ArrowUp, ArrowUpRight, Clapperboard, Folder, PencilLine, Search, Bot, Check, ChevronDown, Globe, MessageSquare, Plus, Settings2, Sparkles, Square, Trash2, Wrench, X } from "lucide-react";
+import { ArrowUp, ArrowUpRight, CircleAlert, LoaderCircle, Pause, Circle, Clapperboard, Folder, PencilLine, Search, Bot, Check, ChevronDown, Globe, MessageSquare, Plus, Settings2, Sparkles, Square, Trash2, Wrench, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -43,7 +43,12 @@ function toolTarget(args: unknown): string {
 const phaseText: Record<string, string> = { thinking: "正在整理下一步", streaming: "正在回复", stopping: "正在停止，等待当前操作结束", retrying: "模型服务暂时不可用，正在重试", finalizing: "正在整理执行结果", tool: "正在执行操作" };
 function displayJson(value: unknown) { if (typeof value === "string") { try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; } } return JSON.stringify(value, null, 2); }
 function hasActiveRun(session: Session | null): boolean { return session?.execution?.active ?? session?.status === "running"; }
-function sessionStatus(session: Session): string { return hasActiveRun(session) && session.status === "cancelled" ? "正在停止" : statusText[session.status] || session.status; }
+function sessionStatus(session: Session): string { return hasActiveRun(session) ? (session.status === "cancelled" ? "正在停止" : "执行中") : statusText[session.status] || session.status; }
+function SessionStatusIcon({ session }: { session: Session }) {
+  const status = hasActiveRun(session) ? "running" : session.status;
+  const Icon = ({ running: LoaderCircle, completed: Circle, limited: Pause, failed: CircleAlert, cancelled: Square } as Record<string, typeof Check>)[status] || Circle;
+  return <span className="agent-session-state" data-status={status} title={sessionStatus(session)} role="img" aria-label={sessionStatus(session)}><Icon size={15} aria-hidden="true" /></span>;
+}
 
 function updateSession(items: Session[], session: Session): Session[] {
   return items.some(item => item.id === session.id)
@@ -271,13 +276,12 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
         <Button long data-testid="agent-new-session" icon={<Plus size={16} />} loading={creating} disabled={loading || loadFailed || sending} onClick={() => void createSession()}>新建会话</Button>
         <div className="agent-history-heading"><span>项目会话 <small>{sessions.length}</small></span><Button size="mini" type="text" className="agent-mobile-history" aria-label="关闭会话列表" icon={<X size={16} />} onClick={() => setMobileSessions(false)} /></div>
         <div className="agent-session-list">{sessions.length === 0 && <div className="agent-history-empty"><MessageSquare size={28} /><b>暂无会话</b><p>开始创作后，会话将保存在这里</p></div>}{sessions.map(session => <div className={`agent-session${selected?.id === session.id ? " is-selected" : ""}`} key={session.id}>
-          <button data-testid={`agent-session-${session.id}`} data-session-id={session.id} className="agent-session-select" title={session.title} aria-current={selected?.id === session.id ? "page" : undefined} onClick={() => void choose(session)} disabled={creating}><MessageSquare size={15} /><span><strong>{session.title}</strong><small data-status={hasActiveRun(session) ? "running" : session.status}>{sessionStatus(session)}</small></span></button>
+          <button data-testid={`agent-session-${session.id}`} data-session-id={session.id} className="agent-session-select" title={`${session.title} · ${sessionStatus(session)}`} aria-label={`${session.title}，${sessionStatus(session)}`} aria-current={selected?.id === session.id ? "page" : undefined} onClick={() => void choose(session)} disabled={creating}><span className="agent-session-title"><strong>{session.title}</strong></span><SessionStatusIcon session={session} /></button>
           <button type="button" className="agent-delete" aria-label={`删除会话 ${session.title}`} disabled={hasActiveRun(session) || sending} onClick={() => remove(session)}><Trash2 size={14} /></button>
         </div>)}</div>
-        <div className="agent-history-footer"><span><Clapperboard size={15} />每个好故事，都始于一次对话</span></div>
       </aside>
       <div className={`agent-conversation${empty ? " is-empty" : ""}`}>
-        <div className="agent-conversation-bar"><div><Button ref={historyTrigger} className="agent-mobile-history" aria-label="打开会话列表" aria-controls="agent-history" aria-expanded={mobileSessions} icon={<MessageSquare size={16} />} onClick={() => setMobileSessions(value => !value)} /><span className="agent-bar-label">创作助手</span><span className="agent-bar-separator">/</span><b>{selected?.title || "新对话"}</b></div><div className="agent-conversation-actions">{running && <span><i className="agent-status-dot" />{cancelling ? "正在停止" : "正在执行"}</span>}<Button type="text" data-testid="agent-settings" aria-label="Agent 设置" icon={<Settings2 size={15} />} onClick={openSettings}>Agent 设置</Button></div></div>
+        <div className="agent-conversation-bar"><div><Button ref={historyTrigger} className="agent-mobile-history" aria-label="打开会话列表" aria-controls="agent-history" aria-expanded={mobileSessions} icon={<MessageSquare size={16} />} onClick={() => setMobileSessions(value => !value)} /><b>{selected?.title || "新对话"}</b></div><div className="agent-conversation-actions">{running && <span><i className="agent-status-dot" />{cancelling ? "正在停止" : "正在执行"}</span>}<Button type="text" data-testid="agent-settings" aria-label="Agent 设置" icon={<Settings2 size={15} />} onClick={openSettings}>Agent 设置</Button></div></div>
         {!configured && !loading && !loadFailed && <div className="agent-config-notice">请在统一渠道配置中添加支持工具调用的模型，并在输入框右下角选择渠道与模型。{onNavigate && <button onClick={() => onNavigate("settings")}>配置统一渠道</button>}</div>}
         <div className="agent-stage">
         {!loading && selected?.context && (!!selected.context.summarized_turns || !!selected.context.active_compacted_messages) && <div className="agent-memory-notice" data-testid="agent-memory-notice"><MessageSquare size={14} aria-hidden="true" /><span>{!!selected.context.summarized_turns && <>保留近期 {selected.context.recent_turns} 轮对话，较早 {selected.context.summarized_turns} 轮已整理为摘录。</>}{!!selected.context.active_compacted_messages && <>本轮较早的 {selected.context.active_compacted_messages} 条执行记录已压缩。</>}助手可按需检索完整记录。</span></div>}
@@ -315,7 +319,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
         </div>
         <div className="agent-composer-wrap">
           <div className="agent-composer">
-            <div className="agent-composer-context"><Folder size={12} /><span>{data.project.name}</span><span className="agent-context-label">项目上下文</span></div>
+            <div className="agent-composer-context"><Folder size={12} /><span>{data.project.name}</span></div>
             {!!images.length && <div className="agent-image-previews">{images.map((image, i) => <div key={i}><img src={image.url} alt={`待发送图片 ${i + 1}（已加入素材）`} /><button type="button" aria-label={`移除图片 ${i + 1}`} disabled={sending} onClick={() => setImageDrafts(items => ({ ...items, [draftKey]: images.filter((_, index) => index !== i) }))}><X size={14} /></button></div>)}</div>}
             <textarea ref={composer}  data-testid="agent-composer" aria-label="向 Agent 发送消息"  value={draft} maxLength={16000} disabled={loading || sending || creating} placeholder="写下一个灵感，或粘贴图片告诉我你想完成什么…" onPaste={event => { if (readingImages) return; const files = Array.from(event.clipboardData.items).filter(item => item.type.startsWith("image/")).map(item => item.getAsFile()).filter((file): file is File => !!file); if (files.length) { event.preventDefault(); void pasteImages(files); } }} onChange={event => updateDraft(event.target.value)} onKeyDown={event => {
               if (event.defaultPrevented || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
