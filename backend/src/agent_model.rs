@@ -2,7 +2,12 @@
 //! Only inference requests are retried; business tools must never be replayed here.
 use super::*;
 
-const MAX_RESPONSE_BYTES: usize = 1_000_000;
+const MAX_JSON_RESPONSE_BYTES: usize = 1_000_000;
+// SSE repeats the JSON envelope for every fragment and can include private
+// reasoning and heartbeats that are discarded. Its wire size is not the size
+// of the retained message. Keep a separate transport ceiling, while bounding
+// each buffered event and the accumulated public text/tool arguments below.
+const MAX_STREAM_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_EVENT_BYTES: usize = 256_000;
 const MAX_TEXT_BYTES: usize = 128_000;
 const MAX_ARGUMENT_BYTES: usize = 64_000;
@@ -79,9 +84,17 @@ struct Stream {
 impl Stream {
     fn feed(&mut self, bytes: &[u8], on_event: &mut impl FnMut(Event) -> Result<(), String>) -> Result<(), String> {
         self.total_bytes = self.total_bytes.saturating_add(bytes.len());
-        if self.total_bytes > MAX_RESPONSE_BYTES { return Err("Agent 模型响应过大".into()); }
-        self.pending.extend_from_slice(bytes);
-        self.lines(false, on_event)
+        if self.total_bytes > MAX_STREAM_RESPONSE_BYTES {
+            return Err("Agent 模型流式传输超过 64 MiB 上限，未完成的工具未执行。请拆分任务后重试。".into());
+        }
+        // A proxy may coalesce many events into one HTTP chunk. Process bounded
+        // slices so raising the wire ceiling does not increase parser buffering.
+        for part in bytes.chunks(MAX_EVENT_BYTES) {
+            self.pending.extend_from_slice(part);
+            self.lines(false, on_event)?;
+            if self.done { self.pending.clear(); break; }
+        }
+        Ok(())
     }
 
     fn lines(&mut self, eof: bool, on_event: &mut impl FnMut(Event) -> Result<(), String>) -> Result<(), String> {
@@ -111,7 +124,10 @@ impl Stream {
             if self.done { break; }
         }
         self.pending.drain(..start);
-        if !self.done && self.data.len() + self.pending.len() > MAX_EVENT_BYTES {
+        // A trailing CR waits for a possible LF in the next chunk, but is
+        // already known to be a line delimiter rather than event payload.
+        let pending_bytes = self.pending.len() - usize::from(self.pending.last() == Some(&b'\r'));
+        if !self.done && self.data.len() + pending_bytes > MAX_EVENT_BYTES {
             return Err("Agent 模型流式事件过大".into());
         }
         Ok(())
@@ -244,7 +260,7 @@ async fn attempt(
     // Some OpenAI-compatible providers ignore stream:true and return normal JSON.
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(|_| Failure::Fatal("读取 Agent 模型响应失败".into()))? {
-        if bytes.len() + chunk.len() > MAX_RESPONSE_BYTES { return Err(Failure::Fatal("Agent 模型响应过大".into())); }
+        if bytes.len() + chunk.len() > MAX_JSON_RESPONSE_BYTES { return Err(Failure::Fatal("Agent 模型 JSON 响应过大，请拆分任务后重试。".into())); }
         bytes.extend_from_slice(&chunk);
     }
     json_completion(&bytes).map_err(Failure::Fatal)
@@ -338,6 +354,97 @@ mod tests {
         ]));
     }
 
+    fn large_tool_stream() -> (String, Value) {
+        let arguments = json!({"resource":"screenplays","method":"PATCH","id":1,
+            "data":{"content":"窗外下着雨，主角走进教室。\n".repeat(400)}}).to_string();
+        assert!(arguments.len() < MAX_ARGUMENT_BYTES);
+        let call = json!({"id":"save-script","type":"function",
+            "function":{"name":"app_request","arguments":arguments}});
+        let mut input = event(json!({"tool_calls":[{"index":0,"id":call["id"],"type":"function",
+            "function":{"name":"app_request","arguments":""}}]}), Value::Null);
+        // Providers commonly emit single-character/token fragments; repeated
+        // transport metadata can exceed 1 MB for a modest Chinese screenplay.
+        for character in arguments.chars() {
+            input.push_str(&format!("data: {}\n\n", json!({
+                "id":"chatcmpl-screenplay-stream", "object":"chat.completion.chunk",
+                "created":1, "model":"fixture-model",
+                "choices":[{"index":0,"delta":{"tool_calls":[{"index":0,
+                    "function":{"arguments":character.to_string()}}]},"finish_reason":null}]
+            })));
+        }
+        assert!(input.len() > MAX_JSON_RESPONSE_BYTES);
+        (input, call)
+    }
+
+    #[test]
+    fn large_sse_envelopes_preserve_tools_with_fragmented_or_coalesced_http_chunks() {
+        let (mut input, call) = large_tool_stream();
+        input.push_str(&event(json!({}), json!("tool_calls")));
+        input.push_str("data: [DONE]\n\n");
+        for chunk_size in [97, input.len()] {
+            let mut stream = Stream::default();
+            for chunk in input.as_bytes().chunks(chunk_size) {
+                stream.feed(chunk, &mut |_| Ok(())).unwrap();
+                assert!(stream.pending.len() <= MAX_EVENT_BYTES);
+            }
+            let completion = stream.finish().unwrap();
+            assert_eq!(completion.message["tool_calls"], json!([call]));
+        }
+    }
+
+    #[test]
+    fn near_limit_multiline_event_allows_crlf_split_at_internal_slice_boundary() {
+        let first_payload_len = MAX_EVENT_BYTES / 2;
+        let first_json = r#"{"choices":[]"#;
+        let first_line = format!("data: {first_json}{}\n", " ".repeat(first_payload_len - first_json.len()));
+        let second_payload_len = MAX_EVENT_BYTES - first_payload_len - "data: ".len();
+        let second_line = format!("data: }}{}\r\n\r\n", " ".repeat(second_payload_len - 1));
+        // Align the CR ending the second data line with an internal slice's
+        // last byte. The CR is a delimiter, not another byte of event data.
+        let cr_offset = first_line.len() + second_line.find('\r').unwrap();
+        let prefix_len = 2 * MAX_EVENT_BYTES - 1 - cr_offset;
+        let input = format!(":{}\n{first_line}{second_line}{}{}data: [DONE]\n\n",
+            " ".repeat(prefix_len - 2), event(json!({"content":"完成"}), Value::Null),
+            event(json!({}), json!("stop")));
+        assert_eq!(input.find('\r'), Some(2 * MAX_EVENT_BYTES - 1));
+        for chunk_size in [MAX_EVENT_BYTES, input.len()] {
+            let mut stream = Stream::default();
+            for chunk in input.as_bytes().chunks(chunk_size) {
+                stream.feed(chunk, &mut |_| Ok(())).unwrap();
+            }
+            assert_eq!(stream.finish().unwrap().message, json!({"role":"assistant","content":"完成"}));
+        }
+    }
+
+    #[test]
+    fn discarded_reasoning_and_heartbeats_do_not_consume_the_public_text_budget() {
+        let mut stream = Stream::default();
+        let private = event(json!({"reasoning_content":"private".repeat(1000)}), Value::Null);
+        let mut snapshots = Vec::new();
+        let mut on_event = |event| { if let Event::Delta(text) = event { snapshots.push(text); } Ok(()) };
+        for _ in 0..200 {
+            stream.feed(b": heartbeat\n\n", &mut on_event).unwrap();
+            stream.feed(private.as_bytes(), &mut on_event).unwrap();
+        }
+        assert!(stream.total_bytes > MAX_JSON_RESPONSE_BYTES);
+        stream.feed(format!("{}{}data: [DONE]\n\n",
+            event(json!({"content":"完成"}), Value::Null), event(json!({}), json!("stop"))).as_bytes(), &mut on_event).unwrap();
+        assert_eq!(stream.finish().unwrap().message, json!({"role":"assistant","content":"完成"}));
+        assert_eq!(snapshots, ["完成"]);
+    }
+
+    #[test]
+    fn large_streams_still_require_successful_finish_and_done_before_releasing_tools() {
+        let (input, _) = large_tool_stream();
+        for suffix in [String::new(), event(json!({}), json!("tool_calls")),
+            "data: [DONE]\n\n".into(), format!("{}data: [DONE]\n\n", event(json!({}), json!("length")))] {
+            let mut stream = Stream::default();
+            stream.feed(input.as_bytes(), &mut |_| Ok(())).unwrap();
+            let result = stream.feed(suffix.as_bytes(), &mut |_| Ok(()));
+            assert!(result.is_err() || stream.finish().is_err());
+        }
+    }
+
     #[test]
     fn incomplete_or_truncated_streams_never_release_tool_calls() {
         let call = event(json!({"tool_calls":[{"index":0,"id":"write","type":"function","function":{"name":"app_request","arguments":"{}"}}]}), Value::Null);
@@ -366,8 +473,6 @@ mod tests {
     fn capacity_limits_apply_before_dispatch() {
         let mut stream = Stream::default();
         assert!(stream.feed(&vec![b'x'; MAX_EVENT_BYTES + 1], &mut |_| Ok(())).is_err());
-        let mut stream = Stream::default();
-        assert!(stream.feed(&vec![b'x'; MAX_RESPONSE_BYTES + 1], &mut |_| Ok(())).is_err());
         for delta in [
             json!({"tool_calls":[{"index":8}]}),
             json!({"tool_calls":[{"index":0,"function":{"arguments":"x".repeat(MAX_ARGUMENT_BYTES + 1)}}]}),
@@ -375,6 +480,33 @@ mod tests {
         ] {
             let mut stream = Stream::default();
             assert!(stream.feed(event(delta, Value::Null).as_bytes(), &mut |_| Ok(())).is_err());
+        }
+    }
+
+    #[test]
+    fn stream_transport_budget_rejects_excess_even_when_no_output_is_retained() {
+        let heartbeat = b": heartbeat\n\n";
+        let mut stream = Stream { total_bytes: MAX_STREAM_RESPONSE_BYTES - heartbeat.len(), ..Stream::default() };
+        stream.feed(heartbeat, &mut |_| Ok(())).unwrap();
+        assert_eq!(stream.total_bytes, MAX_STREAM_RESPONSE_BYTES);
+        let error = stream.feed(heartbeat, &mut |_| Ok(())).unwrap_err();
+        assert!(error.contains("64 MiB"));
+        assert!(stream.content.is_empty());
+        assert!(stream.calls.is_empty());
+    }
+
+    #[test]
+    fn accumulated_text_and_tool_arguments_remain_bounded_across_events() {
+        for (key, limit, expected) in [("content", MAX_TEXT_BYTES, "回复过长"),
+            ("refusal", MAX_TEXT_BYTES, "回复过长"), ("arguments", MAX_ARGUMENT_BYTES, "工具参数过大")] {
+            let mut stream = Stream::default();
+            let delta = |text: String| if key == "arguments" {
+                json!({"tool_calls":[{"index":0,"function":{"arguments":text}}]})
+            } else { json!({key:text}) };
+            let fragment = event(delta("x".repeat(limit / 2)), Value::Null);
+            for _ in 0..2 { stream.feed(fragment.as_bytes(), &mut |_| Ok(())).unwrap(); }
+            let error = stream.feed(event(delta("界".into()), Value::Null).as_bytes(), &mut |_| Ok(())).unwrap_err();
+            assert!(error.contains(expected), "{error}");
         }
     }
 

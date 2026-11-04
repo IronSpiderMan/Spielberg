@@ -18,6 +18,8 @@ ROOT = Path(__file__).resolve().parents[2]
 BINARY = Path(os.environ.get("SPIELBERG_TEST_BINARY", ROOT / "backend/target/debug/spielberg-backend"))
 SECRET = "agent-qa-private-key"
 FOREIGN_HISTORY_MARKER = "history-only-in-a-different-session-2908"
+LARGE_STREAM_SCRIPT = "# 第一集\n\n" + "林晓：先把电脑搬回家，明天再去学校。\n" * 400
+PRIVATE_STREAM_MARKER = "private-stream-reasoning-must-not-be-persisted"
 
 
 def message_text(message):
@@ -67,16 +69,44 @@ class Model(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.end_headers()
 
-        def event(delta=None, finish=None, usage=False):
+        def encoded_event(delta=None, finish=None, usage=False, metadata=False):
             value = {"choices": [{"index": 0, "delta": delta or {}, "finish_reason": finish}]}
             if usage:
                 value = {"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}
-            raw = ("data: " + json.dumps(value, ensure_ascii=False) + "\r\n\r\n").encode()
+            if metadata:
+                value.update({"id": "chatcmpl-long-screenplay-fixture", "object": "chat.completion.chunk",
+                              "created": 1793740800, "model": "qa-model", "system_fingerprint": "fp_fixture"})
+            return ("data: " + json.dumps(value, ensure_ascii=False) + "\r\n\r\n").encode()
+
+        def event(delta=None, finish=None, usage=False):
+            raw = encoded_event(delta, finish, usage)
             for offset in range(0, len(raw), 7):
                 self.wfile.write(raw[offset:offset + 7])
             self.wfile.flush()
 
         try:
+            if prompt.startswith(("STREAM_LARGE_SCRIPT:", "STREAM_LARGE_BROKEN:")) and not tools:
+                arguments = json.dumps({"resource": "screenplays", "method": "POST",
+                                        "episode_id": int(prompt.split(":", 1)[1]),
+                                        "data": {"title": "长流式中文剧本", "content": LARGE_STREAM_SCRIPT}}, ensure_ascii=False)
+                assert 15_000 < len(arguments.encode()) < 30_000
+                frames = [b": heartbeat\r\n\r\n", encoded_event({"reasoning_content": PRIVATE_STREAM_MARKER}),
+                          encoded_event({"tool_calls": [{"index": 0, "id": "large-stream-write", "type": "function",
+                                                         "function": {"name": "app_request", "arguments": ""}}]})]
+                # Small token fragments repeat the provider envelope: wire bytes
+                # exceed 1 MB even though the complete tool arguments stay small.
+                frames.extend(encoded_event({"tool_calls": [{"index": 0, "function": {"arguments": character}}]}, metadata=True)
+                              for character in arguments)
+                frames.extend([encoded_event(finish="tool_calls"), encoded_event(usage=True)])
+                if prompt.startswith("STREAM_LARGE_SCRIPT:"):
+                    frames.append(b"data: [DONE]\r\n\r\n")
+                payload = b"".join(frames)
+                assert len(payload) > 1_000_000
+                # HTTP reads need not align with SSE records or UTF-8 characters.
+                for offset in range(0, len(payload), 4093):
+                    self.wfile.write(payload[offset:offset + 4093])
+                self.wfile.flush()
+                return
             event({"content": "正在整理镜头。"})
             if prompt in ("STREAM_PREVIEW", "STREAM_CANCEL"):
                 event({"content": "凭证：" + SECRET[:7]})
@@ -631,10 +661,34 @@ def main():
             assert completed["execution"]["usage"]["total_tokens"] == 30
             assert len(api(f"/projects/{pid}/assets", method="GET")) == before_assets + 1
             assert len([m for m in completed["messages"] if m["role"] == "assistant"]) == 2
+
+            # Repeated SSE metadata must not reject a valid Chinese screenplay;
+            # an equally large incomplete stream must still perform no writes.
+            large_episode = api(f"/projects/{pid}/episodes", {"title": "长流式剧本回归"}, 201)
+            scripts_path = f"/projects/{pid}/episodes/{large_episode['id']}/screenplays"
+            large_broken = agent("create")
+            agent("run", session_id=large_broken["id"], message=f"STREAM_LARGE_BROKEN:{large_episode['id']}")
+            rejected_large = wait(large_broken)
+            assert rejected_large["status"] == "failed" and rejected_large["execution"]["tool_calls"] == 0
+            assert "未完成的工具未执行" in rejected_large["error"], rejected_large.get("error")
+            assert api(scripts_path, method="GET") == []
+            large_stream = agent("create")
+            agent("run", session_id=large_stream["id"], message=f"STREAM_LARGE_SCRIPT:{large_episode['id']}")
+            completed_large = wait(large_stream)
+            assert completed_large["status"] == "completed", completed_large.get("error")
+            assert completed_large["execution"]["tool_calls"] == 1
+            assert completed_large["execution"]["model_requests"] == 2
+            assert completed_large["execution"]["retries"] == 0
+            large_traces = [m for m in completed_large["messages"] if m["role"] == "tool"]
+            assert len(large_traces) == 1 and large_traces[0]["status"] == "completed"
+            saved_scripts = api(scripts_path, method="GET")
+            assert len(saved_scripts) == 1 and saved_scripts[0]["content"] == LARGE_STREAM_SCRIPT
+            assert PRIVATE_STREAM_MARKER not in json.dumps(completed_large)
+            assert all(PRIVATE_STREAM_MARKER not in json.dumps(request) for request in Model.requests)
             assert all(SECRET not in json.dumps(request) for request in Model.requests)
             for request in Model.requests:
                 assert_tool_protocol(request["messages"])
-            print("PASS: real HTTP Agent CRUD; image/history context and isolation; durable plans; budget finalization/skipped calls; failure-loop guard; inference retries without duplicate writes; cancellable response reads/backoff; SSE previews/tool arguments/usage; interrupted-stream safety; credential fragments; restart persistence")
+            print("PASS: real HTTP Agent CRUD; image/history context and isolation; durable plans; budget finalization/skipped calls; failure-loop guard; inference retries without duplicate writes; cancellable response reads/backoff; SSE previews/tool arguments/usage; large streamed screenplay; interrupted-stream safety; credential fragments; restart persistence")
         finally:
             stop()
             model.shutdown()
