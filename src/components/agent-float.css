@@ -7,44 +7,26 @@
 }
 .agent-float-button:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: 5px; }
 .agent-float-button.is-dragging { cursor: grabbing; }
-/* A soft cyan light suspended inside a fine glass boundary. */
-.agent-float-aura {
-  position: absolute; inset: 6px; z-index: -1; border-radius: 50%;
-  background: radial-gradient(circle, #9fdcdb66, #7ec4ce25 48%, transparent 72%);
-  filter: blur(9px); opacity: .7; animation: agent-aura-breathe 5s ease-in-out infinite;
-  pointer-events: none; transition: opacity .4s;
-}
-.agent-float-orb {
-  position: relative; display: block; box-sizing: border-box; width: 100%; height: 100%;
-  border-radius: 50%; border: 1px solid #b4e4e54d;
-  background: radial-gradient(circle at 47% 44%, #8dcfd41a, #4b818b0a 66%, #a9dfe512);
-  box-shadow: inset 0 0 9px #a5e0e51a, 0 0 1px #b9edf233, 0 0 15px #83c6cf1a;
-  transition: transform .4s ease, border-color .4s ease;
-}
-.agent-float-core, .agent-float-core-light {
-  position: absolute; pointer-events: none;
-  border-radius: 44% 56% 48% 52% / 43% 41% 59% 57%;
-}
-.agent-float-core {
-  inset: 9px 8px 8px 9px;
-  background: radial-gradient(ellipse at 37% 31%, #d1f0e9 0%, #b0e4de 28%, #8acdd0 58%, #6aa9bb99 82%, transparent 100%);
-  filter: blur(3px); box-shadow: 0 0 9px #a2dfde66;
-  animation: agent-light-morph 6s ease-in-out infinite;
-}
-.agent-float-core-light {
-  inset: 12px 14px 15px 11px;
-  background: radial-gradient(ellipse at 40% 40%, #e0f7edb3, #b9eee573 45%, transparent 75%);
-  filter: blur(4px); animation: agent-light-drift 7s ease-in-out infinite;
-}
-.agent-float-button:hover .agent-float-orb { transform: scale(1.07); border-color: #c2eff080; }
-.agent-float-button:hover .agent-float-aura { opacity: 1; }
-.agent-float-button.is-dragging .agent-float-orb { transform: scale(.94); }
-.agent-float-button[data-state="listening"] .agent-float-core { animation-duration: 1.6s; }
-.agent-float-button[data-state="listening"] .agent-float-core-light { animation-duration: 2s; }
-.agent-float-button[data-state="listening"] .agent-float-aura { animation-duration: 1.6s; opacity: 1; }
-.agent-float-button[data-state="listening"] .agent-float-orb { border-color: #c2eff099; }
-.agent-float-button[data-state="working"] .agent-float-core { animation: agent-light-morph 2.8s ease-in-out infinite, agent-light-turn 8s linear infinite; }
-.agent-float-button[data-state="error"] .agent-float-orb { border-color: #c3a6a280; }
+/* Transparent organic membrane, with a CSS fallback for unavailable WebGL. */
+.agent-living-orb { position: absolute; inset: -8px; pointer-events: none; transition: transform .3s; }
+.agent-living-canvas { display: block; width: 100%; height: 100%; opacity: 0; transition: opacity .3s; }
+.agent-living-orb[data-renderer="webgl"] .agent-living-canvas { opacity: 1; }
+.agent-living-orb[data-renderer="webgl"] .agent-living-fallback { display: none; }
+.agent-living-fallback { position: absolute; inset: 16px; overflow: hidden; border-radius: 44% 56% 48% 52% / 43% 41% 59% 57%; border: 1px solid #b8dfff88; background: #152647; box-shadow: 0 0 16px #849aff40, inset 0 0 10px #9be5ff55; animation: agent-light-morph 5s ease-in-out infinite; }
+.agent-living-fallback i { position: absolute; inset: 7px -10px; border-radius: 50%; background: linear-gradient(30deg, transparent 20%, #68dbedbb 44%, #9270edcc 60%, transparent 80%); filter: blur(3px); animation: agent-light-turn 7s linear infinite; }
+.agent-living-fallback i:nth-child(2) { rotate: 70deg; animation-direction: reverse; }
+.agent-living-fallback i:nth-child(3) { inset: 14px 8px; background: #aecfff; filter: blur(7px); }
+.agent-living-motes { position: absolute; inset: 12px; animation: agent-light-turn 24s linear infinite; }
+.agent-living-motes i { position: absolute; width: 1.5px; height: 1.5px; border-radius: 50%; background: #b9d8ff; box-shadow: 0 0 4px #9baaff; opacity: .6; }
+.agent-living-motes i:nth-child(1) { left: 4%; top: 38%; }
+.agent-living-motes i:nth-child(2) { right: 12%; top: 5%; }
+.agent-living-motes i:nth-child(3) { right: 0; bottom: 25%; }
+.agent-living-motes i:nth-child(4) { left: 25%; bottom: 3%; }
+.agent-float-button:hover .agent-living-orb { transform: scale(1.07); }
+.agent-float-button.is-dragging .agent-living-orb { transform: scale(.94); }
+.agent-living-orb[data-mode="listen"] .agent-living-fallback { animation-duration: 1.6s; }
+.agent-living-orb[data-mode="think"] .agent-living-fallback i { animation-duration: 3s; }
+.agent-living-orb[data-mode="error"] { filter: hue-rotate(115deg) saturate(.65); }
 .agent-float-busy-dot { position: absolute; right: 8px; bottom: 9px; width: 5px; height: 5px; background: #a6d5cf; border: 2px solid var(--ui-surface); border-radius: 50%; }
 .agent-float-tooltip { position: absolute; right: 0; bottom: calc(100% + 8px); width: max-content; max-width: 220px; padding: 7px 11px; background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: 9px; color: var(--ui-secondary-text); font-size: 11px; font-weight: 500; box-shadow: var(--ui-shadow-soft); opacity: 0; transform: translateY(3px); transition: opacity .2s, transform .2s; pointer-events: none; }
 .agent-float-button:hover .agent-float-tooltip, .agent-float-button:focus-visible .agent-float-tooltip { opacity: 1; transform: translateY(0); }

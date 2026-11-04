@@ -6,6 +6,7 @@ import { post, type Project } from "../core";
 import { AGENT_SESSION_CHANGED, notifyAgentSessionChanged, type AgentSessionChange } from "../agent-session-events";
 import { startSpeechRecognition } from "../speech-recognition";
 import { startSpeechRecognition as startCloudSpeechRecognition } from "../asr-recognition";
+import { AgentLivingOrb } from "./AgentLivingOrb";
 import "./agent-float.css";
 
 type Position = { x: number; y: number };
@@ -272,9 +273,6 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings }:
     <button ref={button} type="button" className={`agent-float-button${dragging ? " is-dragging" : ""}`} data-testid="agent-float-button" data-state={state} style={{ left: position.x, top: position.y }} aria-label={listening ? "结束听写并执行" : running || sending ? "查看 Agent 执行进度" : "语音 Agent，点击说话，拖动移动"} aria-expanded={open} aria-haspopup="dialog" title="点击说话 · 拖动移动 · 方向键调整位置" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerEnd} onPointerCancel={pointerEnd} onLostPointerCapture={() => { drag.current = null; setDragging(false); }} onClick={event => {
       if (suppressClick.current && event.detail !== 0) { suppressClick.current = false; return; }
       if (listening) finishListening(); else if (running || sending || restoring || restoreFailed || !pid) setOpen(true); else void startListening();
-    }} ><span className="agent-float-aura" aria-hidden="true" /><span className="agent-float-orb" aria-hidden="true">
-      <span className="agent-float-core" />
-      <span className="agent-float-core-light" />
-    </span>{(running || sending) && <span className="agent-float-busy-dot" aria-hidden="true" />}<span className="agent-float-tooltip">{listening ? "点击结束" : running || sending ? "执行中" : "说一声，交给 Agent"}</span></button>
+    }} ><AgentLivingOrb mode={listening ? "listen" : sending || running ? session?.execution?.phase === "streaming" ? "speak" : "think" : state === "error" ? "error" : "idle"} />{(running || sending) && <span className="agent-float-busy-dot" aria-hidden="true" />}<span className="agent-float-tooltip">{listening ? "点击结束" : running || sending ? "执行中" : "说一声，交给 Agent"}</span></button>
   </div>, document.body);
 }
