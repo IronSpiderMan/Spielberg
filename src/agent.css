@@ -27,14 +27,7 @@
   color: var(--agent-text);
 }
 .agent-layout { display: grid; grid-template-columns: 238px minmax(0, 1fr); flex: 1; min-height: 0; position: relative; overflow: hidden; }
-.agent-history { display: flex; flex-direction: column; gap: 22px; min-width: 0; min-height: 0; padding: 28px 16px 18px; background: var(--agent-sidebar); border-right: 1px solid var(--agent-border); }
-.agent-project-picker { display: flex; align-items: center; gap: 11px; min-width: 0; padding: 0 4px; background: transparent; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.agent-project-icon { display: grid; place-items: center; width: 38px; height: 38px; flex-shrink: 0; background: var(--agent-surface); border: 1px solid var(--agent-border); border-radius: 11px; color: var(--agent-accent); }
-.agent-project-copy { display: grid; flex: 1; min-width: 0; gap: 5px; }
-.agent-project-copy strong { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.agent-project-copy small { display: flex; align-items: center; gap: 6px; color: var(--agent-muted); font-size: 11px; }
-.agent-project-picker > svg { color: var(--agent-muted); flex-shrink: 0; }
-.agent-project-picker:hover .agent-project-icon { border-color: var(--agent-accent); }
+.agent-history { display: flex; flex-direction: column; gap: 16px; min-width: 0; min-height: 0; padding: 24px 16px 18px; background: var(--agent-sidebar); border-right: 1px solid var(--agent-border); }
 .agent-status-dot { display: inline-block; width: 5px; height: 5px; flex-shrink: 0; border-radius: 50%; background: #61977d; }
 .agent-history > .arco-btn { flex-shrink: 0; height: 39px; border-radius: 9px; font-size: 12px; gap: 8px; }
 .agent-workspace .agent-history > .arco-btn:not(.arco-btn-disabled) { background: var(--agent-surface); border-color: var(--agent-border); color: var(--agent-text); box-shadow: 0 2px 3px #332c2203; }
@@ -42,7 +35,7 @@
 .agent-history-heading { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px 0; color: var(--agent-muted); font-size: 11px; }
 .agent-history-heading > span { display: flex; gap: 8px; align-items: center; }
 .agent-history-heading small { font-size: 10px; padding: 1px 5px; border-radius: 4px; background: var(--agent-border); color: var(--agent-muted); }
-.agent-session-list { flex: 1; min-height: 0; overflow-y: auto; margin-top: -10px; scrollbar-width: thin; }
+.agent-session-list { flex: 1; min-height: 0; overflow-y: auto; margin-top: -4px; scrollbar-width: thin; }
 .agent-history-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; color: var(--agent-muted); padding: 54px 10px; font-size: 11px; line-height: 1.8; }
 .agent-history-empty > svg { opacity: .45; margin-bottom: 4px; }
 .agent-history-empty b { font-size: 12px; font-weight: 500; }
@@ -100,10 +93,6 @@
 .agent-composer-wrap { flex-shrink: 0; padding: 16px max(28px, calc((100% - 780px) / 2)) 22px; }
 .agent-conversation.is-empty .agent-composer-wrap { width: 100%; max-width: 800px; margin: 0 auto; padding: 0; }
 .agent-composer { padding: 16px 18px 14px; border: 1px solid var(--agent-border); border-radius: 16px; background: var(--agent-surface); box-shadow: var(--agent-shadow); transition: border-color 180ms, box-shadow 180ms; }
-.agent-composer-context { display: flex; align-items: center; gap: 6px; max-width: 100%; margin-bottom: 13px; color: var(--agent-muted); font-size: 11px; }
-.agent-composer-context > svg { flex-shrink: 0; color: var(--agent-accent); }
-.agent-composer-context > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
-.agent-context-label { flex-shrink: 0; padding-left: 7px; border-left: 1px solid var(--agent-border); opacity: .8; }
 .agent-composer textarea { display: block; width: 100%; min-height: 64px; max-height: 180px; resize: none; padding: 0; border: 0; outline: none; color: var(--agent-text); background: transparent; font: inherit; font-size: 14px; line-height: 1.9; }
 .agent-composer textarea:focus, .agent-composer textarea:focus-visible { outline: none; box-shadow: none; }
 .agent-conversation.is-empty .agent-composer textarea { min-height: 88px; }

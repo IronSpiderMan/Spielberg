@@ -390,8 +390,6 @@ function App() {
               icon={(isMobile ? !mobileNavOpen : sidebarCollapsed) ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
               onClick={() => isMobile ? setMobileNavOpen(value => !value) : setSidebarCollapsed(value => !value)}
             />
-            <span className="crumb" title={active?.name}>{active?.name}</span>
-            <span className="crumb-sep">/</span>
             <b>
               {sceneImageFlow
                 ? "工作台 · 图片生成"

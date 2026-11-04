@@ -272,7 +272,6 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
     <div className="agent-layout">
       {mobileSessions && <button className="agent-history-backdrop" tabIndex={-1} aria-label="关闭会话列表" onClick={() => setMobileSessions(false)} />}
       <aside ref={history} id="agent-history"  className={`agent-history${mobileSessions ? " is-open" : ""}`} aria-label="Agent 会话"  role={mobileSessions ? "dialog" : undefined} aria-modal={mobileSessions || undefined} >
-        <button className="agent-project-picker" title={`切换项目：${data.project.name}`} onClick={() => onNavigate?.("projects")}><span className="agent-project-icon"><Folder size={19} /></span><span className="agent-project-copy"><strong>{data.project.name}</strong><small><i className="agent-status-dot" />本地项目</small></span><ChevronDown size={14} /></button>
         <Button long data-testid="agent-new-session" icon={<Plus size={16} />} loading={creating} disabled={loading || loadFailed || sending} onClick={() => void createSession()}>新建会话</Button>
         <div className="agent-history-heading"><span>项目会话 <small>{sessions.length}</small></span><Button size="mini" type="text" className="agent-mobile-history" aria-label="关闭会话列表" icon={<X size={16} />} onClick={() => setMobileSessions(false)} /></div>
         <div className="agent-session-list">{sessions.length === 0 && <div className="agent-history-empty"><MessageSquare size={28} /><b>暂无会话</b><p>开始创作后，会话将保存在这里</p></div>}{sessions.map(session => <div className={`agent-session${selected?.id === session.id ? " is-selected" : ""}`} key={session.id}>
@@ -319,7 +318,6 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
         </div>
         <div className="agent-composer-wrap">
           <div className="agent-composer">
-            <div className="agent-composer-context"><Folder size={12} /><span>{data.project.name}</span></div>
             {!!images.length && <div className="agent-image-previews">{images.map((image, i) => <div key={i}><img src={image.url} alt={`待发送图片 ${i + 1}（已加入素材）`} /><button type="button" aria-label={`移除图片 ${i + 1}`} disabled={sending} onClick={() => setImageDrafts(items => ({ ...items, [draftKey]: images.filter((_, index) => index !== i) }))}><X size={14} /></button></div>)}</div>}
             <textarea ref={composer}  data-testid="agent-composer" aria-label="向 Agent 发送消息"  value={draft} maxLength={16000} disabled={loading || sending || creating} placeholder="写下一个灵感，或粘贴图片告诉我你想完成什么…" onPaste={event => { if (readingImages) return; const files = Array.from(event.clipboardData.items).filter(item => item.type.startsWith("image/")).map(item => item.getAsFile()).filter((file): file is File => !!file); if (files.length) { event.preventDefault(); void pasteImages(files); } }} onChange={event => updateDraft(event.target.value)} onKeyDown={event => {
               if (event.defaultPrevented || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
