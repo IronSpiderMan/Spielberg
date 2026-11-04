@@ -1,0 +1,88 @@
+.agent-float { font-family: inherit; color: var(--ui-text); }
+.agent-float-button {
+  position: fixed; z-index: 990; width: 64px; height: 64px; padding: 7px; border: 0;
+  border-radius: 50%; background: transparent; cursor: grab; touch-action: none;
+  user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+  isolation: isolate; outline: none;
+}
+.agent-float-button:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: 5px; }
+.agent-float-button.is-dragging { cursor: grabbing; }
+.agent-float-aura {
+  position: absolute; inset: 7px; z-index: -1; border-radius: 50%; opacity: .55;
+  background: conic-gradient(from 40deg, #91cfff, #ae95ff, #ed9fd3, #f6b598, #8ce2cf, #91cfff);
+  filter: blur(13px); animation: agent-aura-breathe 5s ease-in-out infinite;
+}
+.agent-float-orb {
+  position: relative; display: block; width: 100%; height: 100%; overflow: hidden;
+  border-radius: 46% 54% 51% 49% / 49% 44% 56% 51%;
+  background: radial-gradient(ellipse at 35% 22%, #fcf4ff 0%, #bdb7ed 25%, #6a74b8 56%, #36416e 100%);
+  box-shadow: inset 0 0 0 1px #ffffff70, inset 2px 3px 9px #ffffff9c, inset -4px -6px 12px #36296860, 0 5px 15px #25213935;
+  animation: agent-orb-shape 7s ease-in-out infinite; transition: transform .25s ease, box-shadow .25s ease;
+}
+.agent-float-flow {
+  position: absolute; inset: -35%; border-radius: 43%; opacity: .95;
+  background: radial-gradient(ellipse at 28% 65%, #87f1e5 0%, #71cce8 16%, transparent 43%), radial-gradient(ellipse at 75% 64%, #e597e6 0%, #c29bf5 22%, transparent 48%), radial-gradient(ellipse at 52% 20%, #ffdabd 0%, #f9b8ce 14%, transparent 44%);
+  filter: blur(4px); animation: agent-orb-flow 9s linear infinite;
+}
+.agent-float-gloss { position: absolute; inset: 0; border-radius: inherit; background: radial-gradient(ellipse at 38% 17%, #ffffffd9, #ffffff30 23%, transparent 48%), radial-gradient(ellipse at 70% 85%, #b8ffff80, transparent 48%); }
+.agent-float-button:hover .agent-float-orb { transform: scale(1.08); }
+.agent-float-button.is-dragging .agent-float-orb { transform: scale(.94); }
+.agent-float-button[data-state="listening"] .agent-float-orb { animation-duration: 1.4s; box-shadow: inset 0 0 0 1px #ffffffa0, inset 2px 3px 9px #ffffff9c, 0 0 22px #8cbfe670; }
+.agent-float-button[data-state="listening"] .agent-float-flow { animation-duration: 2.3s; }
+.agent-float-button[data-state="listening"] .agent-float-aura { animation-duration: 1.3s; opacity: .9; inset: 0; }
+.agent-float-button[data-state="working"] .agent-float-flow { animation-duration: 3.2s; }
+.agent-float-busy-dot { position: absolute; right: 7px; bottom: 8px; width: 9px; height: 9px; background: #92e1c6; border: 2px solid var(--ui-surface); border-radius: 50%; }
+.agent-float-tooltip { position: absolute; right: 0; bottom: calc(100% + 8px); width: max-content; max-width: 220px; padding: 7px 11px; background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: 9px; color: var(--ui-secondary-text); font-size: 11px; font-weight: 500; box-shadow: var(--ui-shadow-soft); opacity: 0; transform: translateY(3px); transition: opacity .2s, transform .2s; pointer-events: none; }
+.agent-float-button:hover .agent-float-tooltip, .agent-float-button:focus-visible .agent-float-tooltip { opacity: 1; transform: translateY(0); }
+.agent-float-button[aria-expanded="true"] .agent-float-tooltip, .agent-float-button.is-dragging .agent-float-tooltip { display: none; }
+.agent-float-panel {
+  position: fixed; z-index: 990; box-sizing: border-box; max-height: calc(100dvh - 24px); overflow: auto;
+  padding: 18px; border: 1px solid color-mix(in srgb, var(--ui-border) 85%, transparent); border-radius: 22px;
+  background: color-mix(in srgb, var(--ui-surface) 96%, transparent); backdrop-filter: blur(28px);
+  box-shadow: 0 16px 64px #17162125, 0 2px 8px #1716210d; outline: none; animation: agent-panel-appear .18s ease-out;
+}
+.agent-float-panel header, .agent-float-heading, .agent-float-composer-actions, .agent-float-composer-actions > div, .agent-float-panel footer, .agent-float-status { display: flex; align-items: center; }
+.agent-float-panel header { justify-content: space-between; gap: 8px; }
+.agent-float-heading { gap: 9px; }
+.agent-float-heading strong { font-size: 14px; font-weight: 650; letter-spacing: -.2px; }
+.agent-float-heading > span:last-child { margin-left: 3px; font-size: 11px; color: var(--ui-muted); }
+.agent-float-indicator { width: 7px; height: 7px; background: linear-gradient(140deg, #9ad8ce, #ab9ce3); border-radius: 50%; }
+.agent-float-project { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ui-muted); font-size: 11px; margin: 4px 0 22px 16px; }
+.agent-float-status { min-height: 25px; gap: 9px; font-size: 17px; font-weight: 550; letter-spacing: -.4px; margin: 0 0 16px; }
+.agent-float-status > svg { color: var(--ui-success); flex-shrink: 0; }
+.agent-float-wave { display: flex; align-items: center; height: 22px; gap: 3px; }
+.agent-float-wave i { width: 3px; height: 12px; background: linear-gradient(#b8a6e3, #75bcb7); border-radius: 3px; animation: agent-wave .75s ease-in-out infinite alternate; }
+.agent-float-wave i:nth-child(2) { animation-delay: -.4s; height: 18px; }
+.agent-float-wave i:nth-child(3) { animation-delay: -.15s; height: 22px; }
+.agent-float-wave i:nth-child(4) { animation-delay: -.5s; height: 16px; }
+.agent-float-wave i:nth-child(5) { animation-delay: -.25s; }
+.agent-float-request { font-size: 12px; color: var(--ui-secondary-text); background: var(--ui-subtle); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; max-height: 72px; overflow: auto; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.agent-float-reply { margin-bottom: 14px; max-height: 175px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.8; }
+.agent-float-error { color: var(--ui-error); font-size: 12px; line-height: 1.65; margin-bottom: 12px; overflow-wrap: anywhere; }
+.agent-float-error button { margin-left: 8px; }
+.agent-float-panel button { font-family: inherit; cursor: pointer; }
+.agent-float-panel button:disabled { opacity: .4; cursor: not-allowed; }
+.agent-float-panel button:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: 2px; }
+.agent-float-icon { display: inline-flex; align-items: center; justify-content: center; padding: 0; width: 28px; height: 28px; background: transparent; color: var(--ui-muted); border: 0; border-radius: 8px; flex-shrink: 0; }
+.agent-float-icon:hover:not(:disabled) { background: var(--ui-subtle); color: var(--ui-text); }
+.agent-float-panel form { border: 1px solid var(--ui-border); border-radius: 13px; padding: 10px; background: var(--ui-bg); transition: border-color .2s; }
+.agent-float-panel form:focus-within { border-color: color-mix(in srgb, var(--ui-primary) 55%, var(--ui-border)); }
+.agent-float-panel textarea { display: block; box-sizing: border-box; width: 100%; min-height: 48px; max-height: 120px; resize: none; border: 0; padding: 2px 3px; margin: 0 0 6px; font: inherit; font-size: 13px; line-height: 1.65; color: var(--ui-text); background: transparent; outline: none; }
+.agent-float-panel textarea::placeholder { color: var(--ui-muted); }
+.agent-float-panel textarea:disabled { opacity: .65; }
+.agent-float-composer-actions { justify-content: space-between; gap: 6px; }
+.agent-float-composer-actions > span { font-size: 10px; color: var(--ui-muted); }
+.agent-float-composer-actions > div { gap: 6px; }
+.agent-float-submit { width: 29px; height: 29px; display: inline-flex; align-items: center; justify-content: center; background: var(--ui-text); color: var(--ui-surface); border: 0; border-radius: 9px; padding: 0; }
+.agent-float-panel footer { margin-top: 12px; justify-content: space-between; gap: 8px; }
+.agent-float-panel footer button, .agent-float-settings, .agent-float-error button { display: inline-flex; align-items: center; gap: 4px; padding: 3px 0; color: var(--ui-muted); font-size: 11px; border: 0; background: transparent; }
+.agent-float-panel footer button:hover:not(:disabled), .agent-float-settings:hover { color: var(--ui-primary); }
+.agent-float-settings { margin: -5px 0 10px; color: var(--ui-primary); }
+/* Keep the existing image shortcut clear of the assistant's default position. */
+.floating-image-generator.arco-btn { right: 108px; }
+@keyframes agent-orb-shape { 0%, 100% { border-radius: 46% 54% 51% 49% / 49% 44% 56% 51%; } 50% { border-radius: 55% 45% 47% 53% / 44% 54% 46% 56%; } }
+@keyframes agent-orb-flow { to { transform: rotate(360deg); } }
+@keyframes agent-aura-breathe { 0%, 100% { transform: scale(.91); } 50% { transform: scale(1.12); } }
+@keyframes agent-wave { to { transform: scaleY(.35); } }
+@keyframes agent-panel-appear { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .agent-float *, .agent-float *::before, .agent-float *::after { animation: none !important; transition: none !important; } }

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>点击 Agent 悬浮球时使用麦克风，将你的语音指令交给 Agent 执行。</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>使用系统语音识别将你的语音转为 Agent 指令，部分语言可能由 Apple 在线处理。</string>
+</dict>
+</plist>

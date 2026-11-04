@@ -1,10 +1,16 @@
 use tauri::Manager;
+mod speech;
 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         // Route target="_blank" links to the system browser from the WebView.
         .plugin(tauri_plugin_opener::init())
+        .invoke_handler(tauri::generate_handler![
+            speech::speech_recognition_available,
+            speech::start_speech_recognition,
+            speech::stop_speech_recognition,
+        ])
         .setup(|app| {
             let root=spielberg_backend::default_data_dir();
             let backend=spielberg_backend::Backend::start(root,"0.0.0.0:8080")?;
@@ -20,6 +26,9 @@ pub fn run() {
                 .build()?;
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("启动 Spielberg 失败");
+        .build(tauri::generate_context!())
+        .expect("启动 Spielberg 失败")
+        .run(|_, event| {
+            if matches!(event, tauri::RunEvent::Exit) { speech::shutdown(); }
+        });
 }

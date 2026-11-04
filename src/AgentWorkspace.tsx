@@ -13,6 +13,7 @@ import { VideoPreviewModal } from "./components/VideoPreviewModal";
 import { AgentMediaPreview } from "./components/AgentMediaPreview";
 import { toolMedia, conversationImages, attachmentImage, mediaFromUrl } from "./agentImages";
 import { backendUrl } from "./transport";
+import { AGENT_SESSION_CHANGED, notifyAgentSessionChanged, type AgentSessionChange } from "./agent-session-events";
 import { GenerationSelector } from "./components/generation/GenerationSelector";
 import { channelsFor, selectionPayload, useGenerationSelection } from "./generation-channels";
 import { focusKeyboardTarget, isKeyboardEventBlocked, scrollWithKeyboard } from "./keyboard";
@@ -128,11 +129,29 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   const call = useCallback(<T,>(action: string, payload: object = {}) => post<T>(`/agent/${action}`, { project_id: pid, ...payload }), [pid]);
   const accept = useCallback((session: Session) => {
     if (!mounted.current) return;
+    const previous = selectedRef.current;
     if (selectedRef.current?.id === session.id && hasActiveRun(selectedRef.current) && !hasActiveRun(session)) void reload().catch(() => {});
     selectedRef.current = session; setSelected(session);
     setSessions(items => updateSession(items, session));
     localStorage.setItem(`spielberg-agent-session-${pid}`, session.id);
+    if (previous?.id !== session.id || previous?.status !== session.status || hasActiveRun(previous) !== hasActiveRun(session)) notifyAgentSessionChanged(pid, session.id, "workspace");
   }, [pid, reload]);
+  useEffect(() => {
+    let disposed = false;
+    const changed = (event: Event) => {
+      const detail = (event as CustomEvent<AgentSessionChange>).detail;
+      if (detail.source === "workspace" || detail.projectId !== pid) return;
+      const version = selectionVersion.current;
+      void call<{ items: Session[] }>("sessions").then(list => { if (!disposed) setSessions(list.items); }).catch(() => {});
+      if (selectedRef.current?.id === detail.sessionId) {
+        void call<Session>("session", { session_id: detail.sessionId }).then(next => {
+          if (!disposed && version === selectionVersion.current && selectedRef.current?.id === next.id) accept(next);
+        }).catch(() => {});
+      }
+    };
+    window.addEventListener(AGENT_SESSION_CHANGED, changed);
+    return () => { disposed = true; window.removeEventListener(AGENT_SESSION_CHANGED, changed); };
+  }, [pid, call, accept]);
   const choose = async (summary: Session, keepHistoryOpen = false) => {
     if (selectedRef.current?.id === summary.id && !error) return;
     const version = ++selectionVersion.current;
@@ -229,7 +248,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
     finally { if (mounted.current) setStopping(false); }
   };
   const remove = (session: Session) => confirmAction({ intent: "danger", title: "删除此会话？", content: "将删除此会话的对话和执行记录，已完成的项目操作会保留。", okText: "删除会话", onOk: async () => {
-    try { await call("delete", { session_id: session.id }); if (!mounted.current) return; setSessions(items => items.filter(item => item.id !== session.id)); if (selectedRef.current?.id === session.id) { selectionVersion.current++; selectedRef.current = null; setSelected(null); localStorage.removeItem(`spielberg-agent-session-${pid}`); } }
+    try { await call("delete", { session_id: session.id }); if (!mounted.current) return; setSessions(items => items.filter(item => item.id !== session.id)); if (selectedRef.current?.id === session.id) { selectionVersion.current++; selectedRef.current = null; setSelected(null); localStorage.removeItem(`spielberg-agent-session-${pid}`); } notifyAgentSessionChanged(pid, session.id, "workspace", true); }
     catch (e) { Message.error(String(e)); throw e; }
   } });
   const openSettings = () => { setForm({ ...config }); setSearchKey(""); setSettingsOpen(true); };

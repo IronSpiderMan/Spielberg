@@ -65,6 +65,7 @@ import "./keyboard.css";
 import { focusKeyboardTarget, hasOpenKeyboardLayer, isKeyboardEventBlocked, isKeyboardInput, isKeyboardTargetVisible } from "./keyboard";
 import { PageHeading, PageLoading } from "./ui";
 import { FloatingImageGenerator } from "./components/FloatingImageGenerator";
+import { AgentFloatButton } from "./components/AgentFloatButton";
 const CreationDesk=lazy(()=>import("./creation").then(m=>({default:m.CreationDesk})));
 const InfiniteCanvas=lazy(()=>import("./InfiniteCanvas"));
 const MediaEditor=lazy(()=>import("./MediaEditor"));
@@ -193,6 +194,7 @@ function App() {
   const [locate,setLocate]=useState<AssetUsage|null>(null);
   const activeRef = useRef<string | null>(null);
   const [page, setPage] = useState("studio");
+  const [agentViewVersion, setAgentViewVersion] = useState(0);
   const [studioTab, setStudioTab] = useState("images");
   const [imageSource, setImageSource] = useState<Media | undefined>();
   const [sceneEditing, setSceneEditing] = useState<{
@@ -334,6 +336,7 @@ function App() {
     return (
       <>
         <Welcome onCreate={() => setCreating(true)} onOpen={openProject} onRestored={openRestored} />
+        <AgentFloatButton project={null} reload={refresh} onOpenSession={() => {}} />
         <Modal
           title="创建项目"
           visible={creating}
@@ -571,7 +574,7 @@ function App() {
                   }
                 />
               )}{" "}
-              {page === "agent" && <AgentWorkspace key={data.project.id} data={data} reload={refresh} onNavigate={navigate} />}
+              {page === "agent" && <AgentWorkspace key={`${data.project.id}:${agentViewVersion}`} data={data} reload={refresh} onNavigate={navigate} />}
               {page === "episodes" && (
                 <Episodes
                   initialEpisodeId={episodeSceneReturnId ?? (locate?.kind==="episode"?locate.target_id:undefined)}
@@ -611,6 +614,10 @@ function App() {
         {(
           <FloatingImageGenerator showButton={!!((sceneEditing && sceneEditing.scene.creation_mode !== "canvas") || page === "roles")} key={`floating-generator:${data.project.id}`} data={data} reload={refresh} />
         )}
+        <AgentFloatButton key={`agent-float:${data.project.id}`} project={data.project} reload={refresh} onSettings={() => navigate("settings")} onOpenSession={sessionId => navigate("agent", () => {
+          localStorage.setItem(`spielberg-agent-session-${data.project.id}`, sessionId);
+          setAgentViewVersion(value => value + 1);
+        })} />
       </Layout>
       <Modal className="keyboard-help-modal" title="键盘快捷键" visible={keyboardHelpOpen} onCancel={() => setKeyboardHelpOpen(false)} footer={null} autoFocus focusLock afterClose={() => { if (!focusKeyboardTarget(keyboardHelpReturn.current)) focusKeyboardTarget(document.querySelector<HTMLElement>(".sidebar-toggle")); }} style={{ width: 480, maxWidth: "calc(100vw - 32px)" }}>
         <div className="keyboard-shortcuts">
