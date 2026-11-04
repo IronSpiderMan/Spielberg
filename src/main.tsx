@@ -296,7 +296,7 @@ function App() {
     <Layout className={`app${mobileNavOpen ? " mobile-nav-open" : ""}${page === "agent" && !sceneEditing ? " agent-page" : ""}${darkMode ? " dark-theme" : ""}${sceneEditing?.scene.creation_mode === "canvas" ? " canvas-mode" : ""}`}>
       <a className="skip-to-content" href="#workspace-content">跳转到工作区</a>
       {mobileNavOpen && <button className="mobile-nav-backdrop" aria-label="关闭导航" onClick={() => setMobileNavOpen(false)} />}
-      <Layout.Sider className={`side${sidebarCollapsed || (page === "agent" && !sceneEditing) ?  " side-collapsed" : ""}`} width={216}>
+      <Layout.Sider className={`side${sidebarCollapsed ? " side-collapsed" : ""}`} width={216}>
         <div className="logo">
           <img className="logo-mark" src={logoSrc} alt="Spielberg" />
           <div>
