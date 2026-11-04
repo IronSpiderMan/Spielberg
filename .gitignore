@@ -65,3 +65,4 @@ backend/target/
 target-linux-arm64/
 
 !/scripts/qa/confirmation-dialogs.cjs
+!/scripts/qa/keyboard-navigation.cjs

@@ -15,6 +15,8 @@ import { toolMedia, conversationImages, attachmentImage, mediaFromUrl } from "./
 import { backendUrl } from "./transport";
 import { GenerationSelector } from "./components/generation/GenerationSelector";
 import { channelsFor, selectionPayload, useGenerationSelection } from "./generation-channels";
+import { focusKeyboardTarget, isKeyboardEventBlocked, scrollWithKeyboard } from "./keyboard";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
 type AgentMessage = { role: "user" | "assistant" | "tool"; content: string; images?: string[]; image_media_ids?: number[]; tool_name?: string; tool_call_id?: string; arguments?: unknown; status?: string; tool_calls?: unknown[] };
 type ConversationContext = { total_turns: number; recent_turns: number; summarized_turns: number; total_images: number; retained_images: number; active_compacted_messages?: number; estimated_text_bytes?: number };
@@ -131,10 +133,10 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
     setSessions(items => updateSession(items, session));
     localStorage.setItem(`spielberg-agent-session-${pid}`, session.id);
   }, [pid, reload]);
-  const choose = async (summary: Session) => {
+  const choose = async (summary: Session, keepHistoryOpen = false) => {
     if (selectedRef.current?.id === summary.id && !error) return;
     const version = ++selectionVersion.current;
-    selectedRef.current = summary; setSelected(summary); setLoading(true); setLoadFailed(false); setError(""); setMobileSessions(false); followBottom.current = true;
+    selectedRef.current = summary; setSelected(summary); setLoading(true); setLoadFailed(false); setError(""); if (!keepHistoryOpen) setMobileSessions(false); followBottom.current = true;
     try { const session = await call<Session>("session", { session_id: summary.id }); if (mounted.current && version === selectionVersion.current) accept(session); }
     catch (e) { if (mounted.current && version === selectionVersion.current) { setError(String(e)); setLoadFailed(true); } }
     finally { if (mounted.current && version === selectionVersion.current) setLoading(false); }
@@ -239,26 +241,61 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   };
 
   const empty = !loading && !selected?.messages.length;
+  const focusSession = () => focusKeyboardTarget(history.current?.querySelector<HTMLElement>('.agent-session-select[aria-current="page"]:not(:disabled)') || history.current?.querySelector<HTMLElement>('.agent-session-select:not(:disabled)') || history.current?.querySelector<HTMLElement>('[data-testid="agent-new-session"]:not(:disabled)') || null);
+  const sessionKeys = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (isKeyboardEventBlocked(event.nativeEvent)) return;
+    if (event.key === "ArrowLeft") {
+      if (focusKeyboardTarget(document.querySelector<HTMLElement>('[data-workspace-nav][aria-current="page"]'))) event.preventDefault();
+      return;
+    }
+    if (event.key === "ArrowRight") {
+      if (focusKeyboardTarget(empty ? composer.current : log.current)) event.preventDefault();
+      return;
+    }
+    if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key) || creating) return;
+    const buttons = Array.from(history.current?.querySelectorAll<HTMLButtonElement>(".agent-session-select:not(:disabled)") || []);
+    if (!buttons.length) return;
+    const row = (event.target as HTMLElement).closest(".agent-session");
+    const current = row ? buttons.findIndex(button => row.contains(button)) : buttons.findIndex(button => button.getAttribute("aria-current") === "page");
+    const index = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : Math.max(0, Math.min(buttons.length - 1, current + (event.key === "ArrowDown" ? 1 : -1)));
+    const button = buttons[index];
+    const session = sessions.find(item => item.id === button.dataset.sessionId);
+    event.preventDefault();
+    focusKeyboardTarget(button);
+    if (session) void choose(session, true);
+  };
+  const conversationKeys = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (isKeyboardEventBlocked(event.nativeEvent)) return;
+    if (event.key === "ArrowLeft") {
+      if (focusSession() || focusKeyboardTarget(historyTrigger.current)) event.preventDefault();
+    } else if (event.key === "ArrowRight") {
+      if (focusKeyboardTarget(composer.current)) event.preventDefault();
+    } else {
+      scrollWithKeyboard(event, empty ? log.current?.closest<HTMLElement>(".agent-stage") || null : log.current);
+    }
+  };
 
-  return <section className="agent-workspace" data-testid="agent-workspace">
+  return <section className="agent-workspace" data-testid="agent-workspace" onKeyDown={event => {
+    if (event.key === "/" && !isKeyboardEventBlocked(event.nativeEvent) && focusKeyboardTarget(composer.current)) event.preventDefault();
+  }}>
     <div className="agent-layout">
       {mobileSessions && <button className="agent-history-backdrop" tabIndex={-1} aria-label="关闭会话列表" onClick={() => setMobileSessions(false)} />}
-      <aside ref={history} id="agent-history" className={`agent-history${mobileSessions ? " is-open" : ""}`} aria-label="Agent 会话" role={mobileSessions ? "dialog" : undefined} aria-modal={mobileSessions || undefined}>
+      <aside ref={history} id="agent-history" data-keyboard-region="sessions" className={`agent-history${mobileSessions ? " is-open" : ""}`} aria-label="Agent 会话" aria-describedby="agent-session-keyboard-hint" role={mobileSessions ? "dialog" : undefined} aria-modal={mobileSessions || undefined} onKeyDown={sessionKeys}>
         <button className="agent-project-picker" title={`切换项目：${data.project.name}`} onClick={() => onNavigate?.("projects")}><span className="agent-project-icon"><Folder size={19} /></span><span className="agent-project-copy"><strong>{data.project.name}</strong><small><i className="agent-status-dot" />本地项目</small></span><ChevronDown size={14} /></button>
         <Button long data-testid="agent-new-session" icon={<Plus size={16} />} loading={creating} disabled={loading || loadFailed || sending} onClick={() => void createSession()}>新建会话</Button>
         <div className="agent-history-heading"><span>项目会话 <small>{sessions.length}</small></span><Button size="mini" type="text" className="agent-mobile-history" aria-label="关闭会话列表" icon={<X size={16} />} onClick={() => setMobileSessions(false)} /></div>
         <div className="agent-session-list">{sessions.length === 0 && <div className="agent-history-empty"><MessageSquare size={28} /><b>暂无会话</b><p>开始创作后，会话将保存在这里</p></div>}{sessions.map(session => <div className={`agent-session${selected?.id === session.id ? " is-selected" : ""}`} key={session.id}>
-          <button data-testid={`agent-session-${session.id}`} className="agent-session-select" title={session.title} aria-current={selected?.id === session.id ? "page" : undefined} onClick={() => void choose(session)} disabled={creating}><MessageSquare size={15} /><span><strong>{session.title}</strong><small data-status={hasActiveRun(session) ? "running" : session.status}>{sessionStatus(session)}</small></span></button>
+          <button data-testid={`agent-session-${session.id}`} data-session-id={session.id} className="agent-session-select" title={session.title} aria-current={selected?.id === session.id ? "page" : undefined} onClick={() => void choose(session)} disabled={creating}><MessageSquare size={15} /><span><strong>{session.title}</strong><small data-status={hasActiveRun(session) ? "running" : session.status}>{sessionStatus(session)}</small></span></button>
           <button type="button" className="agent-delete" aria-label={`删除会话 ${session.title}`} disabled={hasActiveRun(session) || sending} onClick={() => remove(session)}><Trash2 size={14} /></button>
         </div>)}</div>
-        <div className="agent-history-footer"><Clapperboard size={15} /><span>每个好故事，都始于一次对话</span></div>
+        <div className="agent-history-footer"><span><Clapperboard size={15} />每个好故事，都始于一次对话</span><small id="agent-session-keyboard-hint"><kbd>↑ ↓</kbd> 切换会话 <span>·</span> <kbd>← →</kbd> 切换区域</small></div>
       </aside>
       <div className={`agent-conversation${empty ? " is-empty" : ""}`}>
         <div className="agent-conversation-bar"><div><Button ref={historyTrigger} className="agent-mobile-history" aria-label="打开会话列表" aria-controls="agent-history" aria-expanded={mobileSessions} icon={<MessageSquare size={16} />} onClick={() => setMobileSessions(value => !value)} /><span className="agent-bar-label">创作助手</span><span className="agent-bar-separator">/</span><b>{selected?.title || "新对话"}</b></div><div className="agent-conversation-actions">{running && <span><i className="agent-status-dot" />{cancelling ? "正在停止" : "正在执行"}</span>}<Button type="text" data-testid="agent-settings" aria-label="Agent 设置" icon={<Settings2 size={15} />} onClick={openSettings}>Agent 设置</Button></div></div>
         {!configured && !loading && !loadFailed && <div className="agent-config-notice">请在统一渠道配置中添加支持工具调用的模型，并在输入框右下角选择渠道与模型。{onNavigate && <button onClick={() => onNavigate("settings")}>配置统一渠道</button>}</div>}
         <div className="agent-stage">
         {!loading && selected?.context && (!!selected.context.summarized_turns || !!selected.context.active_compacted_messages) && <div className="agent-memory-notice" data-testid="agent-memory-notice"><MessageSquare size={14} aria-hidden="true" /><span>{!!selected.context.summarized_turns && <>保留近期 {selected.context.recent_turns} 轮对话，较早 {selected.context.summarized_turns} 轮已整理为摘录。</>}{!!selected.context.active_compacted_messages && <>本轮较早的 {selected.context.active_compacted_messages} 条执行记录已压缩。</>}助手可按需检索完整记录。</span></div>}
-        <div className="agent-messages" ref={log} role="log" aria-label="Agent 对话记录" aria-busy={running || loading} onScroll={() => { const element = log.current; if (element) followBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100; }}>
+        <div className="agent-messages" ref={log} data-keyboard-region="conversation" tabIndex={0} role="log" aria-label="Agent 对话记录" aria-description="上下键滚动，左键返回会话，右键或斜杠键开始输入" aria-busy={running || loading} onKeyDown={conversationKeys} onScroll={() => { const element = log.current; if (element) followBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100; }}>
           {loading ? <div className="agent-loading"><Spin /><span>正在读取会话</span></div> : !selected?.messages.length ? <div className="agent-empty">
             <div className="agent-empty-mark" aria-hidden="true"><Clapperboard size={28} strokeWidth={1.5} /><Sparkles size={13} /></div>
             <span className="agent-empty-eyebrow">灵感就位，即刻开场</span>
@@ -294,7 +331,12 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
           <div className="agent-composer">
             <div className="agent-composer-context"><Folder size={12} /><span>{data.project.name}</span><span className="agent-context-label">项目上下文</span></div>
             {!!images.length && <div className="agent-image-previews">{images.map((image, i) => <div key={i}><img src={image.url} alt={`待发送图片 ${i + 1}（已加入素材）`} /><button type="button" aria-label={`移除图片 ${i + 1}`} disabled={sending} onClick={() => setImageDrafts(items => ({ ...items, [draftKey]: images.filter((_, index) => index !== i) }))}><X size={14} /></button></div>)}</div>}
-            <textarea ref={composer} data-testid="agent-composer" aria-label="向 Agent 发送消息" value={draft} maxLength={16000} disabled={loading || sending || creating} placeholder="写下一个灵感，或粘贴图片告诉我你想完成什么…" onPaste={event => { if (readingImages) return; const files = Array.from(event.clipboardData.items).filter(item => item.type.startsWith("image/")).map(item => item.getAsFile()).filter((file): file is File => !!file); if (files.length) { event.preventDefault(); void pasteImages(files); } }} onChange={event => updateDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} />
+            <textarea ref={composer} data-keyboard-region="composer" data-testid="agent-composer" aria-label="向 Agent 发送消息" aria-description="Enter 发送，Shift 加 Enter 换行，Esc 返回对话记录" value={draft} maxLength={16000} disabled={loading || sending || creating} placeholder="写下一个灵感，或粘贴图片告诉我你想完成什么…" onPaste={event => { if (readingImages) return; const files = Array.from(event.clipboardData.items).filter(item => item.type.startsWith("image/")).map(item => item.getAsFile()).filter((file): file is File => !!file); if (files.length) { event.preventDefault(); void pasteImages(files); } }} onChange={event => updateDraft(event.target.value)} onKeyDown={event => {
+              if (event.defaultPrevented || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+              if (event.key === "Escape" && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+                if (focusKeyboardTarget(log.current)) { event.preventDefault(); event.stopPropagation(); }
+              } else if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); }
+            }} />
             <div className="agent-composer-actions"><label className={`agent-web-toggle${online ? " is-online" : ""}`}><Globe size={14} /><span>联网搜索</span><Switch size="small" checked={online} onChange={setOnline} disabled={running || sending} aria-label="联网搜索" /></label><GenerationSelector compact settings={modelSettings} kind="llm" operation="chat" value={modelSelection.value} onChange={modelSelection.setValue} disabled={loading || loadFailed || running || sending || creating || saving} />{running ? <Button data-testid="agent-stop" aria-label={cancelling ? "正在停止" : "停止执行"} status="danger" icon={<Square size={14} />} loading={stopping || cancelling} disabled={cancelling} onClick={() => void stop()}>{cancelling ? "正在停止" : "停止"}</Button> : <Button type="primary" data-testid="agent-send" aria-label="发送消息" icon={<ArrowUp size={19} />} loading={sending} disabled={(!draft.trim() && !images.length) || readingImages || loading || loadFailed || creating} onClick={() => void send()} />}</div>
           </div>
           {empty && <>

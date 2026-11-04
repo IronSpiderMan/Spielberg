@@ -5,10 +5,11 @@ import { AssetAssignmentModal } from "./components/AssetAssignmentModal";
 import { Button,Drawer,Dropdown,Empty,Input,Menu,Message,Modal,Pagination,Select,Space,Spin,Tag } from "@arco-design/web-react";
 import { open,save } from "./platform";
 import { Eye,HardDrive,MoreHorizontal,Plus,RotateCcw,WandSparkles } from "lucide-react";
-import { useEffect,useRef,useState } from "react";
+import { useEffect,useId,useRef,useState } from "react";
 import AssetThumbnail from "./AssetThumbnail";
 import { Media,Snapshot,imageUrl,post } from "./core";
 import { EmptyState } from "./ui";
+import { focusKeyboardTarget, isKeyboardEventBlocked, scrollWithKeyboard } from "./keyboard";
 import "./creation.css";
 
 export type AssetUsage = {kind:"asset"|"episode"|"scene"|"canvas";target_id:number;title:string;episode_id?:number;episode_title?:string;purpose:string};
@@ -41,17 +42,23 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
   const [tracking,setTracking]=useState<Asset|null>(null),[uses,setUses]=useState<AssetUsage[]>([]),[usageError,setUsageError]=useState(""),[usageLoading,setUsageLoading]=useState(false);
   const [scan,setScan]=useState<DiskScan|null>(null),[scanning,setScanning]=useState(false);
   const request=useRef(0);
+  const paging=useRef(false);
   const libraryRef=useRef<HTMLElement>(null);
+  const keyboardHintId=useId();
   const pid=data.project.id;
   const refresh=async()=>{await reload();setVersion(v=>v+1);};
-  useEffect(()=>{const timer=setTimeout(()=>{setSearch(query);setPage(1);},250);return()=>clearTimeout(timer);},[query]);
   useEffect(()=>{
-    const id=++request.current;setLoading(true);setError("");
+    if(query===search)return;
+    const timer=setTimeout(()=>{setSearch(query);setPage(1);},250);
+    return()=>clearTimeout(timer);
+  },[query,search]);
+  useEffect(()=>{
+    const id=++request.current;paging.current=true;setLoading(true);setError("");
     void post<{items:Asset[];total:number}>("/media/list",{project_id:pid,kind,query:search,usage:filter,page,limit:24}).then(result=>{
       if(id!==request.current)return;
       if(page>1 && result.total <= (page-1)*24){setPage(Math.max(1,Math.ceil(result.total/24)));return;}
       setItems(result.items);setTotal(result.total);
-    }).catch(e=>{if(id===request.current)setError(String(e));}).finally(()=>{if(id===request.current)setLoading(false);});
+    }).catch(e=>{if(id===request.current)setError(String(e));}).finally(()=>{if(id===request.current){paging.current=false;setLoading(false);}});
     return()=>{request.current++;};
   },[pid,kind,search,filter,page,version,data.revisions?.media,data.revisions?.assets,data.revisions?.episodes]);
   useEffect(()=>{
@@ -80,8 +87,52 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
   const inspectDisk=async()=>{setScanning(true);try{setScan(await post<DiskScan>("/storage/scan",{project_id:pid}));}catch(e){Message.error(String(e));}finally{setScanning(false);}};
   const filtered=kind!=="all"||filter!=="all"||!!query.trim();
   const clearFilters=()=>{setQuery("");setSearch("");setKind("all");setFilter("all");setPage(1);};
-  const changePage=(next:number)=>{setPage(next);libraryRef.current?.querySelector(".arco-spin")?.scrollTo({top:0});};
-  return <section ref={libraryRef} className="asset-library" aria-busy={loading}>
+  const pageCount=Math.max(1,Math.ceil(total/24));
+  const scrollContainer=()=>{
+    const library=libraryRef.current;
+    const grid=library?.querySelector<HTMLElement>(":scope > .arco-spin, :scope > .library-status");
+    if(grid && grid.scrollHeight>grid.clientHeight)return grid;
+    const workspace=library?.closest<HTMLElement>(".content");
+    return workspace && workspace.scrollHeight>workspace.clientHeight ? workspace : grid || library;
+  };
+  const changePage=(next:number)=>{
+    const target=Math.min(pageCount,Math.max(1,next));
+    if(paging.current || loading || query!==search || target===page)return;
+    // Lock synchronously: a second key can arrive before React commits the
+    // loading state and replaces the document's keydown listener.
+    paging.current=true;
+    // The current card disappears after a page load. Keep keyboard focus in a
+    // stable region instead of dropping it onto document.body.
+    focusKeyboardTarget(libraryRef.current);
+    setPage(target);
+    scrollContainer()?.scrollTo({top:0});
+  };
+  useEffect(()=>{scrollContainer()?.scrollTo({top:0});},[page,kind,search,filter]);
+  useEffect(()=>{
+    const keydown=(event:KeyboardEvent)=>{
+      const library=libraryRef.current;
+      const target=event.target;
+      if(!library || !(target instanceof HTMLElement))return;
+      // Blank workspace clicks can leave the body focused. Never take arrow
+      // keys from navigation, another panel, or a portalled control.
+      if(target!==document.body && target.id!=="workspace-content" && !library.contains(target))return;
+      if(isKeyboardEventBlocked(event))return;
+      if(event.key==="/"){
+        const searchInput=library.querySelector<HTMLInputElement>('.asset-toolbar input[aria-label="搜索素材名称"]');
+        if(focusKeyboardTarget(searchInput)){event.preventDefault();searchInput?.select();}
+        return;
+      }
+      if(event.key==="ArrowLeft" || event.key==="ArrowRight"){
+        event.preventDefault();
+        if(!event.repeat && !error)changePage(page+(event.key==="ArrowRight"?1:-1));
+        return;
+      }
+      scrollWithKeyboard(event,scrollContainer());
+    };
+    document.addEventListener("keydown",keydown);
+    return()=>document.removeEventListener("keydown",keydown);
+  },[page,pageCount,loading,error,query,search]);
+  return <section ref={libraryRef} className="asset-library" aria-label="素材库" aria-busy={loading} tabIndex={0} data-keyboard-region="content" aria-describedby={keyboardHintId}>
     <div className="section-title page-actions"><div className="page-intro"><h1>素材库</h1><p>管理项目中的图片、视频与音频。</p></div><Space wrap>
       <Button loading={scanning} icon={<HardDrive size={16}/>} onClick={inspectDisk}>磁盘清理</Button>
       <Button type="primary" loading={busy} icon={<Plus size={16}/>} onClick={importFiles}>导入素材</Button>
@@ -89,7 +140,11 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
     <div className="asset-toolbar">
       <Select aria-label="素材类型" value={kind} onChange={value=>{setKind(value);setPage(1);}} options={[{label:"全部类型",value:"all"},{label:"图片",value:"image"},{label:"视频",value:"video"},{label:"音频",value:"audio"}]}/>
       <Select aria-label="使用状态" value={filter} onChange={value=>{setFilter(value);setPage(1);}} options={[{label:"全部素材",value:"all"},{label:"使用中",value:"used"},{label:"未使用",value:"unused"},{label:"回收站",value:"trash"}]}/>
-      <Input.Search aria-label="搜索素材名称" value={query} onChange={setQuery} placeholder="搜索素材名称" allowClear/>
+      <Input.Search aria-label="搜索素材名称" value={query} onChange={setQuery} placeholder="搜索素材名称" allowClear onKeyDown={event=>{
+        if(event.key==="Escape" && !event.defaultPrevented && !event.nativeEvent.isComposing && event.nativeEvent.keyCode!==229 && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey){
+          event.preventDefault();event.stopPropagation();focusKeyboardTarget(libraryRef.current);
+        }
+      }}/>
       {filtered&&<Button className="asset-clear-filters" type="text" size="small" onClick={clearFilters}>清除筛选</Button>}
       <span className="helper asset-total" role="status">{loading?"正在加载素材…":<>共 <b>{total}</b> 项素材</>}</span>
     </div>
@@ -112,7 +167,11 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
         action={<Button type={filtered?"secondary":"primary"} icon={filtered?undefined:<Plus size={16}/>} onClick={filtered?clearFilters:importFiles}>{filtered?"清除筛选":"导入素材"}</Button>}
       /></div>}
     </Spin>}
-    {total>0&&!error&&<Pagination className="asset-pagination" current={page} pageSize={24} total={total} onChange={changePage} showTotal disabled={loading}/>}
+    <div className="asset-library-footer">
+      <p id={keyboardHintId} className="asset-keyboard-hint"><span><kbd>←</kbd><kbd>→</kbd> 翻页</span><span><kbd>↑</kbd><kbd>↓</kbd> 滚动</span><span><kbd>/</kbd> 搜索</span></p>
+      <span className="asset-page-announcement" role="status" aria-live="polite" aria-atomic="true">{!loading&&!error&&`第 ${page} 页，共 ${pageCount} 页，当前 ${items.length} 项素材`}</span>
+      {total>0&&!error&&<Pagination className="asset-pagination" current={page} pageSize={24} total={total} onChange={changePage} showTotal disabled={loading||query!==search}/>}
+    </div>
     <Drawer className="asset-usage-drawer" width={460} visible={!!tracking} title="素材用途" footer={null} onCancel={()=>setTracking(null)}>
       <h3>{tracking?.name}</h3><Spin loading={usageLoading} style={{display:"block"}}>
         {usageError?<p role="alert">{usageError}</p>:uses.length?uses.map((use,index)=><div className="usage-record" key={index}><Tag>{use.purpose}</Tag><b>{use.episode_title&&use.kind==="scene"?`${use.episode_title} / `:""}{use.title}</b><Button size="small" onClick={()=>{setTracking(null);onLocate(use);}}>前往{use.kind==="asset"?"资产":use.kind==="episode"?"剧集":use.kind==="canvas"?"画布":"场景"}</Button></div>):!usageLoading&&<Empty description="尚未被资产、剧集或场景使用"/>}

@@ -13,6 +13,12 @@ html .app .content:has(> .asset-library) {
   min-height: 0;
 }
 
+.asset-library:focus-visible {
+  outline: 2px solid var(--ui-primary);
+  outline-offset: 6px;
+  border-radius: 4px;
+}
+
 .asset-library > .section-title,
 .asset-library > .asset-toolbar,
 .asset-library > .helper {
@@ -202,10 +208,45 @@ html .app .content:has(> .asset-library) {
   margin: 0;
 }
 
-.asset-library .asset-pagination {
+.asset-library-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 20px;
   flex-shrink: 0;
   margin-top: 16px;
   padding-top: 12px;
+  border-top: 1px solid var(--ui-border);
+}
+
+.asset-library .asset-pagination {
+  margin: 0 0 0 auto;
+  padding: 0;
+  border: 0;
+}
+
+.asset-keyboard-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 11px;
+  line-height: 1.8;
+}
+
+.asset-keyboard-hint > span { white-space: nowrap; }
+.asset-keyboard-hint kbd { margin-right: 3px; font: inherit; color: var(--ui-secondary-text); }
+.asset-page-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .asset-empty {
