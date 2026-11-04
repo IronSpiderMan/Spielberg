@@ -61,7 +61,7 @@ export function GenerationParameters({ratio,ratios,onRatio,size,sizes,onSize,dis
       </div>
       {duration && <DurationSlider {...duration} disabled={disabled}/>}
     </div>}>
-      <button ref={trigger} type="button" className="generation-picker-trigger generation-parameters-trigger" aria-label={`${ariaPrefix}生成参数`} aria-haspopup="dialog" aria-controls={open ? popupId : undefined} aria-expanded={open && !disabled} title={summary} disabled={disabled} onKeyDown={event=>{if(event.key==="Escape"){event.stopPropagation();setOpen(false);}if(event.key==="ArrowDown"){event.preventDefault();setOpen(true);}}}><SlidersHorizontal size={16}/><span>{summary}</span><ChevronDown size={15}/></button>
+      <button ref={trigger} type="button" className="generation-picker-trigger generation-parameters-trigger" aria-label={`${ariaPrefix}生成参数`} aria-haspopup="dialog" aria-controls={open ? popupId : undefined} aria-expanded={open && !disabled} title={summary} disabled={disabled} ><SlidersHorizontal size={16}/><span>{summary}</span><ChevronDown size={15}/></button>
     </Trigger>
   </Form.Item>;
 }

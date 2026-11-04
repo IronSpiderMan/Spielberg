@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Input, Message } from "@arco-design/web-react";
 import { BookOpen, Bot, Check, FileText, GitBranch, Plus, Save, Settings2, Trash2, Upload } from "lucide-react";
 import { post, type Project, type ProjectDocument } from "./core";
@@ -101,12 +101,7 @@ export default function ProjectConfig({ project, reload }: { project: Project; r
     const link = document.createElement("a"); link.href = url; link.download = `${current.title.replace(/[\\/:*?"<>|]/g, "_") || "文档"}.md`; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  const navigateTabs = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
-    const target = event.key === "ArrowRight" ? (index + 1) % sections.length : event.key === "ArrowLeft" ? (index + sections.length - 1) % sections.length : event.key === "Home" ? 0 : event.key === "End" ? sections.length - 1 : null;
-    if (target === null) return;
-    event.preventDefault(); setSection(sections[target].id);
-    tabs.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[target]?.focus();
-  };
+
   const eventCount = draft.timelines.reduce((total, timeline) => total + timeline.entries.reduce((count, entry) => count + entry.events.length, 0), 0);
 
   return <div className="project-config-page">
@@ -119,7 +114,7 @@ export default function ProjectConfig({ project, reload }: { project: Project; r
     </header>
     <div className="project-config-workspace">
       <div className="project-config-tabs" role="tablist" aria-label="项目配置分区" ref={tabs}>
-        {sections.map(({ id, label, icon: Icon }, index) => <button key={id} type="button" role="tab" id={`project-config-tab-${id}`} aria-label={label} aria-controls={`project-config-panel-${id}`} aria-selected={section === id} tabIndex={section === id ? 0 : -1} onClick={() => setSection(id)} onKeyDown={event => navigateTabs(event, index)}>
+        {sections.map(({ id, label, icon: Icon }, index) => <button key={id} type="button" role="tab" id={`project-config-tab-${id}`} aria-label={label} aria-controls={`project-config-panel-${id}`} aria-selected={section === id} tabIndex={0} onClick={() => setSection(id)} >
           <Icon size={16} /><span>{label}</span>{(id === "documents" || id === "timelines") && <small>{draft[id].length}</small>}
         </button>)}
       </div>

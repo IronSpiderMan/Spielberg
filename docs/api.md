@@ -272,3 +272,9 @@ Agent 的 `app_action` 还支持以下当前项目内的操作（具体字段可
 
 所有操作都固定在 Agent 当前项目内；文档修改与删除在项目锁内完成，保留其他文档和大纲，不允许传入其他项目的 ID。
 
+
+### Agent 时间线工具
+
+Agent 通过 `app_action` 的 `project/config/read` 获取时间线数量，通过 `project/timelines/read` 读取完整时间线 JSON。读取接口接受 `offset` 和 `max_chars`（1–1500），需沿 `next_offset` 读取至 null，按顺序拼接 `content` 后解析 JSON；旧项目返回 `[]`。该读取操作按只读工具处理。
+
+`project/config/update` 支持 `timelines` 完整数组，可创建、修改、删除和重排时间线、时间点、事件，结构与项目 PATCH API 相同。修改前读取全部分页，保留无关内容和已有 ID；新建项使用唯一 ID。省略字段保留原值，显式 `[]` 清空时间线。更新复用项目 API 校验，不能跨项目操作，且不会修改项目文档或 Agent 规范。

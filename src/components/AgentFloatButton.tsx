@@ -247,10 +247,7 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings }:
   const lastUser = lastUserIndex >= 0 ? session?.messages[lastUserIndex].content : "";
   const reply = session?.messages.slice(lastUserIndex + 1).filter(message => message.role === "assistant" && message.content).map(message => message.content).join("\n\n");
 
-  return createPortal(<div className="agent-float" data-state={state} onKeyDown={event => {
-    if (event.key === "Escape" && open) { event.preventDefault(); close(); }
-    event.stopPropagation();
-  }}>
+  return createPortal(<div className="agent-float" data-state={state} >
     {open && <section ref={panel} className="agent-float-panel" data-testid="agent-float-panel" role="dialog" aria-label="语音 Agent 助手" tabIndex={-1} style={{ left: panelLeft, top: panelTop, width: panelWidth }}>
       <header><div className="agent-float-heading"><span className="agent-float-indicator" /><strong>Agent</strong><span>随时，说一声</span></div><button type="button" className="agent-float-icon" aria-label="收起语音助手" title="收起 · Esc" onClick={close}><X size={17} /></button></header>
       <div className="agent-float-project" title={project?.name}>{project?.name || "请先打开或创建一个项目"}</div>
@@ -260,10 +257,8 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings }:
       {(error || session?.error) && <div className="agent-float-error" role="alert">{error || session?.error}{restoreFailed && <button onClick={() => setRestoreAttempt(value => value + 1)}>重新连接</button>}</div>}
       {onSettings && !listening && error && <button className="agent-float-settings" onClick={onSettings}>检查模型设置 <ArrowUpRight size={12} /></button>}
       <form onSubmit={event => { event.preventDefault(); if (!listening) void send(draft); }}>
-        <textarea ref={input} data-testid="agent-float-input" value={draft} onChange={event => setDraft(event.target.value)} readOnly={listening} disabled={!pid || locked} rows={2} maxLength={16000} aria-label="Agent 指令" placeholder={listening ? "正在聆听…" : "也可以输入你的指令…"} onKeyDown={event => {
-          if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!listening) void send(draft); }
-        }} />
-        <div className="agent-float-composer-actions"><span>{listening ? "说完自动执行" : "Enter 发送 · Shift Enter 换行"}</span><div>
+        <textarea ref={input} data-testid="agent-float-input" value={draft} onChange={event => setDraft(event.target.value)} readOnly={listening} disabled={!pid || locked} rows={2} maxLength={16000} aria-label="Agent 指令" placeholder={listening ? "正在聆听…" : "也可以输入你的指令…"}  />
+        <div className="agent-float-composer-actions"><span>{listening ? "说完自动执行" : "点击箭头发送"}</span><div>
           {listening ? <button type="button" className="agent-float-icon" aria-label="取消听写，改用文字" title="取消听写，改用文字" onClick={() => { cancelSpeech(); input.current?.focus(); }}><Keyboard size={17} /></button> : <button type="button" className="agent-float-icon" aria-label="开始语音输入" title="开始语音输入" disabled={!pid || locked} onClick={() => void startListening()}><Mic size={17} /></button>}
           {running ? <button type="button" data-testid="agent-float-stop" className="agent-float-submit" aria-label="停止 Agent 执行" disabled={cancelling} onClick={() => void stopAgent()}><Square size={14} /></button> : listening ? <button type="button" className="agent-float-submit" aria-label="结束听写并执行" disabled={speechState !== "listening"} onClick={finishListening}><ArrowUp size={18} /></button> : <button type="submit" data-testid="agent-float-send" className="agent-float-submit" aria-label="执行指令" disabled={!pid || !draft.trim() || locked}><ArrowUp size={18} /></button>}
         </div></div>
@@ -273,12 +268,7 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings }:
     <button ref={button} type="button" className={`agent-float-button${dragging ? " is-dragging" : ""}`} data-testid="agent-float-button" data-state={state} style={{ left: position.x, top: position.y }} aria-label={listening ? "结束听写并执行" : running || sending ? "查看 Agent 执行进度" : "语音 Agent，点击说话，拖动移动"} aria-expanded={open} aria-haspopup="dialog" title="点击说话 · 拖动移动 · 方向键调整位置" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerEnd} onPointerCancel={pointerEnd} onLostPointerCapture={() => { drag.current = null; setDragging(false); }} onClick={event => {
       if (suppressClick.current && event.detail !== 0) { suppressClick.current = false; return; }
       if (listening) finishListening(); else if (running || sending || restoring || restoreFailed || !pid) setOpen(true); else void startListening();
-    }} onKeyDown={event => {
-      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
-      event.preventDefault(); const step = event.shiftKey ? 40 : 12;
-      const next = clampPosition({ x: position.x + (event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0), y: position.y + (event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0) });
-      setPosition(next); writeStorage(POSITION_KEY, JSON.stringify(next));
-    }}><span className="agent-float-aura" aria-hidden="true" /><span className="agent-float-orb" aria-hidden="true">
+    }} ><span className="agent-float-aura" aria-hidden="true" /><span className="agent-float-orb" aria-hidden="true">
       <span className="agent-float-core" />
       <span className="agent-float-core-light" />
     </span>{(running || sending) && <span className="agent-float-busy-dot" aria-hidden="true" />}<span className="agent-float-tooltip">{listening ? "点击结束" : running || sending ? "执行中" : "说一声，交给 Agent"}</span></button>

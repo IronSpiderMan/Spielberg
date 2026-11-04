@@ -82,38 +82,7 @@ function VideoPreview({ media, onClose, title = "视频预览", videos = noVideo
       setLoading(false);
     }
   };
-  useEffect(() => {
-    const keydown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
-      const target = event.target instanceof Element ? event.target : null;
-      const video = player.current;
-      if (!target || !video) return;
-      const dialog = video.closest('[role="dialog"]');
-      // Leave editing, open selectors and dialogs above the preview in control.
-      const dialogs = Array.from(document.querySelectorAll('[role="dialog"]')).filter(element => element.getClientRects().length > 0);
-      if (dialogs[dialogs.length - 1] !== dialog ||
-        target.closest('input, textarea, select, [role="listbox"], [role="combobox"][aria-expanded="true"], [contenteditable]:not([contenteditable="false"])')) return;
-      // Capture before native video controls or focused buttons consume the keys.
-      const consume = () => { event.preventDefault(); event.stopPropagation(); };
-      if (event.code === "Space" || event.key === " ") { consume(); if (!event.repeat) play(); }
-      else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-        if (!canNavigate) return;
-        consume(); move(event.key === "ArrowLeft" ? -1 : 1);
-      } else if (["j", "l", "m", "0", "1"].includes(event.key.toLowerCase())) {
-        consume();
-        switch (event.key.toLowerCase()) {
-          case "j": case "l":
-            if (ready && Number.isFinite(video.duration)) video.currentTime = Math.max(0, Math.min(video.duration, video.currentTime + (event.key.toLowerCase() === "j" ? -5 : 5)));
-            break;
-          case "m": video.muted = !video.muted; break;
-          case "0": setFit(true); break;
-          case "1": setFit(false); break;
-        }
-      }
-    };
-    document.addEventListener("keydown", keydown, true);
-    return () => document.removeEventListener("keydown", keydown, true);
-  }, [canNavigate, move, play, ready]);
+
   const download = async () => {
     setDownloading(true);
     try {
@@ -137,13 +106,13 @@ function VideoPreview({ media, onClose, title = "视频预览", videos = noVideo
     <div className="image-preview-toolbar" role="toolbar" aria-label="视频预览工具">
       <div className="image-preview-tools">
         <Button disabled={!ready} aria-label="从头播放" onClick={() => { if (player.current) { player.current.currentTime = 0; void player.current.play().catch(() => Message.warning("请点击播放开始观看")); } }} icon={<RotateCcw size={16} />} />
-        <Button disabled={!ready} className={fit ? "is-active" : ""} onClick={() => setFit(true)} title="适应窗口 (0)" icon={<Maximize size={16} />}>适应窗口</Button>
-        <Button disabled={!ready} className={!fit ? "is-active" : ""} onClick={() => setFit(false)} title="原始尺寸 (1)">1:1</Button>
+        <Button disabled={!ready} className={fit ? "is-active" : ""} onClick={() => setFit(true)} title="适应窗口" icon={<Maximize size={16} />}>适应窗口</Button>
+        <Button disabled={!ready} className={!fit ? "is-active" : ""} onClick={() => setFit(false)} title="原始尺寸">1:1</Button>
         <span className="image-preview-divider" />
         <Select className="video-preview-speed" aria-label="播放速度" value={speed} disabled={!ready} options={[0.5, 0.75, 1, 1.25, 1.5, 2].map(value => ({ value, label: `${value}×` }))}
           onChange={value => { setSpeed(value); if (player.current) player.current.playbackRate = value; }} />
         <Button disabled={!ready || !allowLoop} aria-pressed={allowLoop && loop} className={allowLoop && loop ? "is-active" : ""} onClick={() => setLoop(value => !value)} icon={<Repeat size={16} />}>循环</Button>
-        <Button disabled={!ready} aria-label={muted ? "取消静音" : "静音"} title="静音 (M)" onClick={() => { if (player.current) player.current.muted = !player.current.muted; }} icon={muted ? <VolumeX size={16} /> : <Volume2 size={16} />} />
+        <Button disabled={!ready} aria-label={muted ? "取消静音" : "静音"} title="静音" onClick={() => { if (player.current) player.current.muted = !player.current.muted; }} icon={muted ? <VolumeX size={16} /> : <Volume2 size={16} />} />
       </div>
       <div className="image-preview-tools image-preview-actions">{toolbar}<Button loading={downloading} icon={<Download size={16} />} onClick={() => void download()}>下载</Button></div>
     </div>
@@ -172,7 +141,7 @@ function VideoPreview({ media, onClose, title = "视频预览", videos = noVideo
       </div>}
       {canNavigate && <button type="button" className="image-preview-nav is-next" aria-label="下一个视频" onClick={() => move(1)}><ChevronRight size={24} /></button>}
     </div>
-    <div className="image-preview-status"><span>空格 播放 / 暂停 · J / L 后退 / 前进 5 秒 · M 静音</span><span>{time(currentTime)} / {time(metadata.duration)}<i />{fit ? "适应窗口" : "原始尺寸"}<i />Esc 关闭</span></div>
+    <div className="image-preview-status"><span>{time(currentTime)} / {time(metadata.duration)}<i />{fit ? "适应窗口" : "原始尺寸"}<i />Esc 关闭</span></div>
     {(canNavigate || footer) && <div className="video-preview-bottom-bar">
     {canNavigate && <div className="image-preview-filmstrip video-preview-filmstrip" aria-label="视频列表">
       <span className="image-preview-position" aria-live="polite">{currentIndex + 1} / {videos.length}</span>
@@ -180,7 +149,7 @@ function VideoPreview({ media, onClose, title = "视频预览", videos = noVideo
         onClick={() => onMediaChange?.(item)} ref={element => { if (item.id === media.id) element?.scrollIntoView({ block: "nearest", inline: "nearest" }); }}>
         {projectId ? <AssetThumbnail media={item} projectId={projectId} /> : <Film size={20} />}<span>{index + 1}</span>
       </button>)}</div>
-      <span className="image-preview-key-hint">← → 切换视频</span>
+
     </div>}
     {footer && <div className="video-preview-footer-actions">{footer}</div>}
     </div>}

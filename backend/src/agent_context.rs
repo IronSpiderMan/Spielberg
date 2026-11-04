@@ -262,7 +262,7 @@ fn is_write(message: &Value) -> bool {
             !operation.is_empty() && !operation.ends_with("/read") && !operation.ends_with("/list")
                 && !matches!(operation,"editor/probe" | "tasks" | "canvas/load" | "scripts/load"
                     | "storage/scan" | "settings/read" | "media/usage" | "editor/projects"
-                    | "project/config/read" | "project/document/read" | "storyboard/validate")
+                    | "project/config/read" | "project/timelines/read" | "project/document/read" | "storyboard/validate")
         },
         _ => false,
     }
@@ -582,7 +582,7 @@ mod tests {
             "arguments":{"resource":"assets","method":"POST","data":{"name":"唯一已创建角色"}},
             "content":"{\"id\":987654321,\"name\":\"唯一已创建角色\"}"});
         let reads = ["editor/probe","tasks","canvas/load","scripts/load","storage/scan","settings/read",
-            "media/usage","editor/projects","project/config/read","project/document/read","storyboard/validate"];
+            "media/usage","editor/projects","project/config/read","project/timelines/read","project/document/read","storyboard/validate"];
         for operation in reads {
             assert!(!is_write(&json!({"tool_name":"app_action","arguments":{"operation":operation}})));
         }

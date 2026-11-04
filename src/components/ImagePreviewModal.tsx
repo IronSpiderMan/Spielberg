@@ -20,19 +20,7 @@ export function ImagePreviewModal({ media, onClose, afterClose, title = "参考�
   const move = (offset: number) => {
     if (canNavigate) onMediaChange?.(images[(currentIndex + offset + images.length) % images.length]);
   };
-  useEffect(() => {
-    if (!visible || !canNavigate) return;
-    const keydown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement;
-      if (target.closest('input, textarea, select, [contenteditable="true"]') || event.altKey || event.ctrlKey || event.metaKey) return;
-      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-        event.preventDefault();
-        onMediaChange?.(images[(currentIndex + (event.key === "ArrowLeft" ? -1 : 1) + images.length) % images.length]);
-      }
-    };
-    document.addEventListener("keydown", keydown);
-    return () => document.removeEventListener("keydown", keydown);
-  }, [visible, canNavigate, currentIndex, images, onMediaChange]);
+
   const [showThumbnails, setShowThumbnails] = useState(() => window.innerWidth > 760);
   const [showInfo, setShowInfo] = useState(() => window.innerWidth > 1100);
   const [fileSize, setFileSize] = useState<number | null>(null);
@@ -160,31 +148,18 @@ export function ImagePreviewModal({ media, onClose, afterClose, title = "参考�
     viewport.addEventListener("wheel", wheel, { passive: false });
     return () => viewport.removeEventListener("wheel", wheel);
   }, [visible, viewport, zoom]);
-  useEffect(() => {
-    if (!visible) return;
-    const keydown = (event: KeyboardEvent) => {
-      if ((event.target as HTMLElement).closest('input, textarea, select, [contenteditable="true"]') || event.altKey || event.ctrlKey || event.metaKey) return;
-      if (["+", "=", "-", "0", "1"].includes(event.key)) {
-        event.preventDefault();
-        if (event.key === "0") reset();
-        else if (event.key === "1") actualSize();
-        else zoom(event.key === "-" ? 1 / 1.25 : 1.25);
-      }
-    };
-    document.addEventListener("keydown", keydown);
-    return () => document.removeEventListener("keydown", keydown);
-  }, [visible, zoom, reset, actualSize]);
+
   return <Modal className={`image-preview-modal is-fullscreen ${className}`} wrapClassName="image-preview-wrapper" alignCenter={false} title={<div className="image-preview-heading"><span className="image-preview-file-icon"><ImageIcon size={20} /></span><div><strong title={media?.name || title}>{media?.name || title}</strong><span>{ready ? `${imageSize.width} × ${imageSize.height}` : "图片预览"} · {sizeLabel} · {format}</span></div></div>} visible={visible} footer={footer} onCancel={onClose} afterClose={afterClose}>
     <div className="image-preview-toolbar" role="toolbar" aria-label="图片预览工具">
       <div className="image-preview-tools">
       <Button aria-label="切换缩略图" aria-pressed={showThumbnails} title="切换缩略图" onClick={() => setShowThumbnails(value => !value)} icon={showThumbnails ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />} />
       <div className="image-preview-zoom-controls">
-      <Button aria-label="缩小" title="缩小 (-)" disabled={!ready || view.scale <= minScale} onClick={() => zoom(1 / 1.25)} icon={<Minus size={16} />} />
+      <Button aria-label="缩小" title="缩小" disabled={!ready || view.scale <= minScale} onClick={() => zoom(1 / 1.25)} icon={<Minus size={16} />} />
       <span className="image-preview-scale" aria-live="polite">{ready ? `${Math.round(view.scale * 100)}%` : "—"}</span>
-      <Button aria-label="放大" title="放大 (+)" disabled={!ready || view.scale >= 16} onClick={() => zoom(1.25)} icon={<Plus size={16} />} />
+      <Button aria-label="放大" title="放大" disabled={!ready || view.scale >= 16} onClick={() => zoom(1.25)} icon={<Plus size={16} />} />
       </div>
-      <Button disabled={!ready} aria-pressed={fit} className={fit ? "is-active" : ""} onClick={reset} title="适应窗口 (0)" icon={<Maximize size={16} />}>适应窗口</Button>
-      <Button disabled={!ready} onClick={actualSize} title="原始尺寸 (1)">1:1</Button>
+      <Button disabled={!ready} aria-pressed={fit} className={fit ? "is-active" : ""} onClick={reset} title="适应窗口" icon={<Maximize size={16} />}>适应窗口</Button>
+      <Button disabled={!ready} onClick={actualSize} title="原始尺寸">1:1</Button>
       <span className="image-preview-divider" />
       <Button aria-label="重置图片" title="重置图片" disabled={!ready} onClick={() => { setRotation(0); reset(); }} icon={<Undo2 size={18} />} />
       <Button aria-label="旋转图片" disabled={!ready} onClick={() => { setFit(true); setRotation(value => (value + 90) % 360); }} icon={<RotateCw size={16} />}>旋转</Button>
@@ -217,7 +192,7 @@ export function ImagePreviewModal({ media, onClose, afterClose, title = "参考�
     {showThumbnails && <aside className="image-preview-sidebar" aria-label="缩略图列表">
       <div className="image-preview-sidebar-heading"><span>缩略图 ({thumbnails.length})</span><ImageIcon size={17} /></div>
       <div className="image-preview-thumbnails">{thumbnails.map((item, index) => <button type="button" key={item.id} title={item.name} aria-label={`查看第 ${index + 1} 张：${item.name}`} aria-pressed={item.id === media?.id} disabled={!onMediaChange && item.id !== media?.id} onClick={() => onMediaChange?.(item)} ref={element => { if (item.id === media?.id) element?.scrollIntoView({ block: "nearest", inline: "nearest" }); }}><img key={`${item.id}:${retryVersion}`} src={imageUrl(item)} alt="" loading="lazy" decoding="async" /><span>{String(index + 1).padStart(2, "0")}</span></button>)}</div>
-      <div className="image-preview-sidebar-foot">{canNavigate ? "← → 切换图片" : "图片预览"}</div>
+      <div className="image-preview-sidebar-foot">图片预览</div>
     </aside>}
     <div className="image-preview-canvas-column">
     <div className="image-preview-stage">

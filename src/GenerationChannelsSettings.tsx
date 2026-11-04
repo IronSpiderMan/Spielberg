@@ -67,13 +67,7 @@ export function GenerationChannelsSettings({ kind, settings, onChange, disabled 
         <div className="settings-service-heading"><div className="settings-channel-list-heading"><h3>{kind === "llm" ? "统一渠道配置" : `${label}生成渠道`}</h3><span>{query.trim() ? `${filtered.length} / ${channels.length}` : channels.length}</span><Button className="settings-add-channel" aria-label={`添加${label}渠道`} title={`添加${label}渠道`} size="small" icon={<Plus size={14} />} disabled={disabled} onClick={add} /></div><p>服务渠道 · 当前项目</p></div>
         <Input aria-label={`搜索${label}渠道`} value={query} onChange={setQuery} allowClear prefix={<Search size={14} />} placeholder="搜索渠道或模型" />
         <div className="settings-channel-list" ref={listRef}>
-          {filtered.map((channel, index) => <button key={channel.id} type="button" className="settings-channel-option" title={channel.name || "未命名渠道"} aria-pressed={selected?.id === channel.id} tabIndex={channel.id === focusableId ? 0 : -1} onClick={() => setSelectedId(channel.id)} onKeyDown={event => {
-            const next = ["ArrowDown", "ArrowRight"].includes(event.key) ? (index + 1) % filtered.length : ["ArrowUp", "ArrowLeft"].includes(event.key) ? (index + filtered.length - 1) % filtered.length : event.key === "Home" ? 0 : event.key === "End" ? filtered.length - 1 : null;
-            if (next === null) return;
-            event.preventDefault();
-            setSelectedId(filtered[next].id);
-            listRef.current?.querySelectorAll<HTMLButtonElement>(".settings-channel-option")[next]?.focus({ preventScroll: true });
-          }}>
+          {filtered.map((channel, index) => <button key={channel.id} type="button" className="settings-channel-option" title={channel.name || "未命名渠道"} aria-pressed={selected?.id === channel.id} tabIndex={0} onClick={() => setSelectedId(channel.id)} >
             <ProviderMark provider={channel.provider} /><span className="settings-channel-option-copy"><strong>{channel.name || "未命名渠道"}</strong><small>{providerLabels[channel.provider]} · {channel.models.length} 个模型</small></span>{channel.id === defaultId && <Star size={12} className="settings-default-star" aria-label="默认渠道" />}
           </button>)}
           {!filtered.length && <div className="settings-channel-list-empty">{query.trim() ? <>没有匹配的渠道<Button type="text" size="small" onClick={() => setQuery("")}>清空搜索</Button></> : "添加第一个服务渠道"}</div>}

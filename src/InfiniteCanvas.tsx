@@ -252,13 +252,7 @@ export default function InfiniteCanvas({ data, scene, reload, onClose }: {
         }
       }
       finish();
-    }} onPointerCancel={() => { finish(); linkDrag.current = null; setLinkTo(""); setLinkFrom(""); setLinkPoint(null); }} onKeyDown={e => {
-      if (e.key === "Escape") { setLinkPoint(null); linkDrag.current = null; setLinkTo(""); setLinkFrom(""); setSelected(""); setMenu(null); }
-      if ((e.target as HTMLElement).closest("input,textarea,button,.arco-select")) return;
-      if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); remove(); }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !busyNode) { e.preventDefault(); e.shiftKey ? redo() : undo(); }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); void save(); }
-    }}>
+    }} onPointerCancel={() => { finish(); linkDrag.current = null; setLinkTo(""); setLinkFrom(""); setLinkPoint(null); }}>
       {!draft.nodes.length && <div className="ic-empty"><div className="ic-empty-mark"><Film size={30} strokeWidth={1.5} /></div><span className="ic-eyebrow">无限画布 · 自由创作</span><h2>让灵感，在这里连接</h2><p>从一张图片、一段音频或一个想法开始，<br />连接节点，构建你的下一个镜头。</p><div className="ic-empty-actions" onPointerDown={e => e.stopPropagation()}>{(["image", "video", "audio", "note"] as const).map(kind => <button key={kind} disabled={!!busyNode} onClick={() => add(kind)}>{kind === "image" ? <Image size={19} /> : kind === "video" ? <Film size={19} /> : kind === "audio" ? <Music size={19} /> : <StickyNote size={19} />}<span>{labels[kind]}</span><Plus size={13} /></button>)}</div><small>也可以在空白处右键添加节点</small></div>}
       <div className="ic-world" style={{ transform: `translate(${draft.viewport.x}px, ${draft.viewport.y}px) scale(${draft.viewport.zoom})` }}>
         <svg className="ic-edges" width="1" height="1" aria-label="创作关系"><defs><marker id="ic-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" /></marker></defs>{draft.edges.map(edge => {

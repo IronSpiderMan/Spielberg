@@ -71,7 +71,6 @@ import { findMentions, promptMentions, syncMentionReferences } from "./prompt-me
 import { EmptyState } from "./ui";
 import { STYLE_PRESETS } from "./prompt-presets";
 import { PROMPT_TEMPLATES } from "./prompt-templates";
-import { focusKeyboardTarget, isKeyboardEventBlocked, moveCardGridFocus } from "./keyboard";
 import "./prompts.css";
 const SequencePreview=lazy(()=>import("./creation").then(m=>({default:m.SequencePreview})));
 const ImageStudio=lazy(()=>import("./creation").then(m=>({default:m.ImageStudio})));
@@ -825,16 +824,7 @@ function EpisodeEditor({
     } catch (error) { Message.error(String(error)); }
     finally { setSaving(false); }
   };
-  useEffect(() => {
-    if (!episode) return;
-    const shortcut = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
-        event.preventDefault(); void save();
-      }
-    };
-    window.addEventListener("keydown", shortcut);
-    return () => window.removeEventListener("keydown", shortcut);
-  });
+
   const currentEpisode = data.episodes.find(ep => ep.id === episode?.id);
   const editorLocked = saving || generatingBoard || scriptStatus.busy;
   const openScene = (scene: Scene) => {
@@ -1776,10 +1766,6 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
     (categoryFilter === "all" || (role.category || "person") === categoryFilter) &&
     (!search || role.name.toLowerCase().includes(search) || role.description.toLowerCase().includes(search))
   );
-  const libraryRef = useRef<HTMLElement>(null);
-  const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null);
-  const selectedVisibleRoleId = visibleRoles.find(role => role.id === selectedRoleId)?.id ?? visibleRoles[0]?.id;
-  const detailFocusPending = useRef(false);
   const [roleImagePreview, setRoleImagePreview] = useState<Media | null>(null);
   const [previewRoleId, setPreviewRoleId] = useState<number | null>(null);
   const openRoleImage = (role: Asset, media: Media) => { setPreviewRoleId(role.id); setRoleImagePreview(media); };
@@ -1787,39 +1773,14 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
   const [detailId, setDetailId] = useState<number | null>(initialRoleId ?? null);
   const detail = data.assets.find(role => role.id === detailId);
   const openRoleDetail = (id: number) => {
-    setSelectedRoleId(id);
-    detailFocusPending.current = true;
     setDetailId(id);
   };
   const closeRoleDetail = () => {
-    detailFocusPending.current = true;
     setDetailId(null);
   };
-  useEffect(() => {
-    if (!detailFocusPending.current) return;
-    detailFocusPending.current = false;
-    focusKeyboardTarget(libraryRef.current?.querySelector<HTMLElement>(detail
-      ? ".role-detail-topbar [data-keyboard-entry]"
-      : `[data-asset-card="${selectedVisibleRoleId}"]`) || libraryRef.current?.querySelector<HTMLElement>("[data-keyboard-entry]") || null);
-  }, [detail?.id, selectedVisibleRoleId]);
-  const returnToRolesTab = () => {
-    if (!focusKeyboardTarget(document.querySelector<HTMLElement>('[data-workspace-nav="roles"]'))) {
-      focusKeyboardTarget(document.querySelector<HTMLElement>(".sidebar-toggle"));
-    }
-  };
-  const assetCardKeys = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (isKeyboardEventBlocked(event.nativeEvent)) return;
-    const card = (event.target as HTMLElement).closest<HTMLElement>("[data-asset-card]");
-    if (!card || !event.currentTarget.contains(card)) return;
-    if (event.target === card && (event.key === "Enter" || event.key === " ")) {
-      event.preventDefault(); event.stopPropagation();
-      if (!event.repeat) openRoleDetail(Number(card.dataset.assetCard));
-      return;
-    }
-    if (moveCardGridFocus(event.key, card, Array.from(event.currentTarget.querySelectorAll<HTMLElement>("[data-asset-card]")), returnToRolesTab)) {
-      event.preventDefault(); event.stopPropagation();
-    }
-  };
+
+
+
   const detailImages = detail ? [...detail.images].sort((a, b) => Number(b.id === detail.design_media_id) - Number(a.id === detail.design_media_id)) : [];
   const previewRole = data.assets.find(role => role.id === previewRoleId);
   const previewImages = [...(previewRole?.images || [])].sort((a, b) => Number(b.id === previewRole?.design_media_id) - Number(a.id === previewRole?.design_media_id));
@@ -1879,10 +1840,10 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
   };
   if (graphOpen) return <AssetRelationships key={data.project.id} data={data} onClose={() => setGraphOpen(false)}/>;
   return (
-    <section ref={libraryRef} className="role-library" aria-label="资产库" data-keyboard-region="content">
+    <section className="role-library" aria-label="资产库" >
       {detail ? <div className="role-detail-page">
         <div className="role-detail-topbar">
-          <Button data-keyboard-entry type="text" icon={<ArrowLeft size={16} />} onClick={closeRoleDetail}>资产列表</Button>
+          <Button  type="text" icon={<ArrowLeft size={16} />} onClick={closeRoleDetail}>资产列表</Button>
           <span>资产档案</span>
           <Button icon={<Pencil size={15} />} disabled={imageActionBusy} onClick={() => setEditing(detail)}>编辑设定</Button>
         </div>
@@ -1925,15 +1886,11 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
           <Button icon={<GitBranch size={16}/>} onClick={() => setGraphOpen(true)}>关系图</Button>
           <Button
             className="role-create-button"
-            data-keyboard-entry={!visibleRoles.length ? "" : undefined}
+
             type="primary"
             icon={<Plus size={18} />}
             onClick={() => make().catch((e) => Message.error(String(e)))}
-            onKeyDown={event => {
-              if (!visibleRoles.length && event.key === "ArrowLeft" && !isKeyboardEventBlocked(event.nativeEvent)) {
-                event.preventDefault(); event.stopPropagation(); returnToRolesTab();
-              }
-            }}
+
           >
             创建资产
           </Button>
@@ -1950,13 +1907,13 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
         <p className="helper">{search ? "没有匹配的资产，可更换搜索词、切换类别或显示已禁用资产。" : categoryFilter !== "all" ? "当前类别下没有符合条件的资产，可切换类别、显示已禁用资产或创建新资产。" : "当前没有启用的资产，可勾选“显示已禁用资产”查看并重新启用。"}</p>
         {search && <Button type="text" size="small" onClick={() => setQuery("")}>清空搜索</Button>}
       </div>}
-      <div className="role-grid" onKeyDown={assetCardKeys}>
+      <div className="role-grid" >
         {visibleRoles.map((r, index) => (
           <Card key={r.id} className={`role-card${r.enabled === false ? " role-card-disabled" : ""}`} bodyStyle={{ padding: 16 }}
-            data-asset-card={r.id} data-keyboard-entry={index === 0 ? "" : undefined}
-            tabIndex={r.id === selectedVisibleRoleId ? 0 : -1} role="group" aria-label={r.name}
-            aria-description="方向键选择资产，最左列按左键返回侧栏，Enter 查看详情"
-            onFocusCapture={() => setSelectedRoleId(r.id)}>
+
+            role="group" aria-label={r.name}
+
+>
             <div className="role-pic">
               {(r.images.find((image) => image.id === r.design_media_id) || r.images[0]) ? (
                 <button type="button" className="role-image-zoom" onClick={() => openRoleImage(r, r.images.find((image) => image.id === r.design_media_id) || r.images[0])} aria-label={`放大查看${r.name}的资产图`} title="放大查看">

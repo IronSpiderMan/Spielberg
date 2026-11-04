@@ -93,13 +93,7 @@ export function ScreenplayInput({ inputRef, value, onChange, mentions, disabled,
       onChange={event => { onChange(event.currentTarget.value); updateSelection(event.currentTarget); setActive(0); setDismissed(false); }}
       onCompositionStart={() => setComposing(true)} onCompositionEnd={event => { setComposing(false); updateSelection(event.currentTarget); }}
       onScroll={() => { if (show) placeSuggestions(); }}
-      onKeyDown={event => {
-        if (event.nativeEvent.isComposing || event.keyCode === 229 || !show) return;
-        if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setDismissed(true); }
-        else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-          event.preventDefault(); setActive((selected + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length);
-        } else if (event.key === "Enter" || event.key === "Tab") { event.preventDefault(); choose(selected); }
-      }} />
+       />
     {show && <div ref={list} id={listId} className="screenplay-suggestions" role="listbox" aria-label="剧本引用" style={position}>
       {options.map((item, index) => <button key={item.id} type="button" role="option" id={`${listId}-${index}`} aria-selected={index === selected}
         onMouseDown={event => event.preventDefault()} onClick={() => choose(index)}>

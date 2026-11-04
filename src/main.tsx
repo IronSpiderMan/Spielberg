@@ -23,7 +23,7 @@ Film,
 FolderOpen,
 FileText,
 ImagePlus,
-Keyboard,
+
 LayoutDashboard,
 Moon,
 PanelLeftClose,
@@ -36,7 +36,7 @@ Users,
 WandSparkles,
 X
 } from "lucide-react";
-import { lazy,Suspense,useCallback,useEffect,useRef,useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { lazy,Suspense,useCallback,useEffect,useRef,useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import "./role-media.css";
@@ -61,8 +61,8 @@ import "./editors-polish.css";
 import "./welcome.css";
 import "./studio-direction.css";
 import "./dialogs.css";
-import "./keyboard.css";
-import { focusKeyboardTarget, hasOpenKeyboardLayer, isKeyboardEventBlocked, isKeyboardInput, isKeyboardTargetVisible } from "./keyboard";
+
+
 import { PageHeading, PageLoading } from "./ui";
 import { FloatingImageGenerator } from "./components/FloatingImageGenerator";
 import { AgentFloatButton } from "./components/AgentFloatButton";
@@ -94,45 +94,11 @@ const workspacePages = [
   { id: "prompts", label: "Prompt 库", icon: WandSparkles },
 ];
 
-function keyboardRegions() {
-  const nav = document.getElementById("studio-navigation");
-  const sessions = document.querySelector<HTMLElement>('[data-keyboard-region="sessions"]');
-  const conversation = document.querySelector<HTMLElement>('[data-keyboard-region="conversation"]');
-  const composer = document.querySelector<HTMLElement>('[data-keyboard-region="composer"]');
-  const content = document.querySelector<HTMLElement>('[data-keyboard-region="content"]') || document.getElementById("workspace-content");
-  return [
-    { region: nav, target: nav?.querySelector<HTMLElement>('[aria-current="page"]') || nav?.querySelector<HTMLElement>('[data-workspace-nav]') || null },
-    { region: sessions, target: sessions?.querySelector<HTMLElement>('.agent-session-select[aria-current="page"]:not(:disabled)') || sessions?.querySelector<HTMLElement>('.agent-session-select:not(:disabled), [data-testid="agent-new-session"]:not(:disabled)') || null },
-    ...(conversation ? [{ region: conversation, target: conversation }, { region: composer, target: composer }] : [{ region: content, target: content?.querySelector<HTMLElement>("[data-keyboard-entry]") || content }]),
-  ].filter(item => isKeyboardTargetVisible(item.region) && isKeyboardTargetVisible(item.target) && !item.target.matches(':disabled, [aria-disabled="true"]'));
-}
+
 
 function App() {
-  const [keyboardHelpOpen, setKeyboardHelpOpen] = useState(false);
-  const keyboardHelpReturn = useRef<HTMLElement | null>(null);
-  const openKeyboardHelp = () => {
-    keyboardHelpReturn.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setMobileNavOpen(false);
-    setKeyboardHelpOpen(true);
-  };
-  useEffect(() => {
-    const shortcuts = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.altKey || event.ctrlKey || event.metaKey || hasOpenKeyboardLayer()) return;
-      if (event.key === "F6") {
-        const regions = keyboardRegions();
-        if (!regions.length) return;
-        const current = regions.findIndex(item => item.region?.contains(document.activeElement));
-        const index = current < 0 ? (event.shiftKey ? regions.length - 1 : 0) : (current + (event.shiftKey ? -1 : 1) + regions.length) % regions.length;
-        event.preventDefault();
-        focusKeyboardTarget(regions[index].target);
-      } else if (event.key === "?" && !event.repeat && !isKeyboardInput(event.target) && document.getElementById("workspace-content")) {
-        event.preventDefault();
-        openKeyboardHelp();
-      }
-    };
-    document.addEventListener("keydown", shortcuts);
-    return () => document.removeEventListener("keydown", shortcuts);
-  }, []);
+
+
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("spielberg-sidebar-collapsed") === "true");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.matchMedia("(max-width: 600px)").matches);
@@ -142,38 +108,7 @@ function App() {
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, []);
-  useEffect(() => {
-    if (!mobileNavOpen) return;
-    const sidebar = document.getElementById("studio-navigation");
-    const main = document.querySelector<HTMLElement>(".app-main");
-    const frame = requestAnimationFrame(() => {
-      sidebar?.querySelector<HTMLElement>(".arco-menu-selected, .mobile-nav-close")?.focus();
-      main?.setAttribute("inert", "");
-    });
-    const close = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setMobileNavOpen(false);
-      }
-      if (event.key === "Tab" && sidebar) {
-        const items = Array.from(sidebar.querySelectorAll<HTMLElement>('button:not(:disabled), [tabindex="0"], a[href]'))
-          .filter(element => element.getClientRects().length > 0);
-        const first = items[0], last = items[items.length - 1];
-        if (event.shiftKey && (document.activeElement === first || !sidebar.contains(document.activeElement))) {
-          event.preventDefault(); last?.focus();
-        } else if (!event.shiftKey && (document.activeElement === last || !sidebar.contains(document.activeElement))) {
-          event.preventDefault(); first?.focus();
-        }
-      }
-    };
-    window.addEventListener("keydown", close);
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener("keydown", close);
-      main?.removeAttribute("inert");
-      document.querySelector<HTMLButtonElement>(".sidebar-toggle")?.focus();
-    };
-  }, [mobileNavOpen]);
+
   useEffect(() => {
     localStorage.setItem("spielberg-sidebar-collapsed", String(sidebarCollapsed));
   }, [sidebarCollapsed]);
@@ -381,33 +316,14 @@ function App() {
     if (next === page && !sceneEditing) { afterNavigate?.(); return; }
     leaveEditor(() => { setLocate(null);setEpisodeSceneReturnId(null);setImageSource(undefined);setSceneEditing(null);setSceneImageFlow(null); setPage(next); }, afterNavigate);
   };
-  const navigateWithKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (isKeyboardEventBlocked(event.nativeEvent)) return;
-    const current = (event.target as Element).closest<HTMLElement>("[data-workspace-nav]");
-    if (!current) return;
-    if (event.key === "ArrowRight") {
-      event.preventDefault(); event.stopPropagation();
-      navigate(current.dataset.workspaceNav!, () => requestAnimationFrame(() => {
-        const regions = keyboardRegions();
-        focusKeyboardTarget(regions.find(item => item.region?.id !== "studio-navigation")?.target || contentRef.current);
-      }));
-      return;
-    }
-    if (!["ArrowUp", "ArrowDown", "Home", "End", " "].includes(event.key)) return;
-    event.preventDefault(); event.stopPropagation();
-    const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("[data-workspace-nav]")).filter(isKeyboardTargetVisible);
-    const index = items.indexOf(current);
-    const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : event.key === "ArrowUp" ? Math.max(0, index - 1) : event.key === "ArrowDown" ? Math.min(items.length - 1, index + 1) : index;
-    const next = items[nextIndex];
-    if (next) navigate(next.dataset.workspaceNav!, () => focusKeyboardTarget(next));
-  };
+
   return (
     <EditGuardContext.Provider value={registerDirty}>
     <Layout className={`app${mobileNavOpen ? " mobile-nav-open" : ""}${page === "agent" && !sceneEditing ? " agent-page" : ""}${darkMode ? " dark-theme" : ""}${sceneEditing?.scene.creation_mode === "canvas" ? " canvas-mode" : ""}`}>
       <a className="skip-to-content" href="#workspace-content">跳转到工作区</a>
       {mobileNavOpen && <button className="mobile-nav-backdrop" aria-label="关闭导航" onClick={() => setMobileNavOpen(false)} />}
       <Layout.Sider className={`side${sidebarCollapsed ? " side-collapsed" : ""}`} width={216}>
-        <div id="studio-navigation" className="side-navigation-body" data-keyboard-region="navigation" onKeyDownCapture={navigateWithKeyboard} role={isMobile && mobileNavOpen ? "dialog" : "navigation"} aria-modal={isMobile && mobileNavOpen ? true : undefined} aria-label="工作室导航">
+        <div id="studio-navigation" className="side-navigation-body"   role={isMobile && mobileNavOpen ? "dialog" : "navigation"} aria-modal={isMobile && mobileNavOpen ? true : undefined} aria-label="工作室导航">
         <div className="mobile-nav-heading"><b>工作室导航</b><Button className="mobile-nav-close" type="text" aria-label="关闭导航" icon={<X size={18}/>} onClick={() => setMobileNavOpen(false)}/></div>
         <div className="logo">
           <img className="logo-mark" src={logoSrc} alt="Spielberg" />
@@ -426,7 +342,7 @@ function App() {
         </button>
         <div className="nav-label">制作空间</div>
         <Menu selectedKeys={[page]} onClickMenuItem={key => navigate(key)} className="nav">
-          {workspacePages.map(({ id, label, icon: Icon }) => <Menu.Item key={id} title={`${label} · ↑↓ 切换 · → 进入`} aria-label={label} data-workspace-nav={id} aria-current={page === id ? "page" : undefined} tabIndex={isMobile || page === id || (page === "projects" && id === "agent") ? 0 : -1}><Icon />{label}</Menu.Item>)}
+          {workspacePages.map(({ id, label, icon: Icon }) => <Menu.Item key={id} title={label} aria-label={label} aria-current={page === id ? "page" : undefined} tabIndex={0}><Icon />{label}</Menu.Item>)}
         </Menu>
         <div className="mobile-project-actions">
           <Button icon={<FolderOpen size={16}/>} onClick={() => { setMobileNavOpen(false); openProject(); }}>打开项目</Button>
@@ -441,15 +357,15 @@ function App() {
             data-active={page === "settings"}
             title="设置"
             aria-label="设置"
-            data-workspace-nav="settings"
+
             aria-current={page === "settings" ? "page" : undefined}
-            tabIndex={isMobile || page === "settings" ? 0 : -1}
+            tabIndex={0}
             icon={<Settings size={18} />}
             onClick={() => navigate("settings")}
           >
             <span>设置</span>
           </Button>
-          <Button className="keyboard-help-button" type="text" long title="键盘快捷键（?）" aria-label="键盘快捷键" icon={<Keyboard size={18} />} onClick={openKeyboardHelp}><span>键盘快捷键 <kbd>?</kbd></span></Button>
+
         </div>
         </div>
       </Layout.Sider>
@@ -619,31 +535,7 @@ function App() {
           setAgentViewVersion(value => value + 1);
         })} />
       </Layout>
-      <Modal className="keyboard-help-modal" title="键盘快捷键" visible={keyboardHelpOpen} onCancel={() => setKeyboardHelpOpen(false)} footer={null} autoFocus focusLock afterClose={() => { if (!focusKeyboardTarget(keyboardHelpReturn.current)) focusKeyboardTarget(document.querySelector<HTMLElement>(".sidebar-toggle")); }} style={{ width: 480, maxWidth: "calc(100vw - 32px)" }}>
-        <div className="keyboard-shortcuts">
-          <div><h3>工作区导航</h3><dl>
-            <div><dt>切换焦点区域 / 反向切换</dt><dd><kbd>F6</kbd> / <kbd>Shift F6</kbd></dd></div>
-            <div><dt>侧栏切换页面、列表切换会话</dt><dd><kbd>↑</kbd> <kbd>↓</kbd></dd></div>
-            <div><dt>侧栏 → 会话 → 对话 → 输入框</dt><dd><kbd>→</kbd></dd></div>
-            <div><dt>对话 → 会话 → 侧栏</dt><dd><kbd>←</kbd></dd></div>
-            <div><dt>列表第一项 / 最后一项</dt><dd><kbd>Home</kbd> / <kbd>End</kbd></dd></div>
-          </dl></div>
-          <div><h3>资产库与素材库</h3><dl>
-            <div><dt>从侧栏选中第一张卡片</dt><dd><kbd>→</kbd></dd></div>
-            <div><dt>按网格位置选择卡片</dt><dd><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></dd></div>
-            <div><dt>最左列返回侧栏</dt><dd><kbd>←</kbd></dd></div>
-            <div><dt>查看资产详情 / 预览素材</dt><dd><kbd>Enter</kbd></dd></div>
-            <div><dt>选择当前列表第一张 / 最后一张</dt><dd><kbd>Home</kbd> / <kbd>End</kbd></dd></div>
-            <div><dt>素材库翻页</dt><dd>底部分页控件</dd></div>
-          </dl></div>
-          <div><h3>素材库与对话</h3><dl>
-            <div><dt>整屏滚动</dt><dd><kbd>PageUp</kbd> <kbd>PageDown</kbd></dd></div>
-            <div><dt>搜索素材 / 输入消息</dt><dd><kbd>/</kbd></dd></div>
-            <div><dt>离开搜索框或消息输入框</dt><dd><kbd>Esc</kbd></dd></div>
-          </dl></div>
-          <p>方向键跟随当前焦点区域，输入文字时保留光标操作。弹窗和下拉菜单使用各自的快捷键。按 <kbd>?</kbd> 查看帮助，按 <kbd>Esc</kbd> 关闭。Mac 的功能键可能需要同时按住 <kbd>Fn</kbd>。</p>
-        </div>
-      </Modal>
+
       <Modal title="创建项目" visible={creating} onCancel={() => !creatingProject && setCreating(false)}
         onOk={create} okText="创建项目" confirmLoading={creatingProject} maskClosable={!creatingProject}>
         <Form layout="vertical"><Form.Item label="项目名称" required>

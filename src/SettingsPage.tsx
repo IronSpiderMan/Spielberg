@@ -118,13 +118,7 @@ export default function SettingsPage({ data, reload }: { data: Snapshot; reload:
       {categories.map(({ id, label, icon: Icon }, index) => {
         const service = serviceKinds.includes(id as GenerationKind);
         const pending = service ? changed(id as GenerationKind) : id === "storage" && directoryDirty;
-        return <button key={id} id={`settings-tab-${id}`} type="button" role="tab" aria-selected={category === id} aria-controls={`settings-panel-${id}`} tabIndex={category === id ? 0 : -1} onClick={() => selectCategory(id)} onKeyDown={event => {
-          const next = event.key === "ArrowRight" ? (index + 1) % categories.length : event.key === "ArrowLeft" ? (index + categories.length - 1) % categories.length : event.key === "Home" ? 0 : event.key === "End" ? categories.length - 1 : null;
-          if (next === null) return;
-          event.preventDefault();
-          selectCategory(categories[next].id);
-          document.getElementById(`settings-tab-${categories[next].id}`)?.focus();
-        }}><Icon size={16} /><span>{label}</span>{pending && <i className="settings-pending-dot" aria-label="有未保存修改" />}</button>;
+        return <button key={id} id={`settings-tab-${id}`} type="button" role="tab" aria-selected={category === id} aria-controls={`settings-panel-${id}`} tabIndex={0} onClick={() => selectCategory(id)} ><Icon size={16} /><span>{label}</span>{pending && <i className="settings-pending-dot" aria-label="有未保存修改" />}</button>;
       })}
     </div>
     {serviceKinds.map(kind => <div key={kind} id={`settings-panel-${kind}`} role="tabpanel" aria-labelledby={`settings-tab-${kind}`} className="studio-settings-panel settings-service-panel" hidden={category !== kind}>
