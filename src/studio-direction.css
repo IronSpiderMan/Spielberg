@@ -78,7 +78,7 @@ html .image-mode-tabs .arco-radio-button-checked, html .generation-mode-tabs .ar
 @keyframes generation-status-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .generation-state.is-busy::before { animation: none; } }
 .generation-preview-body { min-height: 260px; flex: 1 1 auto; gap: 20px; }
-/* A quiet canvas, with all decoration scoped to the image empty state. */
+/* Shared image/video preview canvas; decoration stays inside the empty state. */
 .image-preview-empty {
   box-sizing: border-box;
   position: relative;
@@ -467,19 +467,38 @@ html[data-theme="dark"] .task-state.task-failed { background: #ef8b8f; }
   }
 }
 
-/* Give the image preview and its library the full workspace height on wide screens. */
+/* Keep the video player and its controls within the available preview height. */
+.video-generation-controls { display: contents; }
+.video-generation-result { display: flex; flex-direction: column; width: 100%; min-width: 0; }
+.video-generation-result > .helper { flex: 0 0 auto; max-width: 100%; margin: 12px 0 0; overflow-wrap: anywhere; }
+.video-result .generation-preview-body > .generation-result-note { flex: 0 0 auto; text-align: center; }
+@media (min-width: 1101px) {
+  .video-generation-controls { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; overflow: hidden; }
+  .video-generation-controls > .generation-channel-fields,
+  .video-generation-controls > .image-mode-tabs { flex-shrink: 0; }
+  .video-generation-controls > .arco-form { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-gutter: stable; padding-right: 4px; margin-right: -4px; }
+  .video-generation-result { flex: 1 1 0; min-height: 200px; }
+  .video-generation-result > .video-result-preview { display: flex; align-items: center; flex: 1 1 0; min-height: 0; }
+  .video-generation-result > .video-result-preview > video { height: 100%; max-height: 100%; min-height: 0; }
+}
+@media (min-width: 1101px) and (max-height: 800px) {
+  .video-generation-controls { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-gutter: stable; }
+  .video-generation-controls > .arco-form { flex: 0 0 auto; overflow: visible; padding-right: 0; margin-right: 0; }
+}
+
+/* Image and video previews share a full-height media sidebar on wide screens. */
 @media (min-width: 1201px) {
-  .creation-desk.images-active .image-creation-split > .image-result {
+  .creation-desk.images-active :is(.image-creation-split, .video-creation-split) > .image-result {
     display: grid;
     grid-template-columns: minmax(0, 1fr) clamp(160px, 26%, 240px);
     grid-template-rows: auto minmax(0, 1fr);
     gap: 16px 20px;
     align-items: stretch;
   }
-  .creation-desk .image-creation-split > .image-result > .generation-preview-heading {
+  .creation-desk :is(.image-creation-split, .video-creation-split) > .image-result > .generation-preview-heading {
     grid-column: 1 / -1;
   }
-  .creation-desk.images-active .image-creation-split > .image-result > .generation-preview-body {
+  .creation-desk.images-active :is(.image-creation-split, .video-creation-split) > .image-result > .generation-preview-body {
     grid-column: 1;
     grid-row: 2;
     padding: 0;
@@ -488,7 +507,7 @@ html[data-theme="dark"] .task-state.task-failed { background: #ef8b8f; }
     scrollbar-width: thin;
     justify-content: safe center;
   }
-  .creation-desk.images-active .image-creation-split > .image-result > .studio-media-library {
+  .creation-desk.images-active :is(.image-creation-split, .video-creation-split) > .image-result > .studio-media-library {
     grid-column: 2;
     grid-row: 2;
     min-height: 0;
@@ -499,7 +518,7 @@ html[data-theme="dark"] .task-state.task-failed { background: #ef8b8f; }
     border-left: 1px solid var(--ui-border);
     overflow: hidden;
   }
-  .creation-desk .image-creation-split .studio-media-grid {
+  .creation-desk :is(.image-creation-split, .video-creation-split) .studio-media-grid {
     flex: 1 1 0;
     grid-template-columns: minmax(0, 1fr);
     max-height: none;

@@ -5,10 +5,10 @@ import { PreviewVideo } from "./components/VideoPreviewModal";
 import { StudioMediaLibrary, useStudioMedia } from "./components/StudioMediaLibrary";
 import { ReferenceMediaPicker } from "./components/generation/ReferenceMediaPicker";
 import { buildVideoRequest, type VideoMode } from "./generation-request";
-import { GenerationModeTabs, MediaSizeFields, VideoDurationField } from "./components/generation/GenerationFields";
+import { GenerationModeTabs } from "./components/generation/GenerationFields";
 import { ImageAssetSelect, ReferenceImagePicker } from "./components/generation/ReferenceImagePicker";
-import { Button, Checkbox, Empty, Form, Message, Select, Tag } from "@arco-design/web-react";
-import { Film, Upload } from "lucide-react";
+import { Button, Form, Message, Tag } from "@arco-design/web-react";
+import { CircleAlert, Film, LoaderCircle, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { isSupportedImage, useImageUpload } from "./hooks/useImageUpload";
 import { usePromptOptimization } from "./hooks/usePromptOptimization";
@@ -52,7 +52,6 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
   const disabled = busy || uploading || optimizing || uploadingReferences;
   const cap=generationChoice(data.settings,"video",generation.value)?.capabilities;
   const qianwen=generation.choice?.channel.provider === "qianwen-token-plan";
-  const happyhorse=cap?.label.startsWith("HappyHorse");
   useEffect(()=>{
     if (!cap) return;
     const operation=mode === "i2v"?"ref2v":mode;
@@ -106,11 +105,12 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
   return <div className="creation-split video-creation-split">
     <div className="creation-panel">
       <div className="generation-panel-heading"><h2>视频生成</h2></div>
+      <div className="video-generation-controls">
+      <GenerationSelector settings={data.settings} kind="video" value={generation.value} onChange={value=>{generation.setValue(value);setLast(undefined);setReferenceVideos([]);setReferenceAudios([]);}} disabled={disabled}/>
+      <GenerationModeTabs value={mode} onChange={value=>setMode(value as VideoMode)} disabled={disabled} modes={[
+        { value: "t2v", label: "文生视频" }, { value: "fl2v", label: cap?.last_frame ? "首尾帧" : "首帧生视频" }, { value: "i2v", label: cap?.max_videos ? "全能参考" : "图片参考" },
+      ].filter(item=>!cap || cap.modes.includes(item.value === "i2v"?"ref2v":item.value))} />
       <Form layout="vertical" disabled={disabled}>
-        <GenerationSelector settings={data.settings} kind="video" value={generation.value} onChange={value=>{generation.setValue(value);setLast(undefined);setReferenceVideos([]);setReferenceAudios([]);}} disabled={disabled}/>
-        <GenerationModeTabs value={mode} onChange={value=>setMode(value as VideoMode)} disabled={disabled} modes={[
-          { value: "t2v", label: "文生视频" }, { value: "fl2v", label: cap?.last_frame ? "首尾帧" : "首帧生视频" }, { value: "i2v", label: cap?.max_videos ? "全能参考" : "图片参考" },
-        ].filter(item=>!cap || cap.modes.includes(item.value === "i2v"?"ref2v":item.value))} />
         <Form.Item label="视频描述" required>
           <PromptInput value={prompt} onChange={setPrompt} roles={data.assets} data={mode === "i2v" ? data : undefined} prompts={prompts} templates={[...PROMPT_TEMPLATES, ...data.prompts]} placeholder="描述画面、动作和镜头运动，输入 @ 引用资产或提示词" disabled={disabled} onOptimize={optimize} optimizing={optimizing} onPasteImages={files => void importImages(files)} />
           <p className="helper">{uploading ? "正在上传图片…" : "可粘贴图片作为参考，生成的视频会自动存入素材库"}</p>
@@ -128,16 +128,35 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
         {mode === "i2v" && !!cap?.max_videos && <ReferenceMediaPicker projectId={data.project.id} media={data.media} videoIds={referenceVideos} audioIds={referenceAudios} reload={reload} disabled={busy || uploading || optimizing} onUploading={setUploadingReferences} onChange={(kind, ids) => kind === "video" ? setReferenceVideos(ids) : setReferenceAudios(ids)} />}
         <VideoModelFields disabled={disabled} choice={generation.choice} mode={mode} duration={duration} onDuration={setDuration} ratio={ratio} size={size} onSize={value=>{setRatio(value.ratio);setSize(value.size);}} resolution={resolution} onResolution={setResolution} audio={audio} onAudio={setAudio}/>
         {qianwen&&mode==="i2v"&&<p className="helper">使用 [Image 1]、[Image 2] 引用所选图片。{cap?.max_videos?"参考视频支持 MP4/MOV，音频支持 MP3/WAV；视频和音频各自总时长不超过 15 秒，输入视频与输出视频总时长不超过 30 秒。":""}</p>}
-        </Form>
-      <Button className="generation-submit" type="primary" long icon={<Film size={16} />} loading={busy} disabled={uploading || optimizing || uploadingReferences} onClick={() => void generate()}>{busy ? "视频生成中…" : "生成视频"}</Button>
+      </Form>
+      </div>
+      <div className="generation-submit-row">
+        <Button className="generation-submit" type="primary" long icon={<Film size={16} />} loading={busy} disabled={uploading || optimizing || uploadingReferences} onClick={() => void generate()}>{busy ? "视频生成中…" : "生成视频"}</Button>
+      </div>
     </div>
     <div className="creation-panel image-result video-result" aria-busy={busy}>
-      <div className="generation-preview-heading"><h2>生成预览</h2><span role="status" className={`generation-state${busy ? " is-busy" : error ? " is-error" : result ? " is-ready" : ""}`}>{busy ? "生成中" : error ? "生成失败" : result ? "已完成" : "等待创作"}</span></div>
+      <div className="generation-preview-heading"><h2>生成预览</h2><span role="status" aria-live="polite" className={`generation-state${busy ? " is-busy" : error ? " is-error" : result ? " is-ready" : ""}`}>{busy ? "生成中" : error ? "生成失败" : result ? "已完成" : "等待创作"}</span></div>
       <div className="generation-preview-body">
-      {result ? <><PreviewVideo key={result.id} media={result} projectId={data.project.id} /><p className="helper">{busy || error ? "上次生成 · " : ""}{result.name} · 已保存到素材库</p></> : <Empty icon={<Film size={28} />} description={<><b>{busy ? "视频正在生成" : error ? "本次未生成视频" : "下一个精彩镜头，从这里开始"}</b><p>{busy ? "稍候片刻，完成后将自动展示" : error ? "检查错误信息，调整描述或参数后重试。" : "描述画面，生成的视频将自动存入素材库"}</p></>} />}
-      {error && <p className="image-generation-errors" role="alert">{error}</p>}
+        {result ? <div className="video-generation-result">
+          <PreviewVideo key={result.id} media={result} projectId={data.project.id} />
+          <p className="helper">{busy || error ? "上次生成 · " : ""}{result.name} · 已保存到素材库</p>
+        </div> : <div className={`image-preview-empty video-preview-empty${busy ? " is-busy" : error ? " is-error" : ""}`}>
+          <div className="image-preview-empty-content">
+            <div className="image-preview-empty-art" aria-hidden="true">
+              <span className="image-preview-empty-sheet" />
+              <span className="image-preview-empty-sheet" />
+              <span className="image-preview-empty-sheet image-preview-empty-front">
+                {busy ? <LoaderCircle size={30} strokeWidth={1.4} /> : error ? <CircleAlert size={30} strokeWidth={1.4} /> : <Film size={32} strokeWidth={1.3} />}
+              </span>
+            </div>
+            <div className="image-preview-empty-caption"><span>{busy ? "视频正在生成" : error ? "本次未生成视频" : "视频预览"}</span>
+              {(busy || error) && <p>{busy ? "完成后将自动展示，并存入素材库" : "检查错误信息，调整描述或参数后重试"}</p>}
+            </div>
+          </div>
+        </div>}
+        {error && <p className="image-generation-errors" role="alert">{error}</p>}
+        <p className="helper generation-result-note">生成进度与错误信息可在「后台任务」中查看。</p>
       </div>
-      <p className="helper generation-result-note">生成任务可在「后台任务」中查看进度与错误信息。</p>
       <StudioMediaLibrary kind="video" items={videoLibrary.items} projectId={data.project.id} />
     </div>
   </div>;
