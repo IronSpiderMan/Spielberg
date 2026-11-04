@@ -82,10 +82,6 @@ html .image-mode-tabs .arco-radio-button-checked, html .generation-mode-tabs .ar
 .viewfinder-empty .arco-empty-image { display: none; }
 .generation-preview-body .arco-empty-description b { font-size: 16px; font-weight: 500; color: var(--ui-text); }
 .generation-preview-body .arco-empty-description p { max-width: 280px; margin-top: 12px; font-size: 13px; line-height: 1.8; }
-.prompt-starts { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; font-size: 12px; color: var(--ui-muted); }
-.prompt-starts > span { margin-right: 4px; }
-.prompt-starts button { padding: 7px 12px; border: 1px solid var(--ui-border); border-radius: 6px; background: var(--ui-surface); color: var(--ui-secondary-text); cursor: pointer; font: inherit; transition: border-color 160ms, color 160ms; }
-.prompt-starts button:hover { color: var(--ui-text); border-color: var(--studio-accent); }
 .image-result .generation-result-note { font-size: 12px; padding-top: 16px; }
 .arco-card, .library-card, .role-card, .episode-card, .prompt-card { box-shadow: none; }
 .arco-card:hover { box-shadow: none; }
@@ -290,7 +286,7 @@ html[data-theme="dark"] .task-state.task-failed { background: #ef8b8f; }
 
 /* Secondary metadata reads one step larger; still quiet next to primary text. */
 .studio-local-note, .role-foot, .project-card small, .library-card small, .prompt-meta, .task-list small { font-size: 12px; }
-.role-image-zoom > span, .prompt-starts, .project-card p { font-size: 12px; }
+.role-image-zoom > span, .project-card p { font-size: 12px; }
 
 @container (max-width: 700px) {
   .setting-block > .arco-form, .setting-block > .skills-body { padding-left: 0; border-left: 0; }
@@ -351,9 +347,6 @@ html[data-theme="dark"] .task-state.task-failed { background: #ef8b8f; }
   .creation-split { gap: 20px; grid-template-columns: minmax(0, 1fr); }
   .creation-split > .creation-panel { padding: 16px; }
   .creation-split .arco-btn, .creation-split .arco-select .arco-select-view { min-height: 40px; }
-  .prompt-starts { gap: 8px; }
-  .prompt-starts > span { flex-basis: 100%; text-align: center; }
-  .prompt-starts button { min-height: 44px; }
   .generation-preview-body .arco-empty-description b { font-size: 14px; }
   .generation-preview-body .arco-empty-description p { font-size: 12px; }
   .welcome .welcome-card { padding: 28px 24px; }
