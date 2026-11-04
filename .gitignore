@@ -56,6 +56,7 @@ npm-debug.log*
 !/scripts/qa/generation-channels.cjs
 !/scripts/qa/settings-layout.cjs
 !/scripts/qa/ui-details.cjs
+!/scripts/qa/studio-media-interactions.cjs
 
 # Tauri
 src-tauri/gen/
@@ -66,3 +67,4 @@ target-linux-arm64/
 
 !/scripts/qa/confirmation-dialogs.cjs
 !/scripts/qa/keyboard-navigation.cjs
+!/scripts/qa/project-config.cjs

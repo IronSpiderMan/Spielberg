@@ -591,7 +591,7 @@ function App() {
               {page === "prompts" && (
                 <Prompts data={data} reload={refresh} />
               )}{" "}
-              {page === "project-config" && <ProjectConfig project={data.project} reload={refresh} />}
+              {page === "project-config" && <ProjectConfig key={data.project.id} project={data.project} reload={refresh} />}
               {page === "settings" && (
                 <SettingsPage data={data} reload={refresh} />
               )}{" "}

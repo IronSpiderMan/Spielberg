@@ -23,6 +23,31 @@ fn sql_error(error: rusqlite::Error) -> ApiError {
     }
     ApiError(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
 }
+fn validate_timelines(value: &Value) -> ApiResult<()> {
+    let timelines = value.as_array().ok_or_else(|| bad("时间线必须是数组"))?;
+    let mut timeline_ids = std::collections::HashSet::new();
+    for timeline in timelines {
+        let id = timeline["id"].as_str().filter(|id| !id.trim().is_empty()).ok_or_else(|| bad("时间线 ID 无效"))?;
+        if !timeline_ids.insert(id) { return Err(bad("时间线 ID 不能重复")); }
+        if timeline["title"].as_str().map_or(true, |title| title.trim().is_empty()) { return Err(bad("时间线名称不能为空")); }
+        if !timeline["description"].is_string() { return Err(bad("时间线说明必须是文本")); }
+        let entries = timeline["entries"].as_array().ok_or_else(|| bad("时间点必须是数组"))?;
+        let mut entry_ids = std::collections::HashSet::new();
+        for entry in entries {
+            let id = entry["id"].as_str().filter(|id| !id.trim().is_empty()).ok_or_else(|| bad("时间点 ID 无效"))?;
+            if !entry_ids.insert(id) { return Err(bad("同一时间线中的时间点 ID 不能重复")); }
+            if entry["time"].as_str().map_or(true, |time| time.trim().is_empty()) { return Err(bad("请填写时间点的时间")); }
+            let events = entry["events"].as_array().filter(|events| !events.is_empty()).ok_or_else(|| bad("每个时间点至少需要一个事件"))?;
+            let mut event_ids = std::collections::HashSet::new();
+            for event in events {
+                let id = event["id"].as_str().filter(|id| !id.trim().is_empty()).ok_or_else(|| bad("事件 ID 无效"))?;
+                if !event_ids.insert(id) { return Err(bad("同一时间点中的事件 ID 不能重复")); }
+                if event["content"].as_str().map_or(true, |content| content.trim().is_empty()) { return Err(bad("事件内容不能为空")); }
+            }
+        }
+    }
+    Ok(())
+}
 fn table(resource: &str) -> ApiResult<&'static str> {
     match resource { "assets"=>Ok("assets"),"media"=>Ok("media"),"episodes"=>Ok("episodes"),"scenes"=>Ok("scenes"),"prompts"=>Ok("prompts"),"screenplays"=>Ok("screenplays"),_=>Err(missing()) }
 }
@@ -136,7 +161,7 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
             "GET"=>Ok(snapshot(state,id)?["project"].clone()),
             "PATCH"=>{
                 let fields=value.as_object().ok_or_else(||bad("JSON 必须是对象"))?;
-                for key in fields.keys() {if !["name","outline","agents_md","documents"].contains(&key.as_str()){return Err(bad("不支持的项目字段"))}}
+                for key in fields.keys() {if !["name","outline","agents_md","documents","timelines"].contains(&key.as_str()){return Err(bad("不支持的项目字段"))}}
                 if let Some(name)=value.get("name") {if name.as_str().map_or(true,|s|s.trim().is_empty()){return Err(bad("项目名称不能为空"))}}
                 if value.get("outline").is_some_and(|v|!v.is_string()){return Err(bad("大纲必须是文本"))}
                 if value.get("agents_md").is_some_and(|v|!v.is_string()){return Err(bad("AGENTS.md 必须是文本"))}
@@ -148,15 +173,16 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
                         if !ids.insert(id) || doc["title"].as_str().map_or(true,|s|s.trim().is_empty()) || !doc["content"].is_string(){return Err(bad("文档需要唯一 ID、标题和正文"))}
                     }
                 }
+                if let Some(timelines)=value.get("timelines") {validate_timelines(timelines)?;}
                 let c=db(state,id)?;
                 let raw:Option<String>=c.query_row("SELECT value FROM settings WHERE key='project_config'",[],|r|r.get(0)).optional().map_err(sql_error)?;
-                let mut config:Value=raw.and_then(|s|serde_json::from_str(&s).ok()).unwrap_or(json!({"outline":"","documents":[]}));
-                for key in ["outline","agents_md","documents"] {if let Some(v)=value.get(key){config[key]=v.clone();}}
+                let mut config:Value=raw.and_then(|s|serde_json::from_str(&s).ok()).unwrap_or(json!({"outline":"","documents":[],"timelines":[]}));
+                for key in ["outline","agents_md","documents","timelines"] {if let Some(v)=value.get(key){config[key]=v.clone();}}
                 c.execute("INSERT INTO settings(key,value) VALUES('project_config',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[config.to_string()]).map_err(sql_error)?;
                 let mut all=registry(state)?;let p=all.iter_mut().find(|p|p["id"]==id).ok_or_else(missing)?;
                 if let Some(name)=value["name"].as_str(){p["name"]=json!(name.trim());}
                 p["updated_at"]=json!("刚刚");let mut result=p.clone();save_registry(state,&all)?;
-                result["agents_md"]=config.get("agents_md").cloned().unwrap_or(json!(""));result["outline"]=config["outline"].clone();result["documents"]=config["documents"].clone();Ok(result)
+                result["agents_md"]=config.get("agents_md").cloned().unwrap_or(json!(""));result["outline"]=config["outline"].clone();result["documents"]=config["documents"].clone();result["timelines"]=config.get("timelines").cloned().unwrap_or(json!([]));Ok(result)
             },
             "DELETE"=>{catalog::no_running_jobs(&db(state,id)?)?;let mut all=registry(state)?;all.retain(|p|p["id"]!=id);save_registry(state,&all)?;Ok(json!({"deleted":true,"data_retained":true}))},
             _=>Err(ApiError(StatusCode::METHOD_NOT_ALLOWED,"不支持的方法".into())),
@@ -277,6 +303,88 @@ pub(crate) fn action(state:&AppState,path:&str,value:Value)->ApiResult<Value>{
 #[cfg(test)]
 mod project_config_tests {
     use super::*;
+    fn timeline_fixture() -> (AppState, String, String) {
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("tmp-codex-diagnostics").join(format!("project-timelines-{}",Uuid::new_v4()));
+        storage::initialize_root(&root).unwrap();
+        let state=AppState{root,guard:std::sync::Arc::new(Mutex::new(()))};
+        let created=crud(&state,"POST","projects",json!({"name":"Original"})).unwrap();
+        let pid=created["id"].as_str().unwrap().to_string();
+        let path=format!("projects/{pid}");
+        (state,pid,path)
+    }
+    fn sample_timelines() -> Value {
+        json!([
+            {"id":"main","title":"主线","description":"按叙事顺序排列","entries":[
+                {"id":"future","time":"2035 年","events":[{"id":"reunion","content":"众人重逢"}]},
+                {"id":"school","time":"高三开学","events":[{"id":"return","content":"主角回到高中"},{"id":"meet","content":"同一时刻，好友来到教室\n两人重逢"}]},
+                {"id":"another-perspective","time":"高三开学","events":[{"id":"plan","content":"另一视角中的计划"}]}
+            ]},
+            {"id":"backstory","title":"人物前史","description":"","entries":[]}
+        ])
+    }
+    #[test]
+    fn timelines_preserve_order_and_survive_reload_and_backup() {
+        let (state,pid,path)=timeline_fixture();
+        assert_eq!(snapshot(&state,&pid).unwrap()["project"]["timelines"],json!([]));
+        // Existing project databases do not have a timelines key.
+        let documents=json!([{"id":"notes","title":"笔记","content":"保留原文"}]);
+        let legacy=json!({"outline":"旧大纲","agents_md":"工作规范","documents":documents});
+        db(&state,&pid).unwrap().execute("INSERT INTO settings(key,value) VALUES('project_config',?)",[legacy.to_string()]).unwrap();
+        assert_eq!(crud(&state,"GET",&path,json!({})).unwrap()["timelines"],json!([]));
+        assert_eq!(crud(&state,"PATCH",&path,json!({"name":"Renamed"})).unwrap()["timelines"],json!([]));
+        let timelines=sample_timelines();
+        let result=crud(&state,"PATCH",&path,json!({"timelines":timelines})).unwrap();
+        assert_eq!(result["timelines"],timelines);
+        assert_eq!(result["outline"],legacy["outline"]);
+        assert_eq!(result["agents_md"],legacy["agents_md"]);
+        assert_eq!(result["documents"],documents);
+        let reopened=AppState{root:state.root.clone(),guard:std::sync::Arc::new(Mutex::new(()))};
+        assert_eq!(crud(&reopened,"GET",&path,json!({})).unwrap()["timelines"],timelines);
+        let updated=crud(&reopened,"PATCH",&path,json!({"outline":"新大纲","documents":[]})).unwrap();
+        assert_eq!(updated["timelines"],timelines);
+        assert_eq!(snapshot(&reopened,&pid).unwrap()["project"]["timelines"],timelines);
+        let backup=state.root.join("timelines.spielberg-backup");
+        project_backup::command(&reopened,&json!({"project_id":pid,"path":backup}),false).unwrap();
+        let restored=project_backup::command(&reopened,&json!({"path":backup}),true).unwrap();
+        let restored_pid=restored["id"].as_str().unwrap();
+        assert_eq!(snapshot(&reopened,restored_pid).unwrap()["project"]["timelines"],timelines);
+        assert_eq!(crud(&reopened,"PATCH",&path,json!({"timelines":[]})).unwrap()["timelines"],json!([]));
+        assert_eq!(snapshot(&reopened,&pid).unwrap()["project"]["timelines"],json!([]));
+        assert_eq!(snapshot(&reopened,restored_pid).unwrap()["project"]["timelines"],timelines);
+        fs::remove_dir_all(state.root).unwrap();
+    }
+    #[test]
+    fn invalid_timelines_are_rejected_without_changing_saved_configuration() {
+        let (state,pid,path)=timeline_fixture();
+        let timelines=sample_timelines();
+        crud(&state,"PATCH",&path,json!({"timelines":timelines,"outline":"保留大纲"})).unwrap();
+        let mut invalid=vec![Value::Null,json!({}),json!([null])];
+        for (pointer,bad_value) in [
+            ("/0/id",json!(" ")),("/0/id",json!(2)),
+            ("/0/title",json!("\n")),("/0/title",Value::Null),
+            ("/0/description",json!(3)),("/0/entries",json!({})),
+            ("/0/entries/0/id",json!("")),("/0/entries/0/time",json!(" ")),
+            ("/0/entries/0/time",json!(2000)),("/0/entries/0/events",json!([])),
+            ("/0/entries/0/events",json!({})),("/0/entries/0/events/0/id",json!("")),
+            ("/0/entries/0/events/0/content",json!(" \n")),("/0/entries/0/events/0/content",Value::Null),
+        ] {
+            let mut value=timelines.clone();
+            *value.pointer_mut(pointer).unwrap()=bad_value;
+            invalid.push(value);
+        }
+        let mut duplicate=timelines.clone();duplicate[1]["id"]=duplicate[0]["id"].clone();invalid.push(duplicate);
+        let mut duplicate=timelines.clone();duplicate[0]["entries"][1]["id"]=duplicate[0]["entries"][0]["id"].clone();invalid.push(duplicate);
+        let mut duplicate=timelines.clone();duplicate[0]["entries"][1]["events"][1]["id"]=duplicate[0]["entries"][1]["events"][0]["id"].clone();invalid.push(duplicate);
+        for value in invalid {
+            let error=crud(&state,"PATCH",&path,json!({"name":"Must not change","outline":"Must not change","timelines":value})).unwrap_err();
+            assert_eq!(error.0,StatusCode::BAD_REQUEST);
+        }
+        let saved=snapshot(&state,&pid).unwrap();
+        assert_eq!(saved["project"]["name"],"Original");
+        assert_eq!(saved["project"]["outline"],"保留大纲");
+        assert_eq!(saved["project"]["timelines"],timelines);
+        fs::remove_dir_all(state.root).unwrap();
+    }
     #[test]
     fn configuration_survives_reload_and_rejects_invalid_documents() {
         let root=Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("tmp-codex-diagnostics").join(format!("project-config-{}",Uuid::new_v4()));

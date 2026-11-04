@@ -5,6 +5,7 @@ import { modelImageSize, modelRatio, selectionPayload, useGenerationSelection, v
 import { AssetAssignmentModal } from "./components/AssetAssignmentModal";
 import { ImagePreviewModal } from "./components/ImagePreviewModal";
 import { StudioMediaLibrary, useStudioMedia } from "./components/StudioMediaLibrary";
+import { parseStudioImageDrag, STUDIO_IMAGE_MIME } from "./studio-media-drag";
 import { GenerationModeTabs, MediaSizeFields } from "./components/generation/GenerationFields";
 import { ReferenceImagePicker } from "./components/generation/ReferenceImagePicker";
 import { useImageUpload } from "./hooks/useImageUpload";
@@ -83,7 +84,9 @@ export function ImageStudio({data,reload,source,initialPrompt="",initialRatio="1
   const { uploading, inProgress: uploadInProgress, uploadImages } = useImageUpload({projectId:data.project.id,reload,refreshError:"图片已保存，但刷新素材失败"});
   const { optimizing, optimize: optimizePrompt } = usePromptOptimization();
   const [assetPreview,setAssetPreview]=useState<Media|null>(null);
-  const availableMedia=[...data.media,...poseMedia.filter(m=>!data.media.some(item=>item.id===m.id))];
+  const [referenceDragOver,setReferenceDragOver]=useState(false);
+  const referenceDragDepth=useRef(0);
+  const availableMedia=[...new Map([...imageLibrary.items,...poseMedia,...data.media].map(item=>[item.id,item])).values()];
   const pasteImages=async(files:File[])=>{
     if(uploadInProgress.current||generating.current)return;
     await uploadImages(files, {pasted:true,onUploaded:media=>{
@@ -92,6 +95,54 @@ export function ImageStudio({data,reload,source,initialPrompt="",initialRatio="1
     },onComplete:count=>Message.success(`${count} 张图片已入库，并选为参考图`)});
   };
   const generating=useRef(false);
+  const referenceDragDisabled=busy||uploading||optimizing;
+  const clearReferenceDrag=()=>{
+    referenceDragDepth.current=0;
+    setReferenceDragOver(false);
+  };
+  useEffect(()=>{
+    // A drag can finish outside this panel or be cancelled with Escape.
+    window.addEventListener("dragend",clearReferenceDrag,true);
+    window.addEventListener("drop",clearReferenceDrag,true);
+    return()=>{
+      window.removeEventListener("dragend",clearReferenceDrag,true);
+      window.removeEventListener("drop",clearReferenceDrag,true);
+    };
+  },[]);
+  useEffect(()=>{if(referenceDragDisabled)clearReferenceDrag();},[referenceDragDisabled]);
+  const isStudioImageDrag=(event:React.DragEvent<HTMLDivElement>)=>event.dataTransfer.types.includes(STUDIO_IMAGE_MIME);
+  const enterReferenceDrag=(event:React.DragEvent<HTMLDivElement>)=>{
+    if(!isStudioImageDrag(event))return;
+    event.preventDefault();
+    referenceDragDepth.current++;
+    if(!referenceDragDisabled)setReferenceDragOver(true);
+  };
+  const overReferenceDrag=(event:React.DragEvent<HTMLDivElement>)=>{
+    if(!isStudioImageDrag(event))return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect=referenceDragDisabled?"none":"copy";
+  };
+  const leaveReferenceDrag=(event:React.DragEvent<HTMLDivElement>)=>{
+    if(!isStudioImageDrag(event))return;
+    referenceDragDepth.current=Math.max(0,referenceDragDepth.current-1);
+    if(!referenceDragDepth.current)setReferenceDragOver(false);
+  };
+  const dropReferenceImage=(event:React.DragEvent<HTMLDivElement>)=>{
+    if(!isStudioImageDrag(event))return;
+    // Capture the drop before a textarea can insert any drag payload.
+    event.preventDefault();
+    event.stopPropagation();
+    clearReferenceDrag();
+    if(referenceDragDisabled||generating.current||uploadInProgress.current)return;
+    const payload=parseStudioImageDrag(event.dataTransfer.getData(STUDIO_IMAGE_MIME));
+    if(!payload||payload.projectId!==data.project.id)return;
+    const media=availableMedia.find(item=>item.id===payload.mediaId&&item.kind==="image");
+    if(!media)return;
+    setRefs(ids=>[...new Set([...ids,media.id])]);
+    setMode("i2i");
+    if(!refs.includes(media.id))Message.success("已添加为图生图参考图");
+  };
   const prompts=[...data.prompts,...STYLE_PRESETS];
   const templates=[...PROMPT_TEMPLATES,...data.prompts];
   const succeeded = results.filter(Boolean).length;
@@ -143,7 +194,10 @@ export function ImageStudio({data,reload,source,initialPrompt="",initialRatio="1
       onBusyChange?.(false);
     }
   };
-  return <><Suspense fallback={<p role="status">正在加载 3D 姿势编辑器…</p>}>{poseOpen&&<PoseStudio initialPeople={poseDraft} onPeopleChange={setPoseDraft} projectId={data.project.id} size={size} onClose={()=>setPoseOpen(false)} onUse={media=>{setPoseMedia(items=>[...items,media]);setRefs(ids=>[...ids,media.id]);setPoseOpen(false);Promise.resolve().then(reload).catch(e=>Message.error(`截图已保存，但刷新失败：${String(e)}`));}}/>}</Suspense><div className="creation-split image-creation-split"><div className="creation-panel">{!compact&&<div className="generation-panel-heading"><h2>图片生成</h2></div>}<GenerationSelector settings={data.settings} kind="image" value={generation.value} onChange={generation.setValue} disabled={busy||uploading}/><GenerationModeTabs value={mode} onChange={setMode} disabled={busy} modes={[{value:"t2i",label:"文生图",disabled:!!source},{value:"i2i",label:"图生图"}]}/><Form layout="vertical" disabled={busy}><Form.Item label="画面描述" required><PromptInput value={prompt} onChange={setPrompt} roles={data.assets} data={mode==="i2i"?data:undefined} prompts={prompts} templates={templates} placeholder={mode==="i2i"?"描述画面，输入 @ 引用资产、@prompt 常用提示词、@template 选择模板；也可用 @资产.图片名 或 @剧集名.scene001.first / last / ref 自动添加参考图":"描述画面，输入 @ 引用资产、@prompt 常用提示词，或 @template 选择模板"} disabled={busy||optimizing||uploading} onPasteImages={files=>void pasteImages(files)} onOptimize={optimize} optimizing={optimizing}/><p className="helper" role="status">{uploading?"正在上传粘贴的图片…":"可直接粘贴图片，自动存入素材库并选为图生图参考图"}</p></Form.Item>{mode==="i2i" && <Form.Item label="参考图片"><Button className="pose-entry" onClick={()=>setPoseOpen(true)}>3D 人体 · 摆姿势参考</Button><ReferenceImagePicker media={availableMedia} value={refs} onChange={setRefs} disabled={busy||uploading} onPreview={setAssetPreview}/>{paintSource&&generation.choice?.capabilities.mask&&<MaskPainter key={paintSource.id} source={paintSource} value={mask} onChange={setMask}/>}<div className="reference-strip">{imageRefs.map(r=>r.media&&!refs.includes(r.media.id)?<button type="button" className="reference-preview-button" key={r.id} title={`放大查看 @${r.name}`} aria-label={`放大查看 @${r.name}`} onClick={()=>setAssetPreview(r.media!)}><img src={imageUrl(r.media)} alt={r.name}/></button>:!r.media?<Tag color="red" key={r.id}>{r.name} 缺少图片</Tag>:null)}</div></Form.Item>}<div className="image-generation-options">{mode==="i2i"&&generation.choice&&<p className="helper">当前模型最多支持 {generation.choice.capabilities.max_images || 0} 张参考图{generation.choice.capabilities.mask?"，可绘制蒙版":""}。</p>}<ImageModelFields disabled={busy||uploading} choice={generation.choice} operation={mode} ratio={ratio} size={size} onChange={value=>{setRatio(value.ratio);setSize(value.size);}}/></div></Form><div className="generation-submit-row"><Select className="generation-count" aria-label="生成数量" value={count} onChange={setCount} disabled={busy||uploading} options={[1,2,3,4].map(value=>({label:`${value} 张`,value}))}/><Button className="generation-submit" type="primary" long loading={busy} disabled={uploading||optimizing} onClick={generate} icon={<ImagePlus size={16}/>}>{busy?`生成中 ${completed} / ${count}`:`生成 ${count} 张图片`}</Button></div></div><div className="creation-panel image-result" aria-busy={busy}>{(!compact||busy||failures.length>0)&&<div className="generation-preview-heading">{!compact&&<h2>生成预览</h2>}<span role="status" className={`generation-state${busy?" is-busy":failures.length?" is-error":succeeded?" is-ready":""}`}>{generationState}</span></div>}<div className="generation-preview-body">{results.some(Boolean)?<div className={`image-results-grid${results.length===1?" single":""}`}>{results.map((result,index)=>result&&<article className="image-result-card" key={`${index}-${result.id}`}><button type="button" className="image-result-preview" aria-label={`预览 ${result.name}`} onClick={()=>setAssetPreview(result)}><img src={imageUrl(result)} alt={result.name}/></button><p>第 {index+1} 张 · {result.name} · 已入库</p><div className="image-result-actions"><Button size="small" disabled={busy} onClick={()=>setAssignResult(result)}>设置用途</Button>{onUse&&<Button type="primary" disabled={busy} onClick={()=>onUse(result)}>使用第 {index+1} 张图片</Button>}</div></article>)}</div>:<ImagePreviewEmpty busy={busy} failed={failures.length>0} compact={compact}/>}<div role="status" aria-live="polite">{busy&&<div className="generation-progress"><progress aria-label="图片生成进度" max={count} value={completed}/><p className="helper">已处理 {completed} / {count} 张 · 成功 {succeeded} 张{failures.length>0?` · 失败 ${failures.length} 张`:""}</p></div>}</div>{failures.length>0&&<div className="image-generation-errors" role="alert">{failures.map(error=><p key={error}>{error}</p>)}</div>}{source&&<><p className="helper">原图 · {source.name}</p><button type="button" className="image-result-preview" onClick={()=>setAssetPreview(source)} aria-label="预览原图"><img src={imageUrl(source)} alt={`原图：${source.name}`} style={{maxHeight:180}}/></button><p className="helper">满意后点击「替换原图」，再保存场景。原图仍保留在素材库。</p></>}</div>{!compact&&<StudioMediaLibrary kind="image" items={imageLibrary.items} projectId={data.project.id}/>}</div></div>{assignResult&&<AssetAssignmentModal key={assignResult.id} media={assignResult} data={data} reload={reload} onClose={()=>setAssignResult(null)} title="设置生成图片用途" usageLabel="设置为" successMessage="图片用途已更新"/>}<ImagePreviewModal media={assetPreview} onClose={()=>setAssetPreview(null)} footer={<Button onClick={()=>{setAssignResult(assetPreview);setAssetPreview(null);}}>设置用途</Button>}/></>;
+  return <><Suspense fallback={<p role="status">正在加载 3D 姿势编辑器…</p>}>{poseOpen&&<PoseStudio initialPeople={poseDraft} onPeopleChange={setPoseDraft} projectId={data.project.id} size={size} onClose={()=>setPoseOpen(false)} onUse={media=>{setPoseMedia(items=>[...items,media]);setRefs(ids=>[...ids,media.id]);setPoseOpen(false);Promise.resolve().then(reload).catch(e=>Message.error(`截图已保存，但刷新失败：${String(e)}`));}}/>}</Suspense><div className="creation-split image-creation-split"><div className={`creation-panel image-reference-drop-target${referenceDragOver?" is-drag-over":""}`}
+    onDragEnterCapture={enterReferenceDrag} onDragOverCapture={overReferenceDrag}
+    onDragLeaveCapture={leaveReferenceDrag} onDropCapture={dropReferenceImage}>
+    {referenceDragOver&&<div className="image-reference-drop-feedback" role="status"><ImagePlus size={24}/><span>松开添加为图生图参考图</span></div>}{!compact&&<div className="generation-panel-heading"><h2>图片生成</h2></div>}<GenerationSelector settings={data.settings} kind="image" value={generation.value} onChange={generation.setValue} disabled={busy||uploading}/><GenerationModeTabs value={mode} onChange={setMode} disabled={busy} modes={[{value:"t2i",label:"文生图",disabled:!!source},{value:"i2i",label:"图生图"}]}/><Form layout="vertical" disabled={busy}><Form.Item label="画面描述" required><PromptInput value={prompt} onChange={setPrompt} roles={data.assets} data={mode==="i2i"?data:undefined} prompts={prompts} templates={templates} placeholder={mode==="i2i"?"描述画面，输入 @ 引用资产、@prompt 常用提示词、@template 选择模板；也可用 @资产.图片名 或 @剧集名.scene001.first / last / ref 自动添加参考图":"描述画面，输入 @ 引用资产、@prompt 常用提示词，或 @template 选择模板"} disabled={busy||optimizing||uploading} onPasteImages={files=>void pasteImages(files)} onOptimize={optimize} optimizing={optimizing}/><p className="helper" role="status">{uploading?"正在上传粘贴的图片…":"可直接粘贴图片，自动存入素材库并选为图生图参考图"}</p></Form.Item>{mode==="i2i" && <Form.Item label="参考图片"><Button className="pose-entry" onClick={()=>setPoseOpen(true)}>3D 人体 · 摆姿势参考</Button><ReferenceImagePicker media={availableMedia} value={refs} onChange={setRefs} disabled={busy||uploading} onPreview={setAssetPreview}/>{paintSource&&generation.choice?.capabilities.mask&&<MaskPainter key={paintSource.id} source={paintSource} value={mask} onChange={setMask}/>}<div className="reference-strip">{imageRefs.map(r=>r.media&&!refs.includes(r.media.id)?<button type="button" className="reference-preview-button" key={r.id} title={`放大查看 @${r.name}`} aria-label={`放大查看 @${r.name}`} onClick={()=>setAssetPreview(r.media!)}><img src={imageUrl(r.media)} alt={r.name}/></button>:!r.media?<Tag color="red" key={r.id}>{r.name} 缺少图片</Tag>:null)}</div></Form.Item>}<div className="image-generation-options">{mode==="i2i"&&generation.choice&&<p className="helper">当前模型最多支持 {generation.choice.capabilities.max_images || 0} 张参考图{generation.choice.capabilities.mask?"，可绘制蒙版":""}。</p>}<ImageModelFields disabled={busy||uploading} choice={generation.choice} operation={mode} ratio={ratio} size={size} onChange={value=>{setRatio(value.ratio);setSize(value.size);}}/></div></Form><div className="generation-submit-row"><Select className="generation-count" aria-label="生成数量" value={count} onChange={setCount} disabled={busy||uploading} options={[1,2,3,4].map(value=>({label:`${value} 张`,value}))}/><Button className="generation-submit" type="primary" long loading={busy} disabled={uploading||optimizing} onClick={generate} icon={<ImagePlus size={16}/>}>{busy?`生成中 ${completed} / ${count}`:`生成 ${count} 张图片`}</Button></div></div><div className="creation-panel image-result" aria-busy={busy}>{(!compact||busy||failures.length>0)&&<div className="generation-preview-heading">{!compact&&<h2>生成预览</h2>}<span role="status" className={`generation-state${busy?" is-busy":failures.length?" is-error":succeeded?" is-ready":""}`}>{generationState}</span></div>}<div className="generation-preview-body">{results.some(Boolean)?<div className={`image-results-grid${results.length===1?" single":""}`}>{results.map((result,index)=>result&&<article className="image-result-card" key={`${index}-${result.id}`}><button type="button" className="image-result-preview" aria-label={`预览 ${result.name}`} onClick={()=>setAssetPreview(result)}><img src={imageUrl(result)} alt={result.name}/></button><p>第 {index+1} 张 · {result.name} · 已入库</p><div className="image-result-actions"><Button size="small" disabled={busy} onClick={()=>setAssignResult(result)}>设置用途</Button>{onUse&&<Button type="primary" disabled={busy} onClick={()=>onUse(result)}>使用第 {index+1} 张图片</Button>}</div></article>)}</div>:<ImagePreviewEmpty busy={busy} failed={failures.length>0} compact={compact}/>}<div role="status" aria-live="polite">{busy&&<div className="generation-progress"><progress aria-label="图片生成进度" max={count} value={completed}/><p className="helper">已处理 {completed} / {count} 张 · 成功 {succeeded} 张{failures.length>0?` · 失败 ${failures.length} 张`:""}</p></div>}</div>{failures.length>0&&<div className="image-generation-errors" role="alert">{failures.map(error=><p key={error}>{error}</p>)}</div>}{source&&<><p className="helper">原图 · {source.name}</p><button type="button" className="image-result-preview" onClick={()=>setAssetPreview(source)} aria-label="预览原图"><img src={imageUrl(source)} alt={`原图：${source.name}`} style={{maxHeight:180}}/></button><p className="helper">满意后点击「替换原图」，再保存场景。原图仍保留在素材库。</p></>}</div>{!compact&&<StudioMediaLibrary kind="image" items={imageLibrary.items} projectId={data.project.id} imageDragDisabled={referenceDragDisabled}/>}</div></div>{assignResult&&<AssetAssignmentModal key={assignResult.id} media={assignResult} data={data} reload={reload} onClose={()=>setAssignResult(null)} title="设置生成图片用途" usageLabel="设置为" successMessage="图片用途已更新"/>}<ImagePreviewModal media={assetPreview} onClose={()=>setAssetPreview(null)} footer={<Button onClick={()=>{setAssignResult(assetPreview);setAssetPreview(null);}}>设置用途</Button>}/></>;
 }
 export function SequencePreview({scenes}: {scenes:Scene[]}) {
   const [index,setIndex]=useState(0),[playing,setPlaying]=useState(false);

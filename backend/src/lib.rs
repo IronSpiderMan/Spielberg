@@ -150,6 +150,7 @@ fn snapshot_database(connection:&mut Connection,p:Value,known:&Value)->Result<Va
  p["agents_md"]=config.get("agents_md").cloned().unwrap_or(json!(""));
  p["outline"]=config.get("outline").cloned().unwrap_or(json!(""));
  p["documents"]=config.get("documents").cloned().unwrap_or(json!([]));
+ p["timelines"]=config.get("timelines").cloned().unwrap_or(json!([]));
  let mut result=json!({"project":p,"revisions":versions});
  if known["asset_relations"]!=versions["asset_relations"] || known.is_null() {
    result["asset_relations"]=asset_relations::list(&c)?;

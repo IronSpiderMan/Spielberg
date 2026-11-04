@@ -77,7 +77,10 @@ export type Episode = {
   cover_media?: Media;
 };
 export type ProjectDocument = { id: string; title: string; content: string };
-export type Project = { id: string; name: string; path: string; updated_at: string; outline?: string; agents_md?: string; documents?: ProjectDocument[] };
+export type ProjectTimelineEvent = { id: string; content: string };
+export type ProjectTimelineEntry = { id: string; time: string; events: ProjectTimelineEvent[] };
+export type ProjectTimeline = { id: string; title: string; description: string; entries: ProjectTimelineEntry[] };
+export type Project = { id: string; name: string; path: string; updated_at: string; outline?: string; agents_md?: string; documents?: ProjectDocument[]; timelines?: ProjectTimeline[] };
 export type ModelSettings = Record<
   string,
   {

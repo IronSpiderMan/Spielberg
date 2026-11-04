@@ -8,7 +8,7 @@
 
 | 资源 | 集合 URL | 创建字段 | PATCH 字段 |
 |---|---|---|---|
-| 项目 | `/projects` | `name` | `name` |
+| 项目 | `/projects` | `name` | `name`, `outline`, `agents_md`, `documents`, `timelines` |
 | 资产 | `/projects/{pid}/assets` | `name`, `description?`, `enabled?`, `category?`, `design_media_id?` | 同创建字段 |
 | 资产关系 | `/projects/{pid}/asset-relations` | `source_asset_id`, `target_asset_id`, `label`, `directed?`, `description?` | 同创建字段 |
 | 素材 | `/projects/{pid}/media` | `name`, `extension`, `data_base64`, `asset_id?`；推荐二进制上传 | `name` |
@@ -241,7 +241,26 @@ Agent 的 `list_skills` 工具读取当前启用目录，支持 `offset` 和 `li
 
 ## 项目创作配置
 
-`PATCH /api/v1/projects/{project_id}` 支持可选的 `name`、`outline`（字符串）与 `documents`（数组）字段。未提交的字段保持原值；提交空大纲或空文档数组可清空对应内容。每份文档格式为 `{ "id": "唯一标识", "title": "文档标题", "content": "正文" }`，标题不得为空，同一项目文档 ID 不得重复。`GET /api/v1/projects/{project_id}` 与项目快照的 `project` 字段返回这些配置。项目列表仅返回基本信息。
+`PATCH /api/v1/projects/{project_id}` 支持可选的 `name`、`outline`、`agents_md`（字符串）与 `documents`、`timelines`（数组）字段。未提交的字段保持原值；提交空文本或空数组可清空对应内容，项目名称不得为空。每份文档格式为 `{ "id": "唯一标识", "title": "文档标题", "content": "正文" }`，标题不得为空，同一项目文档 ID 不得重复。`GET /api/v1/projects/{project_id}` 与项目快照的 `project` 字段返回这些配置。项目列表仅返回基本信息。
+
+`timelines` 支持一个项目的多条时间线，每条时间线按 `entries` 数组顺序排列时间点，每个时间点包含一个或多个事件：
+
+```json
+{
+  "timelines": [{
+    "id": "main", "title": "故事主线", "description": "按叙事顺序整理",
+    "entries": [{
+      "id": "school", "time": "高三开学",
+      "events": [
+        {"id": "return", "content": "主角回到高中"},
+        {"id": "meet", "content": "好友来到教室"}
+      ]
+    }]
+  }]
+}
+```
+
+时间线的 `title`、时间点的 `time`、事件的 `content` 必须是非空文本，`description` 是字符串且允许为空。`time` 为自由文本，可填写日期、故事年代或相对时间，不自动排序；事件顺序也按数组保留。时间线允许空 `entries`，已添加的时间点必须至少有一个事件。所有层级的 `id` 必须是非空字符串，且同级数组中不得重复。旧项目默认返回 `timelines: []`；时间线随项目数据库、备份与恢复保留。PATCH 省略 `timelines` 时保留已有时间线，传 `[]` 清空全部时间线。
 
 Agent 的 `app_action` 还支持以下当前项目内的操作（具体字段可用 `app_describe` 查询）：
 

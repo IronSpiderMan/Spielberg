@@ -1,51 +1,103 @@
-.project-config-page{width:100%;min-width:0;min-height:calc(100dvh - 180px);display:grid;grid-template-columns:minmax(280px,.9fr) minmax(0,2fr);grid-template-rows:auto auto minmax(400px,1fr);gap:20px;align-content:start}
-.project-config-heading{grid-column:1/-1}
-.project-config-page > .arco-card{min-width:0}
-.project-config-info{grid-column:1;grid-row:2}
-.project-config-info .arco-form-item{margin-bottom:0}
-.project-config-outline{grid-column:1;grid-row:3}
-.project-config-documents{grid-column:2;grid-row:2/4}
-.project-config-outline,.project-config-documents{display:flex;flex-direction:column}
-.project-config-outline > .arco-card-body,.project-config-documents > .arco-card-body{flex:1;min-height:0;display:flex;flex-direction:column}
-.project-config-outline .arco-textarea-wrapper{display:flex;flex:1;min-height:320px}
-.project-config-outline textarea{flex:1;min-height:320px;resize:vertical}
-.project-config-documents .arco-card-header{height:auto;min-height:52px;gap:12px;flex-wrap:wrap;padding-top:10px;padding-bottom:10px}
-.project-config-documents > .arco-card-body > .arco-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:400px}
-.project-config-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}
-.project-config-heading h1{margin:0 0 8px}.project-config-heading p{margin:0;color:var(--color-text-3)}
-.project-document-layout{display:flex;flex-direction:column;flex:1;min-width:0;gap:16px;margin-top:12px}
-.project-document-layout nav{display:flex;flex-wrap:wrap;gap:8px;max-height:140px;overflow:auto;flex:none}
-.project-document-layout nav button{display:flex;align-items:center;gap:8px;padding:12px;border:1px solid var(--color-border-2);border-radius:8px;background:var(--color-bg-2);color:var(--color-text-1);text-align:left;cursor:pointer}
-.project-document-layout nav button[aria-pressed=true]{background:var(--color-fill-2);border-color:rgb(var(--primary-6))}
-.project-document-layout nav button{max-width:240px;padding:8px 12px}
-.project-document-layout nav button:focus-visible{outline:2px solid var(--ui-primary);outline-offset:2px}
-.project-document-layout nav svg{flex:none}
-.project-document-layout nav span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.project-document-editor{display:flex;flex-direction:column;flex:1;min-width:0}
-.project-document-editor > .screenplay-workspace{flex:1;min-height:460px;margin-bottom:16px}
-.project-document-editor .screenplay-panels{min-height:360px}
-.project-document-editor > .arco-space{flex:none}
-@media(max-width:1100px){.project-config-page{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}.project-document-editor .screenplay-panels{grid-template-columns:1fr}.project-document-editor .screenplay-source{border-right:0;border-bottom:1px solid var(--ui-border)}.project-document-editor .screenplay-source textarea{min-height:300px}.project-document-editor .screenplay-markdown{min-height:180px;max-height:400px;overflow:auto}}
-@media(max-width:800px){.project-config-page{grid-template-columns:minmax(0,1fr);grid-template-rows:auto;min-height:0}.project-config-page > .arco-card{grid-column:1;grid-row:auto}.project-config-heading{align-items:flex-start;flex-wrap:wrap}.project-config-outline .arco-textarea-wrapper,.project-config-outline textarea{min-height:220px}.project-config-documents > .arco-card-body > .arco-empty{min-height:280px}.project-document-editor > .screenplay-workspace{flex:auto}}
-
-/* Bound the workspace to the shell; long documents scroll inside their panes. */
-.app .content:has(> .project-config-page){display:flex;flex-direction:column;overflow:hidden}
-.project-config-page{flex:1;min-height:0;grid-template-rows:auto auto minmax(0,1fr);overflow:hidden}
-.project-config-page > .arco-card{min-height:0;overflow:hidden}
-.project-config-outline .arco-textarea-wrapper,.project-config-outline textarea{min-height:0;height:100%;resize:none;overflow-y:auto;overscroll-behavior:contain}
-.project-config-documents > .arco-card-body{overflow:auto;overscroll-behavior:contain}
-.project-config-documents > .arco-card-body > .arco-empty{min-height:0}
-.project-document-layout,.project-document-editor{min-height:0}
-.project-document-editor > .screenplay-workspace{min-height:0;display:grid;overflow:hidden}
-.project-document-editor .screenplay-panels{min-height:0}
-.project-document-editor .screenplay-source textarea{min-height:0;height:100%;flex:1;overflow:auto}
-.project-document-editor .screenplay-markdown{min-height:0;max-height:none;overflow:auto}
-@media(max-width:1100px){.project-document-editor .screenplay-panels{grid-template-rows:minmax(0,1fr) minmax(0,1fr)}}
-@media(max-width:800px){.project-config-page{overflow:auto;grid-template-rows:auto auto 240px minmax(520px,1fr);overscroll-behavior:contain}.project-document-editor > .screenplay-workspace{flex:1;min-height:240px}.project-config-documents > .arco-card-body > .arco-empty{min-height:0}}
-
-.project-config-page{grid-template-rows:auto auto minmax(0,1fr) minmax(0,1fr)}
-.project-config-agents{grid-column:1;grid-row:4;display:flex;flex-direction:column}
-.project-config-agents > .arco-card-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:auto}
-.project-config-agents .arco-textarea-wrapper{flex:1;min-height:80px}
-.project-config-agents textarea{height:100%;resize:none}
-.project-config-documents{grid-row:2/5}
-@media(max-width:800px){.project-config-page{grid-template-rows:auto auto 240px 260px minmax(520px,1fr)}.project-config-page > .arco-card{grid-column:1;grid-row:auto}}
+.app .content:has(> .project-config-page) { display: flex; flex-direction: column; overflow: hidden; }
+.project-config-page { flex: 1; display: flex; flex-direction: column; gap: 24px; min-width: 0; min-height: 0; }
+.project-config-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex: none; }
+.project-config-heading h1 { margin: 0 0 8px; font-size: 24px; letter-spacing: -.5px; }
+.project-config-heading p { margin: 0; color: var(--ui-muted); font-size: 13px; line-height: 1.6; }
+.project-config-save { display: flex; align-items: center; gap: 16px; flex: none; }
+.project-config-status { display: inline-flex; align-items: center; gap: 6px; color: var(--ui-muted); font-size: 12px; white-space: nowrap; }
+.project-config-status.is-dirty { color: var(--ui-primary); }
+.project-config-status i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.project-config-workspace { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; border: 1px solid var(--ui-border); border-radius: 12px; background: var(--ui-surface); overflow: hidden; }
+.project-config-tabs { display: flex; align-items: stretch; gap: 24px; padding: 0 24px; border-bottom: 1px solid var(--ui-border); flex: none; overflow-x: auto; scrollbar-width: thin; }
+.project-config-tabs > button { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; flex: none; min-height: 58px; padding: 0 2px; border: 0; background: transparent; color: var(--ui-muted); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.project-config-tabs > button:hover { color: var(--ui-text); }
+.project-config-tabs > button[aria-selected="true"] { color: var(--ui-primary); font-weight: 600; }
+.project-config-tabs > button[aria-selected="true"]::after { content: ""; position: absolute; bottom: 0; left: 0; right: 0; height: 2px; border-radius: 2px; background: var(--ui-primary); }
+.project-config-tabs small { min-width: 20px; padding: 1px 6px; border-radius: 5px; background: var(--ui-subtle); font-size: 10px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.project-config-tabs > button[aria-selected="true"] small { background: var(--ui-accent-soft); }
+.project-config-page button:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: -2px; }
+.project-config-panel { display: flex; flex-direction: column; gap: 20px; flex: 1; min-height: 0; min-width: 0; padding: 24px; overflow: auto; overscroll-behavior: contain; }
+.project-config-page [hidden] { display: none !important; }
+.project-config-identity { display: flex; align-items: center; justify-content: space-between; gap: 32px; padding-bottom: 24px; border-bottom: 1px solid var(--ui-border); flex: none; }
+.project-config-name { display: flex; flex-direction: column; gap: 10px; flex: 1; max-width: 560px; min-width: 0; }
+.project-config-name label { font-size: 12px; font-weight: 600; color: var(--ui-secondary-text); }
+.project-config-name label span { color: var(--ui-primary); }
+.project-config-name .arco-input-wrapper { min-height: 40px; }
+.project-config-summary { display: flex; flex: none; align-items: center; gap: 28px; padding: 0 12px; }
+.project-config-summary > * { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 4px 0; border: 0; background: transparent; font: inherit; color: var(--ui-muted); }
+.project-config-summary button { cursor: pointer; }
+.project-config-summary button:hover strong { color: var(--ui-primary); }
+.project-config-summary strong { font-size: 23px; font-weight: 550; color: var(--ui-text); font-variant-numeric: tabular-nums; line-height: 1.2; }
+.project-config-summary span { font-size: 11px; white-space: nowrap; }
+.project-config-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex: none; }
+.project-config-section-heading h2 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0; font-size: 15px; font-weight: 600; color: var(--ui-text); }
+.project-config-section-heading h2 svg { color: var(--ui-primary); }
+.project-config-section-heading p { margin: 8px 0 0; color: var(--ui-muted); font-size: 12px; line-height: 1.7; }
+.project-config-word-count { flex: none; font-size: 11px; color: var(--ui-muted); font-variant-numeric: tabular-nums; }
+.project-config-page .project-config-writing { display: flex; flex: 1; min-height: 200px; border-radius: 8px; background: var(--ui-bg); }
+.project-config-page .project-config-writing textarea { height: 100%; min-height: 200px; padding: 18px 20px; resize: none; color: var(--ui-text); font-size: 14px; line-height: 1.95; overflow: auto; overscroll-behavior: contain; }
+.project-config-section-heading code { padding: 3px 6px; background: var(--ui-subtle); border: 1px solid var(--ui-border); border-radius: 5px; font-size: 11px; font-weight: 400; color: var(--ui-muted); }
+.project-config-agent-note { padding: 12px 16px; border-left: 2px solid var(--ui-primary); border-radius: 0 6px 6px 0; background: var(--ui-accent-soft); color: var(--ui-secondary-text); font-size: 12px; line-height: 1.8; flex: none; }
+.project-config-page .project-config-code textarea { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+.project-config-timelines { padding: 0; overflow: hidden; }
+.project-config-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; flex: none; }
+.project-config-actions .arco-btn { font-size: 12px; }
+/* Keep both writing panes usable; the parent panel scrolls in short windows. */
+.project-document-layout { display: grid; grid-template-columns: 196px minmax(0, 1fr); flex: 1; min-width: 0; min-height: 460px; gap: 24px; }
+.project-document-layout nav { display: flex; flex-direction: column; gap: 6px; overflow: auto; min-height: 0; padding-right: 12px; border-right: 1px solid var(--ui-border); overscroll-behavior: contain; }
+.project-document-layout nav button { display: flex; align-items: center; gap: 10px; flex: none; width: 100%; padding: 12px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--ui-secondary-text); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.project-document-layout nav button:hover { background: var(--ui-subtle); }
+.project-document-layout nav button[aria-pressed="true"] { background: var(--ui-accent-soft); color: var(--ui-primary); border-color: color-mix(in srgb, var(--ui-primary) 20%, transparent); }
+.project-document-layout nav svg { flex: none; }
+.project-document-layout nav span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-document-editor { display: flex; flex-direction: column; gap: 16px; min-width: 0; min-height: 0; }
+.project-document-title { display: flex; align-items: center; gap: 12px; flex: none; }
+.project-document-title > .arco-input-wrapper { flex: 1; min-width: 0; }
+.project-document-title > .arco-btn { flex: none; }
+.project-document-editor > .screenplay-workspace { flex: 1; min-height: 0; margin: 0; overflow: hidden; }
+.project-document-editor .screenplay-panels { min-height: 0; }
+.project-document-editor .screenplay-source textarea { min-height: 0; height: 100%; flex: 1; overflow: auto; }
+.project-document-editor .screenplay-markdown { min-height: 0; overflow: auto; }
+.project-config-empty { display: flex; flex: 1; min-height: 240px; align-items: center; justify-content: center; flex-direction: column; text-align: center; padding: 24px; }
+.project-config-empty > span { display: grid; place-items: center; width: 64px; height: 64px; margin-bottom: 20px; border: 1px solid var(--ui-border); border-radius: 18px; background: var(--ui-bg); color: var(--ui-primary); }
+.project-config-empty h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.project-config-empty p { margin: 10px 0 24px; color: var(--ui-muted); font-size: 12px; line-height: 1.8; }
+@container (max-width: 950px) {
+  .project-document-layout { grid-template-columns: 160px minmax(0, 1fr); gap: 16px; }
+  .project-document-editor .screenplay-panels { grid-template-columns: 1fr; grid-template-rows: minmax(160px, 1fr) minmax(120px, 1fr); }
+  .project-document-editor .screenplay-source { border-right: 0; border-bottom: 1px solid var(--ui-border); }
+  .project-config-summary { gap: 18px; padding: 0; }
+}
+@media (max-width: 760px) {
+  .app .content:has(> .project-config-page) { display: block; overflow: auto; }
+  .project-config-page { gap: 18px; min-height: 100%; }
+  .project-config-heading { flex-wrap: wrap; gap: 14px; }
+  .project-config-heading h1 { font-size: 21px; }
+  .project-config-heading p { font-size: 12px; }
+  .project-config-save { width: 100%; justify-content: space-between; }
+  .project-config-workspace { flex: none; min-height: 620px; }
+  .project-config-tabs { padding: 0 12px; gap: 16px; }
+  .project-config-tabs > button { min-height: 50px; gap: 6px; font-size: 12px; }
+  .project-config-tabs > button > svg { display: none; }
+  .project-config-tabs small { min-width: 16px; padding: 1px 4px; }
+  .project-config-panel { padding: 18px 14px; gap: 18px; overflow: visible; flex: none; min-height: 570px; }
+  .project-config-timelines { padding: 0; }
+  .project-config-identity { flex-direction: column; align-items: stretch; gap: 22px; padding-bottom: 20px; }
+  .project-config-name { max-width: none; }
+  .project-config-summary { justify-content: space-around; gap: 12px; }
+  .project-config-summary strong { font-size: 20px; }
+  .project-config-section-heading { align-items: flex-start; flex-wrap: wrap; gap: 12px; }
+  .project-config-section-heading p { margin-top: 6px; }
+  .project-config-actions { justify-content: flex-start; }
+  .project-config-general .project-config-section-heading { flex-wrap: nowrap; }
+  .project-config-word-count { padding-top: 3px; }
+  .project-config-page .project-config-writing { flex: none; min-height: 330px; }
+  .project-config-page .project-config-writing textarea { min-height: 330px; padding: 14px; font-size: 13px; }
+  .project-document-layout { display: flex; flex-direction: column; gap: 16px; min-height: 0; flex: none; }
+  .project-document-layout nav { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--ui-border); padding: 0 0 12px; max-height: 150px; }
+  .project-document-layout nav button { width: auto; max-width: 100%; padding: 8px 10px; }
+  .project-document-editor > .screenplay-workspace { display: flex; flex-direction: column; flex: none; overflow: hidden; }
+  .project-document-editor .screenplay-panels { display: flex; flex-direction: column; }
+  .project-document-editor .screenplay-source textarea { flex: none; height: 340px; padding: 16px; }
+  .project-document-editor .screenplay-markdown { min-height: 180px; max-height: 380px; padding: 16px; }
+}
