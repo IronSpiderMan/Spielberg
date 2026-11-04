@@ -2,7 +2,7 @@
 use super::*;
 use std::{io::Read, net::{IpAddr, SocketAddr, ToSocketAddrs}, time::Duration};
 
-const RESOURCES: &[&str] = &["assets", "media", "episodes", "scenes", "prompts", "screenplays"];
+const RESOURCES: &[&str] = &["assets", "asset-relations", "media", "episodes", "scenes", "prompts", "screenplays"];
 const OPERATIONS: &[&str] = &[
     "project/rename", "project/config/read", "project/config/update", "project/document/read", "project/document/save", "project/document/delete", "scripts/load", "scripts/save", "scripts/publish", "scenes/duplicate",
     "scenes/reorder", "scenes/select-video", "scenes/delete-video", "episodes/reorder",
@@ -299,6 +299,7 @@ fn describe(operation:Option<&str>)->Value {
         "scope":"All IDs and operations belong to the current project. Never supply project_id. Use existing IDs from get_project/app_request. No shell, arbitrary files, cross-project operations or credential writes.",
         "resources":{
             "assets":creative_assets,
+            "asset-relations":{"description":"Relationships between any two creative assets, including people and locations. Read these when maintaining story consistency. All endpoint IDs refer to assets, not media.","create_required":["source_asset_id","target_asset_id","label"],"fields":{"source_asset_id":"existing creative asset ID","target_asset_id":"a different existing creative asset ID","label":"1–80 characters, e.g. 兄妹 or 老家","directed":"boolean, default false; true means source → target; undirected endpoints are ordered by ID","description":"optional text, up to 2000 characters"},"delete":"Removes only the relationship; both assets and their media remain. Deleting an asset removes its relationships automatically."},
             "media":media_files,
             "episodes":{"create_required":["title"],"fields":{"title":"string","description":"string","cover_media_id":"image media ID or null","storyboard":"storyboard JSON object or null"}},
             "scenes":{"create_required":["title","episode_id"],"fields":{"title":"string","episode_id":"existing episode ID; immutable after creation","description":"string","prompt":"string","creation_mode":"default/canvas; immutable after creation","first_media_id":"image media ID or null","last_media_id":"image media ID or null","reference_media_id":"image media ID or null","generation_options":"object e.g duration,aspect_ratio,video_mode,first,last,reference,reference_media_ids"},"get_filters":{"episode_id":"episode ID"}},

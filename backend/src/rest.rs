@@ -24,7 +24,7 @@ fn sql_error(error: rusqlite::Error) -> ApiError {
     ApiError(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
 }
 fn table(resource: &str) -> ApiResult<&'static str> {
-    match resource { "assets"=>Ok("roles"),"media"=>Ok("media"),"episodes"=>Ok("episodes"),"scenes"=>Ok("scenes"),"prompts"=>Ok("prompts"),"screenplays"=>Ok("screenplays"),_=>Err(missing()) }
+    match resource { "assets"=>Ok("assets"),"media"=>Ok("media"),"episodes"=>Ok("episodes"),"scenes"=>Ok("scenes"),"prompts"=>Ok("prompts"),"screenplays"=>Ok("screenplays"),_=>Err(missing()) }
 }
 fn rows(c: &Connection, table: &str, id: Option<i64>) -> ApiResult<Vec<Value>> {
     // table is selected exclusively by table(), never interpolated from a request.
@@ -172,10 +172,14 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
         } else if parts.len()<=2 {
             (strv(&value,"project_id")?,parts[0],parts.get(1).copied())
         } else {return Err(missing())};
-        let table=table(resource)?;
+        if !["asset-relations","asset-graph"].contains(&resource) { table(resource)?; }
         value["project_id"]=json!(pid);
         let c=db(state,&pid)?;
         let id=id.map(|id|id.parse::<i64>().ok().filter(|n|*n>0).ok_or_else(||bad("资源 ID 无效"))).transpose()?;
+        if ["asset-relations","asset-graph"].contains(&resource) {
+            return asset_relations::handle(state,&c,&pid,method,resource,id,&value);
+        }
+        let table=table(resource)?;
         if let Some(id)=id {
             let current=get(&c,resource,id)?;
             value["id"]=json!(id);

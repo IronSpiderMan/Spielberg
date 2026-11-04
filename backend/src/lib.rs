@@ -13,6 +13,9 @@ mod screenplays;
 pub use http::{Backend, default_data_dir, run};
 mod storage;
 mod catalog;
+mod asset_relations;
+#[cfg(test)]
+mod asset_schema_tests;
 mod project_backup;
 mod app_settings;
 mod thumbnails;
@@ -37,23 +40,40 @@ fn project(s:&AppState,id:&str)->Result<Value,String>{registry(s)?.into_iter().f
 fn migrate(c:&Connection)->Result<(),String>{
  c.execute_batch("PRAGMA foreign_keys=ON;").map_err(|e|e.to_string())?;
  let version:i64=c.query_row("PRAGMA user_version",[],|r|r.get(0)).map_err(|e|e.to_string())?;
- if version>=15{return Ok(())}
- if version==14{
+ if version>=16{return Ok(())}
+ if version==15{
    c.execute_batch("BEGIN IMMEDIATE").map_err(|e|e.to_string())?;
    let result=(||{
-     if c.prepare("SELECT category FROM roles LIMIT 0").is_err(){
-       c.execute_batch("ALTER TABLE roles ADD COLUMN category TEXT NOT NULL DEFAULT 'person' CHECK(category IN ('person','location','object','creature','vehicle','other'));").map_err(|e|e.to_string())?;
+     let legacy:bool=c.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='roles')",[],|r|r.get(0)).map_err(|e|e.to_string())?;
+     if legacy {
+       // SQLite updates foreign keys, views and trigger bodies along with the table.
+       // Keep asset IDs and existing role_media / role_audio links intact.
+       c.execute_batch("ALTER TABLE roles RENAME TO assets;").map_err(|e|e.to_string())?;
      }
-     c.execute_batch("UPDATE revisions SET version=version+1 WHERE section='roles'; PRAGMA user_version=15; COMMIT").map_err(|e|e.to_string())
+     asset_relations::install(c)?;
+     c.execute_batch("PRAGMA user_version=16; COMMIT").map_err(|e|e.to_string())
    })();
    if result.is_err(){let _=c.execute_batch("ROLLBACK");}
    return result;
  }
+ if version==14{
+   c.execute_batch("BEGIN IMMEDIATE").map_err(|e|e.to_string())?;
+   let result=(||{
+     let table=if c.prepare("SELECT id FROM assets LIMIT 0").is_ok(){"assets"}else{"roles"};
+     if c.prepare(&format!("SELECT category FROM {table} LIMIT 0")).is_err(){
+       c.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN category TEXT NOT NULL DEFAULT 'person' CHECK(category IN ('person','location','object','creature','vehicle','other'));")).map_err(|e|e.to_string())?;
+     }
+     c.execute_batch("UPDATE revisions SET version=version+1 WHERE section='roles'; PRAGMA user_version=15; COMMIT").map_err(|e|e.to_string())
+   })();
+   if result.is_err(){let _=c.execute_batch("ROLLBACK");}
+   result?;return migrate(c);
+ }
  if version==13{
    c.execute_batch("BEGIN IMMEDIATE").map_err(|e|e.to_string())?;
    let result=(||{
-     if c.prepare("SELECT enabled FROM roles LIMIT 0").is_err(){
-       c.execute_batch("ALTER TABLE roles ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1));").map_err(|e|e.to_string())?;
+     let table=if c.prepare("SELECT id FROM assets LIMIT 0").is_ok(){"assets"}else{"roles"};
+     if c.prepare(&format!("SELECT enabled FROM {table} LIMIT 0")).is_err(){
+       c.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1));")).map_err(|e|e.to_string())?;
      }
      c.execute_batch("UPDATE revisions SET version=version+1 WHERE section='roles'; PRAGMA user_version=14; COMMIT").map_err(|e|e.to_string())
    })();
@@ -131,9 +151,12 @@ fn snapshot_database(connection:&mut Connection,p:Value,known:&Value)->Result<Va
  p["outline"]=config.get("outline").cloned().unwrap_or(json!(""));
  p["documents"]=config.get("documents").cloned().unwrap_or(json!([]));
  let mut result=json!({"project":p,"revisions":versions});
+ if known["asset_relations"]!=versions["asset_relations"] || known.is_null() {
+   result["asset_relations"]=asset_relations::list(&c)?;
+ }
  if known["media"]!=versions["media"] || known.is_null() { let media_items={let mut q=c.prepare("SELECT id,name,path,kind,created_at FROM media WHERE deleted_at IS NULL ORDER BY id DESC").map_err(|e|e.to_string())?;let rows=q.query_map([],|r|Ok(json!({"id":r.get::<_,i64>(0)?,"name":r.get::<_,String>(1)?,"path":r.get::<_,String>(2)?,"kind":r.get::<_,String>(3)?,"created_at":r.get::<_,String>(4)?}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;rows};
  result["media"]=json!(media_items); }
- if known["assets"]!=versions["assets"] || known.is_null() { let mut roles=Vec::new();let mut qr=c.prepare("SELECT id,name,description,design_media_id,enabled,category FROM roles ORDER BY id DESC").map_err(|e|e.to_string())?;for x in qr.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<i64>>(3)?,r.get::<_,bool>(4)?,r.get::<_,String>(5)?))).map_err(|e|e.to_string())?{let(id,name,description,design,enabled,category)=x.map_err(|e|e.to_string())?;let mut qi=c.prepare("SELECT m.id,m.name,m.path,m.kind,m.created_at FROM media m WHERE m.deleted_at IS NULL AND (m.id=? OR EXISTS(SELECT 1 FROM role_media rm WHERE rm.role_id=? AND rm.media_id=m.id)) ORDER BY CASE WHEN m.id=? THEN 0 ELSE 1 END,m.id DESC").map_err(|e|e.to_string())?;let images=qi.query_map(params![design,id,design],|r|Ok(json!({"id":r.get::<_,i64>(0)?,"name":r.get::<_,String>(1)?,"path":r.get::<_,String>(2)?,"kind":r.get::<_,String>(3)?,"created_at":r.get::<_,String>(4)?}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;roles.push(json!({"id":id,"name":name,"description":description,"enabled":enabled,"category":category,"design_media_id":design,"images":images,"audios":role_audios(&c,id)?}));}
+ if known["assets"]!=versions["assets"] || known.is_null() { let mut roles=Vec::new();let mut qr=c.prepare("SELECT id,name,description,design_media_id,enabled,category FROM assets ORDER BY id DESC").map_err(|e|e.to_string())?;for x in qr.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<i64>>(3)?,r.get::<_,bool>(4)?,r.get::<_,String>(5)?))).map_err(|e|e.to_string())?{let(id,name,description,design,enabled,category)=x.map_err(|e|e.to_string())?;let mut qi=c.prepare("SELECT m.id,m.name,m.path,m.kind,m.created_at FROM media m WHERE m.deleted_at IS NULL AND (m.id=? OR EXISTS(SELECT 1 FROM role_media rm WHERE rm.role_id=? AND rm.media_id=m.id)) ORDER BY CASE WHEN m.id=? THEN 0 ELSE 1 END,m.id DESC").map_err(|e|e.to_string())?;let images=qi.query_map(params![design,id,design],|r|Ok(json!({"id":r.get::<_,i64>(0)?,"name":r.get::<_,String>(1)?,"path":r.get::<_,String>(2)?,"kind":r.get::<_,String>(3)?,"created_at":r.get::<_,String>(4)?}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;roles.push(json!({"id":id,"name":name,"description":description,"enabled":enabled,"category":category,"design_media_id":design,"images":images,"audios":role_audios(&c,id)?}));}
  result["assets"]=json!(roles); }
  if known["episodes"]!=versions["episodes"] || known.is_null() { let mut episodes=Vec::new();let mut qe=c.prepare("SELECT id,title,description FROM episodes ORDER BY sort_order,id").map_err(|e|e.to_string())?;for x in qe.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(|e|e.to_string())?{let(eid,title,description)=x.map_err(|e|e.to_string())?;let mut qs=c.prepare("SELECT id,title,description,sort_order,first_media_id,last_media_id,reference_media_id,video_media_id,prompt,creation_mode FROM scenes WHERE episode_id=? ORDER BY sort_order,id").map_err(|e|e.to_string())?;let mut scenes=Vec::new();for z in qs.query_map([eid],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,i64>(3)?,r.get::<_,Option<i64>>(4)?,r.get::<_,Option<i64>>(5)?,r.get::<_,Option<i64>>(6)?,r.get::<_,Option<i64>>(7)?,r.get::<_,String>(8)?,r.get::<_,String>(9)?))).map_err(|e|e.to_string())?{let(id,t,d,o,f,l,rf,vid,prompt,mode)=z.map_err(|e|e.to_string())?;scenes.push(json!({"id":id,"title":t,"description":d,"prompt":prompt,"creation_mode":mode,"sort_order":o,"first_media_id":f,"last_media_id":l,"reference_media_id":rf,"video_media_id":vid,"first_media":media(&c,f),"last_media":media(&c,l),"reference_media":media(&c,rf),"video_media":media(&c,vid),"videos":scene_videos(&c,id)?,"generation_options":scene_options(&c,id)?,"script":scene_script(&c,id)?}));}episodes.push(json!({"id":eid,"title":title,"description":description,"scenes":scenes,"storyboard":storyboard::load(&c,eid)?,"cover_media":media(&c,c.query_row("SELECT cover_media_id FROM episodes WHERE id=?",[eid],|r|r.get::<_,Option<i64>>(0)).map_err(|e|e.to_string())?)}));}
  result["episodes"]=json!(episodes); }
@@ -185,11 +208,11 @@ fn video_frame(s: &AppState, v: &Value) -> Result<Value, String> {
 }
 
 fn project_id(v:&Value)->Result<String,String>{strv(v,"project_id")}
-fn insert_role(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let c=db(s,&pid)?;let name=strv(v,"name")?;let d=v.get("description").and_then(Value::as_str).unwrap_or("");let enabled=v.get("enabled").and_then(Value::as_bool).unwrap_or(true);let category=v.get("category").and_then(Value::as_str).unwrap_or("person");c.execute("INSERT INTO roles(name,description,enabled,category,created_at) VALUES(?,?,?,?,?)",params![name,d,enabled,category,now()]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"id":c.last_insert_rowid(),"name":name,"description":d,"enabled":enabled,"category":category,"design_media_id":null,"images":[],"audios":[]}))}
-fn update_role(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;db(s,&pid)?.execute("UPDATE roles SET name=?,description=?,design_media_id=?,enabled=COALESCE(?,enabled),category=COALESCE(?,category) WHERE id=?",params![strv(v,"name")?,v.get("description").and_then(Value::as_str).unwrap_or(""),opti(v,"design_media_id"),v.get("enabled").and_then(Value::as_bool),v.get("category").and_then(Value::as_str),intv(v,"id")?]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
-fn delete_role(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;db(s,&pid)?.execute("DELETE FROM roles WHERE id=?",[intv(v,"id")?]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
+fn insert_role(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let c=db(s,&pid)?;let name=strv(v,"name")?;let d=v.get("description").and_then(Value::as_str).unwrap_or("");let enabled=v.get("enabled").and_then(Value::as_bool).unwrap_or(true);let category=v.get("category").and_then(Value::as_str).unwrap_or("person");c.execute("INSERT INTO assets(name,description,enabled,category,created_at) VALUES(?,?,?,?,?)",params![name,d,enabled,category,now()]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"id":c.last_insert_rowid(),"name":name,"description":d,"enabled":enabled,"category":category,"design_media_id":null,"images":[],"audios":[]}))}
+fn update_role(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;db(s,&pid)?.execute("UPDATE assets SET name=?,description=?,design_media_id=?,enabled=COALESCE(?,enabled),category=COALESCE(?,category) WHERE id=?",params![strv(v,"name")?,v.get("description").and_then(Value::as_str).unwrap_or(""),opti(v,"design_media_id"),v.get("enabled").and_then(Value::as_bool),v.get("category").and_then(Value::as_str),intv(v,"id")?]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
+fn delete_role(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;db(s,&pid)?.execute("DELETE FROM assets WHERE id=?",[intv(v,"id")?]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
 fn link_role_media(c: &Connection, role_id: i64, media_id: i64) -> Result<(), String> {
-    let exists = c.query_row("SELECT EXISTS(SELECT 1 FROM roles WHERE id=?)", [role_id], |r| r.get::<_, bool>(0)).map_err(|e| e.to_string())?;
+    let exists = c.query_row("SELECT EXISTS(SELECT 1 FROM assets WHERE id=?)", [role_id], |r| r.get::<_, bool>(0)).map_err(|e| e.to_string())?;
     if !exists { return Err("资产不存在".into()); }
     let kind = c.query_row("SELECT kind FROM media WHERE id=? AND deleted_at IS NULL", [media_id], |r| r.get::<_, String>(0)).optional().map_err(|e| e.to_string())?;
     match kind.as_deref() {
@@ -225,13 +248,13 @@ fn manage_role_audio(s:&AppState,v:&Value,delete:bool)->Result<Value,String>{
  let pid=project_id(v)?;let c=db(s,&pid)?;let rid=intv(v,"asset_id")?;let mid=intv(v,"media_id")?;
  if delete {c.execute("DELETE FROM role_audio WHERE role_id=? AND media_id=?",params![rid,mid]).map_err(|e|e.to_string())?;}
  else {let name=strv(v,"name")?;if name.trim().is_empty(){return Err("请输入音频名称".into())}
- let category=c.query_row("SELECT category FROM roles WHERE id=?",[rid],|r|r.get::<_,String>(0)).optional().map_err(|e|e.to_string())?.ok_or("资产不存在")?;
+ let category=c.query_row("SELECT category FROM assets WHERE id=?",[rid],|r|r.get::<_,String>(0)).optional().map_err(|e|e.to_string())?.ok_or("资产不存在")?;
  if !matches!(category.as_str(),"person"|"creature"){return Err("仅人物和生物资产支持音频参考".into())}
  if media(&c,Some(mid)).map(|m|m["kind"]!="audio").unwrap_or(true){return Err("请选择有效的音频素材".into())}
  c.execute("INSERT INTO role_audio(role_id,media_id,name) VALUES(?,?,?) ON CONFLICT(role_id,media_id) DO UPDATE SET name=excluded.name",params![rid,mid,name.trim()]).map_err(|e|e.to_string())?;}
  touch(s,&pid);Ok(json!({"ok":true}))
 }
-fn delete_role_media(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let role_id=intv(v,"asset_id")?;let media_id=intv(v,"media_id")?;let mut c=db(s,&pid)?;let tx=c.transaction().map_err(|e|e.to_string())?;tx.execute("DELETE FROM role_media WHERE role_id=? AND media_id=?",params![role_id,media_id]).map_err(|e|e.to_string())?;tx.execute("UPDATE roles SET design_media_id=NULL WHERE id=? AND design_media_id=?",params![role_id,media_id]).map_err(|e|e.to_string())?;tx.commit().map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
+fn delete_role_media(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let role_id=intv(v,"asset_id")?;let media_id=intv(v,"media_id")?;let mut c=db(s,&pid)?;let tx=c.transaction().map_err(|e|e.to_string())?;tx.execute("DELETE FROM role_media WHERE role_id=? AND media_id=?",params![role_id,media_id]).map_err(|e|e.to_string())?;tx.execute("UPDATE assets SET design_media_id=NULL WHERE id=? AND design_media_id=?",params![role_id,media_id]).map_err(|e|e.to_string())?;tx.commit().map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
 fn insert_episode(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let c=db(s,&pid)?;let n:i64=c.query_row("SELECT COUNT(*) FROM episodes",[],|r|r.get(0)).map_err(|e|e.to_string())?;let title=strv(v,"title")?;let d=v.get("description").and_then(Value::as_str).unwrap_or("");c.execute("INSERT INTO episodes(title,description,sort_order,created_at,storyboard) VALUES(?,?,?,?,?)",params![title,d,n,now(),v.get("storyboard").unwrap_or(&Value::Null).to_string()]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"id":c.last_insert_rowid(),"title":title,"description":d}))}
 fn update_episode(s:&AppState,v:&Value)->Result<Value,String>{
  let pid=project_id(v)?;let mut c=db(s,&pid)?;let tx=c.transaction().map_err(|e|e.to_string())?;
@@ -1004,9 +1027,9 @@ mod role_enablement_tests {
   let c=Connection::open_in_memory().unwrap();
   c.execute_batch("CREATE TABLE roles(id INTEGER PRIMARY KEY,name TEXT); INSERT INTO roles VALUES(1,'原角色'); CREATE TABLE revisions(section TEXT PRIMARY KEY,version INTEGER); INSERT INTO revisions VALUES('roles',3); PRAGMA user_version=13;").unwrap();
   migrate(&c).unwrap();migrate(&c).unwrap();
-  assert!(c.query_row("SELECT enabled FROM roles WHERE id=1",[],|r|r.get::<_,bool>(0)).unwrap());
+  assert!(c.query_row("SELECT enabled FROM assets WHERE id=1",[],|r|r.get::<_,bool>(0)).unwrap());
   assert_eq!(catalog::revisions(&c).unwrap()["assets"],5);
-  assert_eq!(c.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),15);
+  assert_eq!(c.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),16);
  }
  #[test]
  fn role_status_survives_partial_updates_reload_and_snapshot_changes() {
@@ -1079,7 +1102,7 @@ mod creative_asset_categories_tests {
   let c=Connection::open_in_memory().unwrap();
   c.execute_batch("CREATE TABLE roles(id INTEGER PRIMARY KEY,name TEXT,enabled INTEGER,design_media_id INTEGER); INSERT INTO roles VALUES(1,'旧角色',0,7); CREATE TABLE role_media(role_id INTEGER,media_id INTEGER); INSERT INTO role_media VALUES(1,7); CREATE TABLE revisions(section TEXT PRIMARY KEY,version INTEGER); INSERT INTO revisions VALUES('roles',3); PRAGMA user_version=14;").unwrap();
   migrate(&c).unwrap();migrate(&c).unwrap();
-  let saved=c.query_row("SELECT name,enabled,design_media_id,category FROM roles WHERE id=1",[],|r|Ok((r.get::<_,String>(0)?,r.get::<_,bool>(1)?,r.get::<_,i64>(2)?,r.get::<_,String>(3)?))).unwrap();
+  let saved=c.query_row("SELECT name,enabled,design_media_id,category FROM assets WHERE id=1",[],|r|Ok((r.get::<_,String>(0)?,r.get::<_,bool>(1)?,r.get::<_,i64>(2)?,r.get::<_,String>(3)?))).unwrap();
   assert_eq!(saved,("旧角色".into(),false,7,"person".into()));
   assert_eq!(c.query_row("SELECT media_id FROM role_media WHERE role_id=1",[],|r|r.get::<_,i64>(0)).unwrap(),7);
   assert_eq!(catalog::revisions(&c).unwrap()["assets"],4);

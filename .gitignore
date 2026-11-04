@@ -50,6 +50,7 @@ npm-debug.log*
 !/scripts/qa/role-enabled.cjs
 !/scripts/qa/prompt-mentions.cjs
 !/scripts/qa/asset-categories.cjs
+!/scripts/qa/asset-relations.cjs
 !/scripts/qa/asset-references.cjs
 !/scripts/qa/qianwen-video.cjs
 !/scripts/qa/generation-channels.cjs

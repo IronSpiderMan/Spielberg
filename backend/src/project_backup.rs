@@ -225,7 +225,7 @@ mod tests {
         fs::write(root.join("assets/unregistered.txt"),b"also backed up").unwrap();
         let c=Connection::open(root.join("spielberg.sqlite")).unwrap();migrate(&c).unwrap();
         c.execute("INSERT INTO media(id,name,path,kind,created_at) VALUES(1,'hero',?,'image','1'),(2,'trash',?,'image','1')",params![file.to_string_lossy(),file.to_string_lossy()]).unwrap();
-        c.execute_batch("UPDATE media SET deleted_at='1' WHERE id=2;INSERT INTO roles(id,name,design_media_id,created_at) VALUES(1,'Hero',1,'1');").unwrap();
+        c.execute_batch("UPDATE media SET deleted_at='1' WHERE id=2;INSERT INTO assets(id,name,design_media_id,created_at) VALUES(1,'Hero',1,'1');").unwrap();
         c.execute("INSERT INTO settings VALUES('models',?)",[json!({"t2i":{"api_key":"secret-value","url":"http://model.local"}}).to_string()]).unwrap();
         c.execute("INSERT INTO settings VALUES('agent',?)",[json!({"api_key":"agent-secret","search_api_key":"search-secret","search_provider":"brave"}).to_string()]).unwrap();
         c.execute("INSERT INTO background_jobs(operation,status,prompt,created_at,updated_at,result_json) VALUES('image','completed','','1','1',?)",[json!({"id":1,"path":file,"kind":"image"}).to_string()]).unwrap();

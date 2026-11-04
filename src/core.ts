@@ -98,6 +98,7 @@ export type ModelSettings = Record<
 >;
 export type Screenplay = { episode_id: number; format: "markdown" | "csv"; id: number; title: string; content: string; created_at: string; updated_at: string };
 export type Snapshot = {
+  asset_relations?: import("./AssetRelationships").AssetRelation[];
   screenplays?: Screenplay[];
   revisions?: Record<string,number>;
   project: Project;

@@ -1,7 +1,11 @@
 use super::*;
 
 pub fn install(c: &Connection) -> Result<(), String> {
-    c.execute_batch("CREATE TABLE IF NOT EXISTS role_audio(role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,name TEXT NOT NULL,PRIMARY KEY(role_id,media_id));").map_err(|e|e.to_string())?;
+    // Earlier migrations run before roles is renamed; repair installs may run after it.
+    let asset_table = if c.prepare("SELECT id FROM assets LIMIT 0").is_ok() { "assets" } else { "roles" };
+    let asset_sql = |sql: &str| sql.replace("REFERENCES roles(", &format!("REFERENCES {asset_table}("))
+        .replace("FROM roles ", &format!("FROM {asset_table} ")).replace("JOIN roles ", &format!("JOIN {asset_table} "));
+    c.execute_batch(&asset_sql("CREATE TABLE IF NOT EXISTS role_audio(role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,name TEXT NOT NULL,PRIMARY KEY(role_id,media_id));")).map_err(|e|e.to_string())?;
     let _ = c.execute("ALTER TABLE media ADD COLUMN deleted_at TEXT", []);
     let _ = c.execute("ALTER TABLE media ADD COLUMN purged_at TEXT", []);
     c.execute_batch("CREATE TABLE IF NOT EXISTS edit_projects(id TEXT PRIMARY KEY,name TEXT NOT NULL,draft TEXT NOT NULL DEFAULT '{}',status TEXT NOT NULL DEFAULT 'draft',created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
@@ -10,7 +14,7 @@ pub fn install(c: &Connection) -> Result<(), String> {
     let _=c.execute("ALTER TABLE edit_outputs ADD COLUMN request TEXT",[]);
     let view_sql:Option<String>=c.query_row("SELECT sql FROM sqlite_master WHERE type='view' AND name='asset_usage'",[],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
     if view_sql.is_some_and(|sql|!sql.contains("edit_sources") || !sql.contains("role_audio")){c.execute_batch("DROP VIEW asset_usage;").map_err(|e|e.to_string())?;}
-    c.execute_batch("CREATE INDEX IF NOT EXISTS media_active ON media(deleted_at,id);
+    c.execute_batch(&asset_sql("CREATE INDEX IF NOT EXISTS media_active ON media(deleted_at,id);
     CREATE TABLE IF NOT EXISTS revisions(section TEXT PRIMARY KEY, version INTEGER NOT NULL DEFAULT 0);
     CREATE VIEW IF NOT EXISTS asset_usage AS
     SELECT design_media_id AS media_id,'role' AS kind,id AS target_id,name AS title,NULL AS episode_id,NULL AS episode_title,'资产主图' AS purpose FROM roles WHERE design_media_id IS NOT NULL
@@ -25,7 +29,7 @@ pub fn install(c: &Connection) -> Result<(), String> {
     UNION ALL SELECT DISTINCT CAST(j.value AS INTEGER),'scene',s.id,s.title,e.id,e.title,'场景参考音频' FROM scene_options o JOIN scenes s ON s.id=o.scene_id JOIN episodes e ON e.id=s.episode_id JOIN json_each(CASE WHEN json_valid(o.value) THEN o.value ELSE '{}' END,'$.reference_audio_media_ids') j
     UNION ALL SELECT sv.media_id,'scene',s.id,s.title,e.id,e.title,CASE WHEN s.video_media_id=sv.media_id THEN '当前视频' ELSE '候选视频' END FROM scene_videos sv JOIN scenes s ON s.id=sv.scene_id JOIN episodes e ON e.id=s.episode_id
     UNION ALL SELECT es.media_id,'edit',0,p.name,NULL,NULL,'剪辑素材' FROM edit_sources es JOIN edit_projects p ON p.id=es.edit_id
-    UNION ALL SELECT eo.media_id,'edit',0,p.name,NULL,NULL,'剪辑产出' FROM edit_outputs eo JOIN edit_projects p ON p.id=eo.edit_id;").map_err(|e| e.to_string())?;
+    UNION ALL SELECT eo.media_id,'edit',0,p.name,NULL,NULL,'剪辑产出' FROM edit_outputs eo JOIN edit_projects p ON p.id=eo.edit_id;")).map_err(|e| e.to_string())?;
     for (table, sections) in [
         ("media", vec!["media", "roles", "episodes"]), ("roles",vec!["roles"]),
         ("role_audio",vec!["roles"]), ("role_media",vec!["roles"]), ("episodes",vec!["episodes"]), ("scenes",vec!["episodes"]),
@@ -33,17 +37,19 @@ pub fn install(c: &Connection) -> Result<(), String> {
         ("scene_options",vec!["episodes"]), ("prompts",vec!["prompts"]),
         ("settings",vec!["settings"]), ("background_jobs",vec!["jobs"]),
     ] {
+        let sql_table = if table == "roles" { asset_table } else { table };
         for section in &sections { c.execute("INSERT OR IGNORE INTO revisions(section) VALUES(?)",[section]).map_err(|e|e.to_string())?; }
         for event in ["INSERT", "UPDATE", "DELETE"] {
             let body = sections.iter().map(|section|format!("UPDATE revisions SET version=version+1 WHERE section='{section}';")).collect::<String>();
-            c.execute_batch(&format!("CREATE TRIGGER IF NOT EXISTS revision_{table}_{event} AFTER {event} ON {table} BEGIN {body} END;")).map_err(|e|e.to_string())?;
+            c.execute_batch(&format!("CREATE TRIGGER IF NOT EXISTS revision_{table}_{event} AFTER {event} ON {sql_table} BEGIN {body} END;")).map_err(|e|e.to_string())?;
         }
     }
     // Foreign keys also need to reject references to soft-deleted assets.
     for (table, columns) in [("roles",vec!["design_media_id"]),("role_audio",vec!["media_id"]),("role_media",vec!["media_id"]),("episodes",vec!["cover_media_id"]),("scenes",vec!["first_media_id","last_media_id","reference_media_id","video_media_id"]),("scene_videos",vec!["media_id"])] {
+        let sql_table = if table == "roles" { asset_table } else { table };
         for event in ["INSERT","UPDATE"] {
             for column in &columns {
-                c.execute_batch(&format!("CREATE TRIGGER IF NOT EXISTS active_{table}_{column}_{event} BEFORE {event} ON {table} WHEN EXISTS(SELECT 1 FROM media WHERE id=NEW.{column} AND deleted_at IS NOT NULL) BEGIN SELECT RAISE(ABORT,'素材已在回收站，请先恢复'); END;")).map_err(|e|e.to_string())?;
+                c.execute_batch(&format!("CREATE TRIGGER IF NOT EXISTS active_{table}_{column}_{event} BEFORE {event} ON {sql_table} WHEN EXISTS(SELECT 1 FROM media WHERE id=NEW.{column} AND deleted_at IS NOT NULL) BEGIN SELECT RAISE(ABORT,'素材已在回收站，请先恢复'); END;")).map_err(|e|e.to_string())?;
             }
         }
     }
@@ -179,7 +185,7 @@ mod tests {
     fn fixture()->Connection {
         let c=Connection::open_in_memory().unwrap();migrate(&c).unwrap();
         c.execute_batch("INSERT INTO media(id,name,path,kind,created_at) VALUES(1,'hero','/hero.png','image','1'),(2,'clip','/clip.mp4','video','1');
-        INSERT INTO roles(id,name,design_media_id,created_at) VALUES(1,'Hero',1,'1');
+        INSERT INTO assets(id,name,design_media_id,created_at) VALUES(1,'Hero',1,'1');
         INSERT INTO role_media VALUES(1,1);
         INSERT INTO episodes(id,title,sort_order,created_at,cover_media_id) VALUES(1,'Episode',0,'1',1);
         INSERT INTO scenes(id,episode_id,title,sort_order,created_at,first_media_id,last_media_id,reference_media_id,video_media_id) VALUES(1,1,'Scene',0,'1',1,1,1,2);

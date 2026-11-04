@@ -2,6 +2,7 @@ import { GenerationSelector } from "./components/generation/GenerationSelector";
 import { ImageModelFields, VideoModelFields } from "./components/generation/ModelGenerationFields";
 import { channelsFor, generationChoice, modelImageSize, modelRatio, selectionPayload, useGenerationSelection, validateGeneration } from "./generation-channels";
 import { RoleAudioReferences } from "./components/RoleAudioReferences";
+import AssetRelationships from "./AssetRelationships";
 import { ASSET_CATEGORIES, assetCategoryLabel, supportsAudioReferences, type AssetCategory } from "./asset-categories";
 import { PreviewVideo, VideoPreviewModal } from "./components/VideoPreviewModal";
 import { sceneVideoPrompt } from "./core";
@@ -40,6 +41,7 @@ import {
 ArrowDown,
 ArrowLeft,
 ArrowUp,
+GitBranch,
 ChevronDown,
 ChevronRight,
 Pencil,
@@ -1747,6 +1749,7 @@ function confirmDisableRole(name: string): Promise<boolean> {
   }));
 }
 export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload: () => void; initialRoleId?:number }) {
+  const [graphOpen, setGraphOpen] = useState(false);
   const [showDisabled, setShowDisabled] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<AssetCategory | "all">("all");
   const [updatingRoleId, setUpdatingRoleId] = useState<number | null>(null);
@@ -1765,7 +1768,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
   const detailImages = detail ? [...detail.images].sort((a, b) => Number(b.id === detail.design_media_id) - Number(a.id === detail.design_media_id)) : [];
   const previewRole = data.assets.find(role => role.id === previewRoleId);
   const previewImages = [...(previewRole?.images || [])].sort((a, b) => Number(b.id === previewRole?.design_media_id) - Number(a.id === previewRole?.design_media_id));
-  useEffect(() => { if (initialRoleId != null) setDetailId(initialRoleId); }, [initialRoleId]);
+  useEffect(() => { if (initialRoleId != null) { setDetailId(initialRoleId); setGraphOpen(false); } }, [initialRoleId]);
   const renameMedia = async () => {
     if (!renamingMedia?.name.trim() || renamingMediaBusy) return;
     setRenamingMediaBusy(true);
@@ -1819,6 +1822,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
     await reload();
     setEditing(x);
   };
+  if (graphOpen) return <AssetRelationships key={data.project.id} data={data} onClose={() => setGraphOpen(false)}/>;
   return (
     <section>
       {detail ? <div className="role-detail-page">
@@ -1863,6 +1867,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
       <div className="section-title page-actions">
         <div className="page-intro"><h1>资产库</h1><p>管理人物、地点、物品、生物、载具等创作资产，保持故事中的视觉与设定一致。</p></div>
         <Space wrap>
+          <Button icon={<GitBranch size={16}/>} onClick={() => setGraphOpen(true)}>关系图</Button>
           <Select aria-label="资产类别筛选" value={categoryFilter} onChange={setCategoryFilter} style={{width: 132}}
             options={[{value: "all", label: "全部类别"}, ...ASSET_CATEGORIES]} />
           <Checkbox checked={showDisabled} onChange={setShowDisabled}>显示已禁用资产</Checkbox>

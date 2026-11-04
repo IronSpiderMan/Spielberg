@@ -10,6 +10,7 @@
 |---|---|---|---|
 | 项目 | `/projects` | `name` | `name` |
 | 资产 | `/projects/{pid}/assets` | `name`, `description?`, `enabled?`, `category?`, `design_media_id?` | 同创建字段 |
+| 资产关系 | `/projects/{pid}/asset-relations` | `source_asset_id`, `target_asset_id`, `label`, `directed?`, `description?` | 同创建字段 |
 | 素材 | `/projects/{pid}/media` | `name`, `extension`, `data_base64`, `asset_id?`；推荐二进制上传 | `name` |
 | 剧集 | `/projects/{pid}/episodes` | `title`, `description?`, `cover_media_id?` | 同创建字段 |
 | 场景 | `/projects/{pid}/episodes/{episode_id}/scenes` | `title`, `description?`, `prompt?`, `first_media_id?`, `last_media_id?`, `reference_media_id?`, `generation_options?` | `/projects/{pid}/scenes/{scene_id}`，不能改变所属剧集 |
@@ -26,11 +27,29 @@
 
 每个剧集最多一份 Markdown 剧本和一份 CSV 分镜头剧本，重复创建或移动到已有同类型内容的剧集返回 409；请读取已有资源并 PATCH。剧本按剧集归属：`GET/POST /projects/{pid}/episodes/{episode_id}/screenplays` 列出或创建该集剧本，路径指定归属。兼容 `/projects/{pid}/screenplays`，创建时必须提交有效 `episode_id`，GET 可用 `?episode_id=...` 筛选；单个资源的 GET/PATCH/DELETE 使用 `/projects/{pid}/screenplays/{id}`。PATCH 省略字段保持原值，更新 `episode_id` 可移动到当前项目的其他剧集，不能脱离剧集。资源包含 `id,episode_id,title,content,format,created_at,updated_at`。
 
-资产的 `category` 为 `person`（人物）、`location`（地点）、`object`（物品）、`creature`（生物）、`vehicle`（载具）或 `other`（其他），默认 `person`。旧项目自动迁移为人物，PATCH 省略类别时保留原值，其他类别值会被拒绝。资产列表 GET 支持 `category`、`enabled`（true/false）、`query`（名称或描述，不区分大小写）筛选；省略筛选返回所有资产，包括禁用项。资产库使用 `/assets` 接口和 `assets` 数据字段；素材库使用 `/media` 接口和 `media` 数据字段，关联参数统一为 `asset_id` 与 `media_id`。旧数据库表名和磁盘目录保留，资产、素材 ID 与文件引用不变；客户端与脚本需同步使用新资源名，API 前缀仍为 `/api/v1`。旧 Agent 会话的结构化工具参数会一次性迁移，用户原文不改写。
+资产的 `category` 为 `person`（人物）、`location`（地点）、`object`（物品）、`creature`（生物）、`vehicle`（载具）或 `other`（其他），默认 `person`。旧项目自动迁移为人物，PATCH 省略类别时保留原值，其他类别值会被拒绝。资产列表 GET 支持 `category`、`enabled`（true/false）、`query`（名称或描述，不区分大小写）筛选；省略筛选返回所有资产，包括禁用项。资产库使用 `/assets` 接口和 `assets` 数据字段；素材库使用 `/media` 接口和 `media` 数据字段，关联参数统一为 `asset_id` 与 `media_id`。数据库版本 16 将旧 `roles` 表原地更名为 `assets`，保留资产 ID、图片和音频关联及素材路径；`role_media`、`role_audio` 关联表沿用原名称，其外键更新为引用 `assets`。旧 Agent 会话的结构化工具参数会一次性迁移，用户原文不改写。
 
 资产的 `enabled` 为布尔值，默认 `true`（包含旧项目资产）。设为 `false` 后，资产及其命名图片不再支持 `@` 引用；省略该字段的更新保留原状态。资产返回 `enabled` 和 `images`，剧集返回排序后的 `scenes` 和 `cover_media`，场景返回引用图片、`videos`、`script` 和 `generation_options`。资产、图片、场景等 ID 为项目内整数，项目 ID 为 UUID。
 
 项目 DELETE 仅移除项目注册信息，返回额外的 `data_retained:true`，磁盘目录保留，可重新打开。素材 DELETE 使用回收站；使用中的素材拒绝删除。删除剧集会级联删除所属剧本、分镜头剧本、场景及其关联；删除资产不会删除素材文件。
+
+### 资产关系图
+
+资产关系保存在 `asset_relations`，任意两类资产之间均可建立关系，包括人物与人物、人物与地点。`GET /projects/{pid}/asset-relations` 返回数组；单条关系使用 `/projects/{pid}/asset-relations/{id}` 的 GET/PATCH/DELETE。返回字段为 `id,source_asset_id,target_asset_id,label,directed,description,created_at,updated_at`。
+
+```json
+{"source_asset_id":1,"target_asset_id":2,"label":"兄妹","directed":false,"description":"魏来与魏宁"}
+```
+
+`label` 去除首尾空白后须为 1–80 个字符，`description` 最多 2000 字符，默认空文本；`directed` 默认为 `false`。无向关系将较小资产 ID 保存为 `source_asset_id`，有向关系保留用户指定的起终点。相同起终点、名称和方向的关系重复创建返回 409，允许同一对资产拥有不同名称的关系。资产必须属于当前项目；缺少资产返回 404，自关联或非法字段返回 400。删除资产会级联删除其关系及图中的对应坐标，不删除对端资产。
+
+`GET /projects/{pid}/asset-graph` 返回项目共享的位置布局和修订号：
+
+```json
+{"positions":{"1":{"x":100,"y":120},"2":{"x":450,"y":120}},"revision":1}
+```
+
+`PATCH` 相同路径提交完整 `positions` 与读取时的 `revision`，成功返回新布局并将修订号加一；版本过期返回 409，客户端应重新加载并提示用户。坐标键必须是当前项目资产的十进制 ID，`x/y` 必须是绝对值不超过 1000000 的有限数值，最多保存 5000 个资产位置。空项目初始返回 `{"positions":{},"revision":0}`。关系和布局随项目备份恢复，项目之间独立保存。
 
 素材列表支持 `page`（默认 1）、`limit`（默认 24，上限 60）、`kind`（`all/image/video/audio`）、`query`、`usage`（`all/used/unused/trash`）。同时支持平级资源路径，例如 `/assets?project_id={pid}` 和 `/scenes?project_id={pid}&episode_id={episode_id}`；前端使用上表的嵌套路径。
 

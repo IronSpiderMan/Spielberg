@@ -212,7 +212,7 @@ def prepare_episode(api, episode):
     script = api.rows("SELECT content FROM screenplays WHERE episode_id=? AND format='markdown'", (eid,))[0]['content']
     source_hash = digest(script)
     existing = api.rows('SELECT * FROM scenes WHERE episode_id=? ORDER BY sort_order,id', (eid,))
-    roles = api.rows('SELECT name,description,design_media_id FROM roles ORDER BY id')
+    roles = api.rows('SELECT name,description,design_media_id FROM assets ORDER BY id')
     lines = source_lines(script, [r['name'] for r in roles])
     college = episode['sort_order'] >= 10
     variants = {'未来': 43, '蓝秋月': 50, '王猛': 29, '未约翰': 30} if college else {}
