@@ -131,7 +131,7 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
       </Form>
       </div>
       <div className="generation-submit-row">
-        <Button className="generation-submit" type="primary" long icon={<Film size={16} />} loading={busy} disabled={uploading || optimizing || uploadingReferences} onClick={() => void generate()}>{busy ? "视频生成中…" : "生成视频"}</Button>
+        <Button className="generation-submit" type="primary" long icon={<Film size={16} />} loading={busy} disabled={busy || uploading || optimizing || uploadingReferences || !generation.choice || !prompt.trim() || (mode === "fl2v" && !first) || (mode === "i2v" && !referenceIds.length && !referenceVideos.length && !referenceAudios.length)} onClick={() => void generate()}>{busy ? "视频生成中…" : "生成视频"}</Button>
       </div>
     </div>
     <div className="creation-panel image-result video-result" aria-busy={busy}>

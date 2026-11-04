@@ -488,17 +488,17 @@ html[data-theme="dark"] .task-state.task-failed { background: #ef8b8f; }
 
 /* Image and video previews share a full-height media sidebar on wide screens. */
 @media (min-width: 1201px) {
-  .creation-desk.images-active :is(.image-creation-split, .video-creation-split) > .image-result {
+  .creation-desk.images-active :is(.image-creation-split, .video-creation-split, .tts-creation-split) > .image-result {
     display: grid;
     grid-template-columns: minmax(0, 1fr) clamp(160px, 26%, 240px);
     grid-template-rows: auto minmax(0, 1fr);
     gap: 16px 20px;
     align-items: stretch;
   }
-  .creation-desk :is(.image-creation-split, .video-creation-split) > .image-result > .generation-preview-heading {
+  .creation-desk :is(.image-creation-split, .video-creation-split, .tts-creation-split) > .image-result > .generation-preview-heading {
     grid-column: 1 / -1;
   }
-  .creation-desk.images-active :is(.image-creation-split, .video-creation-split) > .image-result > .generation-preview-body {
+  .creation-desk.images-active :is(.image-creation-split, .video-creation-split, .tts-creation-split) > .image-result > .generation-preview-body {
     grid-column: 1;
     grid-row: 2;
     padding: 0;
@@ -507,7 +507,7 @@ html[data-theme="dark"] .task-state.task-failed { background: #ef8b8f; }
     scrollbar-width: thin;
     justify-content: safe center;
   }
-  .creation-desk.images-active :is(.image-creation-split, .video-creation-split) > .image-result > .studio-media-library {
+  .creation-desk.images-active :is(.image-creation-split, .video-creation-split, .tts-creation-split) > .image-result > .studio-media-library {
     grid-column: 2;
     grid-row: 2;
     min-height: 0;
@@ -518,9 +518,18 @@ html[data-theme="dark"] .task-state.task-failed { background: #ef8b8f; }
     border-left: 1px solid var(--ui-border);
     overflow: hidden;
   }
-  .creation-desk :is(.image-creation-split, .video-creation-split) .studio-media-grid {
+  .creation-desk :is(.image-creation-split, .video-creation-split, .tts-creation-split) .studio-media-grid {
     flex: 1 1 0;
     grid-template-columns: minmax(0, 1fr);
     max-height: none;
   }
+}
+
+/* Keep generation panel titles aligned across image, video and speech. */
+.creation-split > .creation-panel > .generation-panel-heading h2,
+.creation-split > .image-result > .generation-preview-heading h2 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 600;
 }
