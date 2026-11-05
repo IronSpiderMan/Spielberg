@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Form, Tabs, Trigger } from "@arco-design/web-react";
-import { ChevronDown, SlidersHorizontal } from "lucide-react";
+import { ChevronDown, LockKeyhole, SlidersHorizontal } from "lucide-react";
 import { GENERATION_SIZES, normalizeGenerationSize } from "../../generation-sizes";
 import "../../generation-channels.css";
 
@@ -61,7 +61,11 @@ export function GenerationParameters({ratio,ratios,onRatio,size,sizes,onSize,dis
       </div>
       {duration && <DurationSlider {...duration} disabled={disabled}/>}
     </div>}>
-      <button ref={trigger} type="button" className="generation-picker-trigger generation-parameters-trigger" aria-label={`${ariaPrefix}生成参数`} aria-haspopup="dialog" aria-controls={open ? popupId : undefined} aria-expanded={open && !disabled} title={summary} disabled={disabled} ><SlidersHorizontal size={16}/><span>{summary}</span><ChevronDown size={15}/></button>
+      <span className="generation-picker-anchor">
+        <button ref={trigger} type="button" className="generation-picker-trigger generation-parameters-trigger" aria-label={`${ariaPrefix}生成参数`} aria-haspopup="dialog" aria-controls={open && !disabled ? popupId : undefined} aria-expanded={open && !disabled} title={summary} disabled={disabled}>
+          <SlidersHorizontal size={16}/><span>{summary}</span>{disabled ? <LockKeyhole size={15}/> : <ChevronDown size={15}/>}
+        </button>
+      </span>
     </Trigger>
   </Form.Item>;
 }
