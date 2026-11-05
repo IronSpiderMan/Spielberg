@@ -143,6 +143,39 @@ fn validate(c: &Connection, resource: &str, value: &Value, create: bool) -> ApiR
     Ok(())
 }
 
+fn batch_delete(c: &mut Connection, resource: &str, value: &Value) -> ApiResult<Value> {
+    let table = match resource {
+        "asset-relations" => "asset_relations",
+        _ => table(resource)?,
+    };
+    let items = value["ids"].as_array()
+        .filter(|ids| (1..=100).contains(&ids.len()))
+        .ok_or_else(|| bad("ids 必须包含 1 到 100 个资源 ID"))?;
+    let mut seen = std::collections::HashSet::new();
+    let mut ids = Vec::with_capacity(items.len());
+    for item in items {
+        let id = item.as_i64().filter(|id| *id > 0)
+            .ok_or_else(|| bad("资源 ID 必须是正整数"))?;
+        if !seen.insert(id) {
+            return Err(bad("资源 ID 不能重复"));
+        }
+        ids.push(id);
+    }
+
+    let tx = c.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(sql_error)?;
+    let delete_sql = format!("DELETE FROM {table} WHERE id=?");
+    for &id in &ids {
+        if resource == "media" {
+            catalog::trash(&tx, id)?;
+        } else if tx.execute(&delete_sql, [id]).map_err(sql_error)? == 0 {
+            return Err(ApiError(StatusCode::NOT_FOUND, format!("资源 {id} 不存在")));
+        }
+    }
+    tx.commit().map_err(sql_error)?;
+    Ok(json!({"deleted":true,"ids":ids,"count":ids.len()}))
+}
+
 // All CRUD operations share the same lock as the existing generation and storage services.
 pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value) -> ApiResult<Value> {
     let parts:Vec<_>=path.trim_matches('/').split('/').collect();
@@ -199,6 +232,13 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
             (strv(&value,"project_id")?,parts[0],parts.get(1).copied())
         } else {return Err(missing())};
         if !["asset-relations","asset-graph"].contains(&resource) { table(resource)?; }
+        if method == "DELETE" && parts.len() == 3 && parts[0] == "projects"
+            && ["assets", "asset-relations", "media", "episodes", "scenes", "prompts"].contains(&resource)
+        {
+            let result = batch_delete(&mut db(state, &pid)?, resource, &value)?;
+            touch(state, &pid);
+            return Ok(result);
+        }
         value["project_id"]=json!(pid);
         let c=db(state,&pid)?;
         let id=id.map(|id|id.parse::<i64>().ok().filter(|n|*n>0).ok_or_else(||bad("资源 ID 无效"))).transpose()?;
@@ -312,6 +352,25 @@ mod project_config_tests {
         let path=format!("projects/{pid}");
         (state,pid,path)
     }
+    #[test]
+    fn batch_delete_rolls_back_when_an_id_is_missing() {
+        let (state, _, path) = timeline_fixture();
+        let path = format!("{path}/prompts");
+        let first = crud(&state, "POST", &path, json!({"name":"First"})).unwrap();
+        let second = crud(&state, "POST", &path, json!({"name":"Second"})).unwrap();
+        let error = crud(&state, "DELETE", &path, json!({"ids":[first["id"], i64::MAX]}))
+            .unwrap_err();
+        assert_eq!(error.0, StatusCode::NOT_FOUND);
+        assert_eq!(crud(&state, "GET", &path, json!({})).unwrap().as_array().unwrap().len(), 2);
+        let ids = json!([first["id"], second["id"]]);
+        assert_eq!(
+            crud(&state, "DELETE", &path, json!({"ids":ids})).unwrap(),
+            json!({"deleted":true,"ids":ids,"count":2})
+        );
+        assert_eq!(crud(&state, "GET", &path, json!({})).unwrap(), json!([]));
+        fs::remove_dir_all(state.root).unwrap();
+    }
+
     fn sample_timelines() -> Value {
         json!([
             {"id":"main","title":"主线","description":"按叙事顺序排列","entries":[

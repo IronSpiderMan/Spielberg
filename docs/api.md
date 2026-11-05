@@ -23,6 +23,13 @@
 - `PATCH {集合}/{id}`：仅更新请求中的字段，返回更新后的资源；可空引用字段传 `null` 清除。
 - `DELETE {集合}/{id}`：删除并返回 `{deleted:true}`。
 
+批量删除使用 `DELETE /api/v1/projects/{pid}/{resource}`，其中 `resource` 为
+`assets`、`asset-relations`、`media`、`episodes`、`scenes` 或 `prompts`。
+请求体示例为 `{"ids":[1,2]}`，接受 1–100 个不重复的正整数 ID。成功返回 HTTP 200，
+响应为 `{"data":{"deleted":true,"ids":[1,2],"count":2}}`。
+参数无效返回 400，任一 ID 不存在返回 404，素材仍被引用或存在运行中的后台任务时返回 409。
+整个批次在同一事务中处理，失败时回滚。素材移入回收站，剧集沿用级联删除规则。
+
 场景列表和创建通过剧集子资源路径访问：`GET/POST /projects/{pid}/episodes/{episode_id}/scenes`。单个场景的读取、更新和删除使用 `/projects/{pid}/scenes/{scene_id}`。
 
 每个剧集最多一份 Markdown 剧本和一份 CSV 分镜头剧本，重复创建或移动到已有同类型内容的剧集返回 409；请读取已有资源并 PATCH。剧本按剧集归属：`GET/POST /projects/{pid}/episodes/{episode_id}/screenplays` 列出或创建该集剧本，路径指定归属。兼容 `/projects/{pid}/screenplays`，创建时必须提交有效 `episode_id`，GET 可用 `?episode_id=...` 筛选；单个资源的 GET/PATCH/DELETE 使用 `/projects/{pid}/screenplays/{id}`。PATCH 省略字段保持原值，更新 `episode_id` 可移动到当前项目的其他剧集，不能脱离剧集。资源包含 `id,episode_id,title,content,format,created_at,updated_at`。
