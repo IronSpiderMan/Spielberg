@@ -92,6 +92,14 @@ const deferred = () => { let resolve; const promise=new Promise(done=>{resolve=d
   await api('/actions/settings',{project_id:project.id,settings:{llm:{base_url:`http://127.0.0.1:${model.address().port}/v1`,model:'qa-tool-model',api_key:'ui-test-private-key'}}});
   browser=await chromium.launch({headless:true});
   page=await browser.newPage({viewport:{width:1440,height:1000}});
+  // Exercise the current frontend build even when the backend embeds older assets.
+  await page.route(base+'/**', async route => {
+   const pathname = new URL(route.request().url()).pathname;
+   if (pathname !== '/' && !pathname.startsWith('/assets/')) return route.continue();
+   const file = path.resolve(__dirname, '../../dist', pathname === '/' ? 'index.html' : pathname.slice(1));
+   if (!fs.existsSync(file)) return route.continue();
+   await route.fulfill({path:file});
+  });
   const failures=[];page.on('pageerror',error=>failures.push(error.message));
   // A failed initial read must be retryable without losing the composer's draft.
   let failInitialRead=true;
@@ -116,6 +124,15 @@ const deferred = () => { let resolve; const promise=new Promise(done=>{resolve=d
   await page.getByTestId('agent-plan').getByText('2/2',{exact:true}).waitFor();
   assert(await page.locator('.agent-tool summary > small').getByText('资产库',{exact:true}).count()>0);
   assert.equal(await page.locator('.agent-tool summary > small').getByText('roles',{exact:true}).count(),0);
+  const operationGroup = page.locator('.agent-tool-group');
+  assert.equal(await operationGroup.count(),1,'Consecutive operations should share one group');
+  assert.equal(await operationGroup.evaluate(element=>element.open),false,'Operation history should start collapsed');
+  assert.equal(await operationGroup.locator('.agent-tool').count(),6);
+  await operationGroup.locator(':scope > summary').click();
+  await operationGroup.locator('.agent-tool').first().waitFor({state:'visible'});
+  await operationGroup.locator('.agent-tool summary').first().click();
+  assert.equal(await operationGroup.locator('.agent-tool').first().evaluate(element=>element.open),true);
+  await operationGroup.locator(':scope > summary').click();
   const originalSession=(await api('/actions/agent/sessions',{project_id:project.id})).items[0];
   assert.equal(await page.getByRole('link',{name:'参考资料',exact:true}).getAttribute('href'),'https://example.com/reference');
   const roles=await api(`/projects/${project.id}/assets`,undefined,'GET');assert.equal(roles.length,1);assert.equal(roles[0].name,'Agent 主角');

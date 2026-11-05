@@ -19,6 +19,19 @@ import { channelsFor, selectionPayload, useGenerationSelection } from "./generat
 
 
 type AgentMessage = { role: "user" | "assistant" | "tool"; content: string; images?: string[]; image_media_ids?: number[]; tool_name?: string; tool_call_id?: string; arguments?: unknown; status?: string; tool_calls?: unknown[] };
+type MessageEntry = { message: AgentMessage; index: number; tools: AgentMessage[] };
+// Empty assistant tool-call envelopes do not break a visible run of operations.
+function messageEntries(messages: AgentMessage[]): MessageEntry[] {
+  const entries: MessageEntry[] = [];
+  messages.forEach((message, index) => {
+    if (message.role !== "tool" && !message.content && !message.images?.length && message.status !== "streaming" && message.status !== "interrupted") return;
+    const previous = entries[entries.length - 1];
+    if (message.role === "tool" && previous?.tools.length) previous.tools.push(message);
+    else entries.push({ message, index, tools: message.role === "tool" ? [message] : [] });
+  });
+  return entries;
+}
+
 type ConversationContext = { total_turns: number; recent_turns: number; summarized_turns: number; total_images: number; retained_images: number; active_compacted_messages?: number; estimated_text_bytes?: number };
 type PlanStep = { step: string; status: "pending" | "in_progress" | "completed" };
 type Execution = { active?: boolean; phase?: string; tool_calls?: number; max_steps?: number; retries?: number; active_tool?: string; plan?: PlanStep[]; stop_reason?: string };
@@ -268,6 +281,12 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
 
 
 
+  const renderTool = (message: AgentMessage, toolIndex: number) => <div className="agent-tool-result" key={`${message.tool_call_id || toolIndex}:${toolIndex}`}><details className="agent-tool">
+            <summary><Wrench size={14} /><span>{toolText[message.tool_name || ""] || message.tool_name || "执行工具"}</span><small>{toolTarget(message.arguments)}</small><span className={`agent-tool-status ${message.status}`}>{message.status === "running" ? "执行中" : message.status === "failed" ? "失败" : message.status === "skipped" ? "未执行" : <><Check size={12} />完成</>}</span><ChevronDown size={14} /></summary>
+            {message.arguments != null && <div><b>参数</b><pre>{displayJson(message.arguments)}</pre></div>}<div><b>结果</b><pre>{message.content ? displayJson(message.content) : "等待执行结果…"}</pre></div>
+          </details>
+          </div>;
+
   return <section className="agent-workspace" data-testid="agent-workspace" >
     <div className="agent-layout">
       {mobileSessions && <button className="agent-history-backdrop" tabIndex={-1} aria-label="关闭会话列表" onClick={() => setMobileSessions(false)} />}
@@ -289,11 +308,16 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
             <div className="agent-empty-mark" aria-hidden="true"><Clapperboard size={28} strokeWidth={1.5} /><Sparkles size={13} /></div>
             <span className="agent-empty-eyebrow">灵感就位，即刻开场</span>
             <h2>下一幕，从这里开始<span>。</span></h2><p>从一个想法到一个好故事，和你的 AI 创作搭档一起完成。</p>
-          </div> : selected.messages.map((message, index) => message.role === "tool" ? <div className="agent-tool-result" key={`${message.tool_call_id || index}:${index}`}><details className="agent-tool">
-            <summary><Wrench size={14} /><span>{toolText[message.tool_name || ""] || message.tool_name || "执行工具"}</span><small>{toolTarget(message.arguments)}</small><span className={`agent-tool-status ${message.status}`}>{message.status === "running" ? "执行中" : message.status === "failed" ? "失败" : message.status === "skipped" ? "未执行" : <><Check size={12} />完成</>}</span><ChevronDown size={14} /></summary>
-            {message.arguments != null && <div><b>参数</b><pre>{displayJson(message.arguments)}</pre></div>}<div><b>结果</b><pre>{message.content ? displayJson(message.content) : "等待执行结果…"}</pre></div>
-          </details>
-          <div className="agent-generated-images agent-media-results">{toolMedia(message, currentMedia).map(media => <AgentMediaPreview key={media.id} media={media} onPreview={setPreview} onLoad={followMedia} />)}</div>
+          </div> : messageEntries(selected.messages).map(({ message, index, tools }) => tools.length ? <div className="agent-operation-block" key={`${selected.id}:${index}`}>
+            {tools.length > 1 ? <details className="agent-tool-group">
+              <summary><Wrench size={14} /><span>操作记录 <small>{tools.length} 项</small></span><span className={`agent-tool-status ${tools.some(tool => tool.status === "failed") ? "failed" : tools.some(tool => tool.status === "running") ? "running" : ""}`}>
+                {tools.some(tool => tool.status === "running") ? "执行中 · " : ""}{tools.filter(tool => !tool.status || tool.status === "completed").length} 项完成
+                {tools.some(tool => tool.status === "failed") && ` · ${tools.filter(tool => tool.status === "failed").length} 项失败`}
+                {tools.some(tool => tool.status === "skipped") && ` · ${tools.filter(tool => tool.status === "skipped").length} 项未执行`}
+              </span><ChevronDown size={14} /></summary>
+              <div className="agent-tool-group-items">{tools.map((message, toolIndex) => renderTool(message, toolIndex))}</div>
+            </details> : renderTool(tools[0], 0)}
+            <div className="agent-generated-images agent-media-results">{tools.flatMap(tool => toolMedia(tool, currentMedia)).filter((media, index, items) => items.findIndex(item => item.id === media.id) === index).map(media => <AgentMediaPreview key={media.id} media={media} onPreview={setPreview} onLoad={followMedia} />)}</div>
           </div> : message.content || message.images?.length || message.status === "streaming" || message.status === "interrupted" ? <article className={`agent-message is-${message.role}`} data-status={message.status} key={index}>
             <div className="agent-message-label">{message.role === "user" ? "你" : <><Bot size={15} />Agent{message.status === "streaming" && <span className="agent-message-state" role="status">正在回复</span>}{message.status === "interrupted" && <span className="agent-message-state is-interrupted">回复已中断</span>}</>}</div><div className="agent-message-content">{message.role === "user" ? <>{message.images?.map((_, i) => {
               const media = attachmentImage(message, index, i, currentMedia);

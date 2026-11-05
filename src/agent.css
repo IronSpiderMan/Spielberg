@@ -272,3 +272,14 @@
 
 .agent-attachment-preview { display: inline-block; padding: 0; border: 0; background: transparent; cursor: zoom-in; }
 .agent-attachment-preview img { max-width: 100%; }
+
+.agent-operation-block { min-width: 0; }
+.agent-tool-group { margin: 8px 0; border: 1px solid var(--agent-border); border-radius: 9px; background: var(--agent-surface); font-size: 11px; }
+.agent-tool-group > summary { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px; cursor: pointer; list-style: none; }
+.agent-tool-group > summary::-webkit-details-marker { display: none; }
+.agent-tool-group > summary > svg { flex-shrink: 0; color: var(--agent-muted); }
+.agent-tool-group > summary small { margin-left: 6px; color: var(--agent-muted); font-size: 10px; }
+.agent-tool-group > summary > svg:last-child { transition: transform 180ms; }
+.agent-tool-group[open] > summary > svg:last-child { transform: rotate(180deg); }
+.agent-tool-group > summary:focus-visible { outline: 2px solid var(--agent-accent); outline-offset: 2px; border-radius: 9px; }
+.agent-tool-group-items { padding: 0 10px 2px; border-top: 1px solid var(--agent-border); }
