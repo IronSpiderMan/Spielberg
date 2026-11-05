@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import type { AgentFloatPreferences } from "../agent-float-preferences";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 export type OrbMode = "idle" | "listen" | "think" | "speak" | "error";
 // Organic membrane and spectral flow adapted from the supplied Alice reference.
@@ -116,11 +117,13 @@ const fragmentSource = `
     gl_FragColor=vec4(clamp(color+grain,0.,1.),clamp(alpha,0.,1.));
   }`;
 
-export function AgentLivingOrb({ mode }: { mode: OrbMode }) {
+export function AgentLivingOrb({ mode, color, intensity }: Pick<AgentFloatPreferences, "color" | "intensity"> & { mode: OrbMode }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const currentMode = useRef(mode);
   const [ready, setReady] = useState(false);
+  const currentIntensity = useRef(intensity);
   currentMode.current = mode;
+  currentIntensity.current = intensity;
 
   useEffect(() => {
     const surface = canvas.current;
@@ -190,19 +193,21 @@ export function AgentLivingOrb({ mode }: { mode: OrbMode }) {
       const index = currentMode.current === "listen" ? 1 : currentMode.current === "think" ? 2 : currentMode.current === "speak" ? 3 : 0;
       const smooth = 1 - Math.exp(-dt * 5);
       mix.forEach((value, i) => { mix[i] = value + ((i === index ? 1 : 0) - value) * smooth; });
-      if (!reduced.matches) { time += dt; flow += dt * (1 + mix[2] * .9 + mix[3] * .28); }
+      const motion = reduced.matches ? 0 : currentIntensity.current / 100;
+      time += dt * motion;
+      flow += dt * motion * (1 + mix[2] * .9 + mix[3] * .28);
       clickAge += dt; x += (targetX - x) * smooth; y += (targetY - y) * smooth;
       const size = Math.round(80 * Math.min(window.devicePixelRatio || 1, 2));
       if (surface.width !== size) { surface.width = surface.height = size; gl.viewport(0, 0, size, size); }
       gl.uniform2f(uniform.resolution, size, size);
-      gl.uniform1f(uniform.time, reduced.matches ? 1.4 : time);
-      gl.uniform1f(uniform.flow, reduced.matches ? .8 : flow);
-      gl.uniform1f(uniform.motion, reduced.matches ? 0 : 1.15);
-      gl.uniform2f(uniform.pointer, reduced.matches ? 0 : x, reduced.matches ? 0 : y);
+      gl.uniform1f(uniform.time, motion === 0 ? 1.4 : time);
+      gl.uniform1f(uniform.flow, motion === 0 ? .8 : flow);
+      gl.uniform1f(uniform.motion, 1.15 * motion);
+      gl.uniform2f(uniform.pointer, x * motion, y * motion);
       gl.uniform4f(uniform.modes, mix[0], mix[1], mix[2], mix[3]);
-      gl.uniform1f(uniform.hover, reduced.matches ? 0 : hover);
-      gl.uniform1f(uniform.click_age, reduced.matches ? 20 : clickAge);
-      gl.uniform1f(uniform.click_strength, 1);
+      gl.uniform1f(uniform.hover, hover * motion);
+      gl.uniform1f(uniform.click_age, motion === 0 ? 20 : clickAge);
+      gl.uniform1f(uniform.click_strength, motion);
       gl.uniform3f(uniform.bg, 0, 0, 0); gl.uniform1f(uniform.light, 0);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
     };
@@ -217,7 +222,8 @@ export function AgentLivingOrb({ mode }: { mode: OrbMode }) {
     };
   }, []);
 
-  return <span className="agent-living-orb" data-renderer={ready ? "webgl" : "css"} data-mode={mode} aria-hidden="true">
+  return <span className="agent-living-orb" data-renderer={ready ? "webgl" : "css"} data-mode={mode} data-color={color} data-static={intensity === 0}
+    style={{ "--agent-duration-scale": intensity > 0 ? 100 / intensity : 1 } as CSSProperties} aria-hidden="true">
     <span className="agent-living-fallback"><i /><i /><i /></span>
     <canvas ref={canvas} className="agent-living-canvas" />
     <span className="agent-living-motes"><i /><i /><i /><i /></span>

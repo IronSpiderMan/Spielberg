@@ -65,6 +65,7 @@ import "./dialogs.css";
 
 import { PageHeading, PageLoading } from "./ui";
 import { FloatingImageGenerator } from "./components/FloatingImageGenerator";
+import { agentFloatPreferencesKey, readAgentFloatPreferences } from "./agent-float-preferences";
 import { AgentFloatButton } from "./components/AgentFloatButton";
 const CreationDesk=lazy(()=>import("./creation").then(m=>({default:m.CreationDesk})));
 const InfiniteCanvas=lazy(()=>import("./InfiniteCanvas"));
@@ -97,6 +98,10 @@ const workspacePages = [
 
 
 function App() {
+  const [agentFloat, setAgentFloat] = useState(readAgentFloatPreferences);
+  useEffect(() => {
+    localStorage.setItem(agentFloatPreferencesKey, JSON.stringify(agentFloat));
+  }, [agentFloat]);
 
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("spielberg-sidebar-collapsed") === "true");
@@ -271,7 +276,7 @@ function App() {
     return (
       <>
         <Welcome onCreate={() => setCreating(true)} onOpen={openProject} onRestored={openRestored} />
-        <AgentFloatButton project={null} reload={refresh} onOpenSession={() => {}} />
+        {agentFloat.visible && <AgentFloatButton appearance={agentFloat} project={null} reload={refresh} onOpenSession={() => {}} />}
         <Modal
           title="创建项目"
           visible={creating}
@@ -507,7 +512,7 @@ function App() {
               )}{" "}
               {page === "project-config" && <ProjectConfig key={data.project.id} project={data.project} reload={refresh} />}
               {page === "settings" && (
-                <SettingsPage data={data} reload={refresh} />
+                <SettingsPage data={data} reload={refresh} agentFloat={agentFloat} onAgentFloatChange={setAgentFloat} />
               )}{" "}
               {page === "projects" && (
                 <ProjectPage
@@ -525,10 +530,10 @@ function App() {
         {(
           <FloatingImageGenerator showButton={!!((sceneEditing && sceneEditing.scene.creation_mode !== "canvas") || page === "roles")} key={`floating-generator:${data.project.id}`} data={data} reload={refresh} />
         )}
-        <AgentFloatButton key={`agent-float:${data.project.id}`} project={data.project} reload={refresh} onSettings={() => navigate("settings")} onOpenSession={sessionId => navigate("agent", () => {
+        {agentFloat.visible && <AgentFloatButton appearance={agentFloat} key={`agent-float:${data.project.id}`} project={data.project} reload={refresh} onSettings={() => navigate("settings")} onOpenSession={sessionId => navigate("agent", () => {
           localStorage.setItem(`spielberg-agent-session-${data.project.id}`, sessionId);
           setAgentViewVersion(value => value + 1);
-        })} />
+        })} />}
       </Layout>
 
       <Modal title="创建项目" visible={creating} onCancel={() => !creatingProject && setCreating(false)}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Form, Input, Message, Space } from "@arco-design/web-react";
+import { Button, Form, Input, Message, Slider, Space, Switch } from "@arco-design/web-react";
 import { AlertCircle, Check, FolderOpen, Image, LoaderCircle, MessageSquare, Mic, Save, Sparkles, Video } from "lucide-react";
 import { type ModelSettings, type Snapshot, post } from "./core";
 import { useEditGuard } from "./edit-guard";
@@ -8,6 +8,7 @@ import { GenerationChannelsSettings } from "./GenerationChannelsSettings";
 import { SkillsSettings } from "./SkillsSettings";
 import { open } from "./platform";
 import { isLocalDesktop } from "./transport";
+import { agentFloatColors, type AgentFloatPreferences } from "./agent-float-preferences";
 import "./settings.css";
 
 const categories = [
@@ -17,12 +18,16 @@ const categories = [
   { id: "asr", label: "语音识别", icon: Mic },
   { id: "tts", label: "语音合成", icon: Mic },
   { id: "skills", label: "Skills 技能", icon: Sparkles },
+  { id: "agent-float", label: "Agent 悬浮按钮", icon: Sparkles },
   { id: "storage", label: "项目存储", icon: FolderOpen },
 ] as const;
 type Category = typeof categories[number]["id"];
 const serviceKinds: GenerationKind[] = ["llm", "image", "video", "tts", "asr"];
 
-export default function SettingsPage({ data, reload }: { data: Snapshot; reload: () => void | Promise<void> }) {
+export default function SettingsPage({ data, reload, agentFloat, onAgentFloatChange }: {
+  data: Snapshot; reload: () => void | Promise<void>;
+  agentFloat: AgentFloatPreferences; onAgentFloatChange: (value: AgentFloatPreferences) => void;
+}) {
   const [category, setCategory] = useState<Category>("llm");
   const tabsRef = useRef<HTMLDivElement>(null);
   const [skillsVisited, setSkillsVisited] = useState(false);
@@ -126,6 +131,35 @@ export default function SettingsPage({ data, reload }: { data: Snapshot; reload:
       <GenerationChannelsSettings kind={kind} settings={settings} disabled={saving} onChange={next => { setSettings(next); setDirty(true); }} />
     </div>)}
     <div id="settings-panel-skills" role="tabpanel" aria-labelledby="settings-tab-skills" className="studio-settings-panel settings-shared-panel" hidden={category !== "skills"}>{skillsVisited && <SkillsSettings />}</div>
+    <div id="settings-panel-agent-float" role="tabpanel" aria-labelledby="settings-tab-agent-float" className="studio-settings-panel settings-shared-panel" hidden={category !== "agent-float"}>
+      <div className="settings-shared-section">
+        <div className="setting-heading">
+          <div className="settings-panel-title"><h3>Agent 悬浮按钮</h3><span className="settings-scope">本机偏好</span></div>
+          <p>更改即时生效，并自动保存在当前客户端。</p>
+        </div>
+        <Form layout="vertical" className="settings-agent-float-form">
+          <Form.Item label="显示悬浮按钮">
+            <Switch aria-label="显示悬浮按钮" checked={agentFloat.visible} onChange={visible => onAgentFloatChange({ ...agentFloat, visible })} />
+          </Form.Item>
+          <Form.Item label="按钮颜色">
+            <div className="settings-agent-float-colors" role="radiogroup" aria-label="按钮颜色">
+              {(Object.keys(agentFloatColors) as AgentFloatPreferences["color"][]).map(color => (
+                <label key={color} className="settings-agent-float-color" data-color={color}>
+                  <input type="radio" name="agent-float-color" value={color} checked={agentFloat.color === color}
+                    onChange={() => onAgentFloatChange({ ...agentFloat, color })} />
+                  <span className="settings-agent-float-swatch" aria-hidden="true"><Check size={16} /></span>
+                  <span>{agentFloatColors[color]}</span>
+                </label>
+              ))}
+            </div>
+          </Form.Item>
+          <Form.Item label={`动态强度 · ${agentFloat.intensity}%`} extra="0% 为静态，100% 为默认强度。">
+            <Slider aria-label="动态强度" min={0} max={200} step={5} value={agentFloat.intensity}
+              onChange={intensity => onAgentFloatChange({ ...agentFloat, intensity: Number(intensity) })} />
+          </Form.Item>
+        </Form>
+      </div>
+    </div>
     <div id="settings-panel-storage" role="tabpanel" aria-labelledby="settings-tab-storage" className="studio-settings-panel settings-shared-panel" hidden={category !== "storage"}>
       <div className="settings-shared-section settings-storage" aria-busy={loadingDirectory || savingDirectory}>
         <div className="setting-heading"><div className="settings-panel-title"><h3>项目存储</h3><span className="settings-scope">工作室共享</span></div><p>设置新建和恢复项目的默认保存位置。</p></div>

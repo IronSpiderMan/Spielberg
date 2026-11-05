@@ -12,11 +12,11 @@
 .agent-living-canvas { display: block; width: 100%; height: 100%; opacity: 0; transition: opacity .3s; }
 .agent-living-orb[data-renderer="webgl"] .agent-living-canvas { opacity: 1; }
 .agent-living-orb[data-renderer="webgl"] .agent-living-fallback { display: none; }
-.agent-living-fallback { position: absolute; inset: 16px; overflow: hidden; border-radius: 44% 56% 48% 52% / 43% 41% 59% 57%; border: 1px solid #b8dfff88; background: #152647; box-shadow: 0 0 16px #849aff40, inset 0 0 10px #9be5ff55; animation: agent-light-morph 5s ease-in-out infinite; }
-.agent-living-fallback i { position: absolute; inset: 7px -10px; border-radius: 50%; background: linear-gradient(30deg, transparent 20%, #68dbedbb 44%, #9270edcc 60%, transparent 80%); filter: blur(3px); animation: agent-light-turn 7s linear infinite; }
+.agent-living-fallback { position: absolute; inset: 16px; overflow: hidden; border-radius: 44% 56% 48% 52% / 43% 41% 59% 57%; border: 1px solid #b8dfff88; background: #152647; box-shadow: 0 0 16px #849aff40, inset 0 0 10px #9be5ff55; animation: agent-light-morph calc(5s * var(--agent-duration-scale, 1)) ease-in-out infinite; }
+.agent-living-fallback i { position: absolute; inset: 7px -10px; border-radius: 50%; background: linear-gradient(30deg, transparent 20%, #68dbedbb 44%, #9270edcc 60%, transparent 80%); filter: blur(3px); animation: agent-light-turn calc(7s * var(--agent-duration-scale, 1)) linear infinite; }
 .agent-living-fallback i:nth-child(2) { rotate: 70deg; animation-direction: reverse; }
 .agent-living-fallback i:nth-child(3) { inset: 14px 8px; background: #aecfff; filter: blur(7px); }
-.agent-living-motes { position: absolute; inset: 12px; animation: agent-light-turn 24s linear infinite; }
+.agent-living-motes { position: absolute; inset: 12px; animation: agent-light-turn calc(24s * var(--agent-duration-scale, 1)) linear infinite; }
 .agent-living-motes i { position: absolute; width: 1.5px; height: 1.5px; border-radius: 50%; background: #b9d8ff; box-shadow: 0 0 4px #9baaff; opacity: .6; }
 .agent-living-motes i:nth-child(1) { left: 4%; top: 38%; }
 .agent-living-motes i:nth-child(2) { right: 12%; top: 5%; }
@@ -24,9 +24,22 @@
 .agent-living-motes i:nth-child(4) { left: 25%; bottom: 3%; }
 .agent-float-button:hover .agent-living-orb { transform: scale(1.07); }
 .agent-float-button.is-dragging .agent-living-orb { transform: scale(.94); }
-.agent-living-orb[data-mode="listen"] .agent-living-fallback { animation-duration: 1.6s; }
-.agent-living-orb[data-mode="think"] .agent-living-fallback i { animation-duration: 3s; }
-.agent-living-orb[data-mode="error"] { filter: hue-rotate(115deg) saturate(.65); }
+.agent-living-orb[data-mode="listen"] .agent-living-fallback { animation-duration: calc(1.6s * var(--agent-duration-scale, 1)); }
+.agent-living-orb[data-mode="think"] .agent-living-fallback i { animation-duration: calc(3s * var(--agent-duration-scale, 1)); }
+.agent-living-orb[data-color="violet"] { --agent-hue: 48deg; }
+.agent-living-orb[data-color="rose"] { --agent-hue: 105deg; }
+.agent-living-orb[data-color="amber"] { --agent-hue: 190deg; }
+.agent-living-orb[data-color="teal"] { --agent-hue: -65deg; }
+.agent-living-orb[data-color="coral"] { --agent-hue: 140deg; }
+.agent-living-orb[data-color="orange"] { --agent-hue: 165deg; }
+.agent-living-orb[data-color="lime"] { --agent-hue: 235deg; }
+.agent-living-orb[data-color="jade"] { --agent-hue: 265deg; }
+.agent-living-orb[data-color="ice"] { --agent-hue: -35deg; }
+.agent-living-orb[data-color="indigo"] { --agent-hue: 20deg; }
+.agent-living-orb:not([data-color="default"]) { filter: hue-rotate(var(--agent-hue)); }
+.agent-living-orb[data-mode="error"] { filter: hue-rotate(calc(var(--agent-hue, 0deg) + 115deg)) saturate(.65); }
+.agent-float-button .agent-living-orb[data-static="true"] { transform: none; transition: none; }
+.agent-living-orb[data-static="true"] * { animation: none; }
 .agent-float-busy-dot { position: absolute; right: 8px; bottom: 9px; width: 5px; height: 5px; background: #a6d5cf; border: 2px solid var(--ui-surface); border-radius: 50%; }
 .agent-float-tooltip { position: absolute; right: 0; bottom: calc(100% + 8px); width: max-content; max-width: 220px; padding: 7px 11px; background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: 9px; color: var(--ui-secondary-text); font-size: 11px; font-weight: 500; box-shadow: var(--ui-shadow-soft); opacity: 0; transform: translateY(3px); transition: opacity .2s, transform .2s; pointer-events: none; }
 .agent-float-button:hover .agent-float-tooltip, .agent-float-button:focus-visible .agent-float-tooltip { opacity: 1; transform: translateY(0); }
