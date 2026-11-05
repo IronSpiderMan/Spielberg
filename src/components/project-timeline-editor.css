@@ -20,7 +20,11 @@
 .project-timeline-list-heading { display: flex; justify-content: space-between; align-items: center; padding: 0 8px 12px; font-size: 12px; font-weight: 600; }
 .project-timeline-list-heading small { display: inline-block; padding: 1px 6px; margin-left: 5px; border-radius: 5px; background: var(--ui-subtle); color: var(--ui-muted); font-weight: 500; }
 .project-timeline-sidebar nav { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-.project-timeline-option { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 12px 10px; margin: 0 0 5px; border: 1px solid transparent; border-radius: 8px; color: var(--ui-secondary-text); background: transparent; text-align: left; cursor: pointer; }
+.project-timeline-option-row { position: relative; margin-bottom: 5px; }
+.project-timeline-option-delete { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); opacity: 0; pointer-events: none; }
+.project-timeline-option-row:hover .project-timeline-option-delete,
+.project-timeline-option-row:has(:focus-visible) .project-timeline-option-delete { opacity: 1; pointer-events: auto; }
+.project-timeline-option { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 12px 32px 12px 10px; margin: 0; border: 1px solid transparent; border-radius: 8px; color: var(--ui-secondary-text); background: transparent; text-align: left; cursor: pointer; }
 .project-timeline-option > svg { margin-top: 2px; flex: none; }
 .project-timeline-option > span { min-width: 0; }
 .project-timeline-option strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; line-height: 1.7; }
@@ -113,7 +117,8 @@
   .project-timeline-sidebar { flex: none; padding: 12px; border-right: 0; border-bottom: 1px solid var(--ui-border); }
   .project-timeline-list-heading { padding: 0 2px 8px; }
   .project-timeline-sidebar nav { display: flex; gap: 6px; flex: none; overflow-x: auto; }
-  .project-timeline-option { flex: 0 0 180px; margin-bottom: 0; padding: 8px; }
+  .project-timeline-option-row { flex: 0 0 180px; margin-bottom: 0; }
+  .project-timeline-option { height: 100%; padding: 8px 32px 8px 8px; }
   .project-timeline-sidebar-note { display: none; }
   .project-timeline-list-empty { margin: 0; padding: 0 2px; }
   .project-timeline-workspace { flex: 1; }

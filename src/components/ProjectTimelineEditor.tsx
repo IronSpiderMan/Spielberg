@@ -61,12 +61,18 @@ export default function ProjectTimelineEditor({ timelines, onChange, disabled = 
     setSelectedId(id);
     setEditing(true);
   };
-  const removeTimeline = () => {
-    if (!current || disabled) return;
-    const index = timelines.findIndex(timeline => timeline.id === current.id);
-    const next = timelines.filter(timeline => timeline.id !== current.id);
+  const removeTimeline = (id: string) => {
+    const index = timelines.findIndex(timeline => timeline.id === id);
+    if (disabled || index < 0) return;
+    const next = timelines.filter(timeline => timeline.id !== id);
     onChange(next);
-    setSelectedId(next[Math.min(index, next.length - 1)]?.id ?? null);
+    if (current?.id === id) setSelectedId(next[Math.min(index, next.length - 1)]?.id ?? null);
+  };
+  const renderDeleteTimeline = (timeline: ProjectTimeline, inSidebar = false) => {
+    const name = timeline.title || "未命名时间线";
+    return <ConfirmPopover title="删除这条时间线？" content={`「${name}」及其中的 ${eventCount(timeline)} 个事件将被移除，保存配置后生效。`} okText="删除时间线" onOk={() => removeTimeline(timeline.id)}>
+      <Button type="text" size={inSidebar ? "small" : undefined} status="danger" icon={<Trash2 size={inSidebar ? 14 : 16} />} aria-label={`删除时间线：${name}`} title="删除时间线" disabled={disabled} />
+    </ConfirmPopover>;
   };
   const addEntry = () => {
     if (!current || disabled) return;
@@ -91,10 +97,13 @@ export default function ProjectTimelineEditor({ timelines, onChange, disabled = 
     <aside className="project-timeline-sidebar" aria-label="项目时间线列表">
       <div className="project-timeline-list-heading"><span>时间线 <small>{timelines.length}</small></span><Button type="text" size="small" icon={<Plus size={16} />} aria-label="新建时间线" title="新建时间线" disabled={disabled} onClick={addTimeline} /></div>
       <nav aria-label="选择时间线">
-        {timelines.map(timeline => <button type="button" key={timeline.id} aria-pressed={current?.id === timeline.id} className="project-timeline-option" onClick={() => { setSelectedId(timeline.id); setEditing(false); }}>
-          <GitBranch size={17} aria-hidden="true" />
-          <span><strong>{timeline.title || "未命名时间线"}</strong><small>{timeline.entries.length} 个时间点 · {eventCount(timeline)} 个事件</small></span>
-        </button>)}
+        {timelines.map(timeline => <div className="project-timeline-option-row" key={timeline.id}>
+          <button type="button" aria-pressed={current?.id === timeline.id} className="project-timeline-option" onClick={() => { setSelectedId(timeline.id); setEditing(false); }}>
+            <GitBranch size={17} aria-hidden="true" />
+            <span><strong>{timeline.title || "未命名时间线"}</strong><small>{timeline.entries.length} 个时间点 · {eventCount(timeline)} 个事件</small></span>
+          </button>
+          <div className="project-timeline-option-delete">{renderDeleteTimeline(timeline, true)}</div>
+        </div>)}
         {!timelines.length && <p className="project-timeline-list-empty">把主线、人物经历或不同年代，整理成独立的时间线。</p>}
       </nav>
       <div className="project-timeline-sidebar-note"><Clock3 size={14} aria-hidden="true" /><span>每个时间点可记录多个事件</span></div>
@@ -108,7 +117,7 @@ export default function ProjectTimelineEditor({ timelines, onChange, disabled = 
       {editing ? <>
       <div className="project-timeline-details">
         <div className="project-timeline-title-row"><label className="project-timeline-title-field"><span>时间线名称 <i aria-hidden="true">*</i></span><Input aria-label="时间线名称" value={current.title} disabled={disabled} placeholder="例如：故事主线、人物成长线" onChange={title => updateTimeline({ title })} /></label>
-          <ConfirmPopover title="删除这条时间线？" content={`「${current.title || "未命名时间线"}」及其中的 ${eventCount(current)} 个事件将被移除，保存配置后生效。`} okText="删除时间线" onOk={removeTimeline}><Button className="project-timeline-delete" type="text" status="danger" icon={<Trash2 size={16} />} aria-label="删除时间线" title="删除时间线" disabled={disabled} /></ConfirmPopover>
+          {renderDeleteTimeline(current)}
         </div>
         <label className="project-timeline-description-field"><span>时间线说明 <small>选填</small></span><Input.TextArea aria-label="时间线说明" value={current.description} disabled={disabled} autoSize={{ minRows: 1, maxRows: 3 }} placeholder="描述这条时间线的范围与视角……" onChange={description => updateTimeline({ description })} /></label>
       </div>
