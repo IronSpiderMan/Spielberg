@@ -1,7 +1,7 @@
 import { PreviewKeyboardNavigation } from "./PreviewKeyboardNavigation";
 import { Button, Message, Modal } from "@arco-design/web-react";
 import { ChevronLeft, ChevronRight, Copy, Download, FolderOpen, Image as ImageIcon, Info, Maximize, Minus, Mouse, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, RotateCw, Undo2, WandSparkles } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { imageUrl, type Media } from "../core";
 import "./image-preview.css";
 
@@ -81,7 +81,7 @@ export function ImagePreviewModal({ media, onClose, afterClose, title = "参考�
   };
   const [rotation, setRotation] = useState(0);
   const [downloading, setDownloading] = useState(false);
-  const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
+  const [manualView, setManualView] = useState({ scale: 1, x: 0, y: 0 });
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
@@ -92,7 +92,8 @@ export function ImagePreviewModal({ media, onClose, afterClose, title = "参考�
   const ready = imageSize.width > 0 && viewportSize.width > 0 && viewportSize.height > 0;
   const fitScale = ready ? Math.min(1, viewportSize.width / rotatedSize.width, viewportSize.height / rotatedSize.height) : 1;
   const minScale = Math.min(0.05, fitScale);
-  const canDrag = ready && (rotatedSize.width * view.scale > viewportSize.width || rotatedSize.height * view.scale > viewportSize.height);
+  const view = fit ? { scale: fitScale, x: 0, y: 0 } : manualView;
+  const canDrag = ready && !fit && (rotatedSize.width * view.scale > viewportSize.width || rotatedSize.height * view.scale > viewportSize.height);
   const constrain = useCallback((next: typeof view) => {
     const maxX = Math.max(0, (rotatedSize.width * next.scale - viewportSize.width) / 2);
     const maxY = Math.max(0, (rotatedSize.height * next.scale - viewportSize.height) / 2);
@@ -100,11 +101,11 @@ export function ImagePreviewModal({ media, onClose, afterClose, title = "参考�
   }, [rotatedSize.width, rotatedSize.height, viewportSize.width, viewportSize.height]);
   const reset = useCallback(() => {
     setFit(true);
-    setView({ scale: fitScale, x: 0, y: 0 });
-  }, [fitScale]);
-  useEffect(() => {
+    drag.current = null;
+  }, []);
+  useLayoutEffect(() => {
     setFit(true);
-    setView({ scale: 1, x: 0, y: 0 });
+    setManualView({ scale: 1, x: 0, y: 0 });
     setImageSize({ width: 0, height: 0 });
     setFailed(false);
     setRotation(0);
@@ -119,21 +120,21 @@ export function ImagePreviewModal({ media, onClose, afterClose, title = "参考�
     return () => observer.disconnect();
   }, [viewport]);
   useEffect(() => {
-    if (!ready) return;
-    setView(previous => fit ? { scale: fitScale, x: 0, y: 0 } : constrain(previous));
-  }, [fit, fitScale, ready, constrain]);
+    if (ready && !fit) setManualView(constrain);
+  }, [fit, ready, constrain]);
   const zoom = useCallback((factor: number, x = 0, y = 0) => {
     if (!ready) return;
     setFit(false);
-    setView(previous => {
+    setManualView(manual => {
+      const previous = fit ? { scale: fitScale, x: 0, y: 0 } : manual;
       const scale = Math.min(16, Math.max(minScale, previous.scale * factor));
       const ratio = scale / previous.scale;
       return constrain({ scale, x: x - (x - previous.x) * ratio, y: y - (y - previous.y) * ratio });
     });
-  }, [ready, minScale, constrain]);
+  }, [ready, fit, fitScale, minScale, constrain]);
   const actualSize = useCallback(() => {
     setFit(false);
-    setView({ scale: 1, x: 0, y: 0 });
+    setManualView({ scale: 1, x: 0, y: 0 });
   }, []);
   // Portal content mounts after the parent's effect on first open. Track the actual
   // node so the non-passive listener is attached whenever that content becomes ready.
@@ -208,10 +209,10 @@ export function ImagePreviewModal({ media, onClose, afterClose, title = "参考�
       }}
       onPointerMove={event => {
         const start = drag.current;
-        if (!start || start.id !== event.pointerId) return;
+        if (!canDrag || !start || start.id !== event.pointerId) return;
         const dx = event.clientX - start.x, dy = event.clientY - start.y;
         drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
-        setView(previous => constrain({ ...previous, x: previous.x + dx, y: previous.y + dy }));
+        setManualView(previous => constrain({ ...previous, x: previous.x + dx, y: previous.y + dy }));
       }}
       onPointerUp={() => { drag.current = null; }}
       onPointerCancel={() => { drag.current = null; }}
