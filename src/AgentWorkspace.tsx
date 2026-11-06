@@ -240,9 +240,23 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   const send = async () => {
     const text = draft.trim(); if ((!text && !images.length) || readingImages || pasting.current || busy.current || running || loading || loadFailed || creating) return;
     if (!configured) { if (channelsFor(modelSettings, "llm").length) Message.warning("请选择渠道与模型"); else { Message.warning("请先在统一渠道配置中添加支持工具调用的模型"); onNavigate?.("settings"); } return; }
-    busy.current = true; setSending(true); setError(""); const version = ++selectionVersion.current; const key = draftKey;
+    busy.current = true; setSending(true); setError(""); const version = ++selectionVersion.current; const sourceKey = draftKey;
     try {
-      const session = selectedRef.current || await call<Session>("create");
+      let session = selectedRef.current;
+      if (!session) {
+        const created = await call<Session>("create");
+        // Keep the new session and its draft even when starting the run fails.
+        // A retry must use this session instead of creating another empty one.
+        if (mounted.current) {
+          const id = created.id;
+          setDrafts(items => ({ ...items, [id]: items[sourceKey] || "", [sourceKey]: "" }));
+          setImageDrafts(items => ({ ...items, [id]: items[sourceKey] || [], [sourceKey]: [] }));
+          if (version === selectionVersion.current) accept(created);
+          else setSessions(items => updateSession(items, created));
+        }
+        session = created;
+      }
+      const key = session.id;
       const model = modelSelection.choice?.channel.id === INDEPENDENT_CHANNEL ? {} : selectionPayload(modelSelection.choice);
       const result = await call<Session>("run", { session_id: session.id, message: text, images: images.map(image => image.url), image_media_ids: images.map(image => image.mediaId), web_enabled: online, ...model });
       if (!mounted.current) return;

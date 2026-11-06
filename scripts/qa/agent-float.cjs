@@ -8,6 +8,12 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const tool = (name, args, id) => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } });
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
+const waitForGate = async (gate, label) => {
+  let timer;
+  try { await Promise.race([gate.promise, new Promise((_, reject) => { timer = setTimeout(() => reject(Error(`Timed out waiting for ${label}`)), 12000); })]); }
+  finally { clearTimeout(timer); }
+};
 const listen = server => new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const close = async server => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); };
 
@@ -15,6 +21,7 @@ const close = async server => { server.closeAllConnections(); await new Promise(
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'spielberg-agent-float-'));
   const screenshots = path.join(temp, 'screenshots'); fs.mkdirSync(screenshots);
   const syntheses = [], transcriptions = [];
+  const concurrentModelGate = deferred();
   let synthesisFailures = 0, synthesisDelay = 0;
   const wav = Buffer.alloc(44 + 4800);
   wav.write('RIFF', 0); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8);
@@ -44,6 +51,7 @@ const close = async server => { server.closeAllConnections(); await new Promise(
       const userIndex = body.messages.findLastIndex(message => message.role === 'user');
       const prompt = body.messages[userIndex].content;
       const results = body.messages.slice(userIndex + 1).filter(message => message.role === 'tool');
+      if (prompt.includes('并发通知恢复')) await concurrentModelGate.promise;
       if (prompt.includes('停止测试')) await delay(2000);
       const message = prompt.includes('创建语音角色') && !results.length
         ? { role: 'assistant', content: null, tool_calls: [tool('app_request', { method: 'POST', resource: 'assets', data: { name: '语音创建的角色', description: '来自浮动语音助手' } }, 'voice-create')] }
@@ -316,12 +324,71 @@ const close = async server => { server.closeAllConnections(); await new Promise(
     await input().fill('权限拒绝后手动输入'); await send().click(); await waitRuns(2);
     await panel().getByText('已完成：权限拒绝后手动输入', { exact: false }).waitFor();
     assert.equal(runs[1].session_id, firstSession);
+
+    // Freeze a real running snapshot until cancellation has returned. An old
+    // read must not restore the enabled stop button or erase the stopping phase.
+    const oldRead = deferred(), releaseOldRead = deferred();
+    let staleRunning;
+    await page.route('**/api/v1/actions/agent/session', async route => {
+      const response = await route.fetch();
+      const snapshot = await response.json();
+      if (!staleRunning && snapshot.data?.id === firstSession && snapshot.data.status === 'running') {
+        staleRunning = snapshot; oldRead.resolve(); await releaseOldRead.promise;
+      }
+      await route.fulfill({ response, json: snapshot });
+    });
+    await page.route('**/api/v1/actions/agent/cancel', async route => {
+      const response = await route.fetch();
+      const snapshot = await response.json();
+      // Keep the observable draining phase deterministic even if the fixture's
+      // cancellable model request has already closed on the backend.
+      snapshot.data.execution = { ...snapshot.data.execution, active: true, phase: 'stopping' };
+      await route.fulfill({ response, json: snapshot });
+    });
     await input().fill('停止测试'); await send().click(); await waitRuns(3);
+    await waitForGate(oldRead, 'the running snapshot');
+    const cancellation = page.waitForResponse(response => response.url().endsWith('/actions/agent/cancel'));
     await page.getByTestId('agent-float-stop').click();
+    await cancellation;
+    await panel().getByText('执行已取消，已完成的操作已保留。', { exact: true }).waitFor();
+    await panel().getByText('正在停止操作', { exact: true }).waitFor();
+    const releasedRead = page.waitForResponse(response => response.url().endsWith('/actions/agent/session'));
+    releaseOldRead.resolve(); await releasedRead;
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await panel().locator('.agent-float-status').innerText(), '正在停止操作');
+    assert(await page.getByTestId('agent-float-stop').isDisabled(), 'A stale running poll re-enabled cancellation');
+    assert(await input().isDisabled());
+    await page.unroute('**/api/v1/actions/agent/cancel');
+    await page.unroute('**/api/v1/actions/agent/session');
     await page.getByTestId('agent-float-stop').waitFor({ state: 'hidden' });
     await send().waitFor();
     const stopped = await api('/actions/agent/session', { project_id: project.id, session_id: firstSession });
     assert.equal(stopped.status, 'cancelled');
+
+    // Workspace notifications can overlap too. The newest read wins even when
+    // an earlier response for the same session arrives last.
+    const notifiedRead = deferred(), releaseNotifiedRead = deferred();
+    let notificationReads = 0;
+    await page.route('**/api/v1/actions/agent/session', async route => {
+      notificationReads++;
+      if (notificationReads === 1) {
+        notifiedRead.resolve(); await releaseNotifiedRead.promise;
+        await route.fulfill({ status: 200, json: staleRunning });
+      } else await route.continue();
+    });
+    const notifyWorkspace = () => page.evaluate(({ projectId, sessionId }) => {
+      window.dispatchEvent(new CustomEvent('spielberg:agent-session-changed', { detail: { projectId, sessionId, source: 'workspace' } }));
+    }, { projectId: project.id, sessionId: firstSession });
+    await notifyWorkspace(); await waitForGate(notifiedRead, 'the workspace notification read');
+    const latestRead = page.waitForResponse(response => response.url().endsWith('/actions/agent/session'));
+    await notifyWorkspace(); await latestRead;
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const staleNotification = page.waitForResponse(response => response.url().endsWith('/actions/agent/session'));
+    releaseNotifiedRead.resolve(); await staleNotification;
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await panel().locator('.agent-float-status').innerText(), '已停止');
+    assert(await input().isEnabled(), 'An older notification revived a finished run');
+    await page.unroute('**/api/v1/actions/agent/session');
 
     // Switching projects cancels dictation and isolates the next Agent conversation.
     await closePanel(); await start(); await emit('跨项目取消的口述');
@@ -605,6 +672,33 @@ const close = async server => { server.closeAllConnections(); await new Promise(
     await page.waitForFunction(() => window.__systemSpeaks.length === 1);
     assert.equal(await page.evaluate(() => window.__systemSpeaks[0].text), '已完成：本机朗读验证');
     assert.equal(syntheses.length, cloudBeforeSystem); await stopReading();
+
+    // A workspace may start this same idle session while the float's send is
+    // pending. Replay the skipped notification after its conflicting run fails.
+    await panel().getByRole('checkbox', { name: '自动朗读回复', exact: true }).uncheck();
+    const concurrentSession = await page.evaluate(id => localStorage.getItem(`spielberg-agent-float-session-${id}`), project.id);
+    assert(concurrentSession);
+    const blockedRun = deferred(), releaseBlockedRun = deferred();
+    await page.route('**/api/v1/actions/agent/run', async route => {
+      blockedRun.resolve(); await releaseBlockedRun.promise; await route.continue();
+    });
+    await input().fill('浮标并发提交测试'); await send().click();
+    await waitForGate(blockedRun, 'the pending float submission');
+    const concurrent = await api('/actions/agent/run', { project_id: project.id, session_id: concurrentSession, message: '并发通知恢复' });
+    assert.equal(concurrent.status, 'running');
+    await page.evaluate(({ projectId, sessionId }) => {
+      window.dispatchEvent(new CustomEvent('spielberg:agent-session-changed', { detail: { projectId, sessionId, source: 'workspace' } }));
+    }, { projectId: project.id, sessionId: concurrentSession });
+    const conflictingRun = page.waitForResponse(response => response.url().endsWith('/actions/agent/run'));
+    releaseBlockedRun.resolve();
+    assert([400, 409].includes((await conflictingRun).status()));
+    await page.getByTestId('agent-float-stop').waitFor();
+    await panel().getByText('Agent 正在执行', { exact: true }).waitFor();
+    assert(await input().isDisabled(), 'Concurrent execution was left idle after the rejected float submission');
+    await page.unroute('**/api/v1/actions/agent/run');
+    concurrentModelGate.resolve();
+    await panel().getByText('已完成：并发通知恢复', { exact: false }).waitFor();
+    assert(await input().isEnabled());
     assert.deepEqual(failures, []);
     console.log('PASS: float interaction and session regressions; configured ASR/TTS routing and voice; automatic read-once and history isolation; playback cancellation and echo prevention; long-reply chunking; synthesis/autoplay recovery; no media or task side effects.');
     console.log('Screenshots: ' + screenshots);
@@ -612,6 +706,7 @@ const close = async server => { server.closeAllConnections(); await new Promise(
     if (page && !page.isClosed()) { await page.screenshot({ path: path.join(screenshots, 'failure.png'), fullPage: true }).catch(() => {}); console.error('Failure screenshot: ' + path.join(screenshots, 'failure.png')); }
     throw error;
   } finally {
+    concurrentModelGate.resolve();
     if (browser) await browser.close();
     if (frontend) await close(frontend);
     backend.kill('SIGTERM'); await new Promise(resolve => backend.exitCode !== null || backend.signalCode !== null ? resolve() : backend.once('exit', resolve));

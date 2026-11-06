@@ -91,6 +91,8 @@
 .agent-empty h2 > span { color: var(--agent-accent); }
 .agent-empty > p { margin: 0; color: var(--agent-muted); font-size: 13px; line-height: 1.9; }
 .agent-composer-wrap { flex-shrink: 0; padding: 16px max(28px, calc((100% - 780px) / 2)) 22px; }
+/* Keep the send/stop controls above the default floating assistant. */
+.agent-float-visible .agent-conversation:not(.is-empty) .agent-composer-wrap { padding-bottom: max(96px, env(safe-area-inset-bottom)); }
 .agent-conversation.is-empty .agent-composer-wrap { width: 100%; max-width: 800px; margin: 0 auto; padding: 0; }
 .agent-composer { padding: 16px 18px 14px; border: 1px solid var(--agent-border); border-radius: 16px; background: var(--agent-surface); box-shadow: var(--agent-shadow); transition: border-color 180ms, box-shadow 180ms; }
 .agent-composer textarea { display: block; width: 100%; min-height: 64px; max-height: 180px; resize: none; padding: 0; border: 0; outline: none; color: var(--agent-text); background: transparent; font: inherit; font-size: 14px; line-height: 1.9; }

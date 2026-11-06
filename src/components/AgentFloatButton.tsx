@@ -107,7 +107,12 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings, a
   const button = useRef<HTMLButtonElement>(null);
   const mounted = useRef(true);
   const sessionRef = useRef<Session | null>(null);
+  // Polling, restoration and workspace notifications share a response order.
+  // Mutations invalidate earlier reads before and after changing the session.
+  const sessionRequestVersion = useRef(0);
+  const pendingSessionRefresh = useRef(false);
   const submitting = useRef(false);
+  const stoppingRequest = useRef(false);
   const speech = useRef<SpeechController | null>(null);
   const speechAbort = useRef<AbortController | null>(null);
   const speechVersion = useRef(0);
@@ -142,6 +147,22 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings, a
     }
   }, [pid, reload, sessionKey]);
 
+  const refreshCurrentSession = useCallback(async () => {
+    const id = sessionRef.current?.id;
+    if (!mounted.current || !id) { pendingSessionRefresh.current = false; return; }
+    if (submitting.current || stoppingRequest.current) { pendingSessionRefresh.current = true; return; }
+    pendingSessionRefresh.current = false;
+    const version = ++sessionRequestVersion.current;
+    const current = () => mounted.current && version === sessionRequestVersion.current && sessionRef.current?.id === id;
+    try {
+      const next = await call<Session>("session", { session_id: id });
+      if (!current()) return;
+      const previous = sessionRef.current;
+      if (isRunning(next) || previous?.status !== next.status || previous?.messages.length !== next.messages.length) setError("");
+      accept(next);
+    } catch (e) { if (current()) setError(error => error || `读取执行进度失败：${String(e)}`); }
+  }, [call, accept]);
+
   const cancelSpeech = useCallback(() => {
     if (speechAbort.current) setDraft(draftBeforeSpeech.current);
     speechVersion.current++;
@@ -151,7 +172,7 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings, a
   }, []);
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; clearTimeout(copyTimer.current); speechVersion.current++; speechAbort.current?.abort(); speech.current?.cancel(); };
+    return () => { mounted.current = false; sessionRequestVersion.current++; clearTimeout(copyTimer.current); speechVersion.current++; speechAbort.current?.abort(); speech.current?.cancel(); };
   }, []);
   useEffect(() => { if (pid) writeStorage(draftKey, listening ? draftBeforeSpeech.current : draft); }, [pid, draftKey, draft, listening]);
   useLayoutEffect(() => { openRef.current = open; if (open) setUnread(false); }, [open]);
@@ -185,12 +206,15 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings, a
   useEffect(() => {
     const saved = pid && readStorage(sessionKey);
     if (!saved) { setRestoring(false); return; }
+    if (submitting.current || stoppingRequest.current) return;
     let disposed = false;
+    const version = ++sessionRequestVersion.current;
+    const current = () => !disposed && mounted.current && version === sessionRequestVersion.current;
     setRestoring(true); setRestoreFailed(false);
     void call<Session>("session", { session_id: saved }).then(result => {
-      if (!disposed) { accept(result); setError(""); }
+      if (current()) { accept(result); setError(""); }
     }).catch(e => {
-      if (disposed) return;
+      if (!current()) return;
       if (String(e).includes("会话不存在")) { writeStorage(sessionKey, ""); sessionRef.current = null; setSession(null); setError(""); return; }
       setError(`无法恢复对话：${String(e)}`); setRestoreFailed(true);
     }).finally(() => { if (!disposed) setRestoring(false); });
@@ -202,13 +226,17 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings, a
       const detail = (event as CustomEvent<AgentSessionChange>).detail;
       if (detail.source === "float" || detail.projectId !== pid || detail.sessionId !== sessionRef.current?.id) return;
       if (detail.deleted) {
+        sessionRequestVersion.current++;
+        pendingSessionRefresh.current = false;
         narrationRef.current.stop();
         sessionRef.current = null; setSession(null); writeStorage(sessionKey, ""); setError("");
         return;
       }
+      if (submitting.current || stoppingRequest.current) { pendingSessionRefresh.current = true; return; }
+      const version = ++sessionRequestVersion.current;
       void call<Session>("session", { session_id: detail.sessionId }).then(next => {
-        if (!disposed && sessionRef.current?.id === next.id) accept(next);
-      }).catch(e => { if (!disposed) setError(String(e)); });
+        if (!disposed && version === sessionRequestVersion.current && sessionRef.current?.id === next.id) accept(next);
+      }).catch(e => { if (!disposed && version === sessionRequestVersion.current) setError(String(e)); });
     };
     window.addEventListener(AGENT_SESSION_CHANGED, changed);
     return () => { disposed = true; window.removeEventListener(AGENT_SESSION_CHANGED, changed); };
@@ -218,10 +246,14 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings, a
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
-      try {
-        const next = await call<Session>("session", { session_id: session.id });
-        if (!disposed) { setError(""); accept(next); }
-      } catch (e) { if (!disposed) setError(`读取执行进度失败，正在重试：${String(e)}`); }
+      if (!submitting.current && !stoppingRequest.current) {
+        const version = ++sessionRequestVersion.current;
+        const current = () => !disposed && version === sessionRequestVersion.current && sessionRef.current?.id === session.id;
+        try {
+          const next = await call<Session>("session", { session_id: session.id });
+          if (current()) { setError(""); accept(next); }
+        } catch (e) { if (current()) setError(`读取执行进度失败，正在重试：${String(e)}`); }
+      }
       if (!disposed) timer = setTimeout(poll, 1200);
     };
     timer = setTimeout(poll, 400);
@@ -233,18 +265,26 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings, a
     if (!pid || !message || submitting.current || isRunning(sessionRef.current) || restoring || restoreFailed || !mounted.current) return;
     stopAgentSpeechPlayback();
     narration.stop();
+    const version = ++sessionRequestVersion.current;
+    const currentRequest = () => mounted.current && version === sessionRequestVersion.current;
+    let failed = false;
     submitting.current = true; setSending(true); setError(""); setDraft(message);
     try {
       let current = sessionRef.current;
       if (!current) {
         current = await call<Session>("create", { title: message.slice(0, 40) });
-        if (!mounted.current) return;
+        if (!currentRequest()) return;
         accept(current);
       }
       const result = await call<Session>("run", { session_id: current.id, message, web_enabled: true });
-      if (mounted.current) { accept(result); setDraft(""); }
-    } catch (e) { if (mounted.current) setError(String(e).replace(/^Error: /, "")); }
-    finally { submitting.current = false; if (mounted.current) setSending(false); }
+      if (currentRequest()) { accept(result); setDraft(""); }
+    } catch (e) { failed = true; if (currentRequest()) setError(String(e).replace(/^Error: /, "")); }
+    finally {
+      const refresh = currentRequest() && (failed || pendingSessionRefresh.current);
+      if (currentRequest()) sessionRequestVersion.current++;
+      submitting.current = false; if (mounted.current) setSending(false);
+      if (refresh) void refreshCurrentSession();
+    }
   };
   const startListening = async () => {
     setOpen(true);
@@ -314,6 +354,8 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings, a
     return () => { document.removeEventListener("keydown", escape); document.removeEventListener("pointerdown", outside); };
   }, [open, close, cancelSpeech]);
   const newConversation = () => {
+    sessionRequestVersion.current++;
+    pendingSessionRefresh.current = false;
     stopAgentSpeechPlayback();
     narration.stop();
     sessionRef.current = null; setSession(null); writeStorage(sessionKey, "");
@@ -321,11 +363,21 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings, a
     requestAnimationFrame(() => input.current?.focus());
   };
   const stopAgent = async () => {
-    if (!session?.id || stopping || cancelling) return;
+    const id = sessionRef.current?.id;
+    if (!id || stoppingRequest.current || cancelling) return;
+    const version = ++sessionRequestVersion.current;
+    const current = () => mounted.current && version === sessionRequestVersion.current && sessionRef.current?.id === id;
+    let failed = false;
+    stoppingRequest.current = true;
     setStopping(true); setError("");
-    try { accept(await call<Session>("cancel", { session_id: session.id })); }
-    catch (e) { if (mounted.current) setError(String(e)); }
-    finally { if (mounted.current) setStopping(false); }
+    try { const next = await call<Session>("cancel", { session_id: id }); if (current()) accept(next); }
+    catch (e) { failed = true; if (current()) setError(String(e)); }
+    finally {
+      const refresh = current() && (failed || pendingSessionRefresh.current);
+      if (current()) sessionRequestVersion.current++;
+      stoppingRequest.current = false; if (mounted.current) setStopping(false);
+      if (refresh) void refreshCurrentSession();
+    }
   };
   const pointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0 || !event.isPrimary) return;

@@ -40,6 +40,8 @@ const deferred = () => { let resolve; const promise=new Promise(done=>{resolve=d
   let message;
   if(body.tool_choice==='none') {
    message={role:'assistant',content:'本轮执行已暂停，已完成的操作已保留。'};
+  } else if(prompt.includes('导航后台执行测试')) {
+   message={role:'assistant',content:'导航后的后台执行已完成。'};
   } else if(prompt.includes('渠道切换测试')) {
    modelSelections.push({url:req.url,model:body.model,authorization:req.headers.authorization});
    message={role:'assistant',content:`渠道切换测试完成：${body.model}`};
@@ -118,9 +120,33 @@ const deferred = () => { let resolve; const promise=new Promise(done=>{resolve=d
   await page.waitForFunction(()=>!document.querySelector('[data-testid="agent-send"]')?.disabled);
   assert.equal(await page.getByTestId('agent-composer').inputValue(),'恢复后保留的草稿');
   await page.unroute('**/api/v1/actions/agent/sessions');
+  // A rejected first run must retain the newly created session and its draft.
+  let firstSendCreates=0;
+  const firstSendSessionIds=[];
+  const countFirstCreate=async route=>{firstSendCreates++;await route.continue();};
+  const rejectFirstRun=async route=>{
+   firstSendSessionIds.push(route.request().postDataJSON().session_id);
+   if(firstSendSessionIds.length===1)return route.fulfill({status:503,json:{error:'首次启动暂时失败，请重试'}});
+   return route.continue();
+  };
+  await page.route('**/api/v1/actions/agent/create',countFirstCreate);
+  await page.route('**/api/v1/actions/agent/run',rejectFirstRun);
   await page.getByTestId('agent-composer').fill('请创建雨夜故事的主角和剧本');
   await page.getByTestId('agent-send').click();
+  await page.getByRole('alert').getByText('Error: 首次启动暂时失败，请重试',{exact:true}).waitFor();
+  assert.equal(await page.getByTestId('agent-composer').inputValue(),'请创建雨夜故事的主角和剧本');
+  const firstSendSessions=(await api('/actions/agent/sessions',{project_id:project.id})).items;
+  assert.equal(firstSendSessions.length,1,'A failed first run should leave one reusable session');
+  await page.getByTestId(`agent-session-${firstSendSessions[0].id}`).waitFor();
+  assert.equal(await page.getByTestId(`agent-session-${firstSendSessions[0].id}`).getAttribute('aria-current'),'page');
+  await page.getByTestId('agent-send').click();
   await page.getByRole('link',{name:'参考资料',exact:true}).waitFor({timeout:15000});
+  assert.equal(firstSendCreates,1,'Retrying the first run created another empty session');
+  assert.deepEqual(firstSendSessionIds,[firstSendSessions[0].id,firstSendSessions[0].id]);
+  assert.equal((await api('/actions/agent/sessions',{project_id:project.id})).items.length,1);
+  assert.equal(await page.getByTestId('agent-composer').inputValue(),'');
+  await page.unroute('**/api/v1/actions/agent/create',countFirstCreate);
+  await page.unroute('**/api/v1/actions/agent/run',rejectFirstRun);
   await page.getByTestId('agent-plan').getByText('2/2',{exact:true}).waitFor();
   assert(await page.locator('.agent-tool summary > small').getByText('资产库',{exact:true}).count()>0);
   assert.equal(await page.locator('.agent-tool summary > small').getByText('roles',{exact:true}).count(),0);
@@ -465,8 +491,41 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
   assert.equal(await page.getByRole('button',{name:`删除会话 ${active.title}`,exact:true}).isDisabled(),false);
   assert.equal(await page.locator('.agent-loading').count(),0);
   await page.unroute('**/api/v1/actions/agent/*',fixtureRoute);
+  // Leaving the workspace while its first create is pending must not cancel
+  // the already submitted instruction before the backend can start its run.
+  const navigationCreateStarted=deferred(),releaseNavigationCreate=deferred();
+  let navigationSession;
+  const noSessions=route=>route.fulfill({json:{data:{items:[]}}});
+  const delayedCreate=async route=>{
+   const response=await route.fetch();
+   navigationSession=(await response.json()).data;
+   navigationCreateStarted.resolve();
+   await releaseNavigationCreate.promise;
+   return route.fulfill({response});
+  };
+  await page.route('**/api/v1/actions/agent/sessions',noSessions);
+  await page.route('**/api/v1/actions/agent/create',delayedCreate);
+  await page.reload();await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
+  await page.getByTestId('agent-composer').fill('导航后台执行测试');
+  await page.getByTestId('agent-send').click();
+  await navigationCreateStarted.promise;
+  await page.getByRole('menuitem',{name:'素材库',exact:true}).click();
+  await page.getByTestId('agent-workspace').waitFor({state:'detached'});
+  const navigationRun=page.waitForRequest(request=>request.url().endsWith('/api/v1/actions/agent/run') && request.postDataJSON().message==='导航后台执行测试',{timeout:10000});
+  releaseNavigationCreate.resolve();
+  assert.equal((await navigationRun).postDataJSON().session_id,navigationSession.id);
+  await page.unroute('**/api/v1/actions/agent/sessions',noSessions);
+  await page.unroute('**/api/v1/actions/agent/create',delayedCreate);
+  let navigationResult;
+  for(let attempt=0;attempt<100;attempt++) {
+   navigationResult=await api('/actions/agent/session',{project_id:project.id,session_id:navigationSession.id});
+   if(navigationResult.status==='completed')break;
+   await new Promise(resolve=>setTimeout(resolve,100));
+  }
+  assert.equal(navigationResult.status,'completed','Navigating away prevented the submitted instruction from completing');
+  assert(navigationResult.messages.some(message=>message.content==='导航后的后台执行已完成。'));
   assert.deepEqual(failures,[]);
-  console.log('PASS: Agent streaming and interrupted replies; load recovery and draft retention; cancellation during selection, draining and final tool results; channel/model routing; generation previews; TTS; SVG; session order, plans and desktop/mobile/dark themes');
+  console.log('PASS: Agent streaming and interrupted replies; first-run retry without duplicate sessions; navigation during initial send; load recovery and draft retention; cancellation during selection, draining and final tool results; channel/model routing; generation previews; TTS; SVG; session order, plans and desktop/mobile/dark themes');
   console.log('Screenshots: '+screenshots);
  } catch(error) {
   if(page && !page.isClosed()) {

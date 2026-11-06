@@ -20,6 +20,7 @@ SECRET = "agent-qa-private-key"
 FOREIGN_HISTORY_MARKER = "history-only-in-a-different-session-2908"
 LARGE_STREAM_SCRIPT = "# 第一集\n\n" + "林晓：先把电脑搬回家，明天再去学校。\n" * 400
 PRIVATE_STREAM_MARKER = "private-stream-reasoning-must-not-be-persisted"
+LONG_RESOURCE_TEXT = "# 第一集\n\n" + "林晓：雨停后再出发。🎬\n" * 450 + "\n尾声：保留这句约定。"
 
 
 def message_text(message):
@@ -191,6 +192,20 @@ class Model(BaseHTTPRequestHandler):
             assert not body.get("tools"), "Finalization still advertises side effects"
             if "BUDGET_IGNORED" in prompt:
                 calls = [call("app_request", {"resource": "assets", "method": "POST", "data": {"name": "Forbidden during finalization"}}, "forbidden-final-write")]
+        elif "READ_LONG_TEXT:" in prompt:
+            resource_id = int(prompt.split("READ_LONG_TEXT:", 1)[1])
+            assert "resource/text/read" in message_text(messages[0])
+            pages = [json.loads(item["content"]) for item in tools if item["tool_call_id"].startswith("text-page-")]
+            if not pages or pages[-1]["next_offset"] is not None:
+                offset = pages[-1]["next_offset"] if pages else 0
+                calls = [call("app_action", {"operation": "resource/text/read", "data": {
+                    "resource": "screenplays", "id": resource_id, "field": "content", "offset": offset,
+                }}, "text-page-" + str(len(pages)))]
+            elif not any(item["tool_call_id"] == "text-edit" for item in tools):
+                original = "".join(page["content"] for page in pages)
+                assert original == LONG_RESOURCE_TEXT, "Agent lost part of the long screenplay before editing"
+                calls = [call("app_request", {"resource": "screenplays", "method": "PATCH", "id": resource_id,
+                         "data": {"content": original.replace("雨停后再出发", "天亮后再出发")}}, "text-edit")]
         elif "LIBRARY_ADAPT:" in prompt:
             refs = json.loads(prompt.split("LIBRARY_ADAPT:", 1)[1])
             instruction = message_text(messages[0])
@@ -360,6 +375,22 @@ def main():
             # Follow-up must preserve context and not repeat the previous mutations.
             agent("run", session_id=created["id"], message="查看项目", web_enabled=False)
             assert wait(created)["status"] == "completed"
+            # Read the actual long screenplay through bounded tool results before
+            # editing it; neither the model context nor tool persistence may lose a page.
+            screenplay = api(f"/projects/{pid}/screenplays", method="GET")[0]
+            screenplay_path = f"/projects/{pid}/screenplays/{screenplay['id']}"
+            api(screenplay_path, {"content": LONG_RESOURCE_TEXT}, method="PATCH")
+            text_session = agent("create", title="长剧本完整读取与修改")
+            agent("run", session_id=text_session["id"], message=f"READ_LONG_TEXT:{screenplay['id']}")
+            text_result = wait(text_session)
+            assert text_result["status"] == "completed", text_result.get("error")
+            text_traces = [message for message in text_result["messages"] if message["role"] == "tool"]
+            assert len(text_traces) > 3 and all(message["status"] == "completed" for message in text_traces)
+            pages = [json.loads(message["content"]) for message in text_traces if message["tool_call_id"].startswith("text-page-")]
+            assert "".join(page["content"] for page in pages) == LONG_RESOURCE_TEXT
+            assert pages[-1]["next_offset"] is None
+            assert api(screenplay_path, method="GET")["content"] == LONG_RESOURCE_TEXT.replace("雨停后再出发", "天亮后再出发")
+            api(screenplay_path, {"content": screenplay["content"]}, method="PATCH")
             for message in ["SCOPE:" + other["id"], "WEB_DISABLED", "UNKNOWN_TOOL", "MALFORMED"]:
                 session = agent("create")
                 agent("run", session_id=session["id"], message=message, web_enabled=False)
@@ -688,7 +719,7 @@ def main():
             assert all(SECRET not in json.dumps(request) for request in Model.requests)
             for request in Model.requests:
                 assert_tool_protocol(request["messages"])
-            print("PASS: real HTTP Agent CRUD; image/history context and isolation; durable plans; budget finalization/skipped calls; failure-loop guard; inference retries without duplicate writes; cancellable response reads/backoff; SSE previews/tool arguments/usage; large streamed screenplay; interrupted-stream safety; credential fragments; restart persistence")
+            print("PASS: real HTTP Agent CRUD; complete long-text pagination and tail-preserving edits; image/history context and isolation; durable plans; budget finalization/skipped calls; failure-loop guard; inference retries without duplicate writes; cancellable response reads/backoff; SSE previews/tool arguments/usage; large streamed screenplay; interrupted-stream safety; credential fragments; restart persistence")
         finally:
             stop()
             model.shutdown()

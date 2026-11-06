@@ -202,6 +202,8 @@ Agent 接口使用 `POST /api/v1/actions/agent/{动作}`，全部传入 `project
 
 `app_request` 使用现有 REST 校验，`app_action` 使用白名单业务操作，项目 ID 由服务端绑定；模型不能跨项目访问、直接运行系统命令或读取任意本地文件。网页工具仅允许公开 HTTP/HTTPS 地址，并限制响应体和请求时长。搜索 Key 仅由后端用于搜索服务请求。
 
+`app_action` 的 `resource/text/read` 支持完整分页读取创作正文，`data` 必填 `resource,id,field`，可选 `offset`（默认 0，Unicode 字符下标）和 `max_chars`（1–1500，默认 1500）。支持 `screenplays/prompts.content`、`assets/episodes.description`、`scenes.description/prompt`，ID 必须为当前项目内对应资源的正整数。返回 `{resource,id,field,content,offset,total_chars,next_offset}`；按顺序拼接各页 `content`，直至 `next_offset` 为 null。普通资源查询仍有输出长度限制，按 ID 查询不能替代正文分页；修改前读取全文，保留未要求修改的内容，不用节选覆盖整个字段。
+
 ## Skills
 
 技能管理使用 `POST /api/v1/actions/skills/{动作}`，属于全工作室配置，无需 `project_id`。返回值放在统一的 `{data: ...}` 包装中。
