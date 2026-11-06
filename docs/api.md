@@ -217,9 +217,11 @@ Agent 接口使用 `POST /api/v1/actions/agent/{动作}`，全部传入 `project
 | `update` | `id` | 从原 GitHub 来源重新安装，保留启用状态，返回技能摘要 |
 | `delete` | `id` | `{ok:true}` |
 
-技能摘要为 `{id,name,description,enabled,source,installed_at,updated_at,files_count}`，时间字段为 Unix 秒字符串。本地上传路径相对于 Skill 根目录，必须包含根目录的 `SKILL.md`；文件须以 YAML frontmatter 提供 `name` 和 `description`。本地重装使用 `install` 并增加 `replace_id`，新文件的 `name` 须与原技能相同，保留启用状态和安装时间。拒绝重复技能名、目录越界和符号链接。单技能上限为 256 个文件、10 MiB 总大小；说明文件上限 32 KiB，其余单文件上限 2 MiB。GitHub 安装仅下载指定目录中的技能文件，仓库根目录无说明文件时须指定 Skill 子目录。
+技能摘要为 `{id,name,description,enabled,source,installed_at,updated_at,files_count,builtin}`，`builtin` 区分系统内置和自装技能。自装技能的时间字段为 Unix 秒字符串；内置技能的 `installed_at` 为空，`updated_at` 在首次切换启用状态前为空，此后记录偏好修改时间。本地上传路径相对于 Skill 根目录，必须包含根目录的 `SKILL.md`；文件须以 YAML frontmatter 提供 `name` 和 `description`。本地重装使用 `install` 并增加 `replace_id`，新文件的 `name` 须与原技能相同，保留启用状态和安装时间。拒绝重复技能名、目录越界和符号链接。单技能上限为 256 个文件、10 MiB 总大小；说明文件上限 32 KiB，其余单文件上限 2 MiB。GitHub 安装仅下载指定目录中的技能文件，仓库根目录无说明文件时须指定 Skill 子目录。
 
-Agent 的 `list_skills` 工具读取当前启用目录，支持 `offset` 和 `limit`（1–20）；`read_skill` 接受 `id,path?`（默认 `SKILL.md`）、`offset?`（Unicode 字符下标）、`max_chars?`（1–10000，另受单页字节上限约束）。返回 `{id,name,path,content,total_chars,offset,truncated,next_offset}`，有 `next_offset` 时继续读取。技能文件读取限于已安装且启用的 Skill 目录，不受联网开关影响；模型没有安装、卸载或执行脚本工具。技能库与项目数据库独立保存。
+`short-drama-storyboard` 随应用内置并默认启用，无需安装或联网，在首次 Agent 调用前即可发现。支持 `list`、`detail` 和 `toggle`，禁用偏好持久化；`delete`、`update` 和对内置技能的显式重装返回错误，内容随应用更新。升级前已存在的同名自装技能优先，沿用其内容、启用状态和管理行为；卸载这类自装技能后，内置版本保留为停用状态，避免自动重新启用。
+
+Agent 的 `list_skills` 工具读取当前启用目录（含内置技能），支持 `offset` 和 `limit`（1–20）；`read_skill` 接受 `id,path?`（默认 `SKILL.md`）、`offset?`（Unicode 字符下标）、`max_chars?`（1–10000，另受单页字节上限约束）。返回 `{id,name,path,content,total_chars,offset,truncated,next_offset}`，有 `next_offset` 时继续读取。技能文件读取限于已启用的内置或自装 Skill 文件，不受联网开关影响；模型没有安装、卸载或执行脚本工具。技能库与项目数据库独立保存。
 
 ## 部署边界
 

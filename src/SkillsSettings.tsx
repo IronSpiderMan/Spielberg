@@ -10,7 +10,7 @@ import "./skills.css";
 
 type Skill = {
   id: string; name: string; description: string; enabled: boolean; source: string;
-  installed_at: string; updated_at: string; files_count: number;
+  installed_at: string; updated_at: string; files_count: number; builtin: boolean;
 };
 type SkillDetail = Skill & { content: string; files: { path: string; size: number }[] };
 type Installing = "github" | "file" | "folder" | null;
@@ -18,6 +18,7 @@ const MAX_FILES = 256;
 const MAX_TOTAL = 10 * 1024 * 1024;
 const MAX_ASSET = 2 * 1024 * 1024;
 const MAX_SKILL = 32 * 1024;
+const skillName = (skill: Skill) => skill.builtin && skill.id === "short-drama-storyboard" ? "短剧分镜与关键帧" : skill.name;
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 const byteSize = (size: number) => size < 1024 ? `${size} B` : size < 1024 * 1024 ? `${(size / 1024).toFixed(1)} KiB` : `${(size / 1024 / 1024).toFixed(1)} MiB`;
 const dateText = (value: string) => {
@@ -145,11 +146,11 @@ export function SkillsSettings() {
     } catch (error) { setRemoveError(errorText(error)); }
     finally { setBusy(null); }
   };
-  const filtered = items.filter(skill => `${skill.name} ${skill.description} ${skill.source}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const filtered = items.filter(skill => `${skillName(skill)} ${skill.id} ${skill.name} ${skill.description} ${skill.source} ${skill.builtin ? "系统内置" : ""}`.toLowerCase().includes(query.trim().toLowerCase()));
   return <div className="settings-shared-section skills-settings" data-testid="skills-settings">
     <div className="setting-heading"><div className="settings-panel-title"><h3>Skills 技能</h3><span className="settings-scope">工作室共享</span></div><p>安装与管理 Agent 技能。</p></div>
     <div className="skills-body">
-      <p className="skills-explanation">Agent 会根据任务按需读取已启用的 Skill 说明和参考文件。Skill 中的 Shell 脚本不会被执行。</p>
+      <p className="skills-explanation">Agent 会根据任务按需读取已启用的 Skill 说明和参考文件。系统内置技能默认启用，可离线读取，也可随时停用；内容随应用更新。Skill 中的 Shell 脚本不会被执行。</p>
       <div className="skills-install-form">
         <label htmlFor="skills-source">从 GitHub 安装</label>
         <div className="skills-source-row"><Input id="skills-source" data-testid="skills-source" aria-label="GitHub Skill 链接" value={source} onChange={setSource} disabled={locked} placeholder="https://github.com/作者/仓库/tree/main/技能目录" onPressEnter={() => void installGithub()} />
@@ -168,15 +169,15 @@ export function SkillsSettings() {
           description={loading ? "技能列表加载完成后会显示在这里。" : query.trim() ? "试试其他关键词，或清空搜索重新查看。" : "通过上方 GitHub 链接或本地文件添加第一个 Skill。"}
           action={!loading && query.trim() ? <Button onClick={() => setQuery("")}>清空搜索</Button> : undefined}
         /> : <div className="skills-list">{filtered.map(skill => <div className="skills-item" data-testid={`skill-row-${skill.id}`} key={skill.id}>
-          <div className="skills-item-copy"><div className="skills-item-title"><FileText size={17} /><strong>{skill.name}</strong><Tag color={skill.enabled ? "green" : undefined}>{skill.enabled ? "已启用" : "已停用"}</Tag></div><p>{skill.description || "暂无描述"}</p><div className="skills-item-meta"><span title={skill.source}>{skill.source.startsWith("https://github.com/") ? "GitHub" : "本地上传"} · {skill.files_count} 个文件</span><span>更新于 {dateText(skill.updated_at)}</span></div></div>
-          <div className="skills-item-actions"><label className="skills-toggle"><span>{skill.enabled ? "启用中" : "已停用"}</span><Switch size="small" checked={skill.enabled} loading={busy?.id === skill.id && busy.action === "toggle"} disabled={locked} aria-label={`${skill.name} 启用状态`} data-testid={`skill-toggle-${skill.id}`} onChange={enabled => void changeSkill(skill, "toggle", enabled)} /></label><div className="skills-item-buttons"><Button size="small" data-testid={`skill-detail-${skill.id}`} onClick={() => void loadDetail(skill.id)}>详情</Button>{skill.source.startsWith("https://github.com/") ? <Button size="small" data-testid={`skill-update-${skill.id}`} loading={busy?.id === skill.id && busy.action === "update"} disabled={locked} onClick={() => void changeSkill(skill, "update")}>更新</Button> : <Button size="small" data-testid={`skill-reinstall-${skill.id}`} disabled={locked} onClick={() => { setActionError(""); setReinstallTarget(skill); }}>重装</Button>}<Button size="small" status="danger" data-testid={`skill-delete-${skill.id}`} icon={<Trash2 size={13} />} disabled={locked} onClick={() => { setRemoveError(""); setRemoveTarget(skill); }}>卸载</Button></div></div>
+          <div className="skills-item-copy"><div className="skills-item-title"><FileText size={17} /><strong>{skillName(skill)}</strong>{skill.builtin && <Tag color="arcoblue">系统内置</Tag>}<Tag color={skill.enabled ? "green" : undefined}>{skill.enabled ? "已启用" : "已停用"}</Tag></div>{skillName(skill) !== skill.name && <code className="skills-item-id">{skill.id}</code>}<p>{skill.description || "暂无描述"}</p><div className="skills-item-meta"><span title={skill.source}>{skill.builtin ? "随应用提供" : skill.source.startsWith("https://github.com/") ? "GitHub" : "本地上传"} · {skill.files_count} 个文件</span><span>{skill.builtin ? "可离线读取 · 随应用更新" : `更新于 ${dateText(skill.updated_at)}`}</span></div></div>
+          <div className="skills-item-actions"><label className="skills-toggle"><span>{skill.enabled ? "启用中" : "已停用"}</span><Switch size="small" checked={skill.enabled} loading={busy?.id === skill.id && busy.action === "toggle"} disabled={locked} aria-label={`${skillName(skill)} 启用状态`} data-testid={`skill-toggle-${skill.id}`} onChange={enabled => void changeSkill(skill, "toggle", enabled)} /></label><div className="skills-item-buttons"><Button size="small" data-testid={`skill-detail-${skill.id}`} onClick={() => void loadDetail(skill.id)}>详情</Button>{!skill.builtin && <>{skill.source.startsWith("https://github.com/") ? <Button size="small" data-testid={`skill-update-${skill.id}`} loading={busy?.id === skill.id && busy.action === "update"} disabled={locked} onClick={() => void changeSkill(skill, "update")}>更新</Button> : <Button size="small" data-testid={`skill-reinstall-${skill.id}`} disabled={locked} onClick={() => { setActionError(""); setReinstallTarget(skill); }}>重装</Button>}<Button size="small" status="danger" data-testid={`skill-delete-${skill.id}`} icon={<Trash2 size={13} />} disabled={locked} onClick={() => { setRemoveError(""); setRemoveTarget(skill); }}>卸载</Button></>}</div></div>
         </div>)}</div>}
       </Spin>}
-      {directory && <p className="skills-storage">技能存储位置：<code>{directory}</code></p>}
+      {directory && <p className="skills-storage">自定义技能存储位置：<code>{directory}</code></p>}
     </div>
-    <Modal visible={detailId !== null} title={detail?.name || "Skill 详情"} data-testid="skill-detail" className="skills-detail-modal" style={{ width: "min(880px, 94vw)" }} footer={<Button onClick={() => { ++detailRequest.current; setDetailId(null); }}>关闭</Button>} onCancel={() => { ++detailRequest.current; setDetailId(null); }} unmountOnExit>
+    <Modal visible={detailId !== null} title={detail ? skillName(detail) : "Skill 详情"} data-testid="skill-detail" className="skills-detail-modal" style={{ width: "min(880px, 94vw)" }} footer={<Button onClick={() => { ++detailRequest.current; setDetailId(null); }}>关闭</Button>} onCancel={() => { ++detailRequest.current; setDetailId(null); }} unmountOnExit>
       {detailLoading ? <div className="skills-detail-loading"><Spin /><span>正在读取技能详情</span></div> : detailError ? <div className="skills-error" role="alert"><p>{detailError}</p><Button onClick={() => detailId && void loadDetail(detailId)}>重新加载</Button></div> : detail && <>
-        <p className="skills-detail-description">{detail.description}</p><dl className="skills-detail-meta"><div><dt>状态</dt><dd>{detail.enabled ? "已启用" : "已停用"} · 所有项目共享</dd></div><div><dt>来源</dt><dd>{detail.source.startsWith("https://github.com/") ? <a href={detail.source} target="_blank" rel="noopener noreferrer">{detail.source}</a> : detail.source}</dd></div><div><dt>安装时间</dt><dd>{dateText(detail.installed_at)}</dd></div><div><dt>最近更新</dt><dd>{dateText(detail.updated_at)}</dd></div></dl>
+        <p className="skills-detail-description">{detail.description}</p><dl className="skills-detail-meta"><div><dt>标识</dt><dd><code>{detail.id}</code>{detail.builtin && <> · 系统内置</>}</dd></div><div><dt>状态</dt><dd>{detail.enabled ? "已启用" : "已停用"} · 所有项目共享</dd></div><div><dt>来源</dt><dd>{detail.source.startsWith("https://github.com/") ? <a href={detail.source} target="_blank" rel="noopener noreferrer">{detail.source}</a> : detail.source}</dd></div>{detail.builtin ? <div><dt>管理方式</dt><dd>可离线读取，可在技能列表停用或启用；内容随应用更新。</dd></div> : <><div><dt>安装时间</dt><dd>{dateText(detail.installed_at)}</dd></div><div><dt>最近更新</dt><dd>{dateText(detail.updated_at)}</dd></div></>}</dl>
         <Tabs defaultActiveTab="preview"><Tabs.TabPane key="preview" title="技能说明"><article className="skills-markdown"><Markdown remarkPlugins={[remarkGfm]} skipHtml components={{ a: ({ children, href }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{markdownBody(detail.content)}</Markdown></article></Tabs.TabPane><Tabs.TabPane key="source" title="SKILL.md 原文"><pre className="skills-source-preview">{detail.content}</pre></Tabs.TabPane></Tabs>
         <details className="skills-files" open><summary>文件列表（{detail.files.length}）</summary><ul>{detail.files.map(file => <li key={file.path}><code>{file.path}</code><span>{byteSize(file.size)}</span></li>)}</ul></details>
       </>}

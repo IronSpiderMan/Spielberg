@@ -23,10 +23,11 @@
 .skills-item { display: flex; align-items: center; gap: 20px; padding: 16px; }
 .skills-item + .skills-item { border-top: 1px solid var(--ui-border); }
 .skills-item-copy { flex: 1; min-width: 0; }
-.skills-item-title { display: flex; align-items: center; gap: 8px; color: var(--ui-text); }
+.skills-item-title { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--ui-text); }
 .skills-item-title > svg { color: var(--ui-primary); flex-shrink: 0; }
 .skills-item-title > strong { min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
 .skills-item-title > .arco-tag { flex-shrink: 0; }
+.skills-item-id { display: block; margin-top: 6px; color: var(--ui-muted); font-size: 11px; overflow-wrap: anywhere; }
 .skills-settings .skills-item-copy > p { margin: 8px 0; color: var(--ui-secondary-text); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
 .skills-item-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--ui-muted); font-size: 11px; }
 .skills-item-actions { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }

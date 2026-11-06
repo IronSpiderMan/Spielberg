@@ -268,6 +268,10 @@ PLAYWRIGHT_PATH=/path/to/playwright node scripts/qa/agent-ui.cjs
 
 ## Skills 技能
 
+系统默认提供并启用「短剧分镜与关键帧」技能（`short-drama-storyboard`），用于把现有剧本和视觉设定整理成有叙事职责、合理时长、人物站位与动作连续性的分镜，以及首尾关键帧提示词。它改编自 [zenstory-ai/drama-skills](https://github.com/zenstory-ai/drama-skills/tree/main/skills/short-drama-storyboard)，通过 Spielberg 的项目工具读取剧本、资产和素材，并在用户要求保存时写入本集分镜表；不依赖本地脚本，也不会仅因规划分镜就启动图片或视频生成。来源版本和 MIT 许可证随技能附带。
+
+默认技能随应用打包，新工作室和已有工作室都可离线读取。在「设置 → Skills 技能」中标记为「系统内置」，可查看或停用，停用状态在重启后保留；内容随应用版本更新，不提供卸载、GitHub 更新或文件重装。已有的同名自装技能优先保留，不会被内置版本覆盖；卸载该自装技能后，内置版本以停用状态显示。可直接对 Agent 说「用 $short-drama-storyboard 给第一集做分镜并保存」。
+
 在「设置 → Skills 技能」中，可从公开 GitHub 仓库的 Skill 目录、单个 `SKILL.md` 或本地 Skill 文件夹安装技能。GitHub 仓库根目录没有 `SKILL.md` 时，请填写具体子目录链接，例如 `https://github.com/owner/repo/tree/main/skills/storyboard`。文件夹安装保留 `references/`、`scripts/` 等辅助文件；只上传 `SKILL.md` 时不会包含这些文件。
 
 技能说明采用 Markdown，文件开头须有 YAML 元数据：
@@ -282,7 +286,7 @@ description: 将故事整理为角色、剧集和镜头表，适用于分镜规�
 更多约定见 references/guide.md。
 ```
 
-已安装列表支持搜索、启用/停用、查看说明和辅助文件清单、卸载，以及从原 GitHub 来源更新。技能保存在工作室数据目录下的 `skills/`，所有项目共用，重启后保留；项目备份不包含这份全局技能库。每个技能最多 256 个文件、总计 10 MiB；`SKILL.md` 最多 32 KiB，其他单个文件最多 2 MiB。
+已安装列表支持搜索、启用/停用、查看说明和辅助文件清单；自装技能还支持卸载，以及从原 GitHub 来源更新。自装技能和内置技能的启用偏好保存在工作室数据目录下的 `skills/`，所有项目共用，重启后保留；项目备份不包含这份全局技能库。每个技能最多 256 个文件、总计 10 MiB；`SKILL.md` 最多 32 KiB，其他单个文件最多 2 MiB。
 
 Agent 每次运行会获得已启用技能的目录；任务匹配或消息中点名技能（如 `$storyboard-guide`）时，通过 `read_skill` 分页读取说明和引用的文本文件。已安装技能的读取不需要开启联网。技能可指导现有项目工具的操作流程，脚本文件可作为参考读取；应用未提供 Shell 或脚本执行能力，依赖这些能力的技能只能执行现有工具支持的部分。
 

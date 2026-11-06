@@ -9,6 +9,24 @@ const MAX_SKILL: usize = 32 * 1024;
 const MAX_ARCHIVE: usize = 25 * 1024 * 1024;
 const MAX_EXPANDED: u64 = 100 * 1024 * 1024;
 const META: &str = ".spielberg-skill.json";
+const BUILTIN_PREFERENCES: &str = ".spielberg-builtin-skills.json";
+
+struct Builtin {
+    id: &'static str,
+    files: &'static [(&'static str, &'static [u8])],
+}
+const BUILTINS: &[Builtin] = &[Builtin {
+    id: "short-drama-storyboard",
+    files: &[
+        ("SKILL.md", include_bytes!("../builtin-skills/short-drama-storyboard/SKILL.md")),
+        ("references/shot-craft.md", include_bytes!("../builtin-skills/short-drama-storyboard/references/shot-craft.md")),
+        ("references/spielberg-tools.md", include_bytes!("../builtin-skills/short-drama-storyboard/references/spielberg-tools.md")),
+        ("LICENSE.txt", include_bytes!("../builtin-skills/short-drama-storyboard/LICENSE.txt")),
+    ],
+}];
+
+#[derive(Serialize, Deserialize)]
+struct BuiltinPreference { enabled: bool, updated_at: String }
 
 #[derive(Clone, Serialize, Deserialize)]
 struct Metadata {
@@ -19,7 +37,8 @@ struct Metadata {
 impl Metadata {
     fn summary(&self) -> Value {
         json!({"id":self.id,"name":self.name,"description":self.description,"enabled":self.enabled,
-            "source":self.source,"installed_at":self.installed_at,"updated_at":self.updated_at,"files_count":self.files_count})
+            "source":self.source,"installed_at":self.installed_at,"updated_at":self.updated_at,"files_count":self.files_count,
+            "builtin":self.source_kind == "builtin"})
     }
 }
 struct Package { name: String, description: String, files: BTreeMap<String, Vec<u8>>, source: String, source_kind: String }
@@ -51,7 +70,7 @@ fn regular(path: &Path, dir: bool) -> Result<(), String> {
     }
     Ok(())
 }
-fn atomic_json(path: &Path, value: &Metadata) -> Result<(), String> {
+fn atomic_json(path: &Path, value: &impl Serialize) -> Result<(), String> {
     let temporary = path.with_extension(format!("tmp-{}", Uuid::new_v4()));
     let result = (|| {
         let bytes = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
@@ -63,6 +82,42 @@ fn atomic_json(path: &Path, value: &Metadata) -> Result<(), String> {
     })();
     if result.is_err() { let _ = fs::remove_file(temporary); }
     result
+}
+fn entry_exists(path: &Path) -> Result<bool, String> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(io_error(error)),
+    }
+}
+fn builtin_preferences(s: &AppState) -> Result<BTreeMap<String, BuiltinPreference>, String> {
+    let path = directory(s).join(BUILTIN_PREFERENCES);
+    if !entry_exists(&path)? { return Ok(BTreeMap::new()); }
+    regular(&path, false)?;
+    let mut raw = vec![];
+    fs::File::open(path).map_err(io_error)?.take(16 * 1024 + 1).read_to_end(&mut raw).map_err(io_error)?;
+    if raw.len() > 16 * 1024 { return Err("默认 Skill 设置过大".into()); }
+    serde_json::from_slice(&raw).map_err(|_| "默认 Skill 设置损坏".into())
+}
+fn builtin(id: &str) -> Option<&'static Builtin> { BUILTINS.iter().find(|skill| skill.id == id) }
+// Existing imported skills win over bundled defaults, including on first upgrade.
+fn active_builtin(s: &AppState, id: &str) -> Result<Option<&'static Builtin>, String> {
+    if !valid_name(id) { return Err("Skill ID 无效".into()); }
+    Ok(if entry_exists(&directory(s).join(id))? { None } else { builtin(id) })
+}
+fn builtin_metadata(s: &AppState, skill: &Builtin) -> Result<Metadata, String> {
+    let instructions = skill.files.iter().find(|(path, _)| *path == "SKILL.md").ok_or("默认 Skill 缺少说明")?.1;
+    let (name, description) = frontmatter(instructions)?;
+    if name != skill.id { return Err("默认 Skill 名称不匹配".into()); }
+    let preferences = builtin_preferences(s)?;
+    let preference = preferences.get(skill.id);
+    Ok(Metadata {
+        id: name.clone(), name, description,
+        enabled: preference.map(|p| p.enabled).unwrap_or(true),
+        source: "系统内置 · Spielberg 适配版".into(), source_kind: "builtin".into(),
+        installed_at: String::new(), updated_at: preference.map(|p| p.updated_at.clone()).unwrap_or_default(),
+        files_count: skill.files.len(), revision: "builtin".into(),
+    })
 }
 // Commands hold the shared application lock while recovering and committing local state.
 fn recover(s: &AppState) -> Result<(), String> {
@@ -87,7 +142,9 @@ fn recover(s: &AppState) -> Result<(), String> {
 fn metadata(s: &AppState, id: &str) -> Result<Metadata, String> {
     if !valid_name(id) { return Err("Skill ID 无效".into()); }
     let folder = directory(s).join(id);
-    if !folder.exists() { return Err("Skill 不存在".into()); }
+    if !entry_exists(&folder)? {
+        return builtin(id).ok_or_else(|| "Skill 不存在".into()).and_then(|skill| builtin_metadata(s, skill));
+    }
     regular(&folder, true)?;
     regular(&folder.join(META), false)?;
     let mut raw = vec![];
@@ -105,6 +162,9 @@ fn installed(s: &AppState) -> Result<Vec<Metadata>, String> {
         let id = entry.file_name().to_string_lossy().to_string();
         if id.starts_with('.') { continue; }
         all.push(metadata(s, &id)?);
+    }
+    for skill in BUILTINS {
+        if !all.iter().any(|m| m.id == skill.id) { all.push(builtin_metadata(s, skill)?); }
     }
     all.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(all)
@@ -294,7 +354,10 @@ fn github(input: &str) -> Result<Package, String> {
 fn commit(s: &AppState, p: Package, previous: Option<Metadata>) -> Result<Value, String> {
     let all = installed(s)?;
     if let Some(previous) = &previous {
+        if previous.source_kind == "builtin" { return Err("系统默认 Skill 随应用更新，不能重装或替换；可在设置中停用".into()); }
         if p.name != previous.id { return Err("重装后 Skill name 必须与原名称一致".into()); }
+    } else if all.iter().any(|m| m.id == p.name && m.source_kind == "builtin") {
+        return Err("该 Skill 已作为系统默认提供，无需安装；自定义版本请使用不同的 name".into());
     } else if all.iter().any(|m| m.id == p.name || (p.source_kind == "github" && m.source_kind == "github" && m.source == p.source)) {
         return Err("该 Skill 已安装，请使用更新或重装功能".into());
     }
@@ -359,7 +422,11 @@ fn file_inventory(folder: &Path) -> Result<Vec<Value>, String> {
 }
 fn detail(s: &AppState, id: &str) -> Result<Value, String> {
     let meta = metadata(s, id)?;
-    let files = file_inventory(&directory(s).join(id))?;
+    let files = if let Some(skill) = active_builtin(s, id)? {
+        let mut files: Vec<Value> = skill.files.iter().map(|(path, bytes)| json!({"path":path,"size":bytes.len()})).collect();
+        files.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
+        files
+    } else { file_inventory(&directory(s).join(id))? };
     let content = read_file(s, id, "SKILL.md")?;
     frontmatter(content.as_bytes())?;
     let mut result = meta.summary();
@@ -369,6 +436,10 @@ fn detail(s: &AppState, id: &str) -> Result<Value, String> {
 }
 fn read_file(s: &AppState, id: &str, path: &str) -> Result<String, String> {
     let path = checked_path(path)?;
+    if let Some(skill) = active_builtin(s, id)? {
+        let bytes = skill.files.iter().find(|(name, _)| *name == path).ok_or("Skill 文件不存在")?.1;
+        return std::str::from_utf8(bytes).map(str::to_owned).map_err(|_| "默认 Skill 文件必须是 UTF-8 文本".into());
+    }
     let mut file = directory(s).join(id);
     regular(&file, true)?;
     let parts: Vec<_> = path.split('/').collect();
@@ -404,6 +475,7 @@ pub(super) fn command(s: &AppState, action: &str, v: &Value) -> Result<Value, St
             recover(s)?;
             metadata(s, id)?
         };
+        if original.source_kind == "builtin" { return Err("系统默认 Skill 随应用更新，无需从 GitHub 更新".into()); }
         if original.source_kind != "github" { return Err("本地导入的 Skill 请重新选择文件进行重装".into()); }
         let p = github(&original.source)?;
         let _lock = s.guard.lock().map_err(|_| "Skill 数据锁不可用")?;
@@ -422,12 +494,23 @@ pub(super) fn command(s: &AppState, action: &str, v: &Value) -> Result<Value, St
             let enabled = v["enabled"].as_bool().ok_or("enabled 必须为布尔值")?;
             let mut m = metadata(s, id)?;
             m.enabled = enabled; m.updated_at = now(); m.revision = Uuid::new_v4().to_string();
-            atomic_json(&directory(s).join(id).join(META), &m)?;
+            if m.source_kind == "builtin" {
+                let mut preferences = builtin_preferences(s)?;
+                preferences.insert(id.into(), BuiltinPreference { enabled, updated_at: m.updated_at.clone() });
+                atomic_json(&directory(s).join(BUILTIN_PREFERENCES), &preferences)?;
+            } else { atomic_json(&directory(s).join(id).join(META), &m)?; }
             Ok(m.summary())
         },
         "delete" => {
             let id = id_value(v)?;
-            metadata(s, id)?;
+            let m = metadata(s, id)?;
+            if m.source_kind == "builtin" { return Err("系统默认 Skill 不能卸载；可在设置中停用".into()); }
+            // Removing an imported override must not silently activate the bundled workflow.
+            if builtin(id).is_some() {
+                let mut preferences = builtin_preferences(s)?;
+                preferences.insert(id.into(), BuiltinPreference { enabled:false, updated_at:now() });
+                atomic_json(&directory(s).join(BUILTIN_PREFERENCES), &preferences)?;
+            }
             let deleted = directory(s).join(format!(".deleted-{}", Uuid::new_v4()));
             fs::rename(directory(s).join(id), &deleted).map_err(io_error)?;
             let _ = fs::remove_dir_all(deleted);
@@ -488,7 +571,8 @@ mod tests {
     #[test]
     fn global_lifecycle_and_runtime_follow_enabled_state() {
         let f = Fixture::new();
-        assert_eq!(f.run("list", json!({})).unwrap()["items"], json!([]));
+        let defaults = enabled_catalog(&f.0).unwrap();
+        assert_eq!(f.run("list", json!({})).unwrap()["items"].as_array().unwrap().len(), BUILTINS.len());
         let text = "---\nname: helpful-skill\ndescription: >-\n  Read project records\n  and prepare a report.\n---\nFollow the referenced notes.";
         let payload = json!({"source_name":"skills-folder","files":[file("SKILL.md",text),file("references/notes.md","你好，project notes")]});
         let installed = rest::action(&f.0, "/skills/install", payload).unwrap();
@@ -501,7 +585,7 @@ mod tests {
         assert_eq!(enabled_catalog(&f.0).unwrap()[0]["id"], "helpful-skill");
         assert_eq!(read_enabled(&f.0, "helpful-skill", Some("references/notes.md")).unwrap()["content"], "你好，project notes");
         f.run("toggle", json!({"id":"helpful-skill","enabled":false})).unwrap();
-        assert_eq!(enabled_catalog(&f.0).unwrap(), json!([]));
+        assert_eq!(enabled_catalog(&f.0).unwrap(), defaults);
         assert!(read_enabled(&f.0,"helpful-skill",None).unwrap_err().contains("停用"));
         let restarted = AppState { root:f.0.root.clone(), guard:std::sync::Arc::new(Mutex::new(())) };
         assert_eq!(command(&restarted,"list",&json!({})).unwrap()["items"][0]["enabled"],false);
@@ -519,7 +603,7 @@ mod tests {
         assert!(f.run("detail",json!({"id":"replace-me"})).unwrap()["content"].as_str().unwrap().contains("new body"));
         let mut renamed=upload("changed-name","body"); renamed["replace_id"]=json!("replace-me");
         assert!(f.run("install",renamed).is_err());
-        assert_eq!(f.run("list",json!({})).unwrap()["items"].as_array().unwrap().len(),1);
+        assert_eq!(f.run("list",json!({})).unwrap()["items"].as_array().unwrap().len(),1 + BUILTINS.len());
     }
     #[test]
     fn malformed_metadata_oversized_instructions_and_unsafe_paths_are_rejected() {
@@ -538,7 +622,113 @@ mod tests {
         assert!(f.run("install",json!({"files":[{"path":"SKILL.md","content_base64":"%%%%"}]})).is_err());
         assert!(f.run("detail",json!({"id":"../escape"})).is_err());
         assert!(f.run("toggle",json!({"id":"safe","enabled":"true"})).is_err());
-        assert_eq!(f.run("list",json!({})).unwrap()["items"],json!([]));
+        assert_eq!(f.run("list",json!({})).unwrap()["items"].as_array().unwrap().len(),BUILTINS.len());
+    }
+    #[test]
+    fn defaults_are_readable_without_installation_and_preferences_survive_restart() {
+        let f = Fixture::new();
+        let id = "short-drama-storyboard";
+        // An Agent can load a default before the settings page or skill catalog has been opened.
+        let instructions = read_enabled(&f.0, id, None).unwrap();
+        let skill = builtin(id).unwrap();
+        assert_eq!(instructions["content"].as_str().unwrap().as_bytes(), skill.files[0].1);
+        assert!(!directory(&f.0).join(id).exists());
+        let first = f.run("detail", json!({"id":id})).unwrap();
+        assert_eq!(first["builtin"], true);
+        assert_eq!(first["enabled"], true);
+        assert_eq!(first["files_count"], skill.files.len());
+        assert!(enabled_catalog(&f.0).unwrap().as_array().unwrap().iter().any(|item| item["id"] == id));
+        for (path, bytes) in skill.files {
+            let page = read_enabled(&f.0, id, Some(path)).unwrap();
+            assert_eq!(page["content"].as_str().unwrap().as_bytes(), *bytes);
+            assert_eq!(page["total_chars"], std::str::from_utf8(bytes).unwrap().chars().count());
+            assert!(first["files"].as_array().unwrap().iter().any(|item| item["path"] == *path && item["size"] == bytes.len()));
+        }
+        let files = skill.files.iter().map(|(path, bytes)| (path.to_string(), bytes.to_vec())).collect();
+        assert!(package(files, "bundled".into(), "builtin").is_ok());
+        assert!(read_enabled(&f.0, id, Some("../outside")).is_err());
+        assert!(read_enabled(&f.0, id, Some("references/missing.md")).is_err());
+
+        let disabled = f.run("toggle", json!({"id":id,"enabled":false})).unwrap();
+        let restarted = AppState { root:f.0.root.clone(), guard:std::sync::Arc::new(Mutex::new(())) };
+        assert!(!enabled_catalog(&restarted).unwrap().as_array().unwrap().iter().any(|item| item["id"] == id));
+        assert!(read_enabled(&restarted, id, None).unwrap_err().contains("停用"));
+        let detail = command(&restarted, "detail", &json!({"id":id})).unwrap();
+        assert_eq!(detail["enabled"], false);
+        assert_eq!(detail["updated_at"], disabled["updated_at"]);
+        assert_eq!(detail["content"], first["content"]);
+        command(&restarted, "toggle", &json!({"id":id,"enabled":true})).unwrap();
+        assert_eq!(read_enabled(&restarted,id,None).unwrap()["content"], first["content"]);
+    }
+    #[test]
+    fn defaults_cannot_be_replaced_updated_or_uninstalled() {
+        let f = Fixture::new();
+        let id = "short-drama-storyboard";
+        let before = f.run("detail", json!({"id":id})).unwrap();
+        for action in ["delete", "update"] {
+            assert!(f.run(action,json!({"id":id})).unwrap_err().contains("系统默认"));
+        }
+        assert!(f.run("install", upload(id,"replacement")).unwrap_err().contains("系统默认"));
+        let mut replacement = upload(id,"replacement");
+        replacement["replace_id"] = json!(id);
+        assert!(f.run("install",replacement).unwrap_err().contains("不能重装或替换"));
+        assert_eq!(f.run("detail",json!({"id":id})).unwrap(), before);
+        assert!(!directory(&f.0).join(id).exists());
+    }
+    #[test]
+    fn legacy_imports_with_a_default_name_keep_their_content_and_preferences() {
+        for source_kind in ["local", "github"] {
+            let f = Fixture::new();
+            let id = "short-drama-storyboard";
+            // Simulate a studio created by an earlier version before this default was bundled.
+            let folder = directory(&f.0).join(id);
+            fs::create_dir_all(&folder).unwrap();
+            let content = instructions(id, "Existing creator instructions");
+            fs::write(folder.join("SKILL.md"), &content).unwrap();
+            let m = Metadata {
+                id:id.into(), name:id.into(), description:"Existing creator workflow".into(), enabled:false,
+                source:"previous import".into(), source_kind:source_kind.into(), installed_at:"123".into(),
+                updated_at:"456".into(), files_count:1, revision:"legacy".into(),
+            };
+            atomic_json(&folder.join(META), &m).unwrap();
+            let list = f.run("list",json!({})).unwrap();
+            assert_eq!(list["items"].as_array().unwrap().iter().filter(|item| item["id"] == id).count(), 1);
+            let detail = f.run("detail",json!({"id":id})).unwrap();
+            assert_eq!(detail["builtin"], false);
+            assert_eq!(detail["enabled"], false);
+            assert_eq!(detail["installed_at"], "123");
+            assert_eq!(detail["content"], content);
+            assert!(read_enabled(&f.0,id,None).unwrap_err().contains("停用"));
+            f.run("toggle",json!({"id":id,"enabled":true})).unwrap();
+            assert_eq!(read_enabled(&f.0,id,None).unwrap()["content"],content);
+            assert_eq!(metadata(&f.0,id).unwrap().source_kind,source_kind);
+            let mut replacement = upload(id,"Updated creator instructions");
+            replacement["replace_id"] = json!(id);
+            assert_eq!(f.run("install",replacement).unwrap()["builtin"],false);
+            assert_eq!(f.run("delete",json!({"id":id})).unwrap()["ok"],true);
+            assert_eq!(f.run("detail",json!({"id":id})).unwrap()["builtin"],true);
+            assert_eq!(f.run("detail",json!({"id":id})).unwrap()["enabled"],false);
+            assert!(!enabled_catalog(&f.0).unwrap().as_array().unwrap().iter().any(|item| item["id"] == id));
+            assert!(read_enabled(&f.0,id,None).unwrap_err().contains("停用"));
+            f.run("toggle",json!({"id":id,"enabled":true})).unwrap();
+            assert!(read_enabled(&f.0,id,None).is_ok());
+        }
+    }
+    #[cfg(unix)]
+    #[test]
+    fn default_preferences_and_same_name_imports_cannot_follow_symlinks() {
+        let f = Fixture::new();
+        let id = "short-drama-storyboard";
+        recover(&f.0).unwrap();
+        let outside = f.0.root.join("outside.json");
+        fs::write(&outside,"{}").unwrap();
+        let preferences = directory(&f.0).join(BUILTIN_PREFERENCES);
+        std::os::unix::fs::symlink(&outside,&preferences).unwrap();
+        assert!(f.run("toggle",json!({"id":id,"enabled":false})).unwrap_err().contains("符号链接"));
+        assert_eq!(fs::read_to_string(&outside).unwrap(),"{}");
+        fs::remove_file(preferences).unwrap();
+        std::os::unix::fs::symlink(f.0.root.join("missing"),directory(&f.0).join(id)).unwrap();
+        assert!(read_enabled(&f.0,id,None).unwrap_err().contains("符号链接"));
     }
     #[test]
     fn github_links_and_archives_limit_download_scope_and_reject_links_or_traversal() {

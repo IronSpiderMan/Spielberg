@@ -64,6 +64,41 @@ const { chromium } = require(playwrightPath);
     await page.getByRole('tab', { name: 'Skills 技能', exact: true }).click();
     const panel = page.getByTestId('skills-settings');
     await panel.waitFor();
+    const defaults = await list();
+    const builtin = defaults.find(item => item.id === 'short-drama-storyboard');
+    assert(builtin && builtin.builtin === true && builtin.enabled === true, 'The storyboard Skill must be available and enabled without installation');
+    const defaultCount = defaults.length;
+    const builtinRow = page.getByTestId(`skill-row-${builtin.id}`);
+    await builtinRow.waitFor();
+    assert((await builtinRow.innerText()).includes('短剧分镜与关键帧'));
+    assert((await builtinRow.innerText()).includes('系统内置'));
+    assert((await builtinRow.innerText()).includes(builtin.id));
+    for (const action of ['update', 'reinstall', 'delete']) {
+      assert.equal(await page.getByTestId(`skill-${action}-${builtin.id}`).count(), 0, `Built-in Skills cannot offer ${action}`);
+    }
+    for (const query of ['短剧分镜', builtin.id]) {
+      await page.getByTestId('skills-search').fill(query);
+      await until(() => panel.locator('[data-testid^="skill-row-"]').count(), count => count === 1, 'find default Skill by name or id');
+      assert(await builtinRow.isVisible());
+    }
+    await page.getByTestId('skills-search').fill('');
+    await page.getByTestId(`skill-detail-${builtin.id}`).click();
+    const builtinDetail = page.getByTestId('skill-detail');
+    await builtinDetail.getByText('references/spielberg-tools.md', { exact: true }).waitFor();
+    assert((await builtinDetail.innerText()).includes('可离线读取'));
+    assert((await builtinDetail.innerText()).includes('随应用更新'));
+    await page.screenshot({ path: path.join(screenshots, 'builtin-detail.png'), fullPage: true, animations: 'disabled' });
+    await builtinDetail.getByRole('button', { name: '关闭', exact: true }).click();
+    await builtinDetail.waitFor({ state: 'hidden' });
+    await page.getByTestId(`skill-toggle-${builtin.id}`).click();
+    await until(list, values => values.find(item => item.id === builtin.id)?.enabled === false, 'disable default Skill');
+    await page.reload();
+    await page.getByRole('button', { name: '设置', exact: true }).click();
+    await page.getByRole('tab', { name: 'Skills 技能', exact: true }).click();
+    await until(() => builtinRow.innerText(), text => text.includes('已停用'), 'default Skill disabled after reload');
+    assert.equal((await list()).find(item => item.id === builtin.id).enabled, false);
+    await page.getByTestId(`skill-toggle-${builtin.id}`).click();
+    await until(list, values => values.find(item => item.id === builtin.id)?.enabled === true, 're-enable default Skill');
     const singleInput = page.getByTestId('skills-file-input');
     await until(() => panel.getByRole('button', { name: '上传 SKILL.md', exact: true }).isEnabled(), value => value, 'upload controls ready');
     await singleInput.setInputFiles(single);
@@ -128,11 +163,11 @@ const { chromium } = require(playwrightPath);
     await singleInput.setInputFiles(invalid);
     await panel.getByRole('alert').waitFor();
     assert((await panel.getByRole('alert').innerText()).includes('YAML'));
-    assert.equal((await list()).length, 2);
+    assert.equal((await list()).length, defaultCount + 2);
     await page.getByTestId('skills-source').fill('https://example.com/owner/repo');
     await page.getByTestId('skills-install').click();
     await until(() => panel.getByRole('alert').innerText(), value => value.includes('https://github.com/'), 'GitHub source failure');
-    assert.equal((await list()).length, 2);
+    assert.equal((await list()).length, defaultCount + 2);
     await page.screenshot({ path: path.join(screenshots, 'invalid-source.png'), fullPage: true, animations: 'disabled' });
     await page.getByTestId('skills-source').fill('');
     // Recover after a failed install and leave clean, enabled rows for layout screenshots.
@@ -167,12 +202,13 @@ const { chromium } = require(playwrightPath);
     await page.screenshot({ path: path.join(screenshots, 'dark.png'), fullPage: true, animations: 'disabled' });
 
     await page.getByTestId(`skill-delete-${installedFolder.id}`).click();
-    await page.getByRole('dialog').getByRole('button', { name: '卸载', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: '卸载技能', exact: true }).click();
     await until(list, values => !values.some(item => item.id === installedFolder.id), 'uninstall Skill');
     await folderRow.waitFor({ state: 'hidden' });
-    assert.equal((await list()).length, 1);
+    assert.equal((await list()).length, defaultCount + 1);
+    assert.equal((await list()).find(item => item.id === builtin.id).enabled, true);
     assert.deepEqual(failures, []);
-    console.log('PASS: real Skills settings install/reinstall SKILL.md/folder, preserve ID/disabled preference, search, content/files detail, toggle persistence, uninstall, failure/recovery, desktop/mobile/dark layouts');
+    console.log('PASS: built-in storyboard default/name/detail/action boundaries/toggle persistence; custom Skills install/reinstall, preserve ID/preferences, search, detail, uninstall, failure/recovery, desktop/mobile/dark layouts');
   } finally {
     if (browser) await browser.close();
     server.kill('SIGTERM');

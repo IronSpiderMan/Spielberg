@@ -28,6 +28,9 @@ Read references/guide.md, then explain the workflow.
 """
 GUIDE = "# 参考资料\n\n雨夜车站：先描述人物，再描述光线。🎬\n"
 LONG = ("中文🎬分页验证：角色走进雨夜车站。\n" * 83) + "文件结尾✅"
+BUILTIN_ID = "short-drama-storyboard"
+BUILTIN_DIR = ROOT / "backend/builtin-skills" / BUILTIN_ID
+BUILTIN_FILES = ["SKILL.md", "references/shot-craft.md", "references/spielberg-tools.md", "LICENSE.txt"]
 
 
 def file(path, content):
@@ -63,38 +66,50 @@ class Model(BaseHTTPRequestHandler):
             calls = []
             if not results:
                 calls = [tool("list_skills", {"offset": 0, "limit": 1}, "catalog")]
-            elif len(results) == 1:
-                catalog = json.loads(results[0]["content"])
+            elif "items" in json.loads(results[-1]["content"]):
+                catalog = json.loads(results[-1]["content"])
                 assert isinstance(catalog["items"], list) and isinstance(catalog["total"], int), catalog
                 assert all(set(item) == {"id", "name", "description"} for item in catalog["items"]), catalog
-                assert (task["id"] in [item["id"] for item in catalog["items"]]) is task["enabled"], catalog
-                args = {"id": task["id"]}
-                if task.get("path"):
-                    args["path"] = task["path"]
-                if task["scenario"] == "pagination":
-                    args.update(path="references/long.txt", max_chars=137)
-                calls = [tool("read_skill", args, "read-0")]
-            elif task["scenario"] == "read" and len(results) == 2:
-                result = json.loads(results[-1]["content"])
-                assert result["content"] == SKILL and result["path"] == "SKILL.md", result
-                assert result["truncated"] is False and result["next_offset"] is None, result
-                calls = [tool("read_skill", {"id": task["id"], "path": "references/guide.md"}, "reference")]
-            elif task["scenario"] == "pagination":
+                if catalog["next_offset"] is not None:
+                    calls = [tool("list_skills", {"offset": catalog["next_offset"], "limit": 1}, "catalog-" + str(len(results)))]
+                else:
+                    listed = [item for message in results for item in json.loads(message["content"])["items"]]
+                    assert len(listed) == catalog["total"], listed
+                    assert len({item["id"] for item in listed}) == len(listed), listed
+                    assert (task["id"] in [item["id"] for item in listed]) is task["enabled"], listed
+                    args = {"id": task["id"]}
+                    if task.get("path"):
+                        args["path"] = task["path"]
+                    if task["scenario"] == "pagination":
+                        args.update(path="references/long.txt", max_chars=137)
+                    elif task["scenario"] == "builtin":
+                        args.update(max_chars=2000)
+                    calls = [tool("read_skill", args, "read-0")]
+            elif task["scenario"] in ("read", "pagination", "builtin"):
                 result = json.loads(results[-1]["content"])
                 assert "error" not in result, result
-                pages = [json.loads(message["content"]) for message in results[1:]]
+                expected = {"references/long.txt": LONG} if task["scenario"] == "pagination" else (
+                    {path: (BUILTIN_DIR / path).read_text() for path in BUILTIN_FILES}
+                    if task["scenario"] == "builtin" else {"SKILL.md": SKILL, "references/guide.md": GUIDE}
+                )
+                text = expected[result["path"]]
+                pages = [json.loads(message["content"]) for message in results
+                         if json.loads(message["content"]).get("path") == result["path"]]
                 for index, page in enumerate(pages):
-                    assert page["total_chars"] == len(LONG), page
+                    assert page["total_chars"] == len(text), page
                     assert page["offset"] == sum(len(p["content"]) for p in pages[:index]), page
-                    assert len(page["content"]) <= 137, page
+                    if task["scenario"] == "pagination":
+                        assert len(page["content"]) <= 137, page
                 if result["next_offset"] is not None:
                     assert result["truncated"] is True
-                    calls = [tool("read_skill", {"id": task["id"], "path": "references/long.txt", "offset": result["next_offset"], "max_chars": 137}, "page-" + str(len(pages)))]
+                    calls = [tool("read_skill", {"id": task["id"], "path": result["path"], "offset": result["next_offset"], "max_chars": 137 if task["scenario"] == "pagination" else 2000}, "page-" + str(len(results)))]
                 else:
-                    assert "".join(page["content"] for page in pages) == LONG
-            elif task["scenario"] == "read":
-                result = json.loads(results[-1]["content"])
-                assert result["content"] == GUIDE and result["path"] == "references/guide.md", result
+                    assert result["truncated"] is False, result
+                    assert "".join(page["content"] for page in pages) == text
+                    paths = list(expected)
+                    next_index = paths.index(result["path"]) + 1
+                    if next_index < len(paths):
+                        calls = [tool("read_skill", {"id": task["id"], "path": paths[next_index], "max_chars": 2000}, "file-" + str(next_index))]
             elif task["scenario"] == "reject":
                 assert "error" in json.loads(results[-1]["content"]), results[-1]
             else:
@@ -167,11 +182,32 @@ def main():
                     time.sleep(0.05)
                 raise AssertionError("Agent skill fixture timed out")
 
-            assert items(skills("list")) == []
+            # The first Agent run must discover/read the offline default before opening Skills settings.
+            first = api("/projects", {"name": "Skills 项目一"}, 201)
+            second = api("/projects", {"name": "Skills 项目二"}, 201)
+            for project in [first, second]:
+                configure(project["id"])
+            builtin_session = run(first["id"], BUILTIN_ID, "builtin")
+            defaults = items(skills("list"))
+            assert [item["id"] for item in defaults] == [BUILTIN_ID], defaults
+            assert defaults[0]["builtin"] is True and defaults[0]["enabled"] is True, defaults
+            builtin_detail = skills("detail", {"id": BUILTIN_ID})
+            assert builtin_detail["content"] == (BUILTIN_DIR / "SKILL.md").read_text()
+            assert {item["path"] for item in builtin_detail["files"]} == set(BUILTIN_FILES)
+            for action in ["delete", "update"]:
+                skills(action, {"id": BUILTIN_ID}, expected=400)
+            skills("install", {"replace_id": BUILTIN_ID, "files": [file("SKILL.md", builtin_detail["content"])]}, expected=(400, 409))
+
+            def assert_only_default():
+                remaining = items(skills("list"))
+                assert [item["id"] for item in remaining] == [BUILTIN_ID], remaining
+                assert remaining[0]["builtin"] is True and remaining[0]["enabled"] is True, remaining
+
             upload = {"source_name": "本地 QA 文件夹", "files": [file("SKILL.md", SKILL), file("references/guide.md", GUIDE), file("references/long.txt", LONG)]}
             installed = skills("install", upload)
             skill_id = installed["id"]
             assert installed["name"] == "qa-story-workflow" and installed["enabled"] is True, installed
+            assert installed["builtin"] is False, installed
             assert installed["source"] == upload["source_name"] and installed["files_count"] == 3, installed
             assert installed["installed_at"] and installed["updated_at"], installed
             assert {"id", "name", "description", "enabled", "source", "installed_at", "updated_at", "files_count"} <= set(installed), installed
@@ -197,12 +233,13 @@ def main():
                 skills("install", value, expected=(400, 409, 413, 422))
             for action in ["detail", "toggle", "delete", "update"]:
                 skills(action, {"id": "../../outside", "enabled": False}, expected=(400, 404, 422))
-            assert len(items(skills("list"))) == 1
-            first = api("/projects", {"name": "Skills 项目一"}, 201)
-            second = api("/projects", {"name": "Skills 项目二"}, 201)
+            assert len(items(skills("list"))) == 2
             for project in [first, second]:
-                configure(project["id"])
-                assert [item["id"] for item in items(skills("list", {"project_id": project["id"]}))] == [skill_id]
+                assert {item["id"] for item in items(skills("list", {"project_id": project["id"]}))} == {skill_id, BUILTIN_ID}
+            run(second["id"], BUILTIN_ID, "builtin")
+            run(first["id"], BUILTIN_ID, "reject", path="../secret.txt")
+            assert skills("toggle", {"id": BUILTIN_ID, "enabled": False})["enabled"] is False
+            run(first["id"], BUILTIN_ID, "reject", enabled=False, session=builtin_session)
             session = run(first["id"], skill_id)
             run(second["id"], skill_id)
             run(first["id"], skill_id, "pagination")
@@ -217,6 +254,10 @@ def main():
             persisted = skills("detail", {"id": skill_id})
             assert persisted["enabled"] is False and persisted["content"] == SKILL
             assert persisted["installed_at"] == installed["installed_at"]
+            assert skills("detail", {"id": BUILTIN_ID})["enabled"] is False
+            run(second["id"], BUILTIN_ID, "reject", enabled=False)
+            skills("toggle", {"id": BUILTIN_ID, "enabled": True})
+            run(second["id"], BUILTIN_ID, "builtin")
             skills("toggle", {"id": skill_id, "enabled": True})
             run(second["id"], skill_id)
             # GitHub update is unavailable for local imports; reimport explicitly replaces a local package.
@@ -227,12 +268,12 @@ def main():
             assert updated["id"] == skill_id and updated["enabled"] is False and updated["files_count"] == 2, updated
             assert skills("detail", {"id": skill_id})["content"].endswith("Updated locally.\n")
             assert skills("delete", {"id": skill_id})["ok"] is True
-            assert items(skills("list")) == []
+            assert_only_default()
             skills("detail", {"id": skill_id}, expected=(400, 404))
             run(first["id"], skill_id, "reject", enabled=False, session=session)
             stop()
             process, base = start()
-            assert items(skills("list")) == []
+            assert_only_default()
             # Opt in with a public Skill directory URL to exercise the real GitHub download/update path.
             github_source = os.environ.get("SKILLS_GITHUB_SMOKE")
             if github_source:
@@ -244,10 +285,10 @@ def main():
                 assert refreshed["installed_at"] == github["installed_at"] and refreshed["files_count"] >= 1, refreshed
                 assert skills("detail", {"id": github["id"]})["content"].startswith("---")
                 assert skills("delete", {"id": github["id"]})["ok"] is True
-                assert items(skills("list")) == []
+                assert_only_default()
                 print("PASS: actual public GitHub Skill install, refresh with disabled preference preserved, detail and uninstall")
             assert Model.requests and not Model.errors, Model.errors
-            print("PASS: real Skills HTTP install/list/detail/update/toggle/delete, validation, global cross-project sharing, offline Agent metadata/catalog/body/reference tools, Unicode pagination, disabled/uninstalled access denial and restart persistence")
+            print("PASS: bundled default discovery before settings, offline body/references, immutable actions, persistent disable/re-enable, multi-skill catalog pagination, real Skills HTTP lifecycle, cross-project sharing and Agent access controls")
         finally:
             stop()
             model.shutdown()
