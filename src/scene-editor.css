@@ -21,7 +21,8 @@
 .scene-description-heading > span:first-child { flex-shrink: 0; }
 .scene-description-hint { color: var(--ui-muted); font-size: 11px; font-weight: 400; line-height: 1.6; }
 .scene-editor-page .scene-description-label .arco-btn { flex-shrink: 0; color: var(--ui-muted); padding: 0 2px; }
-.scene-editor-page .scene-form-card textarea { max-height: 120px; overflow-y: auto !important; background: var(--ui-surface); line-height: 1.7; padding: 10px 12px; }
+.scene-editor-page .scene-form-card textarea { max-height: 240px; overflow-y: auto !important; background: var(--ui-surface); line-height: 1.7; padding: 10px 12px; }
+.scene-editor-page .scene-prompt-field textarea { min-height: clamp(200px, 28vh, 300px); max-height: min(560px, 65vh); }
 .scene-editor-page .scene-form-card .prompt-editor textarea { background: transparent; line-height: 1.8; color: transparent !important; -webkit-text-fill-color: transparent !important; }
 .scene-editor-page .scene-form-card .prompt-backdrop { color: var(--ui-text); }
 .scene-editor-page .scene-form-card .arco-textarea-wrapper { max-height: 120px; overflow-y: auto; border-color: var(--ui-border); }
@@ -159,3 +160,90 @@
 }
 .scene-reference-annotate:hover:not(:disabled) { color: var(--ui-primary); background: var(--ui-accent-soft); }
 .scene-reference-annotate:disabled { opacity: .55; cursor: default; }
+
+/* Compare writing against the actual reference controls, without remounting drafts. */
+.scene-writing-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.scene-writing-tabs { display: flex; gap: 4px; min-width: 0; }
+.scene-writing-toolbar > .arco-btn { flex-shrink: 0; }
+.scene-editor-page.is-writing .scene-writing-tabs .arco-btn[aria-pressed="true"] { color: var(--ui-primary); background: var(--ui-accent-soft); border-color: var(--ui-primary); }
+.app:has(.scene-editor-page.is-writing) .floating-image-generator { display: none; }
+body:has(.scene-editor-page.is-writing) .agent-float-button[aria-expanded="false"] { display: none; }
+.scene-editor-page.is-writing .scene-editor-content { grid-template-columns: minmax(0, 1fr); }
+.scene-editor-page.is-writing .scene-results,
+.scene-editor-page.is-writing .arco-space-item:has(> .scene-video-import) { display: none; }
+.scene-editor-page.is-writing .scene-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(300px, 34%, 440px);
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  column-gap: 24px;
+  padding: 20px;
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+.scene-editor-page.is-writing .scene-form-card { grid-column: 1; grid-row: 1; display: flex; min-height: 0; }
+.scene-editor-page.is-writing .scene-form-card > .arco-form { display: grid; flex: 1; min-height: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); gap: 14px; }
+.scene-editor-page.is-writing .scene-form-card .arco-form-item { min-height: 0; margin: 0; }
+.scene-editor-page.is-writing .scene-description-field,
+.scene-editor-page.is-writing .scene-prompt-field { display: flex; flex-direction: column; align-items: stretch; }
+.scene-editor-page.is-writing :is(.scene-description-field, .scene-prompt-field):not(.is-active) { display: none; }
+.scene-editor-page.is-writing :is(.scene-description-field, .scene-prompt-field) .arco-form-label-item { flex-shrink: 0; }
+.scene-editor-page.is-writing .scene-description-heading > span:first-child { display: none; }
+.scene-editor-page.is-writing :is(.scene-description-field, .scene-prompt-field) :is(.arco-form-item-wrapper, .arco-form-item-control-wrapper, .arco-form-item-control, .arco-form-item-control-children, .prompt-input) { display: flex; flex: 1; flex-direction: column; align-items: stretch; min-width: 0; min-height: 0; width: 100%; }
+.scene-editor-page.is-writing .prompt-editor { flex: 1; min-height: 0; }
+.scene-editor-page.is-writing .scene-form-card .prompt-editor textarea { height: 100% !important; min-height: 0; max-height: none; resize: none; }
+.scene-editor-page.is-writing .prompt-suggestions { flex: 0 1 auto; min-height: 0; max-height: min(230px, 40%); }
+.scene-editor-page.is-writing .prompt-missing { flex-shrink: 0; max-height: 44px; overflow: auto; }
+.scene-writing-context { grid-column: 1; grid-row: 2; padding-top: 10px; }
+.scene-writing-summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; color: var(--ui-muted); font-size: 11px; }
+.scene-editor-page.is-writing .scene-video-panel { grid-column: 1; grid-row: 3; max-width: none; margin-top: 10px; }
+.scene-editor-page.is-writing .scene-video-action { margin-top: 12px; }
+.scene-editor-page.is-writing .scene-visuals { grid-column: 2; grid-row: 1 / 4; display: flex; flex-direction: column; min-width: 0; min-height: 0; margin: 0; padding: 0 4px 0 20px; border-left: 1px solid var(--ui-border); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.scene-editor-page.is-writing .scene-visuals > * { flex-shrink: 0; }
+.scene-editor-page.is-writing .scene-section-heading { position: sticky; top: 0; z-index: 1; padding-bottom: 12px; margin: 0; background: var(--ui-surface); }
+.scene-editor-page.is-writing .scene-material-tabs { order: 1; }
+.scene-editor-page.is-writing .scene-generation-controls { order: 2; margin-top: 16px; padding-top: 8px; border-top: 1px solid var(--ui-border); }
+.scene-editor-page.is-writing .scene-multi-reference { padding: 10px; margin-top: 0; }
+.scene-editor-page.is-writing .scene-reference-grid,
+.scene-editor-page.is-writing .scene-image-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.scene-editor-page.is-writing .scene-reference-grid:has(> .scene-reference-thumb:nth-child(5)) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.scene-editor-page.is-writing .scene-image-field:last-child { grid-column: auto; }
+.scene-editor-page.is-writing .scene-image-actions { flex-wrap: wrap; }
+.scene-editor-page.is-writing .scene-reference-name { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.5; }
+.scene-editor-page.is-writing .scene-reference-thumb figcaption { min-height: 34px; padding: 6px 4px; }
+.scene-editor-page.is-writing .scene-generation-settings { gap: 12px; margin: 12px 0 0; }
+.scene-editor-page .scene-generation-settings[hidden] { display: none; }
+.scene-settings-toggle.arco-btn { display: flex; justify-content: space-between; width: 100%; height: auto; padding: 8px 0; text-align: left; }
+.scene-settings-toggle > span { display: flex; flex: 1; flex-direction: column; gap: 5px; min-width: 0; }
+.scene-settings-toggle small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: var(--ui-muted); font-size: 11px; }
+.scene-settings-toggle[aria-expanded="true"] > svg { transform: rotate(180deg); }
+
+/* Narrow screens retain a separate, visible material shelf below the editor. */
+@container (max-width: 740px) {
+  .scene-editor-page.is-writing .scene-composer { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto auto clamp(210px, 31vh, 260px); column-gap: 0; }
+  .scene-editor-page.is-writing .scene-visuals { grid-column: 1; grid-row: 4; padding: 10px 0 0; margin-top: 12px; border-left: 0; border-top: 1px solid var(--ui-border); }
+  .scene-editor-page.is-writing .scene-form-card > .arco-form { gap: 10px; }
+  .scene-editor-page.is-writing .scene-title-field .arco-form-label-item { display: none; }
+  .scene-editor-page.is-writing .scene-description-hint { display: none; }
+  .scene-editor-page.is-writing .scene-writing-toolbar .arco-btn { padding-inline: 8px; }
+  .scene-editor-page.is-writing .scene-writing-summary > span:last-child { display: none; }
+  .scene-editor-page.is-writing .scene-section-heading { display: none; }
+  .scene-editor-page.is-writing .scene-material-tabs > .arco-tabs-content { padding-top: 8px; }
+  .scene-editor-page.is-writing .scene-reference-grid { display: flex; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; }
+  .scene-editor-page.is-writing .scene-reference-thumb { flex: 0 0 118px; scroll-snap-align: start; }
+  .scene-editor-page.is-writing .scene-reference-hint { display: none; }
+}
+@media (max-width: 850px) {
+  .app .content:has(.scene-editor-page.is-writing):not(.scene-image-workbench-content) { overflow: hidden; }
+  .scene-editor-host:has(> .is-writing) { flex: 1; }
+  .scene-editor-host > .scene-editor-page.is-writing { flex: 1; min-height: 0; }
+  .scene-editor-page.is-writing .scene-editor-content { flex: 1; height: 0; grid-template-rows: minmax(0, 1fr); }
+  .scene-editor-page.is-writing .scene-editor-heading { margin-bottom: 12px; gap: 8px; }
+  .scene-editor-page.is-writing .scene-editor-heading > .arco-space { width: auto; }
+  .scene-editor-page.is-writing .scene-editor-heading > .arco-space > .arco-space-item:first-child { display: none; }
+  .scene-editor-page.is-writing .scene-composer { padding: 14px; }
+}
+@media (max-height: 700px) {
+  .scene-editor-page.is-writing .scene-title-field .arco-form-label-item { display: none; }
+  .scene-editor-page.is-writing .scene-description-hint { display: none; }
+  .scene-editor-page.is-writing .scene-form-card > .arco-form { gap: 10px; }
+}

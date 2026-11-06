@@ -5,7 +5,7 @@ import type {SavedPrompt} from "./prompt-mentions";
 import type {Asset,Snapshot} from "./core";
 import {assetCategoryLabel} from "./asset-categories";
 
-export function PromptInput({value,onChange,roles,data,prompts=[],templates=[],placeholder,disabled=false,onOptimize,optimizing=false,onPasteImages}:{value:string;onChange:(value:string)=>void;roles:Asset[];data?:Snapshot;prompts?:SavedPrompt[];templates?:{id:string|number;name:string;content:string}[];placeholder?:string;disabled?:boolean;onOptimize?:()=>void;optimizing?:boolean;onPasteImages?:(files:File[])=>void}) {
+export function PromptInput({value,onChange,roles,data,prompts=[],templates=[],placeholder,ariaLabel="画面描述",disabled=false,onOptimize,optimizing=false,onPasteImages}:{value:string;onChange:(value:string)=>void;roles:Asset[];data?:Snapshot;prompts?:SavedPrompt[];templates?:{id:string|number;name:string;content:string}[];placeholder?:string;ariaLabel?:string;disabled?:boolean;onOptimize?:()=>void;optimizing?:boolean;onPasteImages?:(files:File[])=>void}) {
   const input=useRef<HTMLTextAreaElement>(null), backdrop=useRef<HTMLDivElement>(null);
   const [caret,setCaret]=useState(value.length),[focused,setFocused]=useState(false),[active,setActive]=useState(0),[dismissed,setDismissed]=useState(false);
   const listId=useId();
@@ -37,7 +37,7 @@ export function PromptInput({value,onChange,roles,data,prompts=[],templates=[],p
     {onOptimize&&<div className="prompt-tools"><button type="button" disabled={disabled||optimizing||!value.trim()} onClick={onOptimize}>{optimizing?"正在优化…":"优化描述"}</button></div>}
     <div className={`prompt-editor${disabled?" disabled":""}`}>
       <div ref={backdrop} className="prompt-backdrop" aria-hidden="true">{parts}</div>
-      <textarea ref={input} value={value} disabled={disabled} rows={4} aria-label="画面描述" aria-autocomplete="list" aria-controls={show?listId:undefined} aria-activedescendant={show?`${listId}-${selected}`:undefined}
+      <textarea ref={input} value={value} disabled={disabled} rows={4} aria-label={ariaLabel} aria-autocomplete="list" aria-controls={show?listId:undefined} aria-activedescendant={show?`${listId}-${selected}`:undefined}
         placeholder={placeholder||(data?"描述画面，@ 引用资产或剧集.scene001.first / last / ref":"描述画面，输入 @ 引用资产")}
         onPaste={event=>{if(disabled||!onPasteImages)return;const files=Array.from(event.clipboardData.items).filter(item=>item.kind==="file"&&item.type.startsWith("image/")).map(item=>item.getAsFile()).filter((file):file is File=>file!==null);if(!files.length)return;event.preventDefault();onPasteImages(files);}}
         onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}

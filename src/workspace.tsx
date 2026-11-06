@@ -48,6 +48,8 @@ ArrowLeft,
 ArrowUp,
 GitBranch,
 GripVertical,
+Maximize2,
+Minimize2,
 ChevronDown,
 ChevronRight,
 Pencil,
@@ -1193,6 +1195,26 @@ export function SceneEditor({
   const [title, setTitle] = useState(scene.title || "");
   const [description, setDescription] = useState(scene.description || "");
   const [prompt, setPrompt] = useState(scene.prompt || "");
+  const [writing, setWriting] = useState(false);
+  const [writingField, setWritingField] = useState<"description" | "prompt">("prompt");
+  const [writingSettingsOpen, setWritingSettingsOpen] = useState(false);
+  const [optimizationMenuOpen, setOptimizationMenuOpen] = useState(false);
+  const sceneEditorRef = useRef<HTMLElement>(null);
+  const composerScroll = useRef(0);
+  const changeWriting = (next: boolean) => {
+    const editor = sceneEditorRef.current;
+    const composer = editor?.querySelector<HTMLElement>(".scene-composer");
+    if (next) composerScroll.current = composer?.scrollTop || 0;
+    setWriting(next);
+    requestAnimationFrame(() => {
+      if (composer) composer.scrollTop = next ? 0 : composerScroll.current;
+      if (next) {
+        editor?.querySelector<HTMLTextAreaElement>(`.scene-${writingField}-field textarea`)?.focus({preventScroll: true});
+      } else {
+        editor?.querySelector<HTMLButtonElement>(".scene-writing-toggle")?.focus({preventScroll: true});
+      }
+    });
+  };
   const effectivePrompt = prompt.trim() ? prompt : description;
   const { uploading:pastingImages, inProgress:pasteInProgress, uploadImages } = useImageUpload({projectId:data.project.id,reload,refreshError:"图片已上传，但刷新素材失败"});
   const [uploadingReferences, setUploadingReferences] = useState(false);
@@ -1442,7 +1464,7 @@ export function SceneEditor({
     return () => window.clearTimeout(timer);
   }, [signature, savedSignature, savingScene, optimizingPrompt, pastingImages, uploadingReferences, videoGenerating]);
   const generateVideo = async () => {
-    if (pasteInProgress.current || uploadingReferences) return;
+    if (pasteInProgress.current || uploadingReferences || optimizingPrompt || savingScene || videoGenerating || persistedVideoGenerating) return;
     try {
       const request = videoRequest(draft(), data.settings, data.assets, data.prompts);
       setVideoGenerating(true);
@@ -1514,7 +1536,7 @@ export function SceneEditor({
     h3:format==="minimax-h3"?{mode:options.video_mode==="t2v"?"t2va":options.video_mode==="i2v"?"ref2va":frames.first?(frames.last?"fl2va":"i2va"):frames.last?"l2va":"t2va",duration:options.duration,
       videoIds:options.video_mode==="i2v"?options.reference_video_media_ids:[],audioIds:options.video_mode==="i2v"?options.reference_audio_media_ids:[]}:undefined,
     wan:format==="wan3.0"?{mode:options.video_mode||"fl2v",duration:options.duration}:undefined,
-    onOptimized:setPrompt,successMessage:format==="minimax-h3"?"已转换为 MiniMax-H3 Prompt":"已转换为 Wan 3.0 Prompt"});
+    onOptimized:value=>{setPrompt(value);setWritingField("prompt");},successMessage:format==="minimax-h3"?"已转换为 MiniMax-H3 Prompt":"已转换为 Wan 3.0 Prompt"});
   };
   const optimizeImagePrompt=()=>optimizePrompt({projectId:data.project.id,prompt:imagePrompt,kind:"image",imageIds:imageMode==="i2i"?imageRefs.map(media=>media.id):[],onOptimized:setImagePrompt});
   const save = async () => {
@@ -1524,8 +1546,28 @@ export function SceneEditor({
     catch(e) { Message.error(String(e)); }
     finally { setSavingScene(false); }
   };
+  const optimizationMenu = <Dropdown trigger={["hover","click"]} position="br" popupVisible={optimizationMenuOpen && !optimizationDisabled} onVisibleChange={setOptimizationMenuOpen} disabled={optimizationDisabled} droplist={<Menu onClickMenuItem={key=>{setOptimizationMenuOpen(false); if(key==="minimax-h3"||key==="wan3.0") void optimizeVideoPrompt(key);}}>
+    <Menu.Item key="minimax-h3">优化成 minimax-h3 形式</Menu.Item>
+    <Menu.Item key="wan3.0">优化成 wan3.0 形式</Menu.Item>
+  </Menu>}>
+    <Button type="text" size="mini" icon={<WandSparkles size={14}/>} disabled={optimizationDisabled} aria-label={optimizingPrompt?"正在优化…":"优化描述"} aria-haspopup="menu" aria-expanded={optimizationMenuOpen && !optimizationDisabled}>{optimizingPrompt?"正在优化…":"优化描述"}</Button>
+  </Dropdown>;
   return (
-    <section className="scene-editor-page">
+    <section ref={sceneEditorRef} className={`scene-editor-page${writing ? " is-writing" : ""}`} onFocusCapture={event => {
+      if (event.target instanceof HTMLTextAreaElement) {
+        if (event.target.closest(".scene-description-field")) setWritingField("description");
+        else if (event.target.closest(".scene-prompt-field")) setWritingField("prompt");
+      }
+    }} onKeyDown={event => {
+      if (event.key === "Escape" && !event.defaultPrevented && !event.nativeEvent.isComposing && event.keyCode !== 229 && event.currentTarget.contains(event.target as Node)) {
+        if (optimizationMenuOpen) { event.preventDefault(); setOptimizationMenuOpen(false); return; }
+        if (referenceSourcesOpen) { event.preventDefault(); setReferenceSourcesOpen(false); return; }
+        if ((event.target as HTMLElement).closest(".scene-visuals")) return;
+        if (!writing) return;
+        event.preventDefault();
+        changeWriting(false);
+      }
+    }}>
       <div className="scene-editor-heading">
         <div className="scene-editor-heading-title">
           <Button type="text" disabled={pastingImages} onClick={closeEditor}>
@@ -1534,6 +1576,9 @@ export function SceneEditor({
         </div>
         <Space>
           <span className="subtle" role="status">{dirty ? (autoSaveStatus.includes("失败") ? autoSaveStatus : "待自动保存…") : autoSaveStatus}</span>
+          <Button className="scene-writing-toggle" icon={writing ? <Minimize2 size={15}/> : <Maximize2 size={15}/>} aria-pressed={writing} onClick={() => changeWriting(!writing)}>
+            {writing ? "退出对照" : "对照写作"}
+          </Button>
           <Button
             type="primary"
             loading={savingScene}
@@ -1549,32 +1594,34 @@ export function SceneEditor({
         <div className="scene-composer">
           <div className="scene-form-card">
             <Form layout="vertical">
-              <Form.Item label="场景标题">
-                <Input value={title} onChange={setTitle} />
+              <Form.Item className="scene-title-field" label="场景标题">
+                <Input aria-label="场景标题" value={title} onChange={setTitle} />
               </Form.Item>
-              <Form.Item label={<span className="scene-description-label">
+              {writing && <div className="scene-writing-toolbar"><div className="scene-writing-tabs" role="group" aria-label="写作内容">
+                <Button aria-pressed={writingField === "description"} onClick={() => setWritingField("description")}>场景描述</Button>
+                <Button aria-pressed={writingField === "prompt"} onClick={() => setWritingField("prompt")}>视频 Prompt</Button>
+              </div>{optimizationMenu}</div>}
+              <Form.Item className={`scene-description-field${writingField === "description" ? " is-active" : ""}`} label={<span className="scene-description-label">
                 <span className="scene-description-heading"><span>场景描述</span><span className="scene-description-hint" role="status">{pastingImages ? "正在上传粘贴的图片…" : "可在此粘贴图片，自动添加到全能参考（最多 9 张）"}</span></span>
-                <Dropdown trigger={["hover","click"]} position="br" disabled={optimizationDisabled} droplist={<Menu onClickMenuItem={key=>{if(key==="minimax-h3"||key==="wan3.0") void optimizeVideoPrompt(key);}}>
-                  <Menu.Item key="minimax-h3">优化成 minimax-h3 形式</Menu.Item>
-                  <Menu.Item key="wan3.0">优化成 wan3.0 形式</Menu.Item>
-                </Menu>}>
-                  <Button type="text" size="mini" icon={<WandSparkles size={14}/>} disabled={optimizationDisabled} aria-label={optimizingPrompt?"正在优化…":"优化描述"} aria-haspopup="menu">{optimizingPrompt?"正在优化…":"优化描述"}</Button>
-                </Dropdown>
+                {!writing && optimizationMenu}
               </span>}>
-                <PromptInput value={description} onChange={setDescription} roles={data.assets} data={data} prompts={data.prompts} templates={[...PROMPT_TEMPLATES,...data.prompts]} disabled={optimizingPrompt || pastingImages || savingScene || videoGenerating || persistedVideoGenerating} onPasteImages={files => void pasteReferenceImages(files)} placeholder="描述镜头、人物动作、台词与画面情绪… 输入 @template 选择模板，或引用资产、场景素材与 Prompt" />
+                <PromptInput ariaLabel="场景描述" value={description} onChange={setDescription} roles={data.assets} data={data} prompts={data.prompts} templates={[...PROMPT_TEMPLATES,...data.prompts]} disabled={optimizingPrompt || pastingImages || savingScene || videoGenerating || persistedVideoGenerating} onPasteImages={files => void pasteReferenceImages(files)} placeholder="描述镜头、人物动作、台词与画面情绪… 输入 @template 选择模板，或引用资产、场景素材与 Prompt" />
               </Form.Item>
-              <Form.Item label={<span className="scene-description-heading"><span>视频 Prompt</span><span className="scene-description-hint">优化描述的结果会填入此栏，保留手工描述。留空时使用场景描述生成视频。</span></span>}>
-                <PromptInput value={prompt} onChange={setPrompt} roles={data.assets} data={data} prompts={data.prompts} templates={[...PROMPT_TEMPLATES,...data.prompts]} disabled={optimizingPrompt || pastingImages || savingScene || videoGenerating || persistedVideoGenerating} onPasteImages={files => void pasteReferenceImages(files)} placeholder="实际用于生成视频的提示词；留空时使用场景描述" />
+              <Form.Item className={`scene-prompt-field${writingField === "prompt" ? " is-active" : ""}`} label={<span className="scene-description-heading"><span>视频 Prompt</span><span className="scene-description-hint">优化描述的结果会填入此栏，保留手工描述。留空时使用场景描述生成视频。</span></span>}>
+                <PromptInput ariaLabel="视频 Prompt" value={prompt} onChange={setPrompt} roles={data.assets} data={data} prompts={data.prompts} templates={[...PROMPT_TEMPLATES,...data.prompts]} disabled={optimizingPrompt || pastingImages || savingScene || videoGenerating || persistedVideoGenerating} onPasteImages={files => void pasteReferenceImages(files)} placeholder="实际用于生成视频的提示词；留空时使用场景描述" />
               </Form.Item>
             </Form>
           </div>
-          <div className="scene-visuals">
-          <div className="scene-section-heading"><h2>画面素材</h2><span>{options.video_mode === "i2v" ? "最多 9 张参考图" : "上传首帧，可选尾帧"}</span></div>
-          <Form layout="vertical" className="scene-generation-settings">
+          <div className="scene-visuals" tabIndex={-1} role="region" aria-label="场景素材与参数">
+          <div className="scene-section-heading"><h2>{writing ? "参考素材" : "画面素材"}</h2><span>{options.video_mode === "t2v" ? "不使用参考素材" : options.video_mode === "i2v" ? "最多 9 张参考图" : "上传首帧，可选尾帧"}</span></div>
+          <div className="scene-generation-controls">
+          {writing && <Button className="scene-settings-toggle" type="text" aria-expanded={writingSettingsOpen} onClick={() => setWritingSettingsOpen(open => !open)}><span>生成设置<small>{videoChoice?.model.name || "渠道与模型"} · {ratio} · {options.duration > 0 ? `${options.duration} 秒` : "智能时长"}</small></span><ChevronDown size={15}/></Button>}
+          <Form layout="vertical" className="scene-generation-settings" hidden={writing && !writingSettingsOpen}>
             <GenerationSelector settings={data.settings} kind="video" value={options} disabled={videoGenerating||persistedVideoGenerating} onChange={value=>setOptions(o=>{const choice=generationChoice(data.settings,"video",value);const mode=o.video_mode==="i2v"?"ref2v":o.video_mode || "fl2v";const nextMode=choice?.capabilities.modes.includes(mode)?mode:choice?.capabilities.modes[0] || "fl2v";return {...o,...value,video_mode:nextMode==="ref2v"?"i2v":nextMode as "t2v"|"fl2v",duration:5};})}/>
             <VideoModelFields disabled={videoGenerating||persistedVideoGenerating} choice={videoChoice} mode={options.video_mode || "fl2v"} duration={options.duration} onDuration={duration=>setOptions(o=>({...o,duration}))} ratio={ratio} size={options.size} onSize={value=>{setRatio(value.ratio);setOptions(o=>({...o,aspect_ratio:value.ratio,size:value.size}));}} resolution={options.resolution} onResolution={resolution=>setOptions(o=>({...o,resolution}))} audio={options.audio} onAudio={audio=>setOptions(o=>({...o,audio}))}/>
           </Form>
-          <Tabs activeTab={options.video_mode} onChange={key => { if (pasteInProgress.current) return; setOptions(o => ({...o, video_mode: key as "t2v" | "fl2v" | "i2v", model:undefined})); setReferenceSourcesOpen(false); }}>
+          </div>
+          <Tabs className="scene-material-tabs" activeTab={options.video_mode} onChange={key => { if (pasteInProgress.current) return; setOptions(o => ({...o, video_mode: key as "t2v" | "fl2v" | "i2v", model:undefined})); setReferenceSourcesOpen(false); }}>
           <Tabs.TabPane key="t2v" title="文生视频"><p className="helper">使用视频 Prompt 生成，不传入首尾帧或参考素材。</p></Tabs.TabPane>
           <Tabs.TabPane key="fl2v" title={videoChoice?.capabilities.last_frame?"首尾帧":"首帧"}>
           <div className="scene-image-grid">
@@ -1618,7 +1665,7 @@ export function SceneEditor({
               {(options.reference_media_ids || []).length > 0 ? <div className="scene-reference-grid" data-count={(options.reference_media_ids || []).length}>
                 {(options.reference_media_ids || []).map((id,index) => { const media=data.media.find(m=>m.id===id) || pastedMedia.find(m=>m.id===id); return media ? <figure className={`scene-reference-thumb${referenceDropTarget===id?' drop-target':''}`} key={id} data-reference-id={id}>
                   <button type="button" className="scene-reference-preview" onClick={() => setReferencePreview(media)} aria-label={`预览参考图 ${media.name}`}><img src={imageUrl(media)} alt={media.name} draggable={false}/></button>
-                  <span className="scene-reference-index" aria-label={`参考图 ${index+1}`}>{index+1}</span>
+                  <span className="scene-reference-index" aria-label={`参考图 ${index+1}`}>{writing ? `图 ${index+1}` : index+1}</span>
                   <button type="button" className="scene-reference-remove" onClick={() => setOptions(o=>({...o,reference_media_ids:(o.reference_media_ids||[]).filter(x=>x!==id)}))} aria-label={`移除参考图 ${media.name}`} title="移除">×</button>
                   <figcaption title={`拖动调整顺序：${media.name}`}
                     onPointerDown={event=>{if(event.button!==0)return;event.preventDefault();draggedReference.current=id;event.currentTarget.setPointerCapture(event.pointerId);}}
@@ -1639,19 +1686,22 @@ export function SceneEditor({
           </Tabs.TabPane>
           </Tabs>
           </div>
+          {writing && <div className="scene-writing-context">
+            <div className="scene-writing-summary"><span>{writingField === "prompt" ? prompt.length : description.length} 字</span><span>素材可独立滚动 · 点击图片放大查看</span></div>
+          </div>}
             <div className="video-generator scene-video-panel">
               <div className="scene-video-action">
                 <span className="subtle">
                 {options.video_mode === "t2v" ? "文生视频" : options.video_mode === "i2v" ? "全能参考生成" : "首尾帧生成"}
                 </span>
               <Space wrap>
-              <Button icon={<Film size={15}/>} disabled={attachingVideo||videoGenerating||persistedVideoGenerating} onClick={()=>void openVideoAssetPicker()}>从素材库选择</Button>
-              <Button icon={<Upload size={15}/>} loading={attachingVideo} disabled={videoGenerating||persistedVideoGenerating} onClick={()=>void uploadSceneVideo()}>上传视频</Button>
+              <Button className="scene-video-import" icon={<Film size={15}/>} disabled={attachingVideo||videoGenerating||persistedVideoGenerating} onClick={()=>void openVideoAssetPicker()}>从素材库选择</Button>
+              <Button className="scene-video-import" icon={<Upload size={15}/>} loading={attachingVideo} disabled={videoGenerating||persistedVideoGenerating} onClick={()=>void uploadSceneVideo()}>上传视频</Button>
               <Button
                 type="primary"
                 icon={<Sparkles size={17} />}
                 loading={videoGenerating || persistedVideoGenerating}
-                disabled={!effectivePrompt.trim() || pastingImages || uploadingReferences}
+                disabled={!effectivePrompt.trim() || pastingImages || uploadingReferences || optimizingPrompt || savingScene}
                 onClick={generateVideo}
               >
                 {persistedVideoGenerating ? "后台生成中" : "生成新视频"}
