@@ -107,7 +107,8 @@ fn validate(c: &Connection, resource: &str, value: &Value, create: bool) -> ApiR
     for (key,item) in value.as_object().ok_or_else(||bad("JSON 必须是对象"))? {
         if ["project_id","id"].contains(&key.as_str()) {continue}
         if resource=="media" && !create && key!="name" {return Err(bad("素材更新仅支持 name"))}
-        if !fields.contains(&key.as_str()) {return Err(bad(&format!("不支持的字段：{key}")))}
+        let scene_placement = create && resource == "scenes" && ["anchor_scene_id", "position"].contains(&key.as_str());
+        if !scene_placement && !fields.contains(&key.as_str()) {return Err(bad(&format!("不支持的字段：{key}")))}
         if ["name","title","description","content","format","category","extension","data_base64"].contains(&key.as_str()) && !item.is_string(){return Err(bad(&format!("{key} 必须是字符串")))}
         if ["name","title"].contains(&key.as_str()) && item.as_str().unwrap_or("").trim().is_empty(){return Err(bad("名称不能为空"))}
         if key=="enabled" && !item.is_boolean(){return Err(bad("enabled 必须是布尔值"))}
@@ -351,6 +352,25 @@ mod project_config_tests {
         let pid=created["id"].as_str().unwrap().to_string();
         let path=format!("projects/{pid}");
         (state,pid,path)
+    }
+    #[test]
+    fn scene_actions_insert_beside_middle_scene() {
+        let (state, pid, path) = timeline_fixture();
+        let episode = crud(&state, "POST", &format!("{path}/episodes"), json!({"title":"Episode"})).unwrap();
+        let scenes = format!("{path}/episodes/{}/scenes", episode["id"]);
+        let create = |body| crud(&state, "POST", &scenes, body).unwrap()["id"].clone();
+        let first = create(json!({"title":"First"}));
+        let middle = create(json!({"title":"Middle"}));
+        let last = create(json!({"title":"Last"}));
+        let before = create(json!({"title":"Before","anchor_scene_id":middle,"position":"before"}));
+        let after = create(json!({"title":"After","anchor_scene_id":middle,"position":"after"}));
+        let copy = |position| action(&state, "/scenes/duplicate", json!({"project_id":pid,"id":middle,"position":position})).unwrap()["id"].clone();
+        let copy_before = copy("before");
+        let copy_after = copy("after");
+        let list = crud(&state, "GET", &scenes, json!({})).unwrap();
+        let ids: Vec<_> = list.as_array().unwrap().iter().map(|scene| scene["id"].clone()).collect();
+        assert_eq!(ids, vec![first,before,copy_before,middle,copy_after,after,last]);
+        fs::remove_dir_all(&state.root).unwrap();
     }
     #[test]
     fn batch_delete_rolls_back_when_an_id_is_missing() {
