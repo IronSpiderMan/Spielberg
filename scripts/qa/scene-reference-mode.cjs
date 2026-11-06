@@ -95,8 +95,7 @@ const assert = require('node:assert/strict');
     assert.equal(await editor.locator('.scene-reference-thumb').count(), 2);
     await editor.getByRole('button', { name: '保存场景', exact: true }).click();
     await editor.waitFor({ state: 'hidden' });
-    await page.locator('.episode-card').getByRole('button', { name: '编辑', exact: true }).click();
-    await page.getByRole('tab', { name: '场景', exact: true }).click();
+    // Saving returns to this episode's scene list.
     await openLegacy();
     await editor.locator('.scene-reference-thumb').nth(1).waitFor();
     assert.equal(await editor.getByRole('tab', { name: '全能参考', exact: true }).getAttribute('aria-selected'), 'true');

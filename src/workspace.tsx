@@ -47,6 +47,7 @@ ArrowUpToLine,
 ArrowLeft,
 ArrowUp,
 GitBranch,
+GripVertical,
 ChevronDown,
 ChevronRight,
 Pencil,
@@ -1601,9 +1602,9 @@ export function SceneEditor({
           </div>
           </Tabs.TabPane>
           <Tabs.TabPane key="i2v" title="全能参考">
-          <div className="scene-multi-reference">
-            <div className="scene-section-heading"><h2>多张参考图</h2><span>最多 9 张 · 拖拽调整顺序 · 可从素材库选择或上传</span></div>
-            <Space wrap>
+          <section className="scene-multi-reference" aria-label="参考图片">
+            <div className="scene-reference-heading">
+              <div className="scene-reference-title"><ImagePlus size={15}/><h2>参考图片</h2><span>{(options.reference_media_ids || []).length} / 9</span></div>
               <Dropdown trigger="click" popupVisible={referenceSourcesOpen} onVisibleChange={setReferenceSourcesOpen} unmountOnExit={false}
                 droplist={<div className="scene-source-menu" onClick={() => setReferenceSourcesOpen(false)}>
                   <Button type="text" icon={<ImagePlus size={15}/>} onClick={() => setMultiReferencePickerOpen(true)}>从素材库选择</Button>
@@ -1611,12 +1612,13 @@ export function SceneEditor({
                   <SceneFramePicker data={data} reload={reload} onSelect={media => setOptions(o => ({...o, reference_media_ids: [...new Set([...(o.reference_media_ids || []), media.id])].slice(0, 9)}))}/>
                   <Button type="text" icon={<Upload size={15}/>} onClick={() => void addReferenceImages().catch(e => Message.error(String(e)))}>上传图片</Button>
                 </div>}>
-                <Button size="small" disabled={pastingImages}>添加参考图<ChevronDown size={13}/></Button>
+                <Button size="mini" disabled={pastingImages} aria-label="添加参考图" icon={<Plus size={13}/>}>添加<ChevronDown size={12}/></Button>
               </Dropdown>
-              {(options.reference_media_ids || []).length > 0 && <div className="scene-reference-grid" data-count={(options.reference_media_ids || []).length}>
+            </div>
+              {(options.reference_media_ids || []).length > 0 ? <div className="scene-reference-grid" data-count={(options.reference_media_ids || []).length}>
                 {(options.reference_media_ids || []).map((id,index) => { const media=data.media.find(m=>m.id===id) || pastedMedia.find(m=>m.id===id); return media ? <figure className={`scene-reference-thumb${referenceDropTarget===id?' drop-target':''}`} key={id} data-reference-id={id}>
                   <button type="button" className="scene-reference-preview" onClick={() => setReferencePreview(media)} aria-label={`预览参考图 ${media.name}`}><img src={imageUrl(media)} alt={media.name} draggable={false}/></button>
-                  <button type="button" className="scene-reference-annotate" disabled={pastingImages || savingScene || videoGenerating || persistedVideoGenerating} onClick={() => setAnnotationSource(media)} aria-label={`标注参考图 ${media.name}`}><Pencil size={13}/>标注</button>
+                  <span className="scene-reference-index" aria-label={`参考图 ${index+1}`}>{index+1}</span>
                   <button type="button" className="scene-reference-remove" onClick={() => setOptions(o=>({...o,reference_media_ids:(o.reference_media_ids||[]).filter(x=>x!==id)}))} aria-label={`移除参考图 ${media.name}`} title="移除">×</button>
                   <figcaption title={`拖动调整顺序：${media.name}`}
                     onPointerDown={event=>{if(event.button!==0)return;event.preventDefault();draggedReference.current=id;event.currentTarget.setPointerCapture(event.pointerId);}}
@@ -1624,14 +1626,16 @@ export function SceneEditor({
                     onPointerUp={event=>{const source=draggedReference.current;const target=document.elementFromPoint(event.clientX,event.clientY)?.closest<HTMLElement>('[data-reference-id]');const targetId=target?Number(target.dataset.referenceId):null;draggedReference.current=null;setReferenceDropTarget(null);if(source===null||targetId===null||source===targetId)return;setOptions(o=>{const ids=[...(o.reference_media_ids||[])];const from=ids.indexOf(source),to=ids.indexOf(targetId);if(from<0||to<0)return o;ids.splice(from,1);ids.splice(to,0,source);return {...o,reference_media_ids:ids};});}}
                     onPointerCancel={()=>{draggedReference.current=null;setReferenceDropTarget(null);}}
                     onLostPointerCapture={()=>{draggedReference.current=null;setReferenceDropTarget(null);}}
-                  >⠿ 参考图 {index+1} · {media.name}</figcaption>
+                  ><GripVertical size={12} aria-hidden="true"/><span className="scene-reference-name">{media.name}</span><button type="button" className="scene-reference-annotate" disabled={pastingImages || savingScene || videoGenerating || persistedVideoGenerating} onPointerDown={event=>event.stopPropagation()} onClick={() => setAnnotationSource(media)} aria-label={`标注参考图 ${media.name}`} title="标注图片"><Pencil size={13}/></button></figcaption>
                 </figure> : null; })}
-              </div>}
-            </Space>
-          </div>
-          {(!videoChoice || !!videoChoice.capabilities.max_videos || !!options.reference_video_media_ids?.length || !!options.reference_audio_media_ids?.length)&&<Form layout="vertical"><ReferenceMediaPicker projectId={data.project.id} media={data.media} videoIds={options.reference_video_media_ids} audioIds={options.reference_audio_media_ids}
+              </div> : <button type="button" className="scene-reference-empty" disabled={pastingImages} onClick={() => setMultiReferencePickerOpen(true)}>
+                <ImagePlus size={22}/><span>添加参考图片<small>从素材库、资产或场景选择，也可上传、粘贴图片</small></span>
+              </button>}
+            {!!options.reference_media_ids?.length && <p className="scene-reference-hint">拖动名称调整顺序 · 点击图片预览 · 支持粘贴图片</p>}
+          </section>
+          {(!videoChoice || !!videoChoice.capabilities.max_videos || !!options.reference_video_media_ids?.length || !!options.reference_audio_media_ids?.length)&&<ReferenceMediaPicker projectId={data.project.id} media={data.media} assets={data.assets} videoIds={options.reference_video_media_ids} audioIds={options.reference_audio_media_ids}
             reload={reload} disabled={savingScene || videoGenerating || persistedVideoGenerating || pastingImages} onUploading={setUploadingReferences}
-            onChange={(kind, ids) => setOptions(current => ({...current, [kind === "video" ? "reference_video_media_ids" : "reference_audio_media_ids"]: ids}))} /></Form>}
+            onChange={(kind, ids) => setOptions(current => ({...current, [kind === "video" ? "reference_video_media_ids" : "reference_audio_media_ids"]: ids}))} />}
           </Tabs.TabPane>
           </Tabs>
           </div>

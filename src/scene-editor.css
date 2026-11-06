@@ -49,19 +49,33 @@
 .scene-editor-page .scene-video-panel { padding: 0; margin: 14px 0 0; border: 0; border-top: 1px solid var(--ui-border); border-radius: 0 !important; background: transparent; }
 .scene-editor-page .generation-inputs { padding: 14px 0; margin: 0; gap: 8px 16px; border: 0; min-height: 48px; }
 .scene-editor-page .generation-inputs .arco-checkbox { font-size: 12px; color: var(--ui-secondary-text); }
-.scene-multi-reference { padding: 14px 0 4px; margin-top: 14px; border-top: 1px solid var(--ui-border); }
-.scene-multi-reference .scene-section-heading { margin-bottom: 8px; }
-.scene-reference-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: min(100%, 456px); margin-top: 12px; }
-.scene-reference-grid[data-count="1"] { grid-template-columns: minmax(0, 144px); }
-.scene-reference-grid[data-count="2"], .scene-reference-grid[data-count="3"], .scene-reference-grid[data-count="4"] { grid-template-columns: repeat(2, minmax(0, 144px)); }
+.scene-multi-reference { min-width: 0; padding: 12px; margin-top: 14px; border: 1px solid var(--ui-border); border-radius: 10px; background: var(--ui-surface); }
+.scene-reference-heading, .scene-reference-title { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.scene-reference-heading { justify-content: space-between; margin-bottom: 10px; }
+.scene-reference-title > svg { flex-shrink: 0; color: var(--ui-muted); }
+.scene-editor-page .scene-reference-title h2 { margin: 0; font-size: 12px; font-weight: 600; color: var(--ui-secondary-text); }
+.scene-reference-title > span { font-size: 11px; color: var(--ui-muted); white-space: nowrap; }
+.scene-reference-heading > .arco-btn { flex-shrink: 0; }
+.scene-reference-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 120px), 1fr)); gap: 10px; width: 100%; }
 .scene-reference-thumb { position: relative; min-width: 0; margin: 0; overflow: hidden; border: 1px solid var(--ui-border); border-radius: 7px; background: var(--ui-subtle); }
-.scene-reference-preview { display: block; width: 100%; aspect-ratio: 1; padding: 0; overflow: hidden; border: 0; background: transparent; cursor: zoom-in; }
-.scene-reference-preview img { width: 100%; height: 100%; object-fit: cover; }
+.scene-reference-preview { display: block; width: 100%; aspect-ratio: 4 / 3; padding: 0; overflow: hidden; border: 0; background: var(--ui-bg); cursor: zoom-in; }
+.scene-reference-preview img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.scene-reference-index { position: absolute; top: 5px; left: 5px; display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 4px; box-sizing: border-box; border-radius: 5px; background: rgb(20 25 33 / 72%); color: #fff; font-size: 11px; pointer-events: none; }
 .scene-reference-remove { position: absolute; top: 5px; right: 5px; display: grid; place-items: center; width: 23px; height: 23px; padding: 0; border: 0; border-radius: 50%; background: rgb(20 25 33 / 72%); color: #fff; cursor: pointer; font-size: 17px; line-height: 1; }
-.scene-reference-thumb figcaption { overflow: hidden; padding: 4px 6px; color: var(--ui-secondary-text); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.scene-reference-thumb figcaption { cursor: grab; touch-action: none; user-select: none; }
+.scene-reference-thumb figcaption { display: flex; align-items: center; gap: 3px; min-width: 0; padding: 4px; border-top: 1px solid var(--ui-border); color: var(--ui-secondary-text); font-size: 10px; cursor: grab; touch-action: none; user-select: none; }
+.scene-reference-thumb figcaption > svg { flex-shrink: 0; color: var(--ui-muted); }
+.scene-reference-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .scene-reference-thumb figcaption:active { cursor: grabbing; }
 .scene-reference-thumb.drop-target { outline: 2px solid var(--ui-primary); outline-offset: 2px; }
+.scene-reference-empty { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 88px; padding: 12px; border: 1px dashed var(--ui-border); border-radius: 7px; background: var(--ui-bg); color: var(--ui-muted); cursor: pointer; }
+.scene-reference-empty > svg { flex-shrink: 0; }
+.scene-reference-empty > span { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.scene-reference-empty small { font-size: 11px; line-height: 1.7; }
+.scene-reference-empty:hover:not(:disabled) { border-color: var(--ui-primary); color: var(--ui-primary); }
+.scene-reference-empty:disabled { opacity: .55; cursor: default; }
+.scene-reference-hint { margin: 10px 0 0; color: var(--ui-muted); font-size: 11px; line-height: 1.7; }
+.scene-reference-empty:focus-visible, .scene-reference-preview:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: -2px; }
+.scene-reference-annotate:focus-visible, .scene-reference-remove:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: 1px; }
 .scene-editor-page .scene-generation-settings { display: flex; flex-flow: row wrap; align-items: flex-start; gap: 12px 20px; margin-bottom: 16px; }
 .scene-editor-page .scene-generation-settings > .generation-channel-fields { flex: 1 1 220px; width: auto; min-width: 0; }
 .scene-editor-page .scene-generation-settings .arco-form-item { min-width: 0; margin-bottom: 0; }
@@ -131,17 +145,17 @@
 .scene-creation-options{display:grid;grid-template-columns:1fr 1fr;gap:12px}.scene-creation-options>button{display:flex;flex-direction:column;gap:9px;padding:18px;text-align:left;border:1px solid var(--color-border-2);background:var(--color-bg-2);color:var(--color-text-1);border-radius:10px;cursor:pointer}.scene-creation-options>button span{font-size:12px;line-height:1.7;color:var(--color-text-3)}.scene-creation-options>button.selected{border-color:rgb(var(--primary-6));background:var(--color-primary-light-1)}
 
 .scene-reference-annotate {
-  position: absolute;
-  top: 5px;
-  left: 5px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
   border: 0;
   border-radius: 5px;
-  background: rgb(20 25 33 / 78%);
-  color: #fff;
+  background: transparent;
+  color: var(--ui-secondary-text);
   cursor: pointer;
 }
+.scene-reference-annotate:hover:not(:disabled) { color: var(--ui-primary); background: var(--ui-accent-soft); }
 .scene-reference-annotate:disabled { opacity: .55; cursor: default; }
