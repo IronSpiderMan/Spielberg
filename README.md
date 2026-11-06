@@ -177,6 +177,14 @@ STRICT_UI=1 node scripts/qa/ui-audit.cjs
 
 UI 细节回归：`PLAYWRIGHT_PATH=/path/to/playwright node scripts/qa/ui-details.cjs`。使用隔离数据检查 8 个页面在 5 种窗口尺寸、明暗主题下的布局，以及手机导航焦点、Prompt 搜索、取消草稿和保存失败重试。截图与报告输出到 `/tmp/spielberg-ui-details/`。
 
+参考图标注回归：`PLAYWRIGHT_PATH=/path/to/playwright node scripts/qa/reference-annotation.cjs`。使用隔离图片和接口检查形状填充、文字输入、撤销重做、深浅主题及窄窗口布局，并验证 PNG 原分辨率导出和上传失败重试。
+
+### 参考图标注
+
+在场景编辑器的参考图上点击铅笔图标，可使用画笔、矩形、圆形 / 椭圆和文字工具（快捷键 B / R / O / T）。矩形和圆形支持空心或填充；按住 Shift 拖动可绘制正方形或正圆。可设置颜色、线宽、字号和不透明度，设置只影响之后添加的标注。
+
+选择文字工具后点击图片输入文字，Enter 完成，Shift + Enter 换行，Esc 取消当前文字。撤销 / 重做支持 Ctrl / ⌘ Z 和 Ctrl / ⌘ Shift Z，清空操作也可撤销。点击「用作参考图」会按原图尺寸导出 PNG 并替换当前参考图，原图仍保留在素材库，保存场景后生效。
+
 ## 名称与旧项目兼容
 
 应用名称为 Spielberg，npm / Cargo 包名为 `spielberg-studio`，应用标识为 `com.spielberg.studio`，新数据库文件为 `spielberg.sqlite`。
