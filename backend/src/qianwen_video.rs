@@ -21,6 +21,14 @@ pub(super) fn api_root(config: &Value) -> Result<String, String> {
 }
 
 pub(super) fn image_data(c: &Connection, id: i64) -> Result<String, String> {
+    reference_image_data(c, id, false)
+}
+
+fn video_image_data(c: &Connection, id: i64) -> Result<String, String> {
+    reference_image_data(c, id, true)
+}
+
+fn reference_image_data(c: &Connection, id: i64, compress: bool) -> Result<String, String> {
     let item = media(c, Some(id)).ok_or("找不到参考图片")?;
     let path = svg::reference_path(Path::new(item["path"].as_str().ok_or("参考图片路径无效")?))?;
     let bytes = fs::read(&path).map_err(|e| format!("无法读取参考图片：{e}"))?;
@@ -28,6 +36,34 @@ pub(super) fn image_data(c: &Connection, id: i64) -> Result<String, String> {
         else if bytes.starts_with(b"\xff\xd8\xff") { "image/jpeg" }
         else if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") { "image/webp" }
         else { return Err("千问视频参考图仅支持 PNG、JPEG、WebP（SVG 会自动转换）".into()) };
+    if compress && bytes.len() > 512 * 1024 {
+        let binary = if Path::new("/opt/homebrew/bin/ffmpeg").exists() {
+            "/opt/homebrew/bin/ffmpeg"
+        } else {
+            "ffmpeg"
+        };
+        // Keep transparency for formats that can carry it.
+        let opaque = mime == "image/jpeg" || (mime == "image/png"
+            && matches!(bytes.get(25), Some(0 | 2 | 3))
+            && !bytes.windows(4).any(|chunk| chunk == b"tRNS"));
+        let (encoder, output_mime) = if opaque { ("mjpeg", "image/jpeg") }
+            else { ("png", "image/png") };
+        let output = crate::background_command(binary)
+            .args(["-nostdin", "-v", "error", "-i"])
+            .arg(&path)
+            .args(["-frames:v", "1", "-vf",
+                "scale=w='min(1920,iw)':h='min(1920,ih)':force_original_aspect_ratio=decrease",
+                "-q:v", "3", "-c:v", encoder, "-f", "image2pipe", "pipe:1"])
+            .output();
+        if let Ok(output) = output {
+            if output.status.success() && !output.stdout.is_empty()
+                && output.stdout.len() < bytes.len() && output.stdout.len() <= 20 * 1024 * 1024
+            {
+                let encoded = base64::engine::general_purpose::STANDARD.encode(output.stdout);
+                return Ok(format!("data:{output_mime};base64,{encoded}"));
+            }
+        }
+    }
     if bytes.len() > 20 * 1024 * 1024 { return Err("千问视频单张参考图不能超过 20 MB".into()) }
     // Inline data avoids the separate OSS upload API, unavailable to Token Plan.
     Ok(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
@@ -60,7 +96,7 @@ fn request_body(c: &Connection, v: &Value, config: &Value, operation: &str, prom
         let ids = if operation == "fl2v" { opti(v, "first_media_id").into_iter().collect() }
             else { let ids = reference_media_ids(v, "image_media_ids")?; if ids.is_empty() { opti(v, "image_media_id").into_iter().collect() } else { ids } };
         if ids.len() != 1 { return Err("千问图生视频需要且仅支持一张首帧图片".into()) }
-        input["media"] = json!([{"type": "first_frame", "url": image_data(c, ids[0])?}]);
+        input["media"] = json!([{"type": "first_frame", "url": video_image_data(c, ids[0])?}]);
     } else {
         let ratio = v["aspect_ratio"].as_str().unwrap_or("16:9");
         if !["16:9", "9:16", "1:1", "4:3", "3:4", "4:5", "5:4", "9:21", "21:9"].contains(&ratio) {
@@ -70,7 +106,7 @@ fn request_body(c: &Connection, v: &Value, config: &Value, operation: &str, prom
         if mode == "r2v" {
             let ids = reference_media_ids(v, "image_media_ids")?;
             if ids.is_empty() || ids.len() > 9 { return Err("千问图片参考视频需要 1–9 张参考图片".into()) }
-            input["media"] = Value::Array(ids.into_iter().map(|id| Ok(json!({"type": "reference_image", "url": image_data(c, id)?})))
+            input["media"] = Value::Array(ids.into_iter().map(|id| Ok(json!({"type": "reference_image", "url": video_image_data(c, id)?})))
                 .collect::<Result<Vec<_>, String>>()?);
         }
     }
@@ -116,13 +152,13 @@ fn wan_request_body(c: &Connection, v: &Value, config: &Value, operation: &str, 
             if !videos.is_empty() || !audios.is_empty() { return Err("Wan 3.0 首尾帧模式不能混用音视频参考".into()) }
             let first = if operation == "fl2v" { opti(v, "first_media_id") }
                 else if images.len() <= 1 { images.first().copied().or_else(|| opti(v, "image_media_id")) } else { return Err("首帧模式只能选择一张图片，请使用全能参考模式".into()) };
-            refs.push(json!({"type":"first_frame", "url":image_data(c, first.ok_or("请选择首帧")?)?}));
-            if let Some(id) = opti(v, "last_media_id") { refs.push(json!({"type":"last_frame", "url":image_data(c, id)?})); }
+            refs.push(json!({"type":"first_frame", "url":video_image_data(c, first.ok_or("请选择首帧")?)?}));
+            if let Some(id) = opti(v, "last_media_id") { refs.push(json!({"type":"last_frame", "url":video_image_data(c, id)?})); }
         },
         "ref2v" => {
             if opti(v, "first_media_id").is_some() || opti(v, "last_media_id").is_some() { return Err("Wan 3.0 参考模式不能混用首尾帧".into()) }
             if images.len() > 9 || videos.len() > 3 || audios.len() > 3 { return Err("全能参考最多支持 9 张图片、3 个视频和 3 个音频".into()) }
-            for id in images { refs.push(json!({"type":"reference_image", "url":image_data(c, id)?})); }
+            for id in images { refs.push(json!({"type":"reference_image", "url":video_image_data(c, id)?})); }
             for (ids, kind) in [(videos, "video"), (audios, "audio")] {
                 for id in ids { refs.push(json!({"type":format!("reference_{kind}"), "url":av_data(c, id, kind)?})); }
             }
