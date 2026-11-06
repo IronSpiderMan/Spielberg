@@ -16,8 +16,11 @@
 .scene-editor-page .scene-form-card .arco-form-item { margin-bottom: 20px; }
 .scene-editor-page .arco-form-item-label { padding-bottom: 8px; }
 .scene-editor-page .scene-form-card .arco-form-item-label > label { display: block; width: 100%; font-weight: 500; color: var(--ui-text); }
-.scene-editor-page .scene-description-label { display: flex; align-items: center; justify-content: space-between; min-height: 24px; }
-.scene-editor-page .scene-description-label .arco-btn { color: var(--ui-muted); padding: 0 2px; }
+.scene-editor-page .scene-description-label { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; min-height: 24px; }
+.scene-description-heading { display: flex; align-items: baseline; gap: 4px 12px; min-width: 0; flex-wrap: wrap; }
+.scene-description-heading > span:first-child { flex-shrink: 0; }
+.scene-description-hint { color: var(--ui-muted); font-size: 11px; font-weight: 400; line-height: 1.6; }
+.scene-editor-page .scene-description-label .arco-btn { flex-shrink: 0; color: var(--ui-muted); padding: 0 2px; }
 .scene-editor-page .scene-form-card textarea { max-height: 120px; overflow-y: auto !important; background: var(--ui-surface); line-height: 1.7; padding: 10px 12px; }
 .scene-editor-page .scene-form-card .prompt-editor textarea { background: transparent; line-height: 1.8; color: transparent !important; -webkit-text-fill-color: transparent !important; }
 .scene-editor-page .scene-form-card .prompt-backdrop { color: var(--ui-text); }

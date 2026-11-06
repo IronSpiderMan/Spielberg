@@ -1254,8 +1254,6 @@ export function SceneEditor({
   const [savingScene, setSavingScene] = useState(false);
   const [videoGenerating, setVideoGenerating] = useState(false);
   const { optimizing:optimizingPrompt, optimize:optimizePrompt } = usePromptOptimization();
-  const [optimizationInstruction,setOptimizationInstruction]=useState("");
-  const [optimizationInstructionOpen,setOptimizationInstructionOpen]=useState(false);
   const [persistedVideoGenerating, setPersistedVideoGenerating] = useState(false);
   const [videoAssets, setVideoAssets] = useState<Media[]>([]);
   const [videoAssetPage, setVideoAssetPage] = useState(1);
@@ -1502,13 +1500,20 @@ export function SceneEditor({
     } catch (e) { Message.error(String(e)); }
     finally { setAttachingVideo(false); }
   };
-  const optimizeVideoPrompt=()=>{
+  const optimizationDisabled=videoGenerating||persistedVideoGenerating||optimizingPrompt||pastingImages||uploadingReferences||savingScene||!description.trim();
+  const optimizeVideoPrompt=(format:"minimax-h3"|"wan3.0")=>{
+    if (optimizationDisabled) return;
+    if (format==="minimax-h3"&&options.duration<=0) {
+      Message.warning("优化成 minimax-h3 形式前，请在生成参数中选择具体时长");
+      return;
+    }
     const imageIds=options.video_mode==="t2v"?[]:options.video_mode==="i2v"?(options.reference_media_ids||[]):[frames.first,frames.last].filter((id):id is number=>Boolean(id));
     return optimizePrompt({projectId:data.project.id,
-    prompt:resolveH3Prompt(description,data,imageIds),kind:"video",instruction:optimizationInstruction,imageIds,
-    h3:{mode:options.video_mode==="t2v"?"t2va":options.video_mode==="i2v"?"ref2va":frames.first?(frames.last?"fl2va":"i2va"):frames.last?"l2va":"t2va",duration:options.duration,
-      videoIds:options.video_mode==="i2v"?options.reference_video_media_ids:[],audioIds:options.video_mode==="i2v"?options.reference_audio_media_ids:[]},
-    onOptimized:setPrompt,successMessage:"已转换为 MiniMax-H3 Prompt"});
+    prompt:format==="minimax-h3"?resolveH3Prompt(description,data,imageIds):description,kind:"video",imageIds,
+    h3:format==="minimax-h3"?{mode:options.video_mode==="t2v"?"t2va":options.video_mode==="i2v"?"ref2va":frames.first?(frames.last?"fl2va":"i2va"):frames.last?"l2va":"t2va",duration:options.duration,
+      videoIds:options.video_mode==="i2v"?options.reference_video_media_ids:[],audioIds:options.video_mode==="i2v"?options.reference_audio_media_ids:[]}:undefined,
+    wan:format==="wan3.0"?{mode:options.video_mode||"fl2v",duration:options.duration}:undefined,
+    onOptimized:setPrompt,successMessage:format==="minimax-h3"?"已转换为 MiniMax-H3 Prompt":"已转换为 Wan 3.0 Prompt"});
   };
   const optimizeImagePrompt=()=>optimizePrompt({projectId:data.project.id,prompt:imagePrompt,kind:"image",imageIds:imageMode==="i2i"?imageRefs.map(media=>media.id):[],onOptimized:setImagePrompt});
   const save = async () => {
@@ -1546,18 +1551,20 @@ export function SceneEditor({
               <Form.Item label="场景标题">
                 <Input value={title} onChange={setTitle} />
               </Form.Item>
-              <Form.Item label={<span className="scene-description-label"><span>场景描述</span><Space size={2}><Button type="text" size="mini" onClick={()=>setOptimizationInstructionOpen(true)}>优化指令</Button><Button type="text" size="mini" icon={<WandSparkles size={14}/>} disabled={videoGenerating||optimizingPrompt||!description.trim()} onClick={optimizeVideoPrompt}>{optimizingPrompt?"正在优化…":"优化描述"}</Button></Space></span>}>
+              <Form.Item label={<span className="scene-description-label">
+                <span className="scene-description-heading"><span>场景描述</span><span className="scene-description-hint" role="status">{pastingImages ? "正在上传粘贴的图片…" : "可在此粘贴图片，自动添加到全能参考（最多 9 张）"}</span></span>
+                <Dropdown trigger={["hover","click"]} position="br" disabled={optimizationDisabled} droplist={<Menu onClickMenuItem={key=>{if(key==="minimax-h3"||key==="wan3.0") void optimizeVideoPrompt(key);}}>
+                  <Menu.Item key="minimax-h3">优化成 minimax-h3 形式</Menu.Item>
+                  <Menu.Item key="wan3.0">优化成 wan3.0 形式</Menu.Item>
+                </Menu>}>
+                  <Button type="text" size="mini" icon={<WandSparkles size={14}/>} disabled={optimizationDisabled} aria-label={optimizingPrompt?"正在优化…":"优化描述"} aria-haspopup="menu">{optimizingPrompt?"正在优化…":"优化描述"}</Button>
+                </Dropdown>
+              </span>}>
                 <PromptInput value={description} onChange={setDescription} roles={data.assets} data={data} prompts={data.prompts} templates={[...PROMPT_TEMPLATES,...data.prompts]} disabled={optimizingPrompt || pastingImages || savingScene || videoGenerating || persistedVideoGenerating} onPasteImages={files => void pasteReferenceImages(files)} placeholder="描述镜头、人物动作、台词与画面情绪… 输入 @template 选择模板，或引用资产、场景素材与 Prompt" />
-                <p className="helper" role="status">{pastingImages ? "正在上传粘贴的图片…" : "可在此粘贴图片，自动添加到全能参考（最多 9 张）"}</p>
               </Form.Item>
-              <Form.Item label="视频 Prompt">
+              <Form.Item label={<span className="scene-description-heading"><span>视频 Prompt</span><span className="scene-description-hint">优化描述的结果会填入此栏，保留手工描述。留空时使用场景描述生成视频。</span></span>}>
                 <PromptInput value={prompt} onChange={setPrompt} roles={data.assets} data={data} prompts={data.prompts} templates={[...PROMPT_TEMPLATES,...data.prompts]} disabled={optimizingPrompt || pastingImages || savingScene || videoGenerating || persistedVideoGenerating} onPasteImages={files => void pasteReferenceImages(files)} placeholder="实际用于生成视频的提示词；留空时使用场景描述" />
-                <p className="helper">优化描述的结果会填入此栏，保留手工描述。留空时使用场景描述生成视频。</p>
               </Form.Item>
-              <Modal title="自定义提示词优化指令" visible={optimizationInstructionOpen} onCancel={()=>setOptimizationInstructionOpen(false)} onOk={()=>setOptimizationInstructionOpen(false)} okText="完成">
-                <p className="helper">按当前素材转换为 MiniMax-H3 官方格式，英文描述、原语言对白。可补充镜头、节奏或风格要求。</p>
-                <Input.TextArea value={optimizationInstruction} onChange={setOptimizationInstruction} autoSize={{minRows:3,maxRows:7}} placeholder="例如：保留六个分镜，强调人物表情，不添加背景音乐。" />
-              </Modal>
             </Form>
           </div>
           <div className="scene-visuals">

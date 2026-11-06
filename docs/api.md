@@ -123,7 +123,7 @@ curl 'http://127.0.0.1:8080/api/v1/projects/PID/media/1/content?download=1' -o p
 | `generations/image`, `generations/video` | 原有生成参数，包括 `project_id, operation, prompt` 等 |
 | `generations/tts` | `project_id, text`，可选 `channel_id, model, voice, format`；OpenAI 另支持 `speed`，支持风格指令的模型可传 `instructions` |
 | `episodes/merge` | `project_id, episode_id` |
-| `prompts/optimize` | `project_id, prompt, kind, image_media_ids, instruction?`；H3 转换另传 `prompt_format: "minimax-h3", h3_mode, duration, reference_video_media_ids?, reference_audio_media_ids?` |
+| `prompts/optimize` | `project_id, prompt, kind, image_media_ids, instruction?`；H3 转换另传 `prompt_format: "minimax-h3", h3_mode, duration, reference_video_media_ids?, reference_audio_media_ids?`；Wan 中文优化另传 `prompt_format: "wan3.0", duration?, video_mode?`（保留原文及 `@` 引用，正数时长约束总时长，自动时长 `-1` 保留原文时长） |
 | `settings` | `project_id, settings` |
 | `tasks` | `status?, limit?, before?, through?`，返回 `{items,next_cursor,has_more}` |
 | `storage/scan` | `project_id` |
