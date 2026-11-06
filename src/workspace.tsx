@@ -29,6 +29,7 @@ Empty,
 Form,
 Input,
 Message,
+Menu,
 Modal,
 Pagination,
 Select,
@@ -40,6 +41,8 @@ Tabs
 import { open,save as saveDialog } from "./platform";
 import {
 ArrowDown,
+ArrowDownToLine,
+ArrowUpToLine,
 ArrowLeft,
 ArrowUp,
 GitBranch,
@@ -722,23 +725,35 @@ export function Episodes({
   );
 }
 const reorderingEpisodes = new Set<string>();
-function SceneOrderControls({episode, index, project, reload}: {episode: Episode; index: number; project: Project; reload: () => void}) {
+function SceneOrderControls({episode, index, project, reload, showEndpoints = false, disabled = false}: {episode: Episode; index: number; project: Project; reload: () => void; showEndpoints?: boolean; disabled?: boolean}) {
   const [busy, setBusy] = useState(false);
-  const move = async (offset: number) => {
+  const move = async (target: number, toEndpoint = false) => {
     const key = `${project.id}/${episode.id}`;
     if (reorderingEpisodes.has(key)) return;
     const ids = episode.scenes.map(scene => scene.id);
-    if (index + offset < 0 || index + offset >= ids.length) return;
+    if (disabled || target === index || target < 0 || target >= ids.length) return;
     reorderingEpisodes.add(key);
     setBusy(true);
     try {
-      [ids[index], ids[index + offset]] = [ids[index + offset], ids[index]];
+      if (toEndpoint) ids.splice(target, 0, ids.splice(index, 1)[0]);
+      else [ids[index], ids[target]] = [ids[target], ids[index]];
       await post("/scenes/reorder", {project_id: project.id, episode_id: episode.id, scene_ids: ids});
       await reload();
     } catch (error) {Message.error(String(error));}
     finally {reorderingEpisodes.delete(key); setBusy(false);}
   };
-  return <Space size={4}><Button size="mini" aria-label="上移场景" title="上移场景" disabled={busy || index === 0} icon={<ArrowUp size={14}/>} onClick={() => move(-1)}/><Button size="mini" aria-label="下移场景" title="下移场景" disabled={busy || index === episode.scenes.length - 1} icon={<ArrowDown size={14}/>} onClick={() => move(1)}/></Space>;
+  const last = episode.scenes.length - 1;
+  const endpoint = (target: number, label: string, Icon: typeof ArrowUp) => <Button
+    size="mini" aria-label={label} title={label} disabled={disabled || busy || index === target}
+    icon={<Icon size={14}/>}
+    onClick={() => confirmAction({title: label, content: `将「${episode.scenes[index].title}」${label}？`, okText: "确认移动", onOk: () => move(target, true)})}
+  />;
+  return <Space size={4}>
+    {showEndpoints && endpoint(0, "移动到最前方", ArrowUpToLine)}
+    <Button size="mini" aria-label="上移场景" title="上移场景" disabled={disabled || busy || index === 0} icon={<ArrowUp size={14}/>} onClick={() => move(index - 1)}/>
+    <Button size="mini" aria-label="下移场景" title="下移场景" disabled={disabled || busy || index === last} icon={<ArrowDown size={14}/>} onClick={() => move(index + 1)}/>
+    {showEndpoints && endpoint(last, "移动到最后方", ArrowDownToLine)}
+  </Space>;
 }
 function SceneFramePicker({data, reload, onSelect, disabled}: {data: Snapshot; reload: () => void; onSelect: (media: Media) => void; disabled?: boolean}) {
   const [visible, setVisible] = useState(false);
@@ -855,16 +870,22 @@ function EpisodeEditor({
   };
   const [inserting, setInserting] = useState<number | null>(null);
   const [copyingScene, setCopyingScene] = useState<number | null>(null);
-  const copyScene = async (scene: Scene) => {
+  const copyScene = async (scene: Scene, position: "before" | "after") => {
     setCopyingScene(scene.id);
     try {
-      await post("/scenes/duplicate", { project_id: data.project.id, id: scene.id });
+      await post("/scenes/duplicate", { project_id: data.project.id, id: scene.id, position });
       await reload();
       Message.success("场景已复制");
     } catch (e) { Message.error(String(e)); }
     finally { setCopyingScene(null); }
   };
-  const [sceneCreation,setSceneCreation]=useState<number|null>(null);
+  const [sceneCreation,setSceneCreation]=useState<{episodeId:number; anchorSceneId?:number; position?:"before"|"after"}|null>(null);
+  const beginSceneCreation = (anchorSceneId?: number, position?: "before"|"after") => {
+    if (!episode) return;
+    setSceneCreation({episodeId: episode.id, anchorSceneId, position});
+    setCreationMode("default");
+    setNewSceneTitle(`场景 ${(currentEpisode?.scenes.length || 0) + 1}`);
+  };
   const [creationMode,setCreationMode]=useState<"default"|"canvas">("default");
   const [newSceneTitle,setNewSceneTitle]=useState("");
   const makeScene = async (id: number) => {
@@ -875,6 +896,7 @@ function EpisodeEditor({
       episode_id: id,
       title: newSceneTitle.trim() || `场景 ${(data.episodes.find(ep => ep.id === id)?.scenes.length ?? 0) + 1}`,
       creation_mode: creationMode,
+      ...(sceneCreation?.anchorSceneId !== undefined ? {anchor_scene_id: sceneCreation.anchorSceneId, position: sceneCreation.position} : {}),
       description: "",
     });
     await reload();
@@ -914,22 +936,34 @@ function EpisodeEditor({
         <ScreenplayManager key={episode.id} ref={scriptEditor} data={data} episodeId={episode.id} reload={async () => { await reload(); }} disabled={saving || generatingBoard} board={board} onBoard={setBoard} onBoardBusy={setGeneratingBoard} onStatus={onScriptStatus} onFormatChange={setView} />
       </div>
       <div className="episode-scene-browser" hidden={view !== "scenes"}>
-        <div className="episode-scene-browser-heading"><div><h2>全部场景 <span className="subtle">{currentEpisode?.scenes.length || 0} 个场景</span></h2><p className="subtle">按剧集顺序查看场景，点击进入编辑。</p></div><Button type="primary" icon={<Plus size={16}/>} disabled={editorLocked || inserting !== null} onClick={() => {setSceneCreation(episode.id);setCreationMode("default");setNewSceneTitle(`场景 ${(currentEpisode?.scenes.length || 0) + 1}`);}}>新建场景</Button></div>
+        <div className="episode-scene-browser-heading"><div><h2>全部场景 <span className="subtle">{currentEpisode?.scenes.length || 0} 个场景</span></h2><p className="subtle">按剧集顺序查看场景，点击进入编辑。</p></div><Button type="primary" icon={<Plus size={16}/>} disabled={editorLocked || inserting !== null} onClick={() => beginSceneCreation()}>新建场景</Button></div>
         {currentEpisode?.scenes.length ? <div className="episode-scene-grid">
-          {currentEpisode.scenes.map((scene, index) => <div key={scene.id} className="episode-scene-item"><button type="button" className="episode-scene-card" key={scene.id} disabled={editorLocked} aria-label={`编辑场景：${scene.title}`} onClick={() => openScene(scene)}>
-            <SceneThumb scene={scene} media={data.media}/>
-            <div className="episode-scene-card-body">
+          {currentEpisode.scenes.map((scene, index) => <div key={scene.id} className="episode-scene-item"><div className="episode-scene-card">
+            <SceneThumb scene={scene} media={data.media} onPreview={!editorLocked && sceneVideos(scene).length ? () => openScenePreview(scene) : undefined}/>
+            <button type="button" className="episode-scene-card-body" disabled={editorLocked} aria-label={`编辑场景：${scene.title}`} onClick={() => openScene(scene)}>
               <div className="episode-scene-card-title"><span className="subtle">{String(index + 1).padStart(2, "0")}</span><b>{scene.title}</b></div>
               <p>{scene.description || "尚未填写场景描述"}</p>
               <div className="episode-scene-card-footer"><Space size={6} wrap>
                 <Tag color={scene.video_media_id ? "green" : "gray"}>{scene.video_media_id ? "视频已就绪" : (scene.first_media_id || scene.last_media_id || scene.reference_media_id || scene.generation_options?.reference_media_ids?.length) ? "已设画面" : "待制作"}</Tag>
                 {scene.creation_mode === "canvas" && <Tag>画布</Tag>}
               </Space><span className="episode-scene-edit-link">编辑场景 <ChevronRight size={14}/></span></div>
-            </div>
-          </button><div className="episode-scene-item-actions"><Button size="mini" disabled={editorLocked || !sceneVideos(scene).length} icon={<Play size={13}/>} onClick={() => openScenePreview(scene)}>预览</Button><SceneOrderControls episode={currentEpisode} index={index} project={project} reload={reload}/><Button size="mini" disabled={editorLocked || copyingScene !== null || inserting !== null} loading={copyingScene === scene.id} onClick={() => void copyScene(scene)}>复制</Button><ConfirmPopover title="删除这个场景？" content={`将从剧集中删除「${scene.title}」及其场景设置，素材库中的文件会保留。删除后无法撤销。`} okText="删除场景" disabled={editorLocked} onOk={async () => {try {await post("/scenes/delete", {project_id:project.id,id:scene.id});await reload();Message.success("场景已删除");}catch(error){Message.error(String(error));throw error;}}}><Button size="mini" status="danger" disabled={editorLocked} icon={<Trash2 size={14}/>}>删除</Button></ConfirmPopover></div></div>)}
+            </button>
+          </div><div className="episode-scene-item-actions">
+            <SceneOrderControls episode={currentEpisode} index={index} project={project} reload={reload} showEndpoints disabled={editorLocked || copyingScene !== null || inserting !== null}/>
+            <Dropdown trigger="click" disabled={editorLocked || inserting !== null || copyingScene !== null} droplist={<Menu onClickMenuItem={key => {
+              if (key === "copy-before" || key === "copy-after") void copyScene(scene, key === "copy-before" ? "before" : "after");
+              else if (key === "before" || key === "after") beginSceneCreation(scene.id, key);
+            }}>
+              <Menu.Item key="before">在前方新建</Menu.Item>
+              <Menu.Item key="after">在后方新建</Menu.Item>
+              <Menu.Item key="copy-before">复制到前方</Menu.Item>
+              <Menu.Item key="copy-after">复制到后方</Menu.Item>
+            </Menu>}>
+              <Button size="mini" aria-label={`新建或复制场景：${scene.title}`} disabled={editorLocked || inserting !== null || copyingScene !== null} loading={copyingScene === scene.id} icon={<Plus size={13}/>}>新建<ChevronDown size={12}/></Button>
+            </Dropdown><ConfirmPopover title="删除这个场景？" content={`将从剧集中删除「${scene.title}」及其场景设置，素材库中的文件会保留。删除后无法撤销。`} okText="删除场景" disabled={editorLocked} onOk={async () => {try {await post("/scenes/delete", {project_id:project.id,id:scene.id});await reload();Message.success("场景已删除");}catch(error){Message.error(String(error));throw error;}}}><Button size="mini" status="danger" disabled={editorLocked} icon={<Trash2 size={14}/>}>删除</Button></ConfirmPopover></div></div>)}
         </div> : <Empty description="本集暂无场景，点击右上角“新建场景”开始创作"/>}
       </div>
-      <Modal title="新建场景" visible={sceneCreation!==null} confirmLoading={inserting!==null} onCancel={()=>{if(inserting===null)setSceneCreation(null);}} onOk={()=>sceneCreation!==null?makeScene(sceneCreation).catch(e=>{Message.error(String(e));throw e;}):undefined}>
+      <Modal title="新建场景" visible={sceneCreation!==null} confirmLoading={inserting!==null} onCancel={()=>{if(inserting===null)setSceneCreation(null);}} onOk={()=>sceneCreation!==null?makeScene(sceneCreation.episodeId).catch(e=>{Message.error(String(e));throw e;}):undefined}>
         <Form layout="vertical"><Form.Item label="场景名称"><Input aria-label="新场景名称" value={newSceneTitle} onChange={setNewSceneTitle}/></Form.Item>
         <Form.Item label="创建方式"><div className="scene-creation-options">
           <button type="button" className={creationMode==="default"?"selected":""} aria-pressed={creationMode==="default"} onClick={()=>setCreationMode("default")}><b>默认方式</b><span>使用场景表单设置画面、描述和生成参数</span></button>

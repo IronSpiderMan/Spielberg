@@ -113,12 +113,12 @@
 .episode-scene-browser-heading h2 span { margin-left: 8px; font-weight: 400; }
 .episode-scene-browser-heading p { margin: 8px 0 0; }
 .episode-scene-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 16px; }
-.episode-scene-card { display: flex; flex-direction: column; min-width: 0; padding: 0; overflow: hidden; border: 1px solid var(--ui-border); border-radius: 12px; background: var(--ui-surface); color: var(--ui-text); font: inherit; text-align: left; cursor: pointer; transition: border-color 160ms; }
+.episode-scene-card { display: flex; flex-direction: column; min-width: 0; padding: 0; overflow: hidden; border: 1px solid var(--ui-border); border-radius: 12px; background: var(--ui-surface); color: var(--ui-text); font: inherit; text-align: left; transition: border-color 160ms; }
 .episode-scene-card:hover { border-color: var(--ui-primary); }
-.episode-scene-card:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: 3px; }
-.episode-scene-card:disabled { opacity: .55; cursor: wait; }
+.episode-scene-card button:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: -2px; }
+.episode-scene-card-body:disabled { opacity: .55; cursor: wait; }
 .episode-scene-card > .scene-thumb { width: 100%; height: auto; aspect-ratio: 16 / 9; border-radius: 0; flex: none; background: var(--ui-subtle); }
-.episode-scene-card-body { display: flex; flex: 1; flex-direction: column; gap: 12px; min-width: 0; width: 100%; padding: 16px; }
+.episode-scene-card-body { border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; display: flex; flex: 1; flex-direction: column; gap: 12px; min-width: 0; width: 100%; padding: 16px; }
 .episode-scene-card-title { display: flex; align-items: baseline; gap: 8px; }
 .episode-scene-card-title b { min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
 .episode-scene-card-body > p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin: 0; color: var(--ui-muted); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }

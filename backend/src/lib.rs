@@ -265,7 +265,13 @@ fn update_episode(s:&AppState,v:&Value)->Result<Value,String>{
  tx.commit().map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
 
 fn delete_episode(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;db(s,&pid)?.execute("DELETE FROM episodes WHERE id=?",[intv(v,"id")?]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
-fn insert_scene(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let c=db(s,&pid)?;let ep=intv(v,"episode_id")?;let n:i64=c.query_row("SELECT COUNT(*) FROM scenes WHERE episode_id=?",[ep],|r|r.get(0)).map_err(|e|e.to_string())?;let title=strv(v,"title")?;let d=v.get("description").and_then(Value::as_str).unwrap_or("");c.execute("INSERT INTO scenes(episode_id,title,description,prompt,sort_order,created_at,creation_mode) VALUES(?,?,?,?,?,?,?)",params![ep,title,d,v["prompt"].as_str().unwrap_or(""),n,now(),v["creation_mode"].as_str().unwrap_or("default")]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"id":c.last_insert_rowid(),"title":title,"description":d,"prompt":v["prompt"].as_str().unwrap_or(""),"creation_mode":v["creation_mode"].as_str().unwrap_or("default"),"sort_order":n,"first_media_id":null,"last_media_id":null,"reference_media_id":null}))}
+fn insert_scene(s:&AppState,v:&Value)->Result<Value,String>{
+ let pid=project_id(v)?;let mut c=db(s,&pid)?;let tx=c.transaction().map_err(|e|e.to_string())?;let ep=intv(v,"episode_id")?;
+ let mut ids={let mut q=tx.prepare("SELECT id FROM scenes WHERE episode_id=? ORDER BY sort_order,id").map_err(|e|e.to_string())?;let rows=q.query_map([ep],|r|r.get::<_,i64>(0)).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;rows};
+ let n=if let Some(anchor)=v.get("anchor_scene_id") {let anchor=anchor.as_i64().ok_or("场景 ID 无效")?;let index=ids.iter().position(|id|*id==anchor).ok_or("指定场景不存在于当前剧集")?;match v["position"].as_str(){Some("before")=>index,Some("after")=>index+1,_=>return Err("插入位置无效".into())}} else {ids.len()};
+ let title=strv(v,"title")?;let d=v.get("description").and_then(Value::as_str).unwrap_or("");tx.execute("INSERT INTO scenes(episode_id,title,description,prompt,sort_order,created_at,creation_mode) VALUES(?,?,?,?,?,?,?)",params![ep,title,d,v["prompt"].as_str().unwrap_or(""),n as i64,now(),v["creation_mode"].as_str().unwrap_or("default")]).map_err(|e|e.to_string())?;let id=tx.last_insert_rowid();ids.insert(n,id);
+ for (order,id) in ids.iter().enumerate(){tx.execute("UPDATE scenes SET sort_order=? WHERE id=?",params![order as i64,id]).map_err(|e|e.to_string())?;}tx.commit().map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"id":id,"title":title,"description":d,"prompt":v["prompt"].as_str().unwrap_or(""),"creation_mode":v["creation_mode"].as_str().unwrap_or("default"),"sort_order":n,"first_media_id":null,"last_media_id":null,"reference_media_id":null}))
+}
 fn duplicate_scene(s:&AppState,v:&Value)->Result<Value,String>{
  let pid=project_id(v)?;let mut c=db(s,&pid)?;let tx=c.transaction().map_err(|e|e.to_string())?;let source=intv(v,"id")?;
  let ep:i64=tx.query_row("SELECT episode_id FROM scenes WHERE id=?",[source],|r|r.get(0)).optional().map_err(|e|e.to_string())?.ok_or("场景不存在")?;
@@ -277,6 +283,19 @@ fn duplicate_scene(s:&AppState,v:&Value)->Result<Value,String>{
  }
  tx.execute("INSERT INTO scene_canvases SELECT ?,draft,1 FROM scene_canvases WHERE scene_id=?",params![id,source]).map_err(|e|e.to_string())?;
  tx.execute("INSERT INTO scene_canvas_sources SELECT ?,media_id FROM scene_canvas_sources WHERE scene_id=?",params![id,source]).map_err(|e|e.to_string())?;
+ if let Some(position)=v.get("position") {
+  let after=match position.as_str(){Some("before")=>false,Some("after")=>true,_=>return Err("插入位置无效".into())};
+  let mut ids={
+   let mut q=tx.prepare("SELECT id FROM scenes WHERE episode_id=? AND id<>? ORDER BY sort_order,id").map_err(|e|e.to_string())?;
+   let rows=q.query_map(params![ep,id],|r|r.get::<_,i64>(0)).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
+   rows
+  };
+  let index=ids.iter().position(|scene_id|*scene_id==source).ok_or("场景不存在")?;
+  ids.insert(index+usize::from(after),id);
+  for (index,scene_id) in ids.into_iter().enumerate(){
+   tx.execute("UPDATE scenes SET sort_order=? WHERE id=?",params![index as i64,scene_id]).map_err(|e|e.to_string())?;
+  }
+ }
  tx.commit().map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"id":id,"episode_id":ep}))
 }
 fn update_scene(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let mut c=db(s,&pid)?;let tx=c.transaction().map_err(|e|e.to_string())?;let id=intv(v,"id")?;if tx.execute("UPDATE scenes SET title=?,description=?,prompt=COALESCE(?,prompt),first_media_id=?,last_media_id=?,reference_media_id=? WHERE id=?",params![strv(v,"title")?,strv(v,"description")?,v.get("prompt").and_then(Value::as_str),opti(v,"first_media_id"),opti(v,"last_media_id"),opti(v,"reference_media_id"),id]).map_err(|e|e.to_string())?!=1{return Err("场景不存在".into())}if let Some(options)=v.get("generation_options"){tx.execute("INSERT INTO scene_options VALUES(?,?) ON CONFLICT(scene_id) DO UPDATE SET value=excluded.value",params![id,options.to_string()]).map_err(|e|e.to_string())?;}tx.commit().map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
@@ -831,6 +850,24 @@ mod native_video_tests {
 #[cfg(test)]
 mod script_edit_tests {
  use super::*;
+ #[test]
+ fn insert_scene_before_and_after_preserves_order() {
+  let root=std::env::temp_dir().join(format!("spielberg-insert-test-{}",Uuid::new_v4()));
+  storage::initialize_root(&root).unwrap();
+  let state=AppState{root:root.clone(),guard:std::sync::Arc::new(Mutex::new(()))};
+  let project=create_project(&state,&json!({"name":"Insert fixture"})).unwrap();let pid=project["id"].as_str().unwrap();
+  let ep=insert_episode(&state,&json!({"project_id":pid,"title":"Episode"})).unwrap();
+  let first=insert_scene(&state,&json!({"project_id":pid,"episode_id":ep["id"],"title":"first"})).unwrap();
+  let last=insert_scene(&state,&json!({"project_id":pid,"episode_id":ep["id"],"title":"last"})).unwrap();
+  let before=insert_scene(&state,&json!({"project_id":pid,"episode_id":ep["id"],"title":"before","anchor_scene_id":first["id"],"position":"before"})).unwrap();
+  let after=insert_scene(&state,&json!({"project_id":pid,"episode_id":ep["id"],"title":"after","anchor_scene_id":first["id"],"position":"after"})).unwrap();
+  let c=db(&state,pid).unwrap();let mut q=c.prepare("SELECT id,sort_order FROM scenes ORDER BY sort_order,id").unwrap();
+  let rows=q.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,i64>(1)?))).unwrap().collect::<Result<Vec<_>,_>>().unwrap();
+  assert_eq!(rows,vec![(before["id"].as_i64().unwrap(),0),(first["id"].as_i64().unwrap(),1),(after["id"].as_i64().unwrap(),2),(last["id"].as_i64().unwrap(),3)]);
+  assert!(insert_scene(&state,&json!({"project_id":pid,"episode_id":ep["id"],"title":"invalid","anchor_scene_id":99999,"position":"before"})).is_err());
+  drop(q);drop(c);fs::remove_dir_all(root).unwrap();
+ }
+
  #[test]
  fn duplicate_scene_preserves_content_without_videos() {
   let root=std::env::temp_dir().join(format!("spielberg-copy-test-{}",Uuid::new_v4()));
