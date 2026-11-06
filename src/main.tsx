@@ -530,7 +530,7 @@ function App() {
         {(
           <FloatingImageGenerator showButton={!!((sceneEditing && sceneEditing.scene.creation_mode !== "canvas") || page === "roles")} key={`floating-generator:${data.project.id}`} data={data} reload={refresh} />
         )}
-        {agentFloat.visible && <AgentFloatButton appearance={agentFloat} key={`agent-float:${data.project.id}`} project={data.project} reload={refresh} onSettings={() => navigate("settings")} onOpenSession={sessionId => navigate("agent", () => {
+        {agentFloat.visible && <AgentFloatButton appearance={agentFloat} modelSettings={data.settings} key={`agent-float:${data.project.id}`} project={data.project} reload={refresh} onSettings={() => navigate("settings")} onOpenSession={sessionId => navigate("agent", () => {
           localStorage.setItem(`spielberg-agent-session-${data.project.id}`, sessionId);
           setAgentViewVersion(value => value + 1);
         })} />}

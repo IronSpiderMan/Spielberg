@@ -96,7 +96,14 @@ fn request(config: &Value, v: &Value) -> Result<(String, Value, String), String>
     Ok((endpoint, body, format))
 }
 
-pub(super) fn generate(s: &AppState, v: &Value) -> Result<Value, String> {
+struct SynthesizedAudio {
+    bytes: Vec<u8>,
+    format: String,
+    channel_id: Value,
+    model: Value,
+}
+
+fn synthesize_audio(s: &AppState, v: &Value) -> Result<SynthesizedAudio, String> {
     let pid = project_id(v)?;
     let c = db(s, &pid)?;
     let raw: Option<String> = c.query_row("SELECT value FROM settings WHERE key='models'", [], |r| r.get(0)).optional().map_err(|e| e.to_string())?;
@@ -111,7 +118,26 @@ pub(super) fn generate(s: &AppState, v: &Value) -> Result<Value, String> {
     let response = req.send().map_err(|e| generation_http::request_error_for(&e, &url, "语音合成"))?;
     let bytes = audio_bytes(response, &config, key)?;
     let valid = if format == "wav" {bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WAVE")} else {bytes.starts_with(b"ID3") || (bytes.first() == Some(&0xff) && bytes.get(1).is_some_and(|b| b & 0xe0 == 0xe0))};
-    if !valid {return Err("服务返回了空文件或无效音频，未保存到素材库".into())}
+    if !valid {return Err("服务返回了空文件或无效音频".into())}
+    Ok(SynthesizedAudio { bytes, format, channel_id: config["_channel_id"].clone(), model: config["model"].clone() })
+}
+
+// Assistant read-aloud is ephemeral: it shares provider validation with generation,
+// but does not add a media file, background job, or project revision.
+pub(super) fn synthesize(s: &AppState, v: &Value) -> Result<Value, String> {
+    let audio = synthesize_audio(s, v)?;
+    let mime = if audio.format == "wav" { "audio/wav" } else { "audio/mpeg" };
+    Ok(json!({
+        "audio_data_url": format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(audio.bytes)),
+        "channel_id": audio.channel_id,
+        "model": audio.model,
+    }))
+}
+
+pub(super) fn generate(s: &AppState, v: &Value) -> Result<Value, String> {
+    let pid = project_id(v)?;
+    let SynthesizedAudio { bytes, format, .. } = synthesize_audio(s, v)?;
+    let c = db(s, &pid)?;
     let dir = PathBuf::from(strv(&project(s, &pid)?, "path")?).join("assets/audios");
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let out = dir.join(format!("{}.{format}", Uuid::new_v4()));
@@ -153,6 +179,18 @@ mod tests {
         fn run(&self, mut v: Value) -> Result<Value, String> {
             v["project_id"] = json!(self.pid);
             rest::action(&self.state, "/generations/tts", v).map_err(|e| format!("{e:?}"))
+        }
+        fn speak(&self, mut v: Value) -> Result<Value, String> {
+            v["project_id"] = json!(self.pid);
+            rest::action(&self.state, "/speech/synthesize", v).map_err(|e| format!("{e:?}"))
+        }
+        fn assert_no_speech_artifacts(&self) {
+            let c = db(&self.state, &self.pid).unwrap();
+            for table in ["media", "background_jobs"] {
+                assert_eq!(c.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+            }
+            let directory = PathBuf::from(project(&self.state, &self.pid).unwrap()["path"].as_str().unwrap()).join("assets/audios");
+            assert_eq!(fs::read_dir(directory).map(|entries| entries.count()).unwrap_or(0), 0);
         }
     }
     impl Drop for Fixture {fn drop(&mut self) {let _ = fs::remove_dir_all(&self.state.root);}}
@@ -217,6 +255,57 @@ mod tests {
             assert_eq!(media(&c, result["id"].as_i64()).unwrap(), result);
             let (status, prompt): (String, String) = c.query_row("SELECT status,prompt FROM background_jobs ORDER BY id DESC LIMIT 1", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
             assert_eq!(status, "completed");assert_eq!(prompt, "你好，世界。");
+        }
+    }
+
+    #[test]
+    fn speech_synthesis_routes_explicit_selection_without_saving_media_or_jobs() {
+        let f = Fixture::new();
+        for format in ["mp3", "wav"] {
+            let audio = if format == "mp3" { b"ID3fixture".to_vec() } else { b"RIFFxxxxWAVEfixture".to_vec() };
+            let (base, worker) = server(200, "application/octet-stream", audio.clone());
+            let settings = json!({"tts":{"default_channel_id":"unused","channels":[
+                {"id":"unused","name":"Unused","provider":"openai","base_url":"http://127.0.0.1:9","models":[{"id":"unused","profile":"openai-tts"}]},
+                {"id":"selected","name":"Selected","provider":"openai","base_url":base,"api_key":"fixture-selected","default_model_id":"default-model","models":[
+                    {"id":"default-model","profile":"openai-tts"},{"id":"selected-model","profile":"openai-tts"}
+                ]}
+            ]}});
+            save_settings(&f.state, &json!({"project_id":f.pid,"settings":settings})).unwrap();
+            let revisions = snapshot(&f.state, &f.pid).unwrap()["revisions"].clone();
+            let result = f.speak(json!({"text":"回复朗读。","channel_id":"selected","model":"selected-model","voice":"yunxi","speed":1.2,"format":format})).unwrap();
+            let mime = if format == "wav" { "audio/wav" } else { "audio/mpeg" };
+            assert_eq!(result, json!({
+                "audio_data_url":format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(audio)),
+                "channel_id":"selected","model":"selected-model"
+            }));
+            let (headers, body) = worker.join().unwrap();
+            assert!(headers.starts_with("POST /v1/audio/speech "));
+            assert!(headers.contains("Bearer fixture-selected"));
+            assert_eq!(body, json!({"model":"selected-model","input":"回复朗读。","voice":"yunxi","response_format":format,"speed":1.2}));
+            f.assert_no_speech_artifacts();
+            assert_eq!(snapshot(&f.state, &f.pid).unwrap()["revisions"], revisions);
+        }
+    }
+
+    #[test]
+    fn speech_synthesis_rejects_missing_selection_and_invalid_audio_without_side_effects() {
+        let f = Fixture::new();
+        let error = f.speak(json!({"text":"没有配置"})).unwrap_err();
+        assert!(!error.contains("请求失败"));
+        f.assert_no_speech_artifacts();
+        f.configure("http://127.0.0.1:9");
+        for payload in [json!({"text":"ok","channel_id":"deleted"}), json!({"text":"ok","model":"deleted"}), json!({"text":"ok","speed":0})] {
+            let error = f.speak(payload).unwrap_err();
+            assert!(!error.contains("请求失败"), "{error}");
+            f.assert_no_speech_artifacts();
+        }
+        for bytes in [vec![], b"not audio".to_vec()] {
+            let (base, worker) = server(200, "audio/mpeg", bytes);
+            f.configure(&base);
+            let error = f.speak(json!({"text":"这段朗读失败"})).unwrap_err();
+            assert!(error.contains("无效音频"));
+            worker.join().unwrap();
+            f.assert_no_speech_artifacts();
         }
     }
 

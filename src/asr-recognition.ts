@@ -1,9 +1,10 @@
 import { post } from "./core";
 import type { SpeechRecognitionCallbacks, SpeechRecognitionControl } from "./speech-recognition";
+import type { GenerationSelection } from "./generation-channels";
 
-/** Records mono WAV and transcribes through the project's default ASR channel. */
+/** Records mono WAV and transcribes through the selected project ASR channel. */
 export async function startSpeechRecognition(callbacks: SpeechRecognitionCallbacks, options: {
-  projectId: string; signal?: AbortSignal; onFinishing?: () => void;
+  projectId: string; signal?: AbortSignal; onFinishing?: () => void; selection?: GenerationSelection;
 }): Promise<SpeechRecognitionControl> {
   const { signal } = options;
   const aborted = () => new DOMException("语音识别已取消", "AbortError");
@@ -47,7 +48,7 @@ export async function startSpeechRecognition(callbacks: SpeechRecognitionCallbac
     const reader = new FileReader();
     reader.onload = () => {
       if (cancelled) return;
-      void post<{text:string}>("/speech/transcribe",{project_id:options.projectId,audio_data_url:reader.result}).then(result => {
+      void post<{text:string}>("/speech/transcribe",{project_id:options.projectId,audio_data_url:reader.result,...options.selection}).then(result => {
         if (cancelled) return;
         callbacks.onResult(result.text,true); callbacks.onEnd();
       }).catch(e => {if (!cancelled) callbacks.onError(e instanceof Error ? e.message : String(e));})

@@ -1,14 +1,16 @@
-import { useEffect, useRef, useState } from "react";
-import { Button, Form, Input, Message, Slider, Space, Switch } from "@arco-design/web-react";
-import { AlertCircle, Check, FolderOpen, Image, LoaderCircle, MessageSquare, Mic, Save, Sparkles, Video } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Button, Form, Input, InputNumber, Message, Slider, Space, Switch } from "@arco-design/web-react";
+import { AlertCircle, Check, FolderOpen, Image, LoaderCircle, MessageSquare, Mic, Save, Sparkles, Square, Video, Volume2 } from "lucide-react";
 import { type ModelSettings, type Snapshot, post } from "./core";
 import { useEditGuard } from "./edit-guard";
-import { type GenerationKind } from "./generation-channels";
+import { generationChoice, type GenerationKind } from "./generation-channels";
 import { GenerationChannelsSettings } from "./GenerationChannelsSettings";
+import { GenerationSelector } from "./components/generation/GenerationSelector";
 import { SkillsSettings } from "./SkillsSettings";
 import { open } from "./platform";
 import { isLocalDesktop } from "./transport";
-import { agentFloatColors, type AgentFloatPreferences } from "./agent-float-preferences";
+import { agentFloatColors, useAgentFloatSpeechPreferences, type AgentFloatPreferences } from "./agent-float-preferences";
+import { useAgentReplySpeech } from "./agent-reply-speech";
 import "./settings.css";
 
 const categories = [
@@ -29,9 +31,17 @@ export default function SettingsPage({ data, reload, agentFloat, onAgentFloatCha
   agentFloat: AgentFloatPreferences; onAgentFloatChange: (value: AgentFloatPreferences) => void;
 }) {
   const [category, setCategory] = useState<Category>("llm");
+  const [agentSection, setAgentSection] = useState<"speech" | "appearance">("speech");
+  const pageRef = useRef<HTMLElement>(null);
+  const agentScrollRef = useRef<HTMLDivElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
   const [skillsVisited, setSkillsVisited] = useState(false);
   const [settings, setSettings] = useState<ModelSettings>({ ...data.settings });
+  const [agentSpeech, setAgentSpeech] = useAgentFloatSpeechPreferences(data.project.id);
+  const asrChoice = generationChoice(data.settings, "asr", agentSpeech.asr, "asr");
+  const ttsChoice = generationChoice(data.settings, "tts", agentSpeech.tts, "tts");
+  const speechPreview = useAgentReplySpeech(data.project.id, agentSpeech, data.settings);
+  const previewActive = speechPreview.state !== "idle";
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -56,6 +66,14 @@ export default function SettingsPage({ data, reload, agentFloat, onAgentFloatCha
     finally { setLoadingDirectory(false); }
   };
   useEffect(() => { void loadDirectory(); }, []);
+  useEffect(() => { speechPreview.stop(); }, [category, agentSection, data.project.id, agentSpeech, speechPreview.stop]);
+  useEffect(() => { setAgentSection("speech"); }, [data.project.id]);
+  useLayoutEffect(() => {
+    // Each category starts at its heading, including nested channel editors.
+    pageRef.current?.querySelectorAll<HTMLElement>(".studio-settings-panel, .settings-channel-editor-scroll, .settings-channel-list").forEach(element => { element.scrollTop = 0; });
+    if (agentScrollRef.current) agentScrollRef.current.scrollTop = 0;
+  }, [category, data.project.id]);
+  useLayoutEffect(() => { if (agentScrollRef.current) agentScrollRef.current.scrollTop = 0; }, [agentSection]);
   useEffect(() => { if (!dirty) setSettings({ ...data.settings }); }, [data.settings, dirty]);
   useEffect(() => {
     const tabs = tabsRef.current;
@@ -106,12 +124,14 @@ export default function SettingsPage({ data, reload, agentFloat, onAgentFloatCha
     finally { savingRef.current = false; setSaving(false); }
   };
   const selectCategory = (next: Category) => {
+    speechPreview.stop();
+    if (next === "agent-float" && category !== "agent-float") setAgentSection("speech");
     setCategory(next);
     if (next === "skills") setSkillsVisited(true);
   };
   const changed = (kind: GenerationKind) => dirty && JSON.stringify(settings[kind]) !== JSON.stringify(data.settings[kind]);
 
-  return <section className="studio-settings-page">
+  return <section ref={pageRef} className="studio-settings-page">
     <div className="section-title page-actions settings-page-heading">
       <div className="page-intro"><h1>工作室设置</h1><p>管理 AI 创作服务与工作室偏好。</p></div>
       <div className="settings-save-actions">
@@ -131,33 +151,104 @@ export default function SettingsPage({ data, reload, agentFloat, onAgentFloatCha
       <GenerationChannelsSettings kind={kind} settings={settings} disabled={saving} onChange={next => { setSettings(next); setDirty(true); }} />
     </div>)}
     <div id="settings-panel-skills" role="tabpanel" aria-labelledby="settings-tab-skills" className="studio-settings-panel settings-shared-panel" hidden={category !== "skills"}>{skillsVisited && <SkillsSettings />}</div>
-    <div id="settings-panel-agent-float" role="tabpanel" aria-labelledby="settings-tab-agent-float" className="studio-settings-panel settings-shared-panel" hidden={category !== "agent-float"}>
-      <div className="settings-shared-section">
-        <div className="setting-heading">
-          <div className="settings-panel-title"><h3>Agent 悬浮按钮</h3><span className="settings-scope">本机偏好</span></div>
-          <p>更改即时生效，并自动保存在当前客户端。</p>
+    <div id="settings-panel-agent-float" role="tabpanel" aria-labelledby="settings-tab-agent-float" className="studio-settings-panel settings-agent-panel" hidden={category !== "agent-float"}>
+      <div className="settings-agent-navigation">
+        <div className="settings-agent-subtabs" role="tablist" aria-label="浮标设置分组" onKeyDown={event => {
+          if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+          event.preventDefault();
+          const next = event.key === "Home" ? "speech" : event.key === "End" ? "appearance" : agentSection === "speech" ? "appearance" : "speech";
+          setAgentSection(next);
+          event.currentTarget.querySelector<HTMLButtonElement>(`[data-section="${next}"]`)?.focus();
+        }}>
+          {([{ id: "speech", label: "语音服务", icon: Volume2 }, { id: "appearance", label: "浮标与交互", icon: Sparkles }] as const).map(({ id, label, icon: Icon }) =>
+            <button key={id} type="button" id={`agent-settings-tab-${id}`} role="tab" data-section={id} aria-selected={agentSection === id} aria-controls={`agent-settings-${id}`} tabIndex={agentSection === id ? 0 : -1} onClick={() => setAgentSection(id)}><Icon size={15} />{label}</button>
+          )}
         </div>
-        <Form layout="vertical" className="settings-agent-float-form">
-          <Form.Item label="显示悬浮按钮">
-            <Switch aria-label="显示悬浮按钮" checked={agentFloat.visible} onChange={visible => onAgentFloatChange({ ...agentFloat, visible })} />
-          </Form.Item>
-          <Form.Item label="按钮颜色">
-            <div className="settings-agent-float-colors" role="radiogroup" aria-label="按钮颜色">
-              {(Object.keys(agentFloatColors) as AgentFloatPreferences["color"][]).map(color => (
-                <label key={color} className="settings-agent-float-color" data-color={color}>
-                  <input type="radio" name="agent-float-color" value={color} checked={agentFloat.color === color}
-                    onChange={() => onAgentFloatChange({ ...agentFloat, color })} />
-                  <span className="settings-agent-float-swatch" aria-hidden="true"><Check size={16} /></span>
-                  <span>{agentFloatColors[color]}</span>
-                </label>
-              ))}
-            </div>
-          </Form.Item>
-          <Form.Item label={`动态强度 · ${agentFloat.intensity}%`} extra="0% 为静态，100% 为默认强度。">
-            <Slider aria-label="动态强度" min={0} max={200} step={5} value={agentFloat.intensity}
-              onChange={intensity => onAgentFloatChange({ ...agentFloat, intensity: Number(intensity) })} />
-          </Form.Item>
-        </Form>
+        <span className="settings-agent-autosave"><Check size={13} />更改自动保存</span>
+      </div>
+      <div ref={agentScrollRef} className="settings-agent-body">
+        <section id="agent-settings-speech" role="tabpanel" aria-labelledby="agent-settings-tab-speech" className="settings-agent-subpanel" hidden={agentSection !== "speech"}>
+          <div className="settings-agent-section-intro"><h3>语音服务</h3><p>按当前项目保存在本机。项目渠道需先配置并保存，再在这里选择。</p></div>
+          <div className="settings-agent-speech-grid">
+            <section className="settings-agent-speech-card" aria-label="浮标 ASR 设置">
+              <header className="settings-agent-card-heading"><Mic size={18} /><div><h4>语音识别 ASR</h4><p>把你的语音转为指令</p></div></header>
+              <div className="settings-agent-card-body">
+                <div className="settings-agent-field"><span>识别方式</span><div className="settings-agent-float-actions" role="radiogroup" aria-label="ASR 识别方式">
+                  {([{ value: "system", label: "系统识别" }, { value: "cloud", label: "项目 ASR 渠道" }] as const).map(option => (
+                    <label key={option.value}><input type="radio" name="agent-float-asr-provider" value={option.value} checked={agentSpeech.asr.provider === option.value}
+                      onChange={() => setAgentSpeech({ ...agentSpeech, asr: { ...agentSpeech.asr, provider: option.value } })} /><span>{option.label}</span></label>
+                  ))}
+                </div></div>
+                {agentSpeech.asr.provider === "cloud" ? <div className="settings-agent-field"><span>渠道与模型</span><div className="settings-agent-field-content">
+                  <GenerationSelector compact settings={data.settings} kind="asr" operation="asr" value={agentSpeech.asr}
+                    onChange={next => setAgentSpeech({ ...agentSpeech, asr: { ...agentSpeech.asr, ...next } })} />
+                  {!asrChoice ? <div className="settings-agent-speech-notice" role="status"><p>{agentSpeech.asr.channel_id || agentSpeech.asr.model ? "所选 ASR 渠道或模型已不可用，请重新选择。" : "还没有可用的 ASR 渠道和模型。"}</p><Button size="small" type="text" onClick={() => selectCategory("asr")}>配置语音识别渠道</Button></div>
+                    : <p className="settings-agent-speech-hint">{!agentSpeech.asr.channel_id && !agentSpeech.asr.model ? "使用项目已保存的默认渠道和模型。" : "使用所选渠道识别录音。"}</p>}
+                </div></div> : <p className="settings-agent-speech-hint">使用系统中文识别，无需配置渠道；首次使用需授权麦克风与语音识别。</p>}
+              </div>
+            </section>
+            <section className="settings-agent-speech-card" aria-label="浮标 TTS 设置">
+              <header className="settings-agent-card-heading"><Volume2 size={18} /><div><h4>回复朗读 TTS</h4><p>用选定声音朗读回复</p></div></header>
+              <div className="settings-agent-card-body">
+                <div className="settings-agent-field"><span>朗读方式</span><div className="settings-agent-float-actions" role="radiogroup" aria-label="TTS 朗读方式">
+                  {([{ value: "system", label: "系统朗读" }, { value: "cloud", label: "项目 TTS 渠道" }] as const).map(option => (
+                    <label key={option.value}><input type="radio" name="agent-float-tts-provider" value={option.value} checked={agentSpeech.tts.provider === option.value}
+                      onChange={() => setAgentSpeech({ ...agentSpeech, tts: { ...agentSpeech.tts, provider: option.value } })} /><span>{option.label}</span></label>
+                  ))}
+                </div></div>
+                {agentSpeech.tts.provider === "cloud" && <div className="settings-agent-field"><span>渠道与模型</span><div className="settings-agent-field-content">
+                  <GenerationSelector compact settings={data.settings} kind="tts" operation="tts" value={agentSpeech.tts}
+                    onChange={next => setAgentSpeech({ ...agentSpeech, tts: { ...agentSpeech.tts, ...next, voice: "", speed: 1 } })} />
+                  {!ttsChoice ? <div className="settings-agent-speech-notice" role="status"><p>{agentSpeech.tts.channel_id || agentSpeech.tts.model ? "所选 TTS 渠道或模型已不可用，请重新选择。" : "还没有可用的 TTS 渠道和模型。"}</p><Button size="small" type="text" onClick={() => selectCategory("tts")}>配置语音合成渠道</Button></div>
+                    : !agentSpeech.tts.channel_id && !agentSpeech.tts.model && <p className="settings-agent-speech-hint">使用项目已保存的默认渠道和模型。</p>}
+                </div></div>}
+                <div className="settings-agent-voice-fields">
+                  {agentSpeech.tts.provider === "cloud" ? <label><span>音色 ID</span><Input aria-label="TTS 音色 ID" value={agentSpeech.tts.voice} maxLength={256} disabled={!ttsChoice}
+                    placeholder={ttsChoice?.capabilities.default_voice || "模型默认音色"} onChange={voice => setAgentSpeech({ ...agentSpeech, tts: { ...agentSpeech.tts, voice } })} /><small>留空使用模型默认音色。</small></label>
+                    : <div><span>音色</span><p className="settings-agent-system-voice">系统默认中文音色</p></div>}
+                  {(agentSpeech.tts.provider === "system" || ttsChoice?.capabilities.speed) ? <label><span>语速</span><InputNumber aria-label="TTS 语速" min={0.25} max={4} step={0.05} suffix="×" value={agentSpeech.tts.speed}
+                    onChange={speed => setAgentSpeech({ ...agentSpeech, tts: { ...agentSpeech.tts, speed: Number(speed) } })} /><small>1× 为正常语速。</small></label>
+                    : <div><span>语速</span><p className="settings-agent-system-voice">{ttsChoice ? "模型固定语速" : "选择模型后显示"}</p></div>}
+                </div>
+                <div className="settings-agent-switch-row"><div><strong>自动朗读 Agent 回复</strong><p>回复完成后播放，也可在浮标里手动朗读。</p></div><Switch aria-label="自动朗读 Agent 回复" checked={agentSpeech.autoRead} onChange={autoRead => setAgentSpeech({ ...agentSpeech, autoRead })} /></div>
+                <div className="settings-agent-preview-row">
+                  <Button type={previewActive ? "default" : "primary"} icon={previewActive ? <Square size={13} /> : <Volume2 size={15} />} aria-label={previewActive ? "停止试听" : "试听声音"} disabled={!previewActive && agentSpeech.tts.provider === "cloud" && !ttsChoice} onClick={() => {
+                    if (previewActive) speechPreview.stop();
+                    else if (category === "agent-float" && agentSection === "speech") void speechPreview.play("你好，我是你的创作助手。");
+                  }}>{previewActive ? "停止试听" : "试听声音"}</Button>
+                  <span role="status">{speechPreview.state === "loading" ? "正在生成试听…" : speechPreview.state === "speaking" ? "正在播放试听" : "先试听，确认渠道和音色可用。"}</span>
+                </div>
+                {speechPreview.error && <div className="settings-agent-preview-error" role="alert"><AlertCircle size={15} /><div><strong>试听未成功</strong><p>{speechPreview.error.replace(/朗读回复/g, "试听声音")}</p></div></div>}
+              </div>
+            </section>
+          </div>
+        </section>
+        <section id="agent-settings-appearance" role="tabpanel" aria-labelledby="agent-settings-tab-appearance" className="settings-agent-subpanel" hidden={agentSection !== "appearance"}>
+          <div className="settings-agent-section-intro"><h3>浮标与交互</h3><p>外观和操作习惯应用于本机的所有项目。</p></div>
+          <div className="settings-agent-appearance-grid">
+            <section className="settings-agent-preference-card" aria-label="浮标交互设置"><h4>交互方式</h4>
+              <Form layout="vertical" className="settings-agent-float-form">
+                <div className="settings-agent-switch-row"><div><strong>显示悬浮按钮</strong><p>在各个工作页面快速打开 Agent。</p></div><Switch aria-label="显示悬浮按钮" checked={agentFloat.visible} onChange={visible => onAgentFloatChange({ ...agentFloat, visible })} /></div>
+                <Form.Item label="点击浮标时" extra="展开对话后，也可点击麦克风说话。"><div className="settings-agent-float-actions" role="radiogroup" aria-label="点击浮标时">
+                  {([{ value: "panel", label: "展开对话" }, { value: "voice", label: "开始语音" }] as const).map(action => <label key={action.value}><input type="radio" name="agent-float-click-action" value={action.value} checked={agentFloat.clickAction === action.value} onChange={() => onAgentFloatChange({ ...agentFloat, clickAction: action.value })} /><span>{action.label}</span></label>)}
+                </div></Form.Item>
+                <div className="settings-agent-switch-row"><div><strong>语音识别后自动发送</strong><p>关闭时先校对文字，开启后说完即执行。</p></div><Switch aria-label="语音识别后自动发送" checked={agentFloat.speechAutoSend} onChange={speechAutoSend => onAgentFloatChange({ ...agentFloat, speechAutoSend })} /></div>
+                <div className="settings-agent-switch-row"><div><strong>浮标位置</strong><p>拖动后自动贴边，位置保存在本机。</p></div><Button size="small" onClick={() => {
+                  try { localStorage.removeItem("spielberg-agent-float-position"); } catch { /* Private browsing may disable persistence. */ }
+                  window.dispatchEvent(new Event("spielberg-agent-float-reset-position"));
+                }}>重置到右下角</Button></div>
+              </Form>
+            </section>
+            <section className="settings-agent-preference-card" aria-label="浮标外观设置"><h4>外观</h4>
+              <Form layout="vertical" className="settings-agent-float-form">
+                <Form.Item label="按钮颜色"><div className="settings-agent-float-colors" role="radiogroup" aria-label="按钮颜色">
+                  {(Object.keys(agentFloatColors) as AgentFloatPreferences["color"][]).map(color => <label key={color} className="settings-agent-float-color" data-color={color}><input type="radio" name="agent-float-color" value={color} checked={agentFloat.color === color} onChange={() => onAgentFloatChange({ ...agentFloat, color })} /><span className="settings-agent-float-swatch" aria-hidden="true"><Check size={16} /></span><span>{agentFloatColors[color]}</span></label>)}
+                </div></Form.Item>
+                <Form.Item label={`动态强度 · ${agentFloat.intensity}%`} extra="0% 为静态，100% 为默认强度。"><Slider aria-label="动态强度" min={0} max={200} step={5} value={agentFloat.intensity} onChange={intensity => onAgentFloatChange({ ...agentFloat, intensity: Number(intensity) })} /></Form.Item>
+              </Form>
+            </section>
+          </div>
+        </section>
       </div>
     </div>
     <div id="settings-panel-storage" role="tabpanel" aria-labelledby="settings-tab-storage" className="studio-settings-panel settings-shared-panel" hidden={category !== "storage"}>
