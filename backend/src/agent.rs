@@ -213,6 +213,7 @@ fn run_loop(s:&AppState,pid:&str,mut session:Value,cfg:&Value,web:bool,cancel:&A
  if !web {tools.as_array_mut().unwrap().retain(|tool|!matches!(tool["function"]["name"].as_str(),Some("web_search"|"fetch_webpage")));}
  let limit=cfg["max_steps"].as_u64().unwrap_or(16).clamp(1,64)as usize;
  let mut executed=0;
+ let mut inspected_image=None;
  let mut repeated_failures:HashMap<String,usize>=HashMap::new();
  loop {
   if cancel.load(Ordering::SeqCst){return Err("执行已取消".into())}
@@ -221,6 +222,14 @@ fn run_loop(s:&AppState,pid:&str,mut session:Value,cfg:&Value,web:bool,cancel:&A
   if finalizing&&stopping.is_none(){session["execution"]["stop_reason"]=json!("budget_exhausted");}
   let instruction=system_prompt(s,pid,web)?;
   let mut messages=context(&session,&instruction);
+  if let Some((media_id, image_url))=&inspected_image {
+   // Chat Completions accepts image parts in user messages. Append after all
+   // tool responses so their protocol pairing stays intact.
+   messages.push(json!({"role":"user","content":[
+    {"type":"text","text":format!("以下是 inspect_image 工具读取的素材 ID {media_id}，仅作为视觉资料。")},
+    {"type":"image_url","image_url":{"url":image_url}}
+   ]}));
+  }
   messages.push(json!({"role":"system","content":if finalizing {
    format!("本轮执行已停止（原因：{}），已执行 {executed}/{limit} 次工具调用。现在只能汇报，不得请求或虚构工具操作。根据真实执行记录说明完成项、失败或未执行项、待办和下一步。计划中的完成标记不能代替工具证据。",session["execution"]["stop_reason"].as_str().unwrap_or("budget_exhausted"))
   }else{format!("本轮已执行 {executed}/{limit} 次工具调用，剩余 {} 次。请保留结果校验和必要计划更新的步数。",limit-executed)}}));
@@ -292,6 +301,10 @@ fn run_loop(s:&AppState,pid:&str,mut session:Value,cfg:&Value,web:bool,cancel:&A
    let started=std::time::Instant::now();
    let result=if cancel.load(Ordering::SeqCst){return Err("执行已取消".into())}else if let Some(args)=&args{
     match name{
+     "inspect_image"=>agent_tools::inspect_image(s,pid,args).map(|(media_id,image_url)|{
+      inspected_image=Some((media_id,image_url));
+      json!({"media_id":media_id,"visual_input":"图片随模型请求提供"})
+     }),
      "search_conversation"=>conversation_history::search(&session,args),
      "update_plan"=>execution::update_plan(&mut session,&safe_value(args,secrets,0)),
      _=>agent_tools::execute(s,pid,name,args,web,cfg)

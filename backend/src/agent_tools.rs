@@ -40,6 +40,9 @@ pub(super) fn definitions() -> Value {
             "id":{"type":"string"},"path":{"type":"string","description":"Optional relative file path; defaults to SKILL.md"},
             "offset":{"type":"integer","minimum":0},"max_chars":{"type":"integer","minimum":1,"maximum":10000,"description":"Character ceiling per page. A byte budget may return fewer; always follow next_offset."}
         }), &["id"]),
+        tool("inspect_image", "View an existing image in the current project media library by media ID, including images returned by generations/image. Call this when asked to analyze a media image or visually verify a generated result. The image is provided as visual input on the next model request. Use the same media ID for image-to-image edits.", json!({
+            "media_id":{"type":"integer","minimum":1}
+        }), &["media_id"]),
         tool("app_describe", "Get exact resource fields and action payload formats. Call this before unfamiliar operations; operation optionally selects a resource or action.", json!({"operation":{"type":"string"}}), &[]),
         tool("app_request", "CRUD in the current project. resource=assets means creative assets (资产库), including all six categories; resource=media means media files (素材库). Call app_describe for exact fields/filters. GET reads, POST creates, PATCH changes only supplied fields. To disable a creative asset PATCH assets.enabled=false; DELETE assets removes its record and associations but retains media files. DELETE media moves an unused media file to recycle bin and rejects referenced files. Use current-project IDs of the correct resource type.", json!({
             "resource":{"type":"string","enum":RESOURCES,"description":"assets=创作资产; media=图片/视频/音频素材; other values are project resources."},"method":{"type":"string","enum":["GET","POST","PATCH","DELETE"]},
@@ -76,6 +79,45 @@ fn scoped_data(pid: &str, args: &Value) -> Result<Value, String> {
     if !data.is_object(){return Err("data 必须是对象".into())}
     data["project_id"]=json!(pid);
     Ok(data)
+}
+
+pub(super) fn inspect_image(state: &AppState, pid: &str, args: &Value) -> Result<(i64, String), String> {
+    use base64::Engine;
+    let id = intv(args, "media_id")?;
+    let (path, root) = {
+        let _lock = state.guard.lock().map_err(|_| "数据锁不可用")?;
+        let root = PathBuf::from(strv(&project(state, pid)?, "path")?);
+        let item = media(&db(state, pid)?, Some(id)).ok_or("当前项目中找不到该素材")?;
+        if item["kind"] != "image" { return Err("该素材不是图片".into()); }
+        (PathBuf::from(strv(&item, "path")?), root)
+    };
+    let root = root.canonicalize().map_err(|_| "无法读取项目目录")?;
+    let path = path.canonicalize().map_err(|_| "无法读取素材文件")?;
+    if !path.starts_with(root) || !path.is_file() {
+        return Err("图片素材必须是当前项目目录内的文件".into());
+    }
+    let max_bytes = 2 * 1024 * 1024;
+    let (mime, bytes) = if svg::is_svg(&path) {
+        let mut source = Vec::new();
+        fs::File::open(&path).and_then(|file| file.take(max_bytes + 1).read_to_end(&mut source))
+            .map_err(|_| "无法读取 SVG 素材")?;
+        if source.len() as u64 > max_bytes { return Err("SVG 素材超过 2 MB".into()); }
+        ("png", svg::render_png(&source, 1024)?)
+    } else {
+        let binary = if Path::new("/opt/homebrew/bin/ffmpeg").exists() { "/opt/homebrew/bin/ffmpeg" } else { "ffmpeg" };
+        let output = background_command(binary)
+            .args(["-nostdin", "-v", "error", "-protocol_whitelist", "file,pipe",
+                   "-f", "image2", "-pattern_type", "none", "-i"]).arg(&path)
+            .args(["-vf", "scale='min(1536,iw)':'min(1536,ih)':force_original_aspect_ratio=decrease",
+                   "-frames:v", "1", "-threads", "1", "-q:v", "3", "-c:v", "mjpeg", "-f", "image2pipe", "pipe:1"])
+            .output().map_err(|_| "查看图片需要 FFmpeg")?;
+        if !output.status.success() { return Err("无法解码该图片素材".into()); }
+        ("jpeg", output.stdout)
+    };
+    if bytes.is_empty() || bytes.len() as u64 > max_bytes {
+        return Err("图片预览为空或超过 2 MB".into());
+    }
+    Ok((id, format!("data:image/{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes))))
 }
 
 pub(super) fn execute(state: &AppState, pid: &str, name: &str, args: &Value, web_enabled: bool, config: &Value) -> Result<Value,String> {
@@ -568,8 +610,29 @@ mod tests {
     impl Drop for Fixture {fn drop(&mut self){let _=fs::remove_dir_all(&self.state.root);}}
 
     #[test]
+    fn inspects_project_image_pixels_and_rejects_outside_paths() {
+        let f = Fixture::new();
+        let project = project(&f.state, &f.first).unwrap();
+        let path = Path::new(project["path"].as_str().unwrap()).join("preview.svg");
+        fs::write(&path, r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="red"/></svg>"#).unwrap();
+        let c = db(&f.state, &f.first).unwrap();
+        c.execute("INSERT INTO media(name,path,kind,created_at) VALUES('preview',?,'image','now')", [path.to_str().unwrap()]).unwrap();
+        let id = c.last_insert_rowid();
+        let args = json!({"media_id":id});
+        let (returned_id, url) = inspect_image(&f.state, &f.first, &args).unwrap();
+        assert_eq!(returned_id, id);
+        assert!(url.starts_with("data:image/png;base64,iVBOR"));
+        assert!(inspect_image(&f.state, &f.second, &args).is_err());
+
+        let outside = f.state.root.join("outside.svg");
+        fs::copy(path, &outside).unwrap();
+        c.execute("UPDATE media SET path=? WHERE id=?", params![outside.to_str().unwrap(), id]).unwrap();
+        assert!(inspect_image(&f.state, &f.first, &args).is_err());
+    }
+
+    #[test]
     fn tool_schema_and_catalog_are_consistent() {
-        let defs=definitions();let defs=defs.as_array().unwrap();assert_eq!(defs.len(),10);
+        let defs=definitions();let defs=defs.as_array().unwrap();assert_eq!(defs.len(),11);
         let request=defs.iter().find(|v|v["function"]["name"]=="app_request").unwrap();
         assert_eq!(request.pointer("/function/parameters/properties/resource/enum").unwrap(),&json!(RESOURCES));
         assert_eq!(request.pointer("/function/parameters/additionalProperties"),Some(&json!(false)));
