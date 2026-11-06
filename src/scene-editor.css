@@ -59,18 +59,20 @@
 .scene-reference-thumb figcaption { cursor: grab; touch-action: none; user-select: none; }
 .scene-reference-thumb figcaption:active { cursor: grabbing; }
 .scene-reference-thumb.drop-target { outline: 2px solid var(--ui-primary); outline-offset: 2px; }
-.scene-editor-page .generation-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 16px; align-items: start; }
-.scene-editor-page .generation-options .arco-form-item { min-width: 0; margin-bottom: 0; }
-.scene-editor-page .generation-options .video-model-fields { flex-wrap: wrap; column-gap: 20px; row-gap: 10px; }
-.scene-editor-page .generation-options .generation-parameters-field { flex: 0 1 auto; width: auto; max-width: 100%; }
-.scene-editor-page .generation-options .generation-parameters-trigger {
-  min-height: 40px;
+.scene-editor-page .scene-generation-settings { display: flex; flex-flow: row wrap; align-items: flex-start; gap: 12px 20px; margin-bottom: 16px; }
+.scene-editor-page .scene-generation-settings > .generation-channel-fields { flex: 1 1 220px; width: auto; min-width: 0; }
+.scene-editor-page .scene-generation-settings .arco-form-item { min-width: 0; margin-bottom: 0; }
+.scene-editor-page .scene-generation-settings > .video-model-fields { flex: 0 1 auto; max-width: 100%; flex-wrap: wrap; gap: 12px 20px; }
+.scene-editor-page .scene-generation-settings .generation-parameters-field { flex: 0 1 auto; width: auto; max-width: 100%; }
+.scene-editor-page .scene-generation-settings .generation-picker-trigger { min-height: 64px; }
+.scene-editor-page .scene-generation-settings .generation-parameters-trigger {
   padding: 8px 12px;
   font-size: 13px;
   font-weight: 500;
 }
-.scene-editor-page .generation-options .generation-parameters-trigger > svg:first-child { padding: 0; background: transparent; }
-.scene-editor-page .generation-options .generation-parameters-trigger:disabled { color: var(--color-text-1); }
+.scene-editor-page .scene-generation-settings .generation-parameters-trigger > svg:first-child { padding: 0; background: transparent; }
+.scene-editor-page .scene-generation-settings .generation-parameters-trigger:disabled { color: var(--color-text-1); }
+.scene-editor-page .scene-generation-settings .video-audio-field .arco-form-item-control-children { min-height: 64px; }
 .scene-editor-page .scene-video-action { display: flex; flex-direction: row; justify-content: space-between; align-items: center; margin-top: 12px; }
 .scene-editor-page .scene-video-action > .arco-btn { width: auto; min-width: 150px; height: 38px; }
 .scene-editor-page .scene-results { display: flex; flex-direction: column; gap: 16px; padding: 0 6px 0 0; min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
@@ -90,7 +92,6 @@
   .scene-editor-page .scene-editor-content { flex: 0 0 auto; height: auto; grid-template-rows: auto; }
   .scene-editor-page .scene-composer { min-height: 0; overflow: visible; }
   .scene-editor-page .scene-results { min-height: 0; overflow: visible; padding-right: 0; }
-  .scene-editor-page .generation-options { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
   .scene-editor-page .scene-video-action { flex-wrap: wrap; gap: 10px; }
   .scene-editor-page .scene-video-action > .arco-btn { min-width: 0; max-width: 100%; }
 }
@@ -105,7 +106,6 @@
   .scene-editor-page .scene-image-field:last-child { grid-column: 1 / -1; }
   .scene-editor-page .scene-image-actions { flex-wrap: wrap; }
   .scene-editor-page .scene-image-actions .arco-btn { padding-inline: 5px; }
-  .scene-editor-page .generation-options { grid-template-columns: minmax(0, 1fr); }
   .scene-editor-page .scene-results { grid-template-columns: minmax(0, 1fr); }
   .scene-editor-page .scene-video-action { align-items: stretch; }
   .scene-editor-page .scene-video-action > .arco-btn { width: 100%; }
@@ -123,7 +123,6 @@
   .scene-editor-page .scene-image-grid { grid-template-columns: minmax(0, 1fr); gap: 18px; }
   .scene-editor-page .scene-image-preview { aspect-ratio: 16 / 9; }
   .scene-editor-page .scene-image-actions .arco-btn { font-size: 12px; }
-  .scene-editor-page .generation-options { grid-template-columns: minmax(0, 1fr); }
   .scene-editor-page .scene-results { grid-template-columns: minmax(0, 1fr); }
 }
 .scene-creation-options{display:grid;grid-template-columns:1fr 1fr;gap:12px}.scene-creation-options>button{display:flex;flex-direction:column;gap:9px;padding:18px;text-align:left;border:1px solid var(--color-border-2);background:var(--color-bg-2);color:var(--color-text-1);border-radius:10px;cursor:pointer}.scene-creation-options>button span{font-size:12px;line-height:1.7;color:var(--color-text-3)}.scene-creation-options>button.selected{border-color:rgb(var(--primary-6));background:var(--color-primary-light-1)}

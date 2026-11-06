@@ -1562,7 +1562,10 @@ export function SceneEditor({
           </div>
           <div className="scene-visuals">
           <div className="scene-section-heading"><h2>画面素材</h2><span>{options.video_mode === "i2v" ? "最多 9 张参考图" : "上传首帧，可选尾帧"}</span></div>
-          <Form layout="vertical"><GenerationSelector settings={data.settings} kind="video" value={options} disabled={videoGenerating||persistedVideoGenerating} onChange={value=>setOptions(o=>{const choice=generationChoice(data.settings,"video",value);const mode=o.video_mode==="i2v"?"ref2v":o.video_mode || "fl2v";const nextMode=choice?.capabilities.modes.includes(mode)?mode:choice?.capabilities.modes[0] || "fl2v";return {...o,...value,video_mode:nextMode==="ref2v"?"i2v":nextMode as "t2v"|"fl2v",duration:5};})}/></Form>
+          <Form layout="vertical" className="scene-generation-settings">
+            <GenerationSelector settings={data.settings} kind="video" value={options} disabled={videoGenerating||persistedVideoGenerating} onChange={value=>setOptions(o=>{const choice=generationChoice(data.settings,"video",value);const mode=o.video_mode==="i2v"?"ref2v":o.video_mode || "fl2v";const nextMode=choice?.capabilities.modes.includes(mode)?mode:choice?.capabilities.modes[0] || "fl2v";return {...o,...value,video_mode:nextMode==="ref2v"?"i2v":nextMode as "t2v"|"fl2v",duration:5};})}/>
+            <VideoModelFields disabled={videoGenerating||persistedVideoGenerating} choice={videoChoice} mode={options.video_mode || "fl2v"} duration={options.duration} onDuration={duration=>setOptions(o=>({...o,duration}))} ratio={ratio} size={options.size} onSize={value=>{setRatio(value.ratio);setOptions(o=>({...o,aspect_ratio:value.ratio,size:value.size}));}} resolution={options.resolution} onResolution={resolution=>setOptions(o=>({...o,resolution}))} audio={options.audio} onAudio={audio=>setOptions(o=>({...o,audio}))}/>
+          </Form>
           <Tabs activeTab={options.video_mode} onChange={key => { if (pasteInProgress.current) return; setOptions(o => ({...o, video_mode: key as "t2v" | "fl2v" | "i2v", model:undefined})); setReferenceSourcesOpen(false); }}>
           <Tabs.TabPane key="t2v" title="文生视频"><p className="helper">使用视频 Prompt 生成，不传入首尾帧或参考素材。</p></Tabs.TabPane>
           <Tabs.TabPane key="fl2v" title={videoChoice?.capabilities.last_frame?"首尾帧":"首帧"}>
@@ -1626,12 +1629,6 @@ export function SceneEditor({
           </Tabs>
           </div>
             <div className="video-generator scene-video-panel">
-              <Form layout="vertical">
-                <div className="generation-options">
-                  <VideoModelFields disabled={videoGenerating||persistedVideoGenerating} choice={videoChoice} mode={options.video_mode || "fl2v"} duration={options.duration} onDuration={duration=>setOptions(o=>({...o,duration}))} ratio={ratio} size={options.size} onSize={value=>{setRatio(value.ratio);setOptions(o=>({...o,aspect_ratio:value.ratio,size:value.size}));}} resolution={options.resolution} onResolution={resolution=>setOptions(o=>({...o,resolution}))} audio={options.audio} onAudio={audio=>setOptions(o=>({...o,audio}))}/>
-
-                </div>
-              </Form>
               <div className="scene-video-action">
                 <span className="subtle">
                 {options.video_mode === "t2v" ? "文生视频" : options.video_mode === "i2v" ? "全能参考生成" : "首尾帧生成"}
