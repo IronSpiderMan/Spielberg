@@ -52,6 +52,7 @@ Maximize2,
 Minimize2,
 ChevronDown,
 ChevronRight,
+Clock3,
 Pencil,
 Download,
 Film,
@@ -59,7 +60,9 @@ ImagePlus,
 Play,
 Plus,
 Save,
+SlidersHorizontal,
 Sparkles,
+RectangleHorizontal,
 Trash2,
 Upload,
 Users,
@@ -1198,6 +1201,7 @@ export function SceneEditor({
   const [writing, setWriting] = useState(false);
   const [writingField, setWritingField] = useState<"description" | "prompt">("prompt");
   const [writingSettingsOpen, setWritingSettingsOpen] = useState(false);
+  const generationSettingsId = React.useId();
   const [optimizationMenuOpen, setOptimizationMenuOpen] = useState(false);
   const sceneEditorRef = useRef<HTMLElement>(null);
   const composerScroll = useRef(0);
@@ -1237,6 +1241,9 @@ export function SceneEditor({
     scene.generation_options?.aspect_ratio || defaultOptions.aspect_ratio,
   );
   const videoChoice=generationChoice(data.settings,"video",options,options.video_mode==="i2v"?"ref2v":options.video_mode || "fl2v");
+  const generationRatio = modelRatio(videoChoice, ratio);
+  const generationRatioLabel = videoChoice?.capabilities.size_mode === "resolution" && options.video_mode === "fl2v"
+    ? "跟随首帧" : generationRatio === "adaptive" ? "自适应" : generationRatio;
   const imageGeneration=useGenerationSelection(data.settings,"image");
   const automaticReferenceIds = useRef<number[]>([]);
   const mentionItems = promptMentions(data.assets, data);
@@ -1615,8 +1622,19 @@ export function SceneEditor({
           <div className="scene-visuals" tabIndex={-1} role="region" aria-label="场景素材与参数">
           <div className="scene-section-heading"><h2>{writing ? "参考素材" : "画面素材"}</h2><span>{options.video_mode === "t2v" ? "不使用参考素材" : options.video_mode === "i2v" ? "最多 9 张参考图" : "上传首帧，可选尾帧"}</span></div>
           <div className="scene-generation-controls">
-          {writing && <Button className="scene-settings-toggle" type="text" aria-expanded={writingSettingsOpen} onClick={() => setWritingSettingsOpen(open => !open)}><span>生成设置<small>{videoChoice?.model.name || "渠道与模型"} · {ratio} · {options.duration > 0 ? `${options.duration} 秒` : "智能时长"}</small></span><ChevronDown size={15}/></Button>}
-          <Form layout="vertical" className="scene-generation-settings" hidden={writing && !writingSettingsOpen}>
+          {writing && <button className="scene-settings-toggle" type="button" aria-label="生成设置" aria-describedby={`${generationSettingsId}-model ${generationSettingsId}-summary`} aria-expanded={writingSettingsOpen} aria-controls={generationSettingsId} onClick={() => setWritingSettingsOpen(open => !open)}>
+            <span className="scene-settings-heading">
+              <span className="scene-settings-icon"><SlidersHorizontal size={17} aria-hidden="true"/></span>
+              <span className="scene-settings-copy"><strong>生成设置</strong><span id={`${generationSettingsId}-model`} className="scene-settings-model" title={videoChoice ? `${videoChoice.model.name || videoChoice.model.id} · ${videoChoice.channel.name}` : undefined}>{videoChoice?.model.name || videoChoice?.model.id || "选择渠道与模型"}</span></span>
+              <span className="scene-settings-action">{writingSettingsOpen ? "收起" : "调整"}<ChevronDown size={14} aria-hidden="true"/></span>
+            </span>
+            <span id={`${generationSettingsId}-summary`} className="scene-settings-summary">
+              <span title="画幅"><RectangleHorizontal size={12} aria-hidden="true"/>{generationRatioLabel}</span>
+              <span title="时长"><Clock3 size={12} aria-hidden="true"/>{options.duration > 0 ? `${options.duration} 秒` : "智能时长"}</span>
+              {videoChoice?.capabilities.size_mode === "resolution" && <span title="分辨率">{options.resolution || videoChoice.channel.resolution || "720P"}</span>}
+            </span>
+          </button>}
+          <Form id={generationSettingsId} layout="vertical" className="scene-generation-settings" hidden={writing && !writingSettingsOpen}>
             <GenerationSelector settings={data.settings} kind="video" value={options} disabled={videoGenerating||persistedVideoGenerating} onChange={value=>setOptions(o=>{const choice=generationChoice(data.settings,"video",value);const mode=o.video_mode==="i2v"?"ref2v":o.video_mode || "fl2v";const nextMode=choice?.capabilities.modes.includes(mode)?mode:choice?.capabilities.modes[0] || "fl2v";return {...o,...value,video_mode:nextMode==="ref2v"?"i2v":nextMode as "t2v"|"fl2v",duration:5};})}/>
             <VideoModelFields disabled={videoGenerating||persistedVideoGenerating} choice={videoChoice} mode={options.video_mode || "fl2v"} duration={options.duration} onDuration={duration=>setOptions(o=>({...o,duration}))} ratio={ratio} size={options.size} onSize={value=>{setRatio(value.ratio);setOptions(o=>({...o,aspect_ratio:value.ratio,size:value.size}));}} resolution={options.resolution} onResolution={resolution=>setOptions(o=>({...o,resolution}))} audio={options.audio} onAudio={audio=>setOptions(o=>({...o,audio}))}/>
           </Form>
