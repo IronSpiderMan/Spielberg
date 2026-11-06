@@ -127,3 +127,19 @@
   .scene-editor-page .scene-results { grid-template-columns: minmax(0, 1fr); }
 }
 .scene-creation-options{display:grid;grid-template-columns:1fr 1fr;gap:12px}.scene-creation-options>button{display:flex;flex-direction:column;gap:9px;padding:18px;text-align:left;border:1px solid var(--color-border-2);background:var(--color-bg-2);color:var(--color-text-1);border-radius:10px;cursor:pointer}.scene-creation-options>button span{font-size:12px;line-height:1.7;color:var(--color-text-3)}.scene-creation-options>button.selected{border-color:rgb(var(--primary-6));background:var(--color-primary-light-1)}
+
+.scene-reference-annotate {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: rgb(20 25 33 / 78%);
+  color: #fff;
+  cursor: pointer;
+}
+.scene-reference-annotate:disabled { opacity: .55; cursor: default; }

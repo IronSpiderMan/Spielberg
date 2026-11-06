@@ -25,6 +25,10 @@ assert.deepEqual(ids('@角色.x'), []);
 assert.deepEqual(ids('@角色.xx.more'), []);
 assert.deepEqual(ids('@角色. 接下来的句子'), [1]);
 assert.deepEqual(ids('@角色。转身'), [1]);
+const sceneData = {...data, episodes: [{id: 1, title: '剧集', scenes: [{
+  id: 1, title: '场景', sort_order: 0, generation_options: {reference_media_ids: [detail.id]},
+}]}]};
+assert.equal(findMentions('@剧集.scene001.ref', promptMentions(roles, sceneData))[0].media.id, detail.id);
 assert.equal(resolvePrompt('@角色.xx', roles), '@角色.xx');
 assert.equal(resolveReferencePrompt('@角色.xx', data), '角色.xx（角色 · xx.png）');
 // Typing a qualified reference must replace the previously automatic main image.

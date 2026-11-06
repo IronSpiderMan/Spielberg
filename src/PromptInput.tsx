@@ -42,6 +42,27 @@ export function PromptInput({value,onChange,roles,data,prompts=[],templates=[],p
         onPaste={event=>{if(disabled||!onPasteImages)return;const files=Array.from(event.clipboardData.items).filter(item=>item.kind==="file"&&item.type.startsWith("image/")).map(item=>item.getAsFile()).filter((file):file is File=>file!==null);if(!files.length)return;event.preventDefault();onPasteImages(files);}}
         onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}
         onSelect={event=>setCaret(event.currentTarget.selectionStart)}
+        onKeyDown={event=>{
+          if(!show||event.nativeEvent.isComposing||event.keyCode===229) return;
+          switch(event.key) {
+            case "ArrowDown":
+            case "ArrowUp":
+              if(event.shiftKey||event.altKey||event.ctrlKey||event.metaKey) return;
+              event.preventDefault();
+              setActive((selected+(event.key==="ArrowDown"?1:-1)+options.length)%options.length);
+              break;
+            case "Enter":
+              if(event.shiftKey||event.altKey||event.ctrlKey||event.metaKey) return;
+              event.preventDefault();
+              choose(selected);
+              break;
+            case "Escape":
+              event.preventDefault();
+              event.stopPropagation();
+              setDismissed(true);
+              break;
+          }
+        }}
         onChange={event=>{onChange(event.target.value);setCaret(event.target.selectionStart);setActive(0);setDismissed(false);}}
         onScroll={event=>{if(backdrop.current){backdrop.current.scrollTop=event.currentTarget.scrollTop;backdrop.current.scrollLeft=event.currentTarget.scrollLeft;}}}
         />

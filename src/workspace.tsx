@@ -1,3 +1,4 @@
+import { ReferenceAnnotationModal } from "./components/ReferenceAnnotationModal";
 import { ConfirmPopover, confirmAction } from "./components/ConfirmAction";
 import { GenerationSelector } from "./components/generation/GenerationSelector";
 import { ImageModelFields, VideoModelFields } from "./components/generation/ModelGenerationFields";
@@ -1215,18 +1216,29 @@ export function SceneEditor({
   const videoChoice=generationChoice(data.settings,"video",options,options.video_mode==="i2v"?"ref2v":options.video_mode || "fl2v");
   const imageGeneration=useGenerationSelection(data.settings,"image");
   const automaticReferenceIds = useRef<number[]>([]);
+  const mentionItems = promptMentions(data.assets, data);
   const mentionedReferenceIds = JSON.stringify([...new Set(
-    findMentions(effectivePrompt, promptMentions(data.assets, data))
+    [description, prompt].flatMap(value => findMentions(value, mentionItems))
       .flatMap(mention => mention.media?.kind === "image" ? [mention.media.id] : []),
   )]);
+  const previousMentions = useRef(mentionedReferenceIds);
   useEffect(() => {
-    if (options.video_mode !== "i2v" || pastingImages) return;
+    if (pastingImages) return;
     const mentionedIds: number[] = JSON.parse(mentionedReferenceIds);
+    const previousIds: number[] = JSON.parse(previousMentions.current);
+    previousMentions.current = mentionedReferenceIds;
+    const addedImage = mentionedIds.some(id => !previousIds.includes(id));
+    const switchMode = options.video_mode !== "i2v" && addedImage;
+    if (options.video_mode !== "i2v" && !switchMode) return;
     const existing = options.reference_media_ids || [];
     const {ids,automatic} = syncMentionReferences(existing, automaticReferenceIds.current, mentionedIds);
     automaticReferenceIds.current = automatic;
-    if (ids.length !== existing.length || ids.some((id,index)=>id!==existing[index])) {
-      setOptions(current => ({...current, reference_media_ids:ids}));
+    if (switchMode || ids.length !== existing.length || ids.some((id,index)=>id!==existing[index])) {
+      setOptions(current => ({
+        ...current,
+        ...(switchMode ? {video_mode:"i2v", model:undefined} : {}),
+        reference_media_ids:ids,
+      }));
     }
   }, [mentionedReferenceIds, options.video_mode, pastingImages]);
   const signature = JSON.stringify({title, description, prompt, frames, options, ratio});
@@ -1254,6 +1266,7 @@ export function SceneEditor({
   const [referenceRolePickerOpen, setReferenceRolePickerOpen] = useState(false);
   const [referenceSourcesOpen, setReferenceSourcesOpen] = useState(false);
   const [referencePreview, setReferencePreview] = useState<Media | null>(null);
+  const [annotationSource, setAnnotationSource] = useState<Media | null>(null);
   const [attachingVideo, setAttachingVideo] = useState(false);
   const hadPersistedVideoJob = useRef(false);
   useEffect(() => {
@@ -1593,6 +1606,7 @@ export function SceneEditor({
               {(options.reference_media_ids || []).length > 0 && <div className="scene-reference-grid" data-count={(options.reference_media_ids || []).length}>
                 {(options.reference_media_ids || []).map((id,index) => { const media=data.media.find(m=>m.id===id) || pastedMedia.find(m=>m.id===id); return media ? <figure className={`scene-reference-thumb${referenceDropTarget===id?' drop-target':''}`} key={id} data-reference-id={id}>
                   <button type="button" className="scene-reference-preview" onClick={() => setReferencePreview(media)} aria-label={`预览参考图 ${media.name}`}><img src={imageUrl(media)} alt={media.name} draggable={false}/></button>
+                  <button type="button" className="scene-reference-annotate" disabled={pastingImages || savingScene || videoGenerating || persistedVideoGenerating} onClick={() => setAnnotationSource(media)} aria-label={`标注参考图 ${media.name}`}><Pencil size={13}/>标注</button>
                   <button type="button" className="scene-reference-remove" onClick={() => setOptions(o=>({...o,reference_media_ids:(o.reference_media_ids||[]).filter(x=>x!==id)}))} aria-label={`移除参考图 ${media.name}`} title="移除">×</button>
                   <figcaption title={`拖动调整顺序：${media.name}`}
                     onPointerDown={event=>{if(event.button!==0)return;event.preventDefault();draggedReference.current=id;event.currentTarget.setPointerCapture(event.pointerId);}}
@@ -1691,6 +1705,18 @@ export function SceneEditor({
           if(ids.length>=9){Message.warning("最多选择 9 张参考图");return o;}
           return {...o,reference_media_ids:[...ids,media.id]};
         })} />
+      {annotationSource && <ReferenceAnnotationModal key={annotationSource.id} media={annotationSource}
+        onClose={() => setAnnotationSource(null)} onApply={async file => {
+          const count = await uploadImages([file], { onUploaded: media => {
+            setPastedMedia(items => [...items, media]);
+            setOptions(current => ({
+              ...current,
+              reference_media_ids: (current.reference_media_ids || []).map(id => id === annotationSource.id ? media.id : id),
+            }));
+          } });
+          if (count) Message.success("标注图已用作参考图，保存场景后生效");
+          return count > 0;
+        }} />}
       <ImagePreviewModal media={referencePreview} images={referenceImages} onMediaChange={setReferencePreview} title="参考图预览" onClose={()=>setReferencePreview(null)} />
       <Modal
         title="选择视频素材"

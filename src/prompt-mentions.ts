@@ -33,7 +33,8 @@ export function promptMentions(roles:Asset[], data?:Snapshot):PromptMention[] {
     const title=data!.episodes.filter(e=>e.title===episode.title).length>1 ? `${episode.title}#${episode.id}` : episode.title;
     [...episode.scenes].sort((a,b)=>a.sort_order-b.sort_order || a.id-b.id).forEach((scene,index)=>{
       for(const [suffix,key,label] of [["first","first","首帧"],["last","last","尾帧"],["ref","reference","参考图"]] as const) {
-        const media=scene[`${key}_media`] || data!.media.find(m=>m.id===scene[`${key}_media_id`]);
+        const media=scene[`${key}_media`] || data!.media.find(m=>m.id===scene[`${key}_media_id`])
+          || (key==="reference" ? data!.media.find(m=>m.id===scene.generation_options?.reference_media_ids?.[0]) : undefined);
         result.push({id:`scene-${scene.id}-${key}`,name:`${title}.scene${String(index+1).padStart(3,"0")}.${suffix}`,description:`${episode.title} / ${scene.title} / ${label}`,kind:"scene",media:media?.kind==="image"?media:undefined});
       }
     });
