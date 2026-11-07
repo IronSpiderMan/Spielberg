@@ -16,6 +16,7 @@ import { backendUrl } from "./transport";
 import { AGENT_SESSION_CHANGED, notifyAgentSessionChanged, type AgentSessionChange } from "./agent-session-events";
 import { GenerationSelector } from "./components/generation/GenerationSelector";
 import { channelsFor, selectionPayload, useGenerationSelection } from "./generation-channels";
+import { AgentUserInput, type UserInputRequest, type UserInputAnswers } from "./components/AgentUserInput";
 
 
 type AgentMessage = { role: "user" | "assistant" | "tool"; content: string; images?: string[]; image_media_ids?: number[]; tool_name?: string; tool_call_id?: string; arguments?: unknown; status?: string; tool_calls?: unknown[] };
@@ -34,13 +35,13 @@ function messageEntries(messages: AgentMessage[]): MessageEntry[] {
 
 type ConversationContext = { total_turns: number; recent_turns: number; summarized_turns: number; total_images: number; retained_images: number; active_compacted_messages?: number; estimated_text_bytes?: number };
 type PlanStep = { step: string; status: "pending" | "in_progress" | "completed" };
-type Execution = { active?: boolean; phase?: string; tool_calls?: number; max_steps?: number; retries?: number; active_tool?: string; plan?: PlanStep[]; stop_reason?: string };
+type Execution = { active?: boolean; phase?: string; tool_calls?: number; max_steps?: number; retries?: number; active_tool?: string; plan?: PlanStep[]; stop_reason?: string; user_input?: UserInputRequest; user_input_response?: unknown };
 type Session = { id: string; title: string; status: string; messages: AgentMessage[]; error?: string; updated_at: string; context?: ConversationContext; execution?: Execution };
 type Config = { inherit_llm: boolean; base_url: string; model: string; has_api_key: boolean; search_provider: string; has_search_api_key: boolean; max_steps: number; request_timeout_seconds: number };
 const initialConfig: Config = { inherit_llm: true, base_url: "", model: "", has_api_key: false, search_provider: "duckduckgo", has_search_api_key: false, max_steps: 16, request_timeout_seconds: 600 };
 const INDEPENDENT_CHANNEL = "__agent_independent__";
 const statusText: Record<string, string> = { idle: "准备就绪", running: "执行中", completed: "本轮结束", limited: "已暂停，可继续", failed: "执行失败", cancelled: "已停止" };
-const toolText: Record<string, string> = { update_plan: "更新任务计划", get_project: "读取项目", search_conversation: "检索对话记录", list_skills: "查找技能", read_skill: "读取技能", app_describe: "查看操作说明", app_request: "操作项目数据", app_action: "执行创作操作", web_search: "联网搜索", fetch_webpage: "读取网页" };
+const toolText: Record<string, string> = { request_user_input: "请求用户决定", update_plan: "更新任务计划", get_project: "读取项目", search_conversation: "检索对话记录", list_skills: "查找技能", read_skill: "读取技能", app_describe: "查看操作说明", app_request: "操作项目数据", app_action: "执行创作操作", web_search: "联网搜索", fetch_webpage: "读取网页" };
 const toolTargetText: Record<string, string> = {
   assets: "资产库", media: "素材库", episodes: "剧集", scenes: "场景", prompts: "提示词", screenplays: "剧本",
   "assets/media/add": "关联资产图片", "assets/media/delete": "解除资产图片关联",
@@ -53,13 +54,13 @@ function toolTarget(args: unknown): string {
   const target = String(fields.operation || fields.resource || "");
   return toolTargetText[target] || target;
 }
-const phaseText: Record<string, string> = { thinking: "正在整理下一步", streaming: "正在回复", stopping: "正在停止，等待当前操作结束", retrying: "模型服务暂时不可用，正在重试", finalizing: "正在整理执行结果", tool: "正在执行操作" };
+const phaseText: Record<string, string> = { waiting_input: "等待你的回答", thinking: "正在整理下一步", streaming: "正在回复", stopping: "正在停止，等待当前操作结束", retrying: "模型服务暂时不可用，正在重试", finalizing: "正在整理执行结果", tool: "正在执行操作" };
 function displayJson(value: unknown) { if (typeof value === "string") { try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; } } return JSON.stringify(value, null, 2); }
 function hasActiveRun(session: Session | null): boolean { return session?.execution?.active ?? session?.status === "running"; }
-function sessionStatus(session: Session): string { return hasActiveRun(session) ? (session.status === "cancelled" ? "正在停止" : "执行中") : statusText[session.status] || session.status; }
+function sessionStatus(session: Session): string { if (hasActiveRun(session) && session.execution?.phase === "waiting_input") return "等待回答"; return hasActiveRun(session) ? (session.status === "cancelled" ? "正在停止" : "执行中") : statusText[session.status] || session.status; }
 function SessionStatusIcon({ session }: { session: Session }) {
-  const status = hasActiveRun(session) ? "running" : session.status;
-  const Icon = ({ running: LoaderCircle, completed: Circle, limited: Pause, failed: CircleAlert, cancelled: Square } as Record<string, typeof Check>)[status] || Circle;
+  const status = hasActiveRun(session) ? session.execution?.phase === "waiting_input" ? "waiting_input" : "running" : session.status;
+  const Icon = ({ waiting_input: MessageSquare, running: LoaderCircle, completed: Circle, limited: Pause, failed: CircleAlert, cancelled: Square } as Record<string, typeof Check>)[status] || Circle;
   return <span className="agent-session-state" data-status={status} title={sessionStatus(session)} role="img" aria-label={sessionStatus(session)}><Icon size={15} aria-hidden="true" /></span>;
 }
 
@@ -151,7 +152,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
     selectedRef.current = session; setSelected(session);
     setSessions(items => updateSession(items, session));
     localStorage.setItem(`spielberg-agent-session-${pid}`, session.id);
-    if (previous?.id !== session.id || previous?.status !== session.status || hasActiveRun(previous) !== hasActiveRun(session)) notifyAgentSessionChanged(pid, session.id, "workspace");
+    if (previous?.id !== session.id || previous?.status !== session.status || previous?.execution?.phase !== session.execution?.phase || hasActiveRun(previous) !== hasActiveRun(session)) notifyAgentSessionChanged(pid, session.id, "workspace");
   }, [pid, reload]);
   useEffect(() => {
     let disposed = false;
@@ -278,6 +279,16 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
     } catch (e) { if (mounted.current && version === selectionVersion.current) { setError(String(e)); setLoading(false); setLoadFailed(loading); } }
     finally { if (mounted.current) setStopping(false); }
   };
+  const answerUserInput = async (answers: UserInputAnswers) => {
+    const session = selectedRef.current;
+    const request = session?.execution?.user_input;
+    if (!session || !request) throw new Error("此问题已失效，请刷新会话");
+    const version = selectionVersion.current;
+    const result = await call<Session>("respond", { session_id: session.id, request_id: request.id, answers });
+    if (!mounted.current) return;
+    if (version === selectionVersion.current && selectedRef.current?.id === session.id) accept(result);
+    else setSessions(items => updateSession(items, result));
+  };
   const remove = (session: Session) => confirmAction({ intent: "danger", title: "删除此会话？", content: "将删除此会话的对话和执行记录，已完成的项目操作会保留。", okText: "删除会话", onOk: async () => {
     try { await call("delete", { session_id: session.id }); if (!mounted.current) return; setSessions(items => items.filter(item => item.id !== session.id)); if (selectedRef.current?.id === session.id) { selectionVersion.current++; selectedRef.current = null; setSelected(null); localStorage.removeItem(`spielberg-agent-session-${pid}`); } notifyAgentSessionChanged(pid, session.id, "workspace", true); }
     catch (e) { Message.error(String(e)); throw e; }
@@ -296,7 +307,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
 
 
   const renderTool = (message: AgentMessage, toolIndex: number) => <div className="agent-tool-result" key={`${message.tool_call_id || toolIndex}:${toolIndex}`}><details className="agent-tool">
-            <summary><Wrench size={14} /><span>{toolText[message.tool_name || ""] || message.tool_name || "执行工具"}</span><small>{toolTarget(message.arguments)}</small><span className={`agent-tool-status ${message.status}`}>{message.status === "running" ? "执行中" : message.status === "failed" ? "失败" : message.status === "skipped" ? "未执行" : <><Check size={12} />完成</>}</span><ChevronDown size={14} /></summary>
+            <summary><Wrench size={14} /><span>{toolText[message.tool_name || ""] || message.tool_name || "执行工具"}</span><small>{toolTarget(message.arguments)}</small><span className={`agent-tool-status ${message.status}`}>{message.status === "waiting_input" ? "等待回答" : message.status === "running" ? "执行中" : message.status === "failed" ? "失败" : message.status === "skipped" ? "未执行" : <><Check size={12} />完成</>}</span><ChevronDown size={14} /></summary>
             {message.arguments != null && <div><b>参数</b><pre>{displayJson(message.arguments)}</pre></div>}<div><b>结果</b><pre>{message.content ? displayJson(message.content) : "等待执行结果…"}</pre></div>
           </details>
           </div>;
@@ -313,19 +324,19 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
         </div>)}</div>
       </aside>
       <div className={`agent-conversation${empty ? " is-empty" : ""}`}>
-        <div className="agent-conversation-bar"><div><Button ref={historyTrigger} className="agent-mobile-history" aria-label="打开会话列表" aria-controls="agent-history" aria-expanded={mobileSessions} icon={<MessageSquare size={16} />} onClick={() => setMobileSessions(value => !value)} /><b>{selected?.title || "新对话"}</b></div><div className="agent-conversation-actions">{running && <span><i className="agent-status-dot" />{cancelling ? "正在停止" : "正在执行"}</span>}<Button type="text" data-testid="agent-settings" aria-label="Agent 设置" icon={<Settings2 size={15} />} onClick={openSettings}>Agent 设置</Button></div></div>
+        <div className="agent-conversation-bar"><div><Button ref={historyTrigger} className="agent-mobile-history" aria-label="打开会话列表" aria-controls="agent-history" aria-expanded={mobileSessions} icon={<MessageSquare size={16} />} onClick={() => setMobileSessions(value => !value)} /><b>{selected?.title || "新对话"}</b></div><div className="agent-conversation-actions">{running && <span><i className="agent-status-dot" />{cancelling ? "正在停止" : execution?.phase === "waiting_input" ? "等待回答" : "正在执行"}</span>}<Button type="text" data-testid="agent-settings" aria-label="Agent 设置" icon={<Settings2 size={15} />} onClick={openSettings}>Agent 设置</Button></div></div>
         {!configured && !loading && !loadFailed && <div className="agent-config-notice">请在统一渠道配置中添加支持工具调用的模型，并在输入框右下角选择渠道与模型。{onNavigate && <button onClick={() => onNavigate("settings")}>配置统一渠道</button>}</div>}
         <div className="agent-stage">
         {!loading && selected?.context && (!!selected.context.summarized_turns || !!selected.context.active_compacted_messages) && <div className="agent-memory-notice" data-testid="agent-memory-notice"><MessageSquare size={14} aria-hidden="true" /><span>{!!selected.context.summarized_turns && <>保留近期 {selected.context.recent_turns} 轮对话，较早 {selected.context.summarized_turns} 轮已整理为摘录。</>}{!!selected.context.active_compacted_messages && <>本轮较早的 {selected.context.active_compacted_messages} 条执行记录已压缩。</>}助手可按需检索完整记录。</span></div>}
-        <div className="agent-messages" ref={log} role="log" aria-label="Agent 对话记录"  aria-busy={running || loading}  onScroll={() => { const element = log.current; if (element) followBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100; }}>
+        <div className="agent-messages" ref={log} role="log" aria-label="Agent 对话记录"  aria-busy={(running && execution?.phase !== "waiting_input") || loading}  onScroll={() => { const element = log.current; if (element) followBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100; }}>
           {loading ? <div className="agent-loading"><Spin /><span>正在读取会话</span></div> : !selected?.messages.length ? <div className="agent-empty">
             <div className="agent-empty-mark" aria-hidden="true"><Clapperboard size={28} strokeWidth={1.5} /><Sparkles size={13} /></div>
             <span className="agent-empty-eyebrow">灵感就位，即刻开场</span>
             <h2>下一幕，从这里开始<span>。</span></h2><p>从一个想法到一个好故事，和你的 AI 创作搭档一起完成。</p>
           </div> : messageEntries(selected.messages).map(({ message, index, tools }) => tools.length ? <div className="agent-operation-block" key={`${selected.id}:${index}`}>
             {tools.length > 1 ? <details className="agent-tool-group">
-              <summary><Wrench size={14} /><span>操作记录 <small>{tools.length} 项</small></span><span className={`agent-tool-status ${tools.some(tool => tool.status === "failed") ? "failed" : tools.some(tool => tool.status === "running") ? "running" : ""}`}>
-                {tools.some(tool => tool.status === "running") ? "执行中 · " : ""}{tools.filter(tool => !tool.status || tool.status === "completed").length} 项完成
+              <summary><Wrench size={14} /><span>操作记录 <small>{tools.length} 项</small></span><span className={`agent-tool-status ${tools.some(tool => tool.status === "failed") ? "failed" : tools.some(tool => tool.status === "waiting_input") ? "waiting_input" : tools.some(tool => tool.status === "running") ? "running" : ""}`}>
+                {tools.some(tool => tool.status === "waiting_input") ? "等待回答 · " : tools.some(tool => tool.status === "running") ? "执行中 · " : ""}{tools.filter(tool => !tool.status || tool.status === "completed").length} 项完成
                 {tools.some(tool => tool.status === "failed") && ` · ${tools.filter(tool => tool.status === "failed").length} 项失败`}
                 {tools.some(tool => tool.status === "skipped") && ` · ${tools.filter(tool => tool.status === "skipped").length} 项未执行`}
               </span><ChevronDown size={14} /></summary>
@@ -346,6 +357,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
               },
             }}>{message.content}</ReactMarkdown>}</div>
           </article> : null)}
+          {running && !cancelling && execution?.phase === "waiting_input" && execution.user_input && <AgentUserInput key={`${selected?.id}:${execution.user_input.id}`} request={execution.user_input} disabled={!!execution.user_input_response} onSubmit={answerUserInput} />}
           {!!execution?.plan?.length && <section className="agent-plan" data-testid="agent-plan" aria-label="任务计划">
             <div className="agent-plan-heading"><b>任务计划</b><span>{execution.plan.filter(item => item.status === "completed").length}/{execution.plan.length}</span></div>
             <ol>{execution.plan.map((item, index) => <li key={index} data-status={item.status}><span aria-hidden="true">{item.status === "completed" ? <Check size={14} /> : item.status === "in_progress" ? "◉" : "○"}</span><span>{item.step}</span><small>{item.status === "completed" ? "已完成" : item.status === "in_progress" ? running ? "进行中" : "待继续" : "待处理"}</small></li>)}</ol>

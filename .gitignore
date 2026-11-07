@@ -41,6 +41,7 @@ npm-debug.log*
 /scripts/qa/*
 !/scripts/qa/agent.py
 !/scripts/qa/agent-ui.cjs
+!/scripts/qa/agent-user-input.cjs
 !/scripts/qa/agent-float.cjs
 !/scripts/qa/skills.py
 !/scripts/qa/skills-ui.cjs

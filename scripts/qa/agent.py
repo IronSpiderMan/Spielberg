@@ -192,6 +192,21 @@ class Model(BaseHTTPRequestHandler):
             assert not body.get("tools"), "Finalization still advertises side effects"
             if "BUDGET_IGNORED" in prompt:
                 calls = [call("app_request", {"resource": "assets", "method": "POST", "data": {"name": "Forbidden during finalization"}}, "forbidden-final-write")]
+        elif prompt.startswith("USER_INPUT_") and not tools:
+            assert "request_user_input" in advertised
+            if prompt == "USER_INPUT_FORM":
+                questions = [
+                    {"id": "ok", "question": "是否继续？", "type": "confirmation"},
+                    {"id": "brief", "question": "补充信息", "type": "text"},
+                    {"id": "one", "question": "选择画风", "type": "single_select", "options": [{"id": "film", "label": "电影"}, {"id": "comic", "label": "漫画"}]},
+                    {"id": "many", "question": "选择场景", "type": "multi_select", "options": [{"id": "rain", "label": "雨夜"}, {"id": "station", "label": "车站"}]},
+                ]
+                arguments = {"questions": questions}
+            else:
+                arguments = {"questions": [{"id": "approve", "question": "是否创建此资产？", "type": "confirmation"}],
+                             "tool": {"name": "app_request", "arguments": {"resource": "assets", "method": "POST", "data": {"name": prompt}}}}
+            calls = [call("request_user_input", arguments, "user-decision"),
+                     call("app_request", {"resource": "assets", "method": "POST", "data": {"name": "Must skip after question"}}, "skip-after-input")]
         elif "READ_LONG_TEXT:" in prompt:
             resource_id = int(prompt.split("READ_LONG_TEXT:", 1)[1])
             assert "resource/text/read" in message_text(messages[0])
@@ -372,6 +387,64 @@ def main():
             assert len(api(f"/projects/{pid}/screenplays", method="GET")) == 1
             assert len(api(f"/projects/{pid}/assets", method="GET")) == 1
             assert len(api(f"/projects/{pid}/episodes", method="GET")[0]["scenes"]) == 1
+            # All question types, exact-action approval, rejection, duplicate/stale answers,
+            # scope isolation, cancellation, page reload, and restart interruption.
+            def waiting_for_input(session):
+                for _ in range(100):
+                    current = agent("session", session_id=session["id"])
+                    if current["execution"].get("phase") == "waiting_input":
+                        return current
+                    assert current["status"] == "running", current
+                    time.sleep(0.03)
+                raise AssertionError("No user-input request")
+
+            for prompt in ["USER_INPUT_FORM", "USER_INPUT_APPROVE", "USER_INPUT_REJECT", "USER_INPUT_CANCEL", "USER_INPUT_RESTART"]:
+                decision = agent("create", title=prompt)
+                before = len(api(f"/projects/{pid}/assets", method="GET"))
+                request_start = len(Model.requests)
+                agent("run", session_id=decision["id"], message=prompt)
+                pending = waiting_for_input(decision)
+                request_id = pending["execution"]["user_input"]["id"]
+                summary = next(item for item in agent("sessions")["items"] if item["id"] == decision["id"])
+                assert summary["execution"]["phase"] == "waiting_input"
+                time.sleep(0.15)
+                assert len(Model.requests) == request_start + 1, "Model continued while awaiting user"
+                assert len(api(f"/projects/{pid}/assets", method="GET")) == before, "Tool ran before approval"
+                assert agent("session", session_id=decision["id"])["execution"]["user_input"]["id"] == request_id
+                response = {"project_id": pid, "session_id": decision["id"], "request_id": request_id,
+                            "answers": {"ok": True, "brief": "保留雨夜设定", "one": "film", "many": ["rain", "station"]} if prompt == "USER_INPUT_FORM" else {"approve": prompt == "USER_INPUT_APPROVE"}}
+                api("/actions/agent/respond", {**response, "request_id": "stale"}, expected=400)
+                api("/actions/agent/respond", {**response, "project_id": other["id"]}, expected=404)
+                if prompt == "USER_INPUT_CANCEL":
+                    agent("cancel", session_id=decision["id"])
+                    assert wait(decision)["status"] == "cancelled"
+                    api("/actions/agent/respond", response, expected=400)
+                elif prompt == "USER_INPUT_RESTART":
+                    stop()
+                    process, base = start()
+                    recovered = agent("session", session_id=decision["id"])
+                    assert recovered["status"] == "failed"
+                    assert not recovered["execution"].get("user_input")
+                    assert next(m for m in recovered["messages"] if m.get("tool_name") == "request_user_input")["status"] == "failed"
+                    api("/actions/agent/respond", response, expected=400)
+                else:
+                    api("/actions/agent/respond", {**response, "answers": {}}, expected=400)
+                    api("/actions/agent/respond", response)
+                    api("/actions/agent/respond", response, expected=400)
+                    completed = wait(decision)
+                    assert completed["status"] == "completed", completed
+                    traces = [m for m in completed["messages"] if m["role"] == "tool"]
+                    assert [m["status"] for m in traces] == ["completed", "skipped"], traces
+                    answer = json.loads(traces[0]["content"])
+                    assert answer["answers"] == response["answers"]
+                    if prompt != "USER_INPUT_FORM":
+                        assert answer["executed"] == (prompt == "USER_INPUT_APPROVE")
+                        assert answer["approved"] == (prompt == "USER_INPUT_APPROVE")
+                after = len(api(f"/projects/{pid}/assets", method="GET"))
+                assert after == before + (1 if prompt == "USER_INPUT_APPROVE" else 0)
+            print("PASS: user input form, approve/reject, no execution before approval, skipped batch tail, duplicate/stale/scope validation, cancellation and restart interruption")
+            approved_asset = next(item for item in api(f"/projects/{pid}/assets", method="GET") if item["name"] == "USER_INPUT_APPROVE")
+            api(f"/projects/{pid}/assets/{approved_asset['id']}", method="DELETE")
             # Follow-up must preserve context and not repeat the previous mutations.
             agent("run", session_id=created["id"], message="查看项目", web_enabled=False)
             assert wait(created)["status"] == "completed"

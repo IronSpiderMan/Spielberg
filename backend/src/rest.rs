@@ -333,7 +333,7 @@ pub(crate) fn action(state:&AppState,path:&str,value:Value)->ApiResult<Value>{
     if let Some(action)=path.strip_prefix("/skills/") {
         return Ok(skills::command(state, action, &value)?);
     }
-    if ["/agent/config", "/agent/config/save", "/agent/sessions", "/agent/create", "/agent/session", "/agent/run", "/agent/cancel", "/agent/delete"].contains(&path) {
+    if ["/agent/config", "/agent/config/save", "/agent/sessions", "/agent/create", "/agent/session", "/agent/run", "/agent/cancel", "/agent/delete", "/agent/respond"].contains(&path) {
         return Ok(agent::command(state, path, &value)?);
     }
     const ALLOWED:&[&str]=&["/canvas/load","/canvas/save","/editor/projects","/editor/save","/editor/probe","/editor/export","/app/settings/load","/app/settings/save","/project","/project/changes","/projects/open","/projects/migrate","/projects/backup","/projects/restore","/media/import","/media/export","/media/pose-reference","/media/thumbnail","/media/create-svg","/media/usage","/media/restore","/media/purge","/media/video-frame","/storage/scan","/storage/cleanup","/assets/media/add","/assets/media/delete","/assets/audio/save","/assets/audio/delete","/scripts/load","/scripts/save","/scripts/publish","/tasks","/generations/image","/generations/video","/generations/tts","/generations/asr","/speech/transcribe","/speech/synthesize","/prompts/optimize","/storyboard/generate","/storyboard/plan","/storyboard/validate","/scenes/reorder","/scenes/duplicate","/scenes/select-video","/scenes/delete-video","/episodes/reorder","/episodes/merge","/settings"];

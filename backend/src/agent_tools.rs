@@ -19,6 +19,17 @@ pub(super) fn definitions() -> Value {
         "parameters":{"type":"object","properties":properties,"required":required,"additionalProperties":false}}
     });
     json!([
+        tool("request_user_input", "Pause execution and ask the user for missing information or a necessary decision. Questions support confirmation (boolean), text, single_select (one option ID), and multi_select (option IDs). Use only when the answer materially affects the next step; do not ask again for decisions already made. For approval of a concrete business tool, include tool={name,arguments} and exactly one confirmation question: the backend executes that exact tool only after explicit approval, and returns its result; never repeat it yourself. Rejection means the tool was not executed. Waiting has no automatic approval or timeout. Do not request credentials.", json!({
+            "questions":{"type":"array","minItems":1,"maxItems":4,"items":{"type":"object","properties":{
+                "id":{"type":"string","minLength":1,"maxLength":80},
+                "question":{"type":"string","minLength":1,"maxLength":1000},
+                "type":{"type":"string","enum":["confirmation","text","single_select","multi_select"]},
+                "options":{"type":"array","minItems":2,"maxItems":12,"items":{"type":"object","properties":{
+                    "id":{"type":"string","minLength":1,"maxLength":80},"label":{"type":"string","minLength":1,"maxLength":200},"description":{"type":"string","maxLength":500}
+                },"required":["id","label"],"additionalProperties":false}}
+            },"required":["id","question","type"],"additionalProperties":false}},
+            "tool":{"type":"object","properties":{"name":{"type":"string","enum":["app_request","app_action"]},"arguments":{"type":"object"}},"required":["name","arguments"],"additionalProperties":false}
+        }), &["questions"]),
         tool("update_plan", "Maintain a short visible plan for multi-step work. Use 1–8 steps and at most one in_progress step. Update after milestones, keep unfinished steps honest, and verify real tool results before marking completed. This changes only the plan, never project data or permissions. Skip planning for simple requests.", json!({
             "explanation":{"type":"string","maxLength":1000},
             "plan":{"type":"array","minItems":1,"maxItems":8,"items":{"type":"object","properties":{

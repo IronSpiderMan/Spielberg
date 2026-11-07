@@ -6,6 +6,14 @@ export type ImageMessage = { role: string; content: string; images?: string[]; i
 // Preview only media created by generation actions, never queries or exports.
 // Bounded tool results and saved task results can wrap or JSON-encode data.
 export function toolMedia(message: ImageMessage, currentMedia: Map<number, Media>): Media[] {
+  if (message.tool_name === "request_user_input" && message.status === "completed") {
+    try {
+      const result = JSON.parse(message.content);
+      const tool = (message.arguments as { tool?: { name: string; arguments: unknown } } | undefined)?.tool;
+      if (!tool || result.approved !== true || result.executed !== true || result.tool_error) return [];
+      return toolMedia({ ...message, tool_name: tool.name, arguments: tool.arguments, content: JSON.stringify(result.tool_result) }, currentMedia);
+    } catch { return []; }
+  }
   if (["running", "failed", "skipped", "cancelled"].includes(message.status || "") || !message.arguments || typeof message.arguments !== "object") return [];
   const args = message.arguments as Record<string, unknown>;
   const output = message.tool_name === "app_action" && ["generations/image", "generations/video", "generations/tts", "media/create-svg"].includes(String(args.operation));

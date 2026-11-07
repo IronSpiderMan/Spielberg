@@ -14,12 +14,13 @@ import { stopAgentSpeechPlayback, useAgentReplySpeech } from "../agent-reply-spe
 import { generationChoice, selectionPayload } from "../generation-channels";
 import { AgentLivingOrb } from "./AgentLivingOrb";
 import "./agent-float.css";
+import { AgentUserInput, type UserInputRequest, type UserInputAnswers } from "./AgentUserInput";
 
 type Position = { x: number; y: number };
 type Session = {
   id: string; status: string; error?: string;
   messages: { role: string; content: string }[];
-  execution?: { active?: boolean; phase?: string; active_tool?: string };
+  execution?: { active?: boolean; phase?: string; active_tool?: string; user_input?: UserInputRequest; user_input_response?: unknown };
 };
 type SpeechController = Awaited<ReturnType<typeof startSpeechRecognition>>;
 type ListeningState = "idle" | "starting" | "listening" | "finishing";
@@ -133,9 +134,10 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings, a
     const previous = sessionRef.current;
     if (isRunning(next) && !isRunning(previous)) narrationRef.current.stop();
     sessionRef.current = next; setSession(next); writeStorage(sessionKey, next.id);
-    if (previous?.id !== next.id || previous?.status !== next.status || isRunning(previous) !== isRunning(next)) {
+    if (previous?.id !== next.id || previous?.status !== next.status || previous?.execution?.phase !== next.execution?.phase || isRunning(previous) !== isRunning(next)) {
       if (pid) notifyAgentSessionChanged(pid, next.id, "float");
     }
+    if (next.execution?.phase === "waiting_input" && previous?.execution?.user_input?.id !== next.execution.user_input?.id && !openRef.current) setUnread(true);
     if (isRunning(previous) && !isRunning(next)) {
       if (!openRef.current) setUnread(true);
       if (speechPreferencesRef.current.autoRead && ["completed", "limited"].includes(next.status) && !speechAbort.current) {
@@ -407,7 +409,7 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings, a
   const placement = panelPlacement(position, viewport, panelHeight);
   const speaking = narration.state !== "idle";
   const state = listening ? "listening" : sending || running ? "working" : speaking ? "speaking" : error || session?.status === "failed" ? "error" : "idle";
-  const status = speechState === "starting" ? "正在打开麦克风" : speechState === "finishing" ? "正在识别语音" : listening ? "我在听，说完即可（最长 60 秒）" : sending ? "正在发送指令" : cancelling ? "正在停止操作" : running ? (session?.execution?.phase === "streaming" ? "正在回复" : toolLabels[session?.execution?.active_tool || ""] || "Agent 正在执行") : restoring ? "正在恢复会话" : restoreFailed ? "对话恢复失败" : session?.status === "failed" ? "执行未完成" : session?.status === "completed" ? "已完成" : session?.status === "limited" ? "已暂停，可继续" : session?.status === "cancelled" ? "已停止" : "有什么我可以帮你？";
+  const status = speechState === "starting" ? "正在打开麦克风" : speechState === "finishing" ? "正在识别语音" : listening ? "我在听，说完即可（最长 60 秒）" : sending ? "正在发送指令" : cancelling ? "正在停止操作" : running ? (session?.execution?.phase === "waiting_input" ? "等待你的回答" : session?.execution?.phase === "streaming" ? "正在回复" : toolLabels[session?.execution?.active_tool || ""] || "Agent 正在执行") : restoring ? "正在恢复会话" : restoreFailed ? "对话恢复失败" : session?.status === "failed" ? "执行未完成" : session?.status === "completed" ? "已完成" : session?.status === "limited" ? "已暂停，可继续" : session?.status === "cancelled" ? "已停止" : "有什么我可以帮你？";
   const lastUserIndex = session?.messages.map(message => message.role).lastIndexOf("user") ?? -1;
   const lastUser = lastUserIndex >= 0 ? session?.messages[lastUserIndex].content : "";
   const reply = session?.messages.slice(lastUserIndex + 1).filter(message => message.role === "assistant" && message.content).map(message => message.content).join("\n\n");
@@ -425,6 +427,15 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings, a
     } catch { if (mounted.current) setError("复制失败，请选中回复文字后复制。"); }
   };
   const finishLabel = appearance.speechAutoSend ? "结束听写并执行" : "结束听写并校对";
+  const answerUserInput = async (answers: UserInputAnswers) => {
+    const current = sessionRef.current;
+    const request = current?.execution?.user_input;
+    if (!current || !request) throw new Error("此问题已失效，请刷新会话");
+    const version = ++sessionRequestVersion.current;
+    const result = await call<Session>("respond", { session_id: current.id, request_id: request.id, answers });
+    if (mounted.current && sessionRef.current?.id === current.id && version === sessionRequestVersion.current) accept(result);
+  };
+
   const orbLabel = listening ? finishLabel : open && appearance.clickAction === "panel" ? "收起 Agent 助手" : running || sending ? "查看 Agent 执行进度" : speaking ? "查看 Agent 朗读进度" : unread ? "查看 Agent 最新结果" : appearance.clickAction === "voice" ? "语音 Agent，点击说话，拖动移动" : "打开 Agent 助手，拖动移动";
 
   return createPortal(<div className="agent-float" data-state={state}>
@@ -448,6 +459,7 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings, a
           <div className="agent-float-reply-actions"><button type="button" className="agent-float-copy" onClick={() => void copyReply()} disabled={running} aria-label="复制回复">{copied ? <Check size={12} /> : <Copy size={12} />}{copied ? "已复制" : "复制回复"}</button>
           {!speaking && <button type="button" className="agent-float-copy" aria-label="朗读回复" disabled={running || sending || !speechReply} onClick={() => void narration.play(speechReply)}><Volume2 size={13} />朗读回复</button>}</div>
         </>}
+        {running && !cancelling && session?.execution?.phase === "waiting_input" && session.execution.user_input && <AgentUserInput key={`${session.id}:${session.execution.user_input.id}`} request={session.execution.user_input} disabled={!!session.execution.user_input_response} onSubmit={answerUserInput} />}
         {(error || session?.error) && <div className="agent-float-error" role="alert">{error || session?.error}{restoreFailed && <button type="button" onClick={() => setRestoreAttempt(value => value + 1)}>重新连接</button>}</div>}
         {narration.error && <div className="agent-float-error" role="alert">朗读失败：{narration.error}</div>}
         {onSettings && !listening && (error || narration.error) && <button type="button" className="agent-float-settings" onClick={() => { close(); onSettings(); }}>检查模型设置 <ArrowUpRight size={12} /></button>}

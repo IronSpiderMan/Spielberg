@@ -256,6 +256,7 @@ PLAYWRIGHT_PATH=/path/to/playwright node scripts/qa-screenplay-layout.cjs
 - 支持直接生成 SVG：例如「画一个 SVG 标志并保存到素材库」。Agent 会编写 SVG 源码并调用 `media/create-svg`，无需配置图片生成服务；结果直接显示在对话中，可预览、下载及关联资产。图片素材支持 JPG/JPEG、PNG、WebP、GIF、SVG；SVG 保留矢量原文件，用于模型参考时自动转为 PNG。支持自包含的静态 SVG（形状、文字、渐变、内部引用及内嵌位图），不接受脚本、事件、动画、嵌入网页和外部资源；单个 SVG 最大 5 MB，单边不超过 8192 像素且总面积不超过 16,777,216 像素。
 - 联网搜索默认无需 Key，使用 DuckDuckGo，并在不可用时尝试 Bing；也可以配置 Brave Search 或 Tavily。搜索结果包含来源链接，Agent 可以继续读取公开网页。每次发送前可关闭联网。搜索服务受网络连通性和上游限流影响。
 - 会话、消息与执行记录保存在当前项目数据库，支持新建、切换和删除会话。复杂任务可显示分步计划，保留待办和执行进度；重启后发送“继续”时，Agent 会结合原记录和当前项目状态接着处理。计划是工作记录，完成标记仍需真实工具结果支持。 首次发送失败时保留已创建的会话与文字、图片草稿，重试沿用同一会话。
+- Agent 可在需要关键信息或选择时调用 `request_user_input`，在完整对话和悬浮助手显示执行确认、补充文本、单选或多选卡片。每次最多 4 个问题，选择题支持 2–12 个选项；选项不会默认提交。工具确认会展示具体的 `app_request` / `app_action` 及参数，只有明确批准后才执行一次，拒绝则不执行。等待期间可切换页面或刷新后继续回答，也可停止任务；关闭面板或等待时间不会视为批准。应用后端重启会中断待回答请求，保留记录，再发送消息继续并重新确认。
 - 回复支持流式显示，生成中的文字逐步保存到同一条消息；取消、断流或重启后保留已保存的部分回复并标为“回复已中断”。工具参数必须完整接收且响应正常结束后才执行，断流不会执行半截工具调用。仍兼容返回完整 JSON 的模型渠道。
 - 后台执行不依赖页面持续打开；「停止」会中断等待中的模型请求和自动重试，并阻止后续工具步骤。已经开始的业务工具（如生成或导出）可能继续完成，实际结果仍会保留。此时界面保持“正在停止”并持续刷新，后台退出后才允许再次发送或删除会话；加载失败可直接重试。
 - 界面显示正在思考、执行工具、重试或整理结果，以及本轮已用步数。达到步数上限后，Agent 会进入只汇报结果的阶段，多出的工具调用明确标记“未执行”，会话显示“已暂停，可继续”。相同参数的工具失败三次会暂停，避免反复消耗步数。模型临时连接故障或限流、部分 5xx 错误最多自动重试两次；重试仅针对模型请求，不会重放已经完成的业务工具。
@@ -270,6 +271,7 @@ cargo build --manifest-path backend/Cargo.toml
 npm run test:agent
 npm run test:skills
 PLAYWRIGHT_PATH=/path/to/playwright node scripts/qa/agent-ui.cjs
+PLAYWRIGHT_PATH=/path/to/playwright node scripts/qa/agent-user-input.cjs
 ```
 
 实现分为执行循环（`backend/src/agent.rs`）、模型传输（`agent_model.rs`）、运行状态与计划（`agent_execution.rs`）、上下文投影/历史检索和项目业务工具。参考 [Codex App Server 的 turn、计划与中断设计](https://learn.chatgpt.com/docs/app-server)，在现有 OpenAI 兼容模型接口上实现独立运行状态，保留 Spielberg 自身的业务工具和项目权限边界。

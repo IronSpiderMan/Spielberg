@@ -51,7 +51,7 @@
 .agent-session-state[data-status=completed] svg { width: 5px; height: 5px; fill: currentColor; stroke: none; opacity: .4; }
 .agent-session-state[data-status=idle] svg { width: 6px; height: 6px; opacity: .5; }
 .agent-session-state { width: 15px; height: 15px; align-items: center; justify-content: center; }
-.agent-session-state[data-status=running], .agent-session-state[data-status=limited] { color: var(--agent-accent); }
+.agent-session-state[data-status=waiting_input], .agent-session-state[data-status=running], .agent-session-state[data-status=limited] { color: var(--agent-accent); }
 .agent-session-state[data-status=failed] { color: var(--color-danger-6, #d95757); }
 .agent-session-state[data-status=running] svg { animation: agent-session-spin 1.2s linear infinite; }
 @keyframes agent-session-spin { to { transform: rotate(360deg); } }
@@ -146,7 +146,7 @@
 .agent-tool summary > small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--agent-muted); font-size: 10px; }
 .agent-tool-status { display: flex; align-items: center; gap: 3px; margin-left: auto; flex-shrink: 0; color: #4d8b6e; }
 .agent-tool-status.failed { color: #c05f50; }
-.agent-tool-status.running { color: var(--agent-accent); }
+.agent-tool-status.waiting_input, .agent-tool-status.running { color: var(--agent-accent); }
 .agent-tool > div { padding: 10px 12px; border-top: 1px solid var(--agent-border); }
 .agent-tool b { color: var(--agent-muted); font-size: 10px; }
 .agent-tool pre { max-height: 280px; overflow: auto; margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; line-height: 1.7; }
