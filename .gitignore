@@ -63,6 +63,7 @@ npm-debug.log*
 !/scripts/qa/settings-layout.cjs
 !/scripts/qa/ui-details.cjs
 !/scripts/qa/studio-media-interactions.cjs
+!/scripts/qa/audio-tools.cjs
 !/scripts/qa/video-preview-trim.cjs
 !/scripts/qa/editor-workflow.cjs
 

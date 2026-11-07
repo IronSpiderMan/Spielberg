@@ -1,10 +1,10 @@
 use super::*;
 use std::process::Command;
-fn binary(name: &str) -> String {
+pub(super) fn binary(name: &str) -> String {
     let local = format!("/opt/homebrew/bin/{name}");
     if Path::new(&local).exists() { local } else { name.into() }
 }
-fn run(cmd: &mut Command) -> Result<std::process::Output, String> {
+pub(super) fn run(cmd: &mut Command) -> Result<std::process::Output, String> {
     let output = cmd.output().map_err(|e| format!("无法运行 FFmpeg/FFprobe，请确认已安装：{e}"))?;
     if !output.status.success() { return Err(format!("媒体处理失败：{}", String::from_utf8_lossy(&output.stderr).chars().take(1500).collect::<String>())); }
     Ok(output)
@@ -54,6 +54,80 @@ pub(super) fn trim_video(s: &AppState, v: &Value) -> Result<Value, String> {
         c.execute("INSERT INTO media(name,path,kind,created_at) VALUES(?,?,'video',?)",
             params![name, out.to_string_lossy(), now()]).map_err(|e| e.to_string())?;
         Ok(media(&c, Some(c.last_insert_rowid())).unwrap())
+    })();
+    if result.is_err() { let _ = fs::remove_file(&out); }
+    result
+}
+// Render to a new file first. Overwriting changes the existing row only after FFmpeg succeeds.
+pub(super) fn process_audio(s: &AppState, v: &Value, extract: bool) -> Result<Value, String> {
+    let pid = project_id(v)?;
+    let c = db(s, &pid)?;
+    let mid = intv(v, "media_id")?;
+    let item = media(&c, Some(mid)).ok_or("素材不存在或已删除")?;
+    if item["kind"] != if extract { "video" } else { "audio" } {
+        return Err(if extract { "只能从视频提取音频" } else { "只能裁剪音频素材" }.into());
+    }
+    let path = item["path"].as_str().ok_or("素材路径无效")?;
+    if v.get("source_path").is_some_and(|value| value.as_str() != Some(path)) {
+        return Err("素材已更新，请重新打开后再操作".into());
+    }
+    let overwrite = match v.get("overwrite") {
+        None => false,
+        Some(value) => value.as_bool().ok_or("覆盖参数必须为布尔值")?,
+    };
+    if extract && overwrite { return Err("提取音频必须另存为新素材".into()); }
+    let info = probe(path)?;
+    if info["audio"] != true { return Err("该素材没有音轨，无法提取或裁剪音频".into()); }
+    let duration = info["duration"].as_f64().unwrap();
+    let (start, end) = if extract { (0.0, duration) } else {
+        let n = |key: &str| v[key].as_f64().filter(|n| n.is_finite()).ok_or_else(|| format!("无效参数：{key}"));
+        let (start, end) = (n("start")?, n("end")?);
+        if start < 0.0 || end > duration + 0.05 || end.min(duration) - start < 0.05 - 1e-8 {
+            return Err("裁剪范围无效，请保留至少 0.05 秒且不要超出原音频".into());
+        }
+        (start, end.min(duration))
+    };
+    let name = if overwrite { item["name"].as_str().unwrap().to_string() } else { strv(v, "name")? };
+    let name = name.trim().chars().take(100).collect::<String>();
+    if name.is_empty() { return Err("请输入保存名称".into()); }
+    // PCM avoids accumulating lossy encoding artifacts on repeated cuts.
+    let named_path = Path::new(&name);
+    let has_extension = named_path.extension().and_then(|ext| ext.to_str()).is_some_and(|ext|
+        ["mp3", "wav", "m4a", "aac", "ogg", "flac", "mp4", "mov", "webm", "mkv"].contains(&ext.to_ascii_lowercase().as_str()));
+    let stem = if has_extension { named_path.file_stem().and_then(|s| s.to_str()).unwrap_or(&name) } else { &name };
+    let name = format!("{stem}.wav");
+    let root = PathBuf::from(strv(&project(s, &pid)?, "path")?);
+    let dir = root.join("assets/audio");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let out = dir.join(format!("{}-{}.wav", if extract { "extract" } else { "trim" }, Uuid::new_v4()));
+    let result = (|| {
+        run(crate::background_command(binary("ffmpeg")).args([
+            "-v", "error", "-nostdin", "-y", "-ss", &start.to_string(), "-i", path,
+            "-t", &(end - start).to_string(), "-map", "0:a:0", "-vn", "-c:a", "pcm_s16le",
+        ]).arg(&out))?;
+        let _lock = s.guard.lock().map_err(|_| "本地数据锁不可用")?;
+        let mut c = db(s, &pid)?;
+        let current = media(&c, Some(mid)).ok_or("原素材已删除，请重新打开素材库")?;
+        if current["path"] != item["path"] { return Err("原素材已更新，请重新打开后再操作".into()); }
+        let tx = c.transaction().map_err(|e| e.to_string())?;
+        let id = if overwrite {
+            tx.execute("UPDATE media SET name=?,path=? WHERE id=?", params![name, out.to_string_lossy(), mid]).map_err(|e| e.to_string())?;
+            // Cached timeline exports using this source no longer describe the current content.
+            tx.execute("UPDATE edit_outputs SET request=NULL WHERE edit_id IN (SELECT edit_id FROM edit_sources WHERE media_id=?)", [mid]).map_err(|e| e.to_string())?;
+            tx.execute("UPDATE edit_projects SET status='draft' WHERE id IN (SELECT edit_id FROM edit_sources WHERE media_id=?)", [mid]).map_err(|e| e.to_string())?;
+            mid
+        } else {
+            tx.execute("INSERT INTO media(name,path,kind,created_at) VALUES(?,?,'audio',?)", params![name, out.to_string_lossy(), now()]).map_err(|e| e.to_string())?;
+            tx.last_insert_rowid()
+        };
+        tx.commit().map_err(|e| e.to_string())?;
+        // Imports use audios; generated media uses audio. Never delete external/shared files.
+        let imported_dir = root.join("assets/audios");
+        if overwrite && [Some(dir.as_path()), Some(imported_dir.as_path())].contains(&Path::new(path).parent()) {
+            let used: i64 = c.query_row("SELECT COUNT(*) FROM media WHERE path=?", [path], |r| r.get(0)).unwrap_or(1);
+            if used == 0 { let _ = fs::remove_file(path); }
+        }
+        media(&c, Some(id)).ok_or_else(|| "保存后的素材不可用".into())
     })();
     if result.is_err() { let _ = fs::remove_file(&out); }
     result
@@ -200,6 +274,96 @@ pub(super) fn command(s: &AppState, v: &Value, export: bool) -> Result<Value,Str
 }
 #[cfg(test)] mod tests {
     use super::*;
+    #[test] fn audio_extraction_and_trim_save_modes() {
+        let root = std::env::temp_dir().join(format!("audio-tools-test-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let s = AppState { root: root.clone(), guard: std::sync::Arc::new(Mutex::new(())) };
+        let result = (|| -> Result<(), String> {
+            let p = create_project(&s, &json!({"name":"Audio tools"}))?;
+            let pid = p["id"].as_str().unwrap();
+            let other = create_project(&s, &json!({"name":"Other"}))?;
+            let video = root.join("source.mp4");
+            run(crate::background_command(binary("ffmpeg")).args(["-v","error","-f","lavfi","-i","color=c=red:s=160x120:r=24","-f","lavfi","-i","sine=frequency=440:sample_rate=48000","-t","2","-c:v","libx264","-c:a","aac"]).arg(&video))?;
+            let source = import_media(&s, &json!({"project_id":pid,"source_path":video}))?;
+            let original_video = fs::read(source["path"].as_str().unwrap()).unwrap();
+            let audio = rest::action(&s, "/media/extract-audio", json!({"project_id":pid,"media_id":source["id"],"name":"提取音轨"})).map_err(|e| e.1)?;
+            assert_eq!(audio["kind"], "audio");
+            assert_eq!(audio["name"], "提取音轨.wav");
+            let audio_path = audio["path"].as_str().unwrap();
+            let info = probe(audio_path)?;
+            assert_eq!(info["video"], false); assert_eq!(info["audio"], true);
+            assert!((info["duration"].as_f64().unwrap() - 2.0).abs() < 0.06);
+            assert_eq!(fs::read(source["path"].as_str().unwrap()).unwrap(), original_video);
+            let original_audio = fs::read(audio_path).unwrap();
+            let request = json!({"project_id":pid,"media_id":audio["id"],"source_path":audio_path,"start":0.375,"end":1.125,"name":"裁剪片段","overwrite":false});
+            let trimmed = rest::action(&s, "/media/trim-audio", request.clone()).map_err(|e| e.1)?;
+            assert_ne!(trimmed["id"], audio["id"]);
+            assert_eq!(fs::read(audio_path).unwrap(), original_audio);
+            let pcm = |path: &str| -> Result<Vec<u8>, String> { Ok(run(crate::background_command(binary("ffmpeg")).args(["-v","error","-i",path,"-f","s16le","pipe:1"]))?.stdout) };
+            let samples = pcm(audio_path)?;
+            assert_eq!(pcm(trimmed["path"].as_str().unwrap())?, samples[18000*2..54000*2], "Trim boundaries must match source PCM samples");
+
+            // In-place edits keep role references and invalidate dependent cached exports.
+            let role = insert_role(&s, &json!({"project_id":pid,"name":"Hero"}))?;
+            manage_role_audio(&s, &json!({"project_id":pid,"asset_id":role["id"],"media_id":audio["id"],"name":"低语"}), false)?;
+            let c = db(&s, pid)?;
+            c.execute("INSERT INTO edit_projects VALUES('cut','Cut','{}','exported','1','1')", []).unwrap();
+            c.execute("INSERT INTO edit_sources VALUES('cut',?)", [audio["id"].as_i64().unwrap()]).unwrap();
+            c.execute("INSERT INTO edit_outputs VALUES('cut',?,'1','cached')", [trimmed["id"].as_i64().unwrap()]).unwrap();
+            let before = catalog::revisions(&c)?;
+            let mut overwrite = request.clone(); overwrite["overwrite"] = json!(true);
+            let updated = rest::action(&s, "/media/trim-audio", overwrite.clone()).map_err(|e| e.1)?;
+            assert_eq!(updated["id"], audio["id"]);
+            assert_ne!(updated["path"], audio["path"]);
+            assert!(!Path::new(audio_path).exists());
+            assert_eq!(role_audios(&c, role["id"].as_i64().unwrap())?[0]["path"], updated["path"]);
+            assert!(catalog::revisions(&c)?["media"].as_i64().unwrap() > before["media"].as_i64().unwrap());
+            assert_eq!(c.query_row("SELECT request FROM edit_outputs WHERE edit_id='cut'", [], |r| r.get::<_, Option<String>>(0)).unwrap(), None);
+            assert_eq!(c.query_row("SELECT status FROM edit_projects WHERE id='cut'", [], |r| r.get::<_, String>(0)).unwrap(), "draft");
+            assert!(process_audio(&s, &overwrite, false).unwrap_err().contains("已更新"));
+            let duration = probe(updated["path"].as_str().unwrap())?["duration"].as_f64().unwrap();
+            assert!((duration - 0.75).abs() < 0.001);
+
+            let valid = json!({"project_id":pid,"media_id":updated["id"],"source_path":updated["path"],"start":0.1,"end":0.15,"name":"最短片段"});
+            process_audio(&s, &valid, false)?;
+            for patch in [json!({"start":-1}),json!({"end":4}),json!({"end":0.14}),json!({"end":"0.5"}),json!({"start":null}),json!({"name":" "}),json!({"overwrite":"yes"}),json!({"media_id":source["id"]}),json!({"project_id":other["id"]})] {
+                let mut invalid = valid.clone(); invalid.as_object_mut().unwrap().extend(patch.as_object().unwrap().clone());
+                assert!(process_audio(&s, &invalid, false).is_err(), "Accepted invalid audio request: {invalid}");
+            }
+            let silent = root.join("silent.mp4");
+            run(crate::background_command(binary("ffmpeg")).args(["-v","error","-i",source["path"].as_str().unwrap(),"-an","-c:v","copy"]).arg(&silent))?;
+            let silent = import_media(&s, &json!({"project_id":pid,"source_path":silent}))?;
+            assert!(process_audio(&s, &json!({"project_id":pid,"media_id":silent["id"],"name":"No audio"}), true).unwrap_err().contains("没有音轨"));
+            catalog::trash(&c, trimmed["id"].as_i64().unwrap()).unwrap_err(); // Still an edit output.
+            catalog::trash(&c, silent["id"].as_i64().unwrap())?;
+            assert!(process_audio(&s, &json!({"project_id":pid,"media_id":silent["id"],"name":"Deleted"}), true).is_err());
+
+            // Failed media processing must leave both the row and original file intact.
+            let updated_path = updated["path"].as_str().unwrap();
+            let intact = fs::read(updated_path).unwrap();
+            fs::write(updated_path, b"invalid audio").unwrap();
+            let count: i64 = c.query_row("SELECT COUNT(*) FROM media", [], |r| r.get(0)).unwrap();
+            let mut failure = valid.clone(); failure["overwrite"] = json!(true);
+            assert!(process_audio(&s, &failure, false).is_err());
+            assert_eq!(media(&c, updated["id"].as_i64()).unwrap(), updated);
+            assert_eq!(fs::read(updated_path).unwrap(), b"invalid audio");
+            fs::write(updated_path, intact).unwrap();
+            assert_eq!(c.query_row("SELECT COUNT(*) FROM media", [], |r| r.get::<_, i64>(0)).unwrap(), count);
+            let listed = catalog::list(&c, &json!({"kind":"audio","usage":"all","page":1,"limit":24}))?;
+            assert!(listed["items"].as_array().unwrap().iter().any(|item| item["id"] == updated["id"]));
+            let mp3 = root.join("配音.第一段.mp3");
+            run(crate::background_command(binary("ffmpeg")).args(["-v","error","-i",updated_path,"-c:a","libmp3lame"]).arg(&mp3))?;
+            let imported = import_media(&s, &json!({"project_id":pid,"source_path":mp3}))?;
+            let cut = process_audio(&s, &json!({"project_id":pid,"media_id":imported["id"],"start":0.1,"end":0.6,"overwrite":true}), false)?;
+            assert_eq!(cut["id"], imported["id"]);
+            assert_eq!(cut["name"], "配音.第一段.wav");
+            assert!(!Path::new(imported["path"].as_str().unwrap()).exists());
+            assert!((probe(cut["path"].as_str().unwrap())?["duration"].as_f64().unwrap() - 0.5).abs() < 0.001);
+            Ok(())
+        })();
+        let _ = fs::remove_dir_all(root);
+        result.unwrap();
+    }
     #[test] fn preview_trim_preserves_sources_geometry_and_optional_audio() {
         let root = std::env::temp_dir().join(format!("preview-trim-test-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();

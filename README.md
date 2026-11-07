@@ -312,6 +312,12 @@ Private
 
 「预览选中片段」只播放保留范围，也可开启「循环片段」。填写名称后点击「保存为新素材」，生成 MP4（H.264/AAC）并立即加入项目素材库，原视频保留；成功后可直接「预览结果」，失败时在裁剪区重试。此处按时间裁剪，保留源视频的帧率与画面比例，不套用时间线导出的固定尺寸；无声视频保持无声。服务端需要 FFmpeg 和 FFprobe。
 
+视频预览工具栏提供「提取音频」，将视频的首条音轨保存为独立 WAV 音频并立即加入素材库；无音轨时显示原因，可重试。素材库音频卡片可点击「裁剪音频」，也可在音频预览中进入「编辑 / 裁剪」：拖动范围两端或输入起止秒数，试听选中片段，然后选择「另存为新素材」或「覆盖原素材」。另存保留原音频；覆盖保留素材 ID，已有引用使用裁剪后的声音。音频统一保存为 WAV，避免重复有损编码；保存失败保留原素材，覆盖后可直接试听结果。已有剪辑项目的范围不会自动重排，若超出裁剪后的时长，需重新调整入点与出点。
+
+音频裁剪以真实波形为主视图，显示振幅包络、选中范围与播放头；静音或峰值低于 −50 dB 的极低音量区间以平直线和「静音」标记提示（不会自动删去）。支持点击波形定位、拖动起止点，以及将播放头设为起点/终点。波形在服务端逐声道分析，避免反相声道相互抵消，生成时不在浏览器加载完整解码音频；结果缓存于项目 `.cache/waveforms`，源文件变化或覆盖后重新生成，可通过磁盘清理删除。加载失败会显示重试入口，不影响原有试听和裁剪。
+
+音频功能验证：`cargo test --manifest-path backend/Cargo.toml audio_extraction_and_trim_save_modes`；真实波形、静音与缓存测试：`cargo test --manifest-path backend/Cargo.toml audio_waveform::tests`；界面回归：`PLAYWRIGHT_PATH=/path/to/playwright QA_URL=http://127.0.0.1:1420 node scripts/qa/audio-tools.cjs`。
+
 预览裁剪验证：`cargo test --manifest-path backend/Cargo.toml preview_trim_preserves_sources_geometry_and_optional_audio`；界面回归：`PLAYWRIGHT_PATH=/path/to/playwright QA_URL=http://127.0.0.1:1420 node scripts/qa/video-preview-trim.cjs`（使用临时视频与隔离 HTTP 数据）。
 
 在项目侧栏打开「音视频剪辑」，创建或继续一个剪辑项目。素材库支持搜索、类型筛选和剧集筛选；点击素材预览，点击旁边的「＋」添加：视频追加到主轨，音频在当前播放头位置添加为独立音轨。也可拖动素材到时间线。时间线草稿自动保存到项目数据库，随项目备份恢复；状态栏区分有修改、保存中、已保存和保存失败，失败时可重试。

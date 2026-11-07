@@ -149,7 +149,7 @@ pub fn disk_scan(c:&Connection,root:&Path)->Result<Value,String> {
         }
     }
     let mut cache_bytes=0u64;
-    for name in ["thumbnails","svg"] {
+    for name in ["thumbnails","svg","waveforms"] {
         let cache=root.join(".cache").join(name);
         if cache.exists() && !cache.canonicalize().map_err(|e|e.to_string())?.starts_with(root.canonicalize().map_err(|e|e.to_string())?){return Err("缓存目录不能指向项目之外".into())}
         cache_bytes+=files_under(&cache)?.iter().filter_map(|p|fs::metadata(p).ok().map(|m|m.len())).sum::<u64>();
@@ -172,7 +172,7 @@ pub fn cleanup(c:&Connection,root:&Path,v:&Value)->Result<Value,String> {
         count+=1;
     }
     if v["clear_cache"].as_bool().unwrap_or(false) {
-        for name in ["thumbnails","svg"] {
+        for name in ["thumbnails","svg","waveforms"] {
             for path in files_under(&root.join(".cache").join(name))? { fs::remove_file(path).map_err(|e|e.to_string())?; }
         }
     }

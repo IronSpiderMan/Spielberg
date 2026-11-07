@@ -1,7 +1,9 @@
+import { TrimTimeField } from "./TrimTimeField";
+import { AudioPreviewModal } from "./AudioPreviewModal";
 import { PreviewKeyboardNavigation } from "./PreviewKeyboardNavigation";
 import { RevealFileButton } from "./RevealFileButton";
 import { Button, Message, Modal, Select } from "@arco-design/web-react";
-import { ChevronLeft, ChevronRight, Download, Film, Maximize, Pause, Play, Repeat, RotateCcw, Scissors, Volume2, VolumeX, Undo2, Redo2, SkipBack, SkipForward, Save, CheckCircle2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Music, Film, Maximize, Pause, Play, Repeat, RotateCcw, Scissors, Volume2, VolumeX, Undo2, Redo2, SkipBack, SkipForward, Save, CheckCircle2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode, type VideoHTMLAttributes } from "react";
 import AssetThumbnail, { cachedThumbnailUrl, loadThumbnailUrl } from "../AssetThumbnail";
 import { imageUrl, post, type Media } from "../core";
@@ -37,23 +39,6 @@ function preciseTime(value: number) {
   const cs = Math.round(Math.max(0, Number.isFinite(value) ? value : 0) * 100);
   return `${Math.floor(cs / 6000).toString().padStart(2, "0")}:${(cs % 6000 / 100).toFixed(2).padStart(5, "0")}`;
 }
-function TrimTimeField({label,value,min,max,disabled,onCommit}:{label:string;value:number;min:number;max:number;disabled:boolean;onCommit:(value:number)=>void}) {
-  const [entry,setEntry] = useState({value,text:value.toFixed(2)});
-  if (entry.value !== value) setEntry({value,text:value.toFixed(2)});
-  const text = entry.value === value ? entry.text : value.toFixed(2);
-  const cancelled = useRef(false);
-  return <input aria-label={label} type="number" min={min} max={max} step="0.01" value={text} disabled={disabled}
-    onChange={event=>setEntry({value,text:event.target.value})}
-    onBlur={()=>{
-      if(cancelled.current){cancelled.current=false;return;}
-      const parsed=Number(text);
-      if(text.trim()&&Number.isFinite(parsed)&&text!==value.toFixed(2))onCommit(clamp(parsed,min,max));
-      setEntry({value,text:value.toFixed(2)});
-    }} onKeyDown={event=>{
-      if(event.key==="Enter"){event.preventDefault();event.currentTarget.blur();}
-      if(event.key==="Escape"){event.preventDefault();event.stopPropagation();cancelled.current=true;setEntry({value,text:value.toFixed(2)});event.currentTarget.blur();}
-    }}/>;
-}
 
 function time(value: number) {
   const seconds = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
@@ -67,7 +52,7 @@ export function VideoPreviewModal({ visible, afterClose, ...props }: Props) {
   useEffect(() => { setEditing(false); setSaving(false); }, [open, props.media?.id, props.media?.path, props.playbackKey]);
   const videos = props.videos || noVideos;
   const index = videos.findIndex(item => item.id === props.media?.id);
-  const canNavigate = open && !editing && videos.length > 1 && index >= 0 && !!props.onMediaChange;
+  const canNavigate = open && !editing && !saving && videos.length > 1 && index >= 0 && !!props.onMediaChange;
   const move = (offset: number) => {if (canNavigate) props.onMediaChange?.(videos[(index + offset + videos.length) % videos.length]);};
   return <Modal modalRender={node => <PreviewKeyboardNavigation enabled={canNavigate} move={move}>{node}</PreviewKeyboardNavigation>} className={`image-preview-modal video-preview-modal is-fullscreen${editing ? " is-editing" : ""}`} wrapClassName="image-preview-wrapper" alignCenter={false}
     visible={open} title={props.media?.name || props.title || "视频预览"} closable={false} footer={null} escToExit={!saving} maskClosable={!saving} onCancel={() => { if (!saving) props.onClose(); }} afterClose={afterClose} unmountOnExit>
@@ -101,8 +86,12 @@ function VideoPreview({ media, onClose, title = "视频预览", videos = noVideo
   const [previewing, setPreviewing] = useState(false);
   const [saved, setSaved] = useState<Media | null>(null);
   const saveInFlight = useRef(false);
+  const [extracted, setExtracted] = useState<Media | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [audioOpen, setAudioOpen] = useState(false);
+  const [extractError, setExtractError] = useState("");
   const currentIndex = videos.findIndex(item => item.id === media.id);
-  const canNavigate = !editing && videos.length > 1 && currentIndex >= 0 && !!onMediaChange;
+  const canNavigate = !editing && !saving && !audioOpen && videos.length > 1 && currentIndex >= 0 && !!onMediaChange;
   const ready = metadata.width > 0 && !failed;
   const canEdit = ready && !!projectId && allowEdit && Number.isFinite(metadata.duration) && metadata.duration >= 0.05;
   const validRange = range.start >= 0 && range.end <= metadata.duration && range.end - range.start >= 0.05 - 1e-8;
@@ -179,6 +168,19 @@ function VideoPreview({ media, onClose, title = "视频预览", videos = noVideo
     } catch (error) { setSaveError(`裁剪保存失败：${error instanceof Error ? error.message : String(error)}`); }
     finally { saveInFlight.current = false; setSaving(false); }
   };
+  const extractAudio = async () => {
+    if (!projectId || saveInFlight.current) return;
+    if (extracted) { player.current?.pause(); setAudioOpen(true); return; }
+    saveInFlight.current = true;
+    player.current?.pause(); setSaving(true); setExtracting(true); setExtractError("");
+    try {
+      const result = await post<Media>("/media/extract-audio", {project_id: projectId, media_id: media.id, source_path: media.path, name: `${media.name.replace(/\.[^.]+$/, "")} · 音频`});
+      setExtracted(result);
+      window.dispatchEvent(new CustomEvent("spielberg:media-saved", {detail: {projectId, media: result}}));
+      Message.success("音频已保存到素材库");
+    } catch (error) { setExtractError(`提取音频失败：${error instanceof Error ? error.message : String(error)}`); }
+    finally { saveInFlight.current = false; setExtracting(false); setSaving(false); }
+  };
   const move = useCallback((offset: number) => {
     if (canNavigate) onMediaChange?.(videos[(currentIndex + offset + videos.length) % videos.length]);
   }, [canNavigate, currentIndex, videos, onMediaChange]);
@@ -248,10 +250,11 @@ function VideoPreview({ media, onClose, title = "视频预览", videos = noVideo
         player.current?.pause(); setLoop(false);
         if (!editing && range.end === 0) { const initial = {start:0,end:metadata.duration}; rangeRef.current=initial;setRange(initial); }
         setEditing(!editing);
-      }}>{editing ? "返回预览" : "编辑 / 裁剪"}</Button>}{!editing && <Button loading={downloading} disabled={saving} icon={<Download size={16} />} onClick={() => void download()}>下载</Button>}</div>
+      }}>{editing ? "返回预览" : "编辑 / 裁剪"}</Button>}{!editing && projectId && allowEdit && <Button loading={extracting} disabled={saving} icon={<Music size={16}/>} onClick={()=>void extractAudio()}>{extracted ? "试听已提取音频" : "提取音频"}</Button>}{!editing && <Button loading={downloading} disabled={saving} icon={<Download size={16} />} onClick={() => void download()}>下载</Button>}</div>
     </div>
     <Button className="video-preview-close" aria-label="关闭视频预览" disabled={saving} onClick={onClose}>关闭</Button>
     </div>
+    {extractError && <div className="video-trim-feedback is-error" role="alert"><span>{extractError}</span><Button disabled={saving} onClick={()=>void extractAudio()}>重试提取</Button></div>}
     <div className="image-preview-stage video-preview-stage">
       {canNavigate && <button type="button" className="image-preview-nav is-previous" aria-label="上一个视频" title="上一个视频（←）" onClick={() => move(-1)}><ChevronLeft size={24} /></button>}
       <div className={`video-preview-viewport${fit ? "" : " is-actual-size"}`} aria-label="视频画布">
@@ -324,7 +327,7 @@ function VideoPreview({ media, onClose, title = "视频预览", videos = noVideo
       <div className="video-trim-shortcuts"><span>空格 播放 / 暂停 · ← → 微调播放位置 · I / O 标记起止点</span><span>⌘ / Ctrl Z 撤销 · Esc 关闭</span></div>
     </section>}
     {!editing && <div className="image-preview-status"><span>{time(currentTime)} / {time(metadata.duration)}<i />{fit ? "适应窗口" : "原始尺寸"}<i />{canNavigate && <>← / → 切换<i /></>}{saving ? "正在保存…" : "Esc 关闭"}</span></div>}
-    {!editing && (canNavigate || footer) && <div className="video-preview-bottom-bar">
+    {!editing && !saving && (canNavigate || footer) && <div className="video-preview-bottom-bar">
     {canNavigate && <div className="image-preview-filmstrip video-preview-filmstrip" aria-label="视频列表">
       <span className="image-preview-position" aria-live="polite">{currentIndex + 1} / {videos.length}</span>
       <div>{videos.map((item, index) => <button type="button" key={item.id} title={item.name} aria-label={`查看第 ${index + 1} 个视频：${item.name}`} aria-pressed={item.id === media.id}
@@ -335,6 +338,7 @@ function VideoPreview({ media, onClose, title = "视频预览", videos = noVideo
     </div>}
     {footer && <div className="video-preview-footer-actions">{footer}</div>}
     </div>}
+    <AudioPreviewModal media={audioOpen ? extracted : null} allowEdit={false} projectId={projectId} onClose={()=>setAudioOpen(false)}/>
     {saved && <VideoPreviewModal media={resultOpen ? saved : null} projectId={projectId} allowEdit={false} onClose={()=>setResultOpen(false)}/>}
   </div>;
 }

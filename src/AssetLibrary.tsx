@@ -1,3 +1,4 @@
+import { AudioPreviewModal } from "./components/AudioPreviewModal";
 import { confirmAction } from "./components/ConfirmAction";
 import { VideoPreviewModal } from "./components/VideoPreviewModal";
 import { ImagePreviewModal } from "./components/ImagePreviewModal";
@@ -43,7 +44,8 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
   const request=useRef(0);
   const paging=useRef(false);
   const libraryRef=useRef<HTMLElement>(null);
-  const openPreview=(media:Media)=>setPreview(media);
+  const [audioEditing,setAudioEditing]=useState(false);
+  const openPreview=(media:Media)=>{setAudioEditing(false);setPreview(media);};
   const pid=data.project.id;
   const refresh=async()=>{await reload();setVersion(v=>v+1);};
   useEffect(()=>{
@@ -134,7 +136,7 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
         <div className="library-card-copy"><b title={m.name}>{m.name}</b>{(m.kind==="image"||m.kind==="video")&&<MediaDimensions media={m}/>}<small>{new Date(Number(m.created_at)*1000).toLocaleString()}</small></div>
         {filter!=="trash"&&m.kind!=="file"&&<button type="button" className="asset-usage-link" data-used={m.usage_count>0} onClick={()=>setTracking(m)}>{m.usage_count?`使用中 · ${m.usage_count} 处用途`:"未使用 · 查看用途"}</button>}
         <div className="asset-card-actions">
-          {filter==="trash"?<Button size="small" disabled={busy} icon={<RotateCcw size={14}/>} onClick={()=>action("/media/restore",m)}>恢复素材</Button>:m.kind==="image"?<><Button size="small" icon={<WandSparkles size={14}/>} onClick={()=>onImageToImage(m)}>图生图</Button><Button size="small" onClick={()=>beginAssignment(m)}>设置用途</Button></>:m.kind==="video"?<Button size="small" onClick={()=>beginAssignment(m)}>设置用途</Button>:<Button size="small" onClick={()=>exportAsset(m)}>导出文件</Button>}
+          {filter==="trash"?<Button size="small" disabled={busy} icon={<RotateCcw size={14}/>} onClick={()=>action("/media/restore",m)}>恢复素材</Button>:m.kind==="image"?<><Button size="small" icon={<WandSparkles size={14}/>} onClick={()=>onImageToImage(m)}>图生图</Button><Button size="small" onClick={()=>beginAssignment(m)}>设置用途</Button></>:m.kind==="video"?<Button size="small" onClick={()=>beginAssignment(m)}>设置用途</Button>:m.kind==="audio"?<Button size="small" onClick={()=>{setAudioEditing(true);setPreview(m);}}>裁剪音频</Button>:<Button size="small" onClick={()=>exportAsset(m)}>导出文件</Button>}
           <Dropdown trigger="click" droplist={<Menu onClickMenuItem={key=>{if(key==="reveal")void revealAsset(m);if(key==="rename")setRename({...m});if(key==="export")void exportAsset(m);if(key==="delete")confirmDelete(m);if(key==="usage")setTracking(m);}}>
             {canRevealFile&&<Menu.Item key="reveal" disabled={!m.path?.trim()}>{revealFileLabel}</Menu.Item>}
             {filter!=="trash"&&<Menu.Item key="usage">查看用途</Menu.Item>}{filter!=="trash"&&<Menu.Item key="rename">重命名</Menu.Item>}<Menu.Item key="export">导出</Menu.Item><Menu.Item key="delete" disabled={busy || (filter!=="trash"&&m.usage_count>0)}>{filter==="trash"?"永久删除":"移入回收站"}</Menu.Item>
@@ -159,12 +161,13 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
     </Drawer>
     <ImagePreviewModal media={preview?.kind==="image"?preview:null} images={items.filter(item=>item.kind==="image")} onMediaChange={setPreview} onClose={()=>setPreview(null)} footer={filter==="trash"?null:<Button type="primary" onClick={()=>preview&&beginAssignment(preview)}>设置用途</Button>}/>
     <VideoPreviewModal allowEdit={filter!=="trash"} media={preview?.kind==="video"?preview:null} videos={items.filter(item=>item.kind==="video")} projectId={pid} onMediaChange={setPreview} onClose={()=>setPreview(null)} footer={filter==="trash"?null:<Button type="primary" onClick={()=>preview&&beginAssignment(preview)}>设置用途</Button>}/>
-    <Modal visible={!!preview && (preview.kind==="audio"||preview.kind==="file")} title={preview?.name} footer={null} unmountOnExit onCancel={()=>setPreview(null)}>{preview?.kind==="audio"?<audio controls src={imageUrl(preview)} style={{width:"100%"}}/>:<Empty description="此文件不支持预览，可通过更多操作导出查看"/>}</Modal>
+    <AudioPreviewModal media={preview?.kind==="audio"?preview:null} projectId={pid} allowEdit={filter!=="trash"} initialEditing={audioEditing} onClose={()=>setPreview(null)}/>
+    <Modal visible={preview?.kind==="file"} title={preview?.name} footer={null} unmountOnExit onCancel={()=>setPreview(null)}><Empty description="此文件不支持预览，可通过更多操作导出查看"/></Modal>
     <Modal visible={!!rename} title="重命名素材" onCancel={()=>setRename(null)} onOk={async()=>{if(!rename?.name.trim())throw Error("请输入素材名称");await post("/media/rename",{project_id:pid,id:rename.id,name:rename.name.trim()});setRename(null);await refresh();}}><Input aria-label="素材名称" value={rename?.name||""} onChange={name=>setRename(m=>m?{...m,name}:null)}/></Modal>
     <Modal visible={!!scan} title="磁盘清理" okText="执行清理" confirmLoading={busy} onCancel={()=>{if(!busy)setScan(null);}} onOk={async()=>{
       if(!scan)return;setBusy(true);try{await post("/storage/cleanup",{project_id:pid,files:scan.files.map(f=>f.path),clear_cache:true});setScan(null);await refresh();Message.success("缓存已清理，未登记文件已移入回收站");}catch(e){Message.error(String(e));throw e;}finally{setBusy(false);}
     }}>
-      <p>可重建的缩略图缓存：{bytes(scan?.cache_bytes||0)}</p><p>未登记文件：{scan?.files.length||0} 个，共 {bytes(scan?.files.reduce((sum,f)=>sum+f.size,0)||0)}</p>
+      <p>可重建的预览缓存（缩略图、波形）：{bytes(scan?.cache_bytes||0)}</p><p>未登记文件：{scan?.files.length||0} 个，共 {bytes(scan?.files.reduce((sum,f)=>sum+f.size,0)||0)}</p>
       <p>未登记文件将进入回收站，可检查后恢复或永久删除。正在使用的素材不会被清理。</p>
       <div className="cleanup-files">{scan?.files.map(file=><p key={file.path}>{file.path.split(/[\\/]/).pop()} · {bytes(file.size)}</p>)}</div>
     </Modal>

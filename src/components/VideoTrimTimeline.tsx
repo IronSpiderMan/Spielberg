@@ -1,7 +1,8 @@
-import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 
 type Edge = "start" | "end";
 type Props = {
+  label?: string;
   duration: number;
   start: number;
   end: number;
@@ -12,6 +13,7 @@ type Props = {
   onGestureStart: () => void;
   onGestureEnd: (cancel?: boolean) => void;
   frames?: string[];
+  children?: ReactNode;
 };
 type Gesture = {
   kind: "trim";
@@ -126,7 +128,7 @@ export function VideoTrimTimeline(props: Props) {
     <div className="video-trim-ruler ruler" aria-hidden="true">
       {ticks.map((value, index) => <span key={index} style={{ position: "absolute", left: `${percent(value)}%` }}>{labelTime(value, step < 1)}</span>)}
     </div>
-    <div ref={track} className="video-trim-track" role="group" aria-label="视频裁剪时间轴" tabIndex={disabled ? -1 : 0}
+    <div ref={track} className="video-trim-track" role="group" aria-label={props.label || "视频裁剪时间轴"} tabIndex={disabled ? -1 : 0}
       onPointerDown={event => {
         if (disabled || gesture.current || event.button !== 0) return;
         event.preventDefault();
@@ -148,6 +150,7 @@ export function VideoTrimTimeline(props: Props) {
         event.preventDefault(); event.stopPropagation(); props.onSeek(clamp(next, 0, duration));
       }}>
       {!!props.frames?.length && <div className="video-trim-frames" aria-hidden="true">{props.frames.map((src, index) => <img key={`${index}:${src}`} src={src} alt="" draggable={false} />)}</div>}
+      {props.children}
       <div className="video-trim-discard is-before" style={{ position: "absolute", left: 0, width: `${percent(start)}%`, pointerEvents: "none" }} />
       <div className="video-trim-discard is-after" style={{ position: "absolute", left: `${percent(end)}%`, right: 0, pointerEvents: "none" }} />
       <div className="video-trim-selection" style={{ position: "absolute", left: `${percent(start)}%`, width: `${percent(end - start)}%`, pointerEvents: "none" }} />
