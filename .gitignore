@@ -57,6 +57,7 @@ npm-debug.log*
 !/scripts/qa/asset-categories.cjs
 !/scripts/qa/asset-relations.cjs
 !/scripts/qa/asset-references.cjs
+!/scripts/qa/asset-editor-layout.cjs
 !/scripts/qa/reveal-file.cjs
 !/scripts/qa/qianwen-video.cjs
 !/scripts/qa/generation-channels.cjs

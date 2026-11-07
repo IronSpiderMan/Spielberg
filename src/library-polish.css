@@ -830,34 +830,36 @@ html .app .content:has(> .asset-library) {
 .role-detail-eyebrow { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .15em; color: var(--ui-primary); }
 .role-detail-eyebrow > span { width: 18px; height: 2px; background: currentColor; }
 .content .role-detail-profile h1 { margin: 16px 0 14px; font-size: clamp(30px, 3vw, 44px); line-height: 1.3; letter-spacing: .04em; overflow-wrap: anywhere; }
-.role-detail-meta { display: flex; align-items: center; gap: 12px; color: var(--ui-muted); font-size: 12px; }
+.role-detail-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; color: var(--ui-muted); font-size: 12px; }
 .role-detail-meta > span { color: var(--ui-primary); }
 .role-detail-meta > i { width: 3px; height: 3px; border-radius: 50%; background: var(--ui-muted); }
 .role-detail-description { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--ui-border); }
 .role-detail-description h2 { margin: 0 0 14px; font-size: 12px; font-weight: 500; color: var(--ui-muted); }
 .role-detail-description p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 2; font-size: 14px; color: var(--ui-secondary-text); }
 .role-detail-gallery { margin-top: 40px; padding-top: 28px; border-top: 1px solid var(--ui-border); }
-.role-detail-gallery-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.role-detail-gallery-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
 .role-detail-gallery-heading h2 { margin: 0; font-size: 17px; font-weight: 600; }
 .role-detail-gallery-heading h2 span { margin-left: 8px; font-size: 12px; color: var(--ui-muted); font-weight: 400; font-variant-numeric: tabular-nums; }
 .role-detail-gallery-heading p { margin: 6px 0 0; font-size: 12px; color: var(--ui-muted); }
 .role-detail-gallery-heading > span { font-size: 11px; color: var(--ui-muted); }
-.role-detail-images { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 20px; }
-.role-detail-images figure { margin: 0; min-width: 0; }
+.role-detail-images { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr)); gap: 20px; }
+.role-detail-images figure { margin: 0; min-width: 0; padding: 10px; border: 1px solid var(--ui-border); border-radius: 12px; background: var(--ui-surface); }
 .role-detail-image-frame { position: relative; }
 .role-detail-set-primary { position: absolute; top: 8px; right: 8px; min-height: 24px; padding: 3px 7px; border: 1px solid var(--ui-border); border-radius: 4px; background: var(--ui-surface); color: var(--ui-primary); font: inherit; font-size: 11px; cursor: pointer; }
 .role-detail-set-primary:hover { border-color: var(--ui-primary); }
 .role-detail-set-primary:disabled { opacity: .6; cursor: default; }
-.role-detail-images .role-detail-image-preview { position: relative; display: block; width: 100%; height: 210px; padding: 10px; border: 1px solid var(--ui-border); border-radius: 10px; background: var(--ui-subtle); cursor: zoom-in; overflow: hidden; transition: border-color 160ms, box-shadow 160ms; }
+.role-detail-images .role-detail-image-preview { position: relative; display: block; width: 100%; height: auto; aspect-ratio: 4/3; padding: 14px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--ui-subtle); cursor: zoom-in; overflow: hidden; transition: border-color 160ms, box-shadow 160ms; }
 .role-detail-images .role-detail-image-preview:hover { border-color: var(--ui-primary); box-shadow: 0 4px 16px rgba(0,0,0,.05); }
-.role-detail-image-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; gap: 4px; margin-top: 6px; }
+.role-detail-image-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; gap: 6px; padding-top: 10px; margin-top: 10px; border-top: 1px solid var(--ui-border); }
 .role-detail-image-actions .arco-btn { width: 100%; min-width: 0; padding-inline: 4px; white-space: nowrap; }
 .role-detail-image-actions .role-detail-image-rename { color: var(--ui-muted); }
 .role-detail-image-actions .role-detail-image-reveal { grid-column: 1 / -1; }
 .role-detail-images img { display: block; width: 100%; height: 100%; object-fit: contain; }
-.role-detail-images figcaption { margin-top: 10px; font-size: 12px; color: var(--ui-secondary-text); white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.role-detail-images figcaption { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; min-height: 38px; margin: 12px 2px 0; font-size: 13px; line-height: 19px; color: var(--ui-text); overflow-wrap: anywhere; overflow: hidden; }
 .role-detail-image-number { position: absolute; bottom: 8px; left: 10px; font-size: 10px; color: var(--ui-muted); font-variant-numeric: tabular-nums; }
 .role-detail-main-badge { position: absolute; top: 8px; right: 8px; border-radius: 4px; padding: 3px 7px; color: var(--ui-primary); background: var(--ui-surface); font-size: 10px; }
+.role-detail-image-zoom { position: absolute; bottom: 10px; right: 10px; display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border-radius: 5px; color: #fff; background: #1c1e1dcc; font-size: 11px; opacity: 0; transition: opacity 160ms; }
+.role-detail-image-preview:hover .role-detail-image-zoom, .role-detail-image-preview:focus-visible .role-detail-image-zoom { opacity: 1; }
 .role-detail-page button:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: 3px; }
 @media (max-width: 800px) {
   .role-detail-hero { grid-template-columns: minmax(0, .85fr) minmax(0, 1fr); gap: 24px; }
@@ -867,11 +869,10 @@ html .app .content:has(> .asset-library) {
 @media (max-width: 600px) {
   .role-detail-hero { grid-template-columns: 1fr; gap: 20px; }
   .role-detail-portrait > button { height: 400px; }
-  .role-detail-topbar { gap: 8px; }
+  .role-detail-topbar { gap: 8px; flex-wrap: wrap; }
   .role-detail-topbar > span { padding-left: 8px; }
   .role-detail-gallery-heading > span { display: none; }
-  .role-detail-images { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-  .role-detail-images .role-detail-image-preview { height: 180px; }
+  .role-detail-images { grid-template-columns: minmax(0, 1fr); gap: 14px; }
 }
 
 /* Episodes follow the same scroll and pagination layout as the libraries. */

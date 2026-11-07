@@ -1,0 +1,60 @@
+.role-audio-references .role-audio-add-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.role-audio-references .role-audio-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(360px, 100%), 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.role-audio-references .role-audio-item {
+  min-width: 0;
+  margin: 0;
+  padding: 16px;
+  gap: 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-surface);
+}
+
+.role-audio-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.role-audio-title > div { min-width: 0; }
+.role-audio-title b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ui-text); font-size: 13px; }
+.role-audio-title small { display: block; margin-top: 3px; color: var(--ui-muted); font-size: 11px; }
+.role-audio-icon { display: grid; place-items: center; flex: 0 0 36px; width: 36px; height: 36px; border-radius: 8px; background: var(--ui-accent-soft); color: var(--ui-primary); }
+.role-audio-references .role-audio-item audio,
+.role-audio-picker-item audio { display: block; width: 100%; min-width: 0; height: 40px; }
+.role-audio-references .role-audio-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; min-width: 0; padding-top: 10px; border-top: 1px solid var(--ui-border); }
+.role-audio-references .role-audio-actions:empty { display: none; }
+.role-audio-references .role-audio-actions > .role-audio-reveal { max-width: 100%; margin-right: auto; }
+.role-audio-references .role-audio-actions .arco-btn { min-width: 0; }
+.role-audio-references .role-audio-empty { padding: 16px; border: 1px dashed var(--ui-border); border-radius: 10px; }
+.role-audio-references .role-audio-empty .arco-empty { margin: 16px 0; }
+
+.role-audio-picker-modal .arco-modal-content { padding: 20px 24px; }
+.role-audio-picker-toolbar { display: flex; align-items: center; gap: 16px; }
+.role-audio-picker-toolbar .arco-input-search { flex: 1; min-width: 0; }
+.role-audio-picker-toolbar > span { color: var(--ui-muted); font-size: 12px; white-space: nowrap; }
+.role-audio-picker-note { margin: 10px 0 16px; color: var(--ui-muted); font-size: 12px; }
+.role-audio-picker-list { display: grid; align-content: start; gap: 10px; max-height: min(520px, 55vh); overflow-y: auto; overscroll-behavior: contain; padding: 2px; scrollbar-width: thin; }
+.role-audio-picker-item { display: grid; min-width: 0; gap: 12px; padding: 14px; border: 1px solid var(--ui-border); border-radius: 9px; background: var(--ui-subtle); }
+.role-audio-picker-copy { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.role-audio-picker-copy > svg { color: var(--ui-primary); flex-shrink: 0; }
+.role-audio-picker-copy b { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--ui-text); font-size: 13px; }
+.role-audio-picker-copy .arco-btn { flex-shrink: 0; }
+.role-audio-picker-empty { padding: 20px 0; text-align: center; }
+.role-audio-picker-empty .arco-empty { margin: 16px 0; }
+
+@media (max-width: 600px) {
+  .role-audio-references .role-audio-item { padding: 12px; }
+  .role-audio-picker-modal .arco-modal-content { padding: 16px; }
+  .role-audio-picker-toolbar { flex-wrap: wrap; gap: 8px; }
+  .role-audio-picker-toolbar .arco-input-search { flex-basis: 100%; }
+  .role-audio-picker-copy { gap: 7px; }
+  .role-audio-picker-item { padding: 10px; }
+}

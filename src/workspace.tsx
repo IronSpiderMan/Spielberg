@@ -18,6 +18,7 @@ import { ImagePreviewModal, PreviewImage } from "./components/ImagePreviewModal"
 import { usePromptOptimization } from "./hooks/usePromptOptimization";
 import { supportedPastedImages, useImageUpload } from "./hooks/useImageUpload";
 import { AssetImagePicker } from "./components/AssetImagePicker";
+import "./role-editor.css";
 import { SceneVideoPicker } from "./components/SceneVideoPicker";
 import { MediaSizeFields, VideoDurationField } from "./components/generation/GenerationFields";
 import React,{ lazy,useCallback,useEffect,useRef,useState } from "react";
@@ -1895,6 +1896,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
   const [previewRoleId, setPreviewRoleId] = useState<number | null>(null);
   const openRoleImage = (role: Asset, media: Media) => { setPreviewRoleId(role.id); setRoleImagePreview(media); };
   const [editing, setEditing] = useState<Asset | null>(null);
+  const [editorStart, setEditorStart] = useState<"basic" | "references">("basic");
   const [detailId, setDetailId] = useState<number | null>(initialRoleId ?? null);
   const detail = data.assets.find(role => role.id === detailId);
   const openRoleDetail = (id: number) => {
@@ -1990,10 +1992,10 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
         </div>
         <RoleAudioReferences key={detail.id} role={detail} data={data} reload={reload}/>
         <section className="role-detail-gallery" aria-label="资产图片">
-          <div className="role-detail-gallery-heading"><div><h2>图片参考 <span>{detail.images.length.toString().padStart(2, "0")}</span></h2><p>记录资产的外观、空间布局与细节</p></div><span>点击图片放大查看</span></div>
+          <div className="role-detail-gallery-heading"><div><h2>图片参考 <span>{detail.images.length.toString().padStart(2, "0")}</span></h2><p>记录资产的外观、空间布局与细节</p></div><Button size="small" icon={<ImagePlus size={15}/>} onClick={() => { setEditorStart("references"); setEditing(detail); }}>管理参考素材</Button></div>
           {detailImages.length ? <div className="role-detail-images">{detailImages.map((media, index) => <figure key={media.id}>
             <div className="role-detail-image-frame">
-            <button type="button" className="role-detail-image-preview" onClick={() => openRoleImage(detail, media)} aria-label={`预览 ${media.name}`}><img src={imageUrl(media)} alt={media.name} /><span className="role-detail-image-number">{String(index + 1).padStart(2, "0")}</span>{media.id === detail.design_media_id && <span className="role-detail-main-badge">主图</span>}</button>
+            <button type="button" className="role-detail-image-preview" onClick={() => openRoleImage(detail, media)} aria-label={`预览 ${media.name}`}><img src={imageUrl(media)} alt={media.name} loading="lazy" decoding="async" /><span className="role-detail-image-number">{String(index + 1).padStart(2, "0")}</span><span className="role-detail-image-zoom"><ZoomIn size={15}/>放大预览</span>{media.id === detail.design_media_id && <span className="role-detail-main-badge">主图</span>}</button>
             {media.id !== detail.design_media_id && <button type="button" className="role-detail-set-primary" disabled={imageActionBusy} aria-label={`设为主图 ${media.name}`} onClick={() => void setPrimaryImage(detail, media)}>{settingPrimaryImageId === media.id ? "设置中…" : "设为主图"}</button>}
             </div>
             <figcaption title={media.name}>{media.name}</figcaption>
@@ -2103,8 +2105,9 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
       <ImagePreviewModal media={roleImagePreview} images={previewImages} onMediaChange={setRoleImagePreview} title="资产图预览" onClose={()=>setRoleImagePreview(null)} />
       <RoleEditor
         role={editing}
+        initialSection={editorStart}
         data={data}
-        onClose={() => setEditing(null)}
+        onClose={() => { setEditing(null); setEditorStart("basic"); }}
         reload={reload}
       />
     </section>
@@ -2112,11 +2115,13 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
 }
 function RoleEditor({
   role,
+  initialSection = "basic",
   data,
   onClose,
   reload,
 }: {
   role: Asset | null;
+  initialSection?: "basic" | "references";
   data: Snapshot;
   onClose: () => void;
   reload: () => void;
@@ -2133,7 +2138,13 @@ function RoleEditor({
   const [importingAsset, setImportingAsset] = useState(false);
   const [pendingImage, setPendingImage] = useState<{id:number;name:string}|null>(null);
   const [renamingImage, setRenamingImage] = useState<{id:number;name:string}|null>(null);
+  const [renamingImageBusy, setRenamingImageBusy] = useState(false);
+  const [removingImageId, setRemovingImageId] = useState<number | null>(null);
   const [imagePreview, setImagePreview] = useState<Media | null>(null);
+  const basicSection = useRef<HTMLElement>(null);
+  const referenceSection = useRef<HTMLElement>(null);
+  const generationSection = useRef<HTMLElement>(null);
+  const editorBusy = generating || savingRole || importingAsset || renamingImageBusy || removingImageId !== null;
   const currentRole = data.assets.find((x) => x.id === role?.id) || role;
   useEffect(() => {
     setName(role?.name || "");
@@ -2144,23 +2155,32 @@ function RoleEditor({
     setAssetsOpen(false);
     setImagePreview(null);
     setPendingImage(null);
+    setRenamingImage(null);
   }, [role]);
   const upload = async () => {
-    const source = await open({
-      multiple: false,
-      filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp", "gif", "svg"] }],
-    });
-    if (typeof source !== "string" || !role) return;
-    const imported = await post<Media>("/media/import", {
-      project_id: data.project.id,
-      source_path: source,
-    });
-    await reload();
-    setPendingImage({id:imported.id,name:""});
+    if (!role || editorBusy) return;
+    setImportingAsset(true);
+    try {
+      const source = await open({
+        multiple: false,
+        filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp", "gif", "svg"] }],
+      });
+      if (typeof source !== "string") return;
+      const imported = await post<Media>("/media/import", {
+        project_id: data.project.id,
+        source_path: source,
+      });
+      await reload();
+      setPendingImage({id:imported.id,name:""});
+    } finally { setImportingAsset(false); }
   };
   const importAsset = async (mediaId: number) => {
-    if (!role || importingAsset) return;
+    if (!role || editorBusy) return;
     setAssetsOpen(false);
+    if (currentRole?.images.some(image => image.id === mediaId)) {
+      setDesign(mediaId);
+      return;
+    }
     setPendingImage({id:mediaId,name:""});
   };
   const confirmRoleImage = async () => {
@@ -2180,25 +2200,31 @@ function RoleEditor({
     finally { setImportingAsset(false); }
   };
   const removeImage = async (id: number) => {
-    if (!role) return;
-    await post("/assets/media/delete", {
-      project_id: data.project.id,
-      asset_id: role.id,
-      media_id: id,
-    });
-    if (design === id) setDesign(currentRole?.images.find((image) => image.id !== id)?.id ?? null);
-    if (imagePreview?.id === id) setImagePreview(null);
-    await reload();
-    Message.success("已从资产中删除图片，素材文件已保留");
+    if (!role || editorBusy) return;
+    setRemovingImageId(id);
+    try {
+      await post("/assets/media/delete", {
+        project_id: data.project.id,
+        asset_id: role.id,
+        media_id: id,
+      });
+      if (design === id) setDesign(currentRole?.images.find((image) => image.id !== id)?.id ?? null);
+      if (imagePreview?.id === id) setImagePreview(null);
+      await reload();
+      Message.success("已从资产中删除图片，素材文件已保留");
+    } finally { setRemovingImageId(null); }
   };
   const renameImage = async () => {
+    if (editorBusy) return;
     if (!renamingImage || !renamingImage.name.trim()) return Message.warning("请输入图片名称");
+    setRenamingImageBusy(true);
     try {
       await post("/media/rename", { project_id:data.project.id, id:renamingImage.id, name:renamingImage.name.trim() });
       await reload();
       setRenamingImage(null);
       Message.success("资产图片名称已更新，可用 @资产.图片名 引用");
     } catch(error) { Message.error(String(error)); }
+    finally { setRenamingImageBusy(false); }
   };
   const generateRoleImage = async (operation: "t2i" | "i2i") => {
     if (!role || generating) return;
@@ -2214,7 +2240,7 @@ function RoleEditor({
     finally { setGenerating(false); }
   };
   const saveRole = async () => {
-    if (!role || savingRole || importingAsset) return;
+    if (!role || editorBusy) return;
     if (!name.trim()) return Message.warning("请输入资产名称");
     setSavingRole(true);
     try {
@@ -2226,126 +2252,130 @@ function RoleEditor({
   };
   return (
     <Drawer
-      width="min(620px, 100vw)"
+      className="role-editor-drawer"
+      width="min(820px, 100vw)"
       title="资产设定"
       visible={!!role}
-      onCancel={() => { if (!generating && !savingRole && !importingAsset) onClose(); }}
+      afterOpen={() => { if (initialSection === "references") referenceSection.current?.scrollIntoView({block:"start"}); }}
+      onCancel={() => { if (!editorBusy) onClose(); }}
       footer={
-        <Button
-          type="primary"
-          loading={savingRole}
-          disabled={generating || importingAsset}
-          onClick={saveRole}
-        >
-          保存资产
-        </Button>
+        <div className="role-editor-footer"><span>名称、描述与主图在保存后生效</span><Space>
+          <Button disabled={editorBusy} onClick={onClose}>取消</Button>
+          <Button type="primary" loading={savingRole} disabled={editorBusy && !savingRole} onClick={saveRole}>保存资产</Button>
+        </Space></div>
       }
     >
-      <Form layout="vertical">
-        <Form.Item label="资产名称">
+      <nav className="role-editor-nav" aria-label="资产设定章节">
+        <button type="button" onClick={() => basicSection.current?.scrollIntoView({block:"start"})}>基本信息</button>
+        <button type="button" onClick={() => referenceSection.current?.scrollIntoView({block:"start"})}>参考素材 <span>{currentRole?.images.length || 0}</span></button>
+        <button type="button" onClick={() => generationSection.current?.scrollIntoView({block:"start"})}>图片生成</button>
+      </nav>
+      <Form className="role-editor-form" layout="vertical" disabled={editorBusy}>
+        <section ref={basicSection} className="role-editor-section" aria-label="基本信息">
+        <div className="role-editor-section-heading"><h2>基本信息</h2><p>定义资产的身份、外观与故事背景</p></div>
+        <div className="role-editor-basic-grid">
+        <Form.Item label="资产名称" required>
           <Input aria-label="资产名称" value={name} onChange={setName} />
         </Form.Item>
         <Form.Item label="资产类别">
-          <Select aria-label="资产类别" value={category} onChange={setCategory} options={[...ASSET_CATEGORIES]} disabled={savingRole || generating || importingAsset} />
+          <Select aria-label="资产类别" value={category} onChange={setCategory} options={[...ASSET_CATEGORIES]} disabled={editorBusy} />
         </Form.Item>
-        <Form.Item label="启用资产" extra="禁用后，无法通过 @ 引用该资产及其命名图片。保存资产后生效。">
-          <Switch aria-label="启用资产" checked={enabled} onChange={setEnabled} checkedText="启用" uncheckedText="禁用" disabled={savingRole || generating || importingAsset} />
-        </Form.Item>
+        </div>
+        <div className="role-editor-enabled"><div><b>启用资产</b><p>启用后可通过 @ 引用资产及其命名图片</p></div><Switch aria-label="启用资产" checked={enabled} onChange={setEnabled} checkedText="启用" uncheckedText="禁用" disabled={editorBusy} /></div>
         <Form.Item label="资产描述">
           <Input.TextArea
             aria-label="资产描述"
             value={description}
             onChange={setDescription}
             placeholder="外观、材质、空间布局、标志性特征、画风或故事背景等。此描述可直接进入生成 Prompt。"
-            autoSize={{ minRows: 5 }}
+            autoSize={{ minRows: 4, maxRows: 8 }}
           />
         </Form.Item>
-        <Form.Item
-          label="图片参考"
-          extra="一个资产可以关联多张图片，删除参考图会保留素材文件。点击图片放大预览，点击“设为主图”选择主图，再点底部“保存资产”生效。"
-        >
-          <Space direction="vertical" style={{ width: "100%" }}>
-            <Space wrap>
+        </section>
+        <section ref={referenceSection} className="role-editor-section" aria-label="参考素材">
+          <div className="role-editor-section-heading"><h2>参考素材</h2><p>添加图片与声音，保持资产在创作中的一致性</p></div>
+          <div className="role-editor-image-heading"><h3>图片参考 <span>{currentRole?.images.length || 0}</span></h3><Space wrap>
               <Button
                 icon={<ImagePlus size={15} />}
-                disabled={generating || savingRole || importingAsset}
+                disabled={editorBusy}
                 onClick={() => setAssetsOpen(true)}
               >
                 从素材库选择
               </Button>
               <Button
                 icon={<Upload size={15} />}
+                disabled={editorBusy}
                 onClick={() => upload().catch((e) => Message.error(String(e)))}
               >
                 导入资产图片
               </Button>
-            </Space>
+            </Space></div>
+            <p className="role-editor-reference-note">点击图片放大预览，选择主图后保存资产。添加、重命名与移除参考素材会立即生效。</p>
             <div className="role-image-library">
               <div className="role-image-library-heading">
                 <b>已关联图片</b>
-                <span>{currentRole?.images.length || 0} 张</span>
+                <span>{design ? "主图已选择" : "尚未选择主图"}</span>
               </div>
-              {currentRole?.images.length ? <div className="media-picker">
+              {currentRole?.images.length ? <div className="role-editor-image-grid">
                 {currentRole.images.map((m) => (
-                  <div
+                  <article
                     key={m.id}
-                    className={design === m.id ? "media-option selected" : "media-option"}
-                    onClick={() => setImagePreview(m)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setImagePreview(m); } }}
-                    aria-label={`放大预览 ${m.name}${design === m.id ? "，当前主图" : ""}`}
+                    className={`role-editor-image-card${design === m.id ? " selected" : ""}`}
                   >
-                    <img src={imageUrl(m)} alt={m.name} />
-                    <span>{design === m.id ? "主图 · " : ""}{m.name}</span>
-                    <button type="button" className="role-image-rename" aria-label={`编辑图片名称 ${m.name}`} title="编辑图片名称" onClick={(e) => { e.stopPropagation(); setRenamingImage({id:m.id,name:m.name}); }}><Pencil size={12}/></button>
-                    {design !== m.id && <button type="button" className="role-image-primary" onClick={(e) => { e.stopPropagation(); setDesign(m.id); }}>设为主图</button>}
-                    <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                    <button type="button" className="role-editor-image-preview" aria-label={`放大预览 ${m.name}${design === m.id ? "，当前主图" : ""}`} onClick={() => setImagePreview(m)}>
+                      <img src={imageUrl(m)} alt="" loading="lazy" decoding="async" />
+                      <span className="role-editor-image-zoom"><ZoomIn size={16}/>预览</span>
+                      {design === m.id && <span className="role-editor-main-badge">主图</span>}
+                    </button>
+                    <p className="role-editor-image-name" title={m.name}>{m.name}</p>
+                    <div className="role-editor-image-actions">
+                    <Button type="text" size="mini" className="role-editor-primary" disabled={editorBusy || design === m.id} aria-label={`设为主图 ${m.name}`} onClick={() => setDesign(m.id)}>{design === m.id ? "当前主图" : "设为主图"}</Button>
+                    <Button type="text" size="mini" icon={<Pencil size={14}/>} disabled={editorBusy} aria-label={`编辑图片名称 ${m.name}`} title="编辑图片名称" onClick={() => setRenamingImage({id:m.id,name:m.name})}/>
                     <ConfirmPopover
                       title="移除这张资产图片？"
                       content="将立即解除图片关联，素材库中的原文件会保留。"
                       okText="移除图片"
+                      disabled={editorBusy}
                       onOk={() => removeImage(m.id).catch((e) => { Message.error(String(e)); throw e; })}
                     >
-                      <button
-                        type="button"
-                        className="role-image-delete"
+                      <Button
+                        type="text" size="mini" status="danger" icon={<Trash2 size={14}/>}
+                        disabled={editorBusy} loading={removingImageId === m.id}
                         aria-label={`删除 ${m.name}`}
                         title="从资产中删除图片，保留素材文件"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Trash2 size={13} /> 删除
-                      </button>
+                      />
                     </ConfirmPopover>
                     </div>
-                  </div>
+                  </article>
                 ))}
               </div> : <p className="subtle role-image-empty">还没有关联图片。可从素材库添加多张，或导入本地图片。</p>}
             </div>
-      </Space>
-        </Form.Item>
         {currentRole && supportsAudioReferences(category) && (supportsAudioReferences(currentRole.category)
           ? <RoleAudioReferences key={currentRole.id} role={currentRole} data={data} reload={reload} editable/>
           : <p className="helper">保存资产类别后可添加音频参考。</p>)}
-        <GenerationSelector settings={data.settings} kind="image" value={imageGeneration.value} onChange={imageGeneration.setValue} disabled={generating}/>
+        </section>
+        <section ref={generationSection} className="role-editor-section" aria-label="图片生成">
+        <div className="role-editor-section-heading"><h2>图片生成</h2><p>使用资产描述生成图片，或以当前主图为参考</p></div>
+        <GenerationSelector settings={data.settings} kind="image" value={imageGeneration.value} onChange={imageGeneration.setValue} disabled={editorBusy}/>
         <Form.Item label="生成方式">
           <Space>
-            <Button icon={<Sparkles size={15} />} type="primary" loading={generating} onClick={() => generateRoleImage("t2i")}>
+            <Button icon={<Sparkles size={15} />} type="primary" loading={generating} disabled={editorBusy && !generating} onClick={() => generateRoleImage("t2i")}>
               文生图
             </Button>
-            <Button icon={<ImagePlus size={15} />} disabled={generating || !design} onClick={() => generateRoleImage("i2i")}>图生图</Button>
+            <Button icon={<ImagePlus size={15} />} disabled={editorBusy || !design} onClick={() => generateRoleImage("i2i")}>图生图</Button>
           </Space>
           <p className="subtle">
             使用上方选择的图片渠道与模型生成。
           </p>
         </Form.Item>
+        </section>
       </Form>
       <AssetImagePicker
         visible={!!role && assetsOpen}
         label="资产设计图"
         value={design}
         data={data}
-        busy={importingAsset}
+        busy={editorBusy}
         onSelect={importAsset}
         onClose={() => { if (!importingAsset) setAssetsOpen(false); }}
       />
@@ -2358,9 +2388,9 @@ function RoleEditor({
             onChange={name => setPendingImage(current => current ? {...current,name} : null)} onPressEnter={confirmRoleImage}/>
         </Form.Item></Form>
       </Modal>
-      <Modal visible={!!renamingImage} title="编辑资产图片名称" okText="保存名称" onCancel={() => setRenamingImage(null)} onOk={renameImage}>
+      <Modal visible={!!renamingImage} title="编辑资产图片名称" okText="保存名称" confirmLoading={renamingImageBusy} okButtonProps={{disabled:!renamingImage?.name.trim()}} maskClosable={!renamingImageBusy} closable={!renamingImageBusy} cancelButtonProps={{disabled:renamingImageBusy}} onCancel={() => {if (!renamingImageBusy) setRenamingImage(null);}} onOk={renameImage}>
         <Form layout="vertical"><Form.Item label="图片名称" extra="图生图时可用 @资产.图片名称 引用这张图片。">
-          <Input autoFocus value={renamingImage?.name || ""} onChange={name => setRenamingImage(current => current ? {...current,name} : null)} onPressEnter={renameImage}/>
+          <Input autoFocus aria-label="图片名称" disabled={renamingImageBusy} value={renamingImage?.name || ""} onChange={name => setRenamingImage(current => current ? {...current,name} : null)} onPressEnter={renameImage}/>
         </Form.Item></Form>
       </Modal>
       <ImagePreviewModal media={imagePreview} images={currentRole?.images || []} onMediaChange={setImagePreview} title="资产图预览" onClose={()=>setImagePreview(null)} />
