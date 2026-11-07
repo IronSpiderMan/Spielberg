@@ -17,6 +17,7 @@ import { ImagePreviewModal, PreviewImage } from "./components/ImagePreviewModal"
 import { usePromptOptimization } from "./hooks/usePromptOptimization";
 import { supportedPastedImages, useImageUpload } from "./hooks/useImageUpload";
 import { AssetImagePicker } from "./components/AssetImagePicker";
+import { SceneVideoPicker } from "./components/SceneVideoPicker";
 import { MediaSizeFields, VideoDurationField } from "./components/generation/GenerationFields";
 import React,{ lazy,useCallback,useEffect,useRef,useState } from "react";
 
@@ -1285,11 +1286,7 @@ export function SceneEditor({
   const [videoGenerating, setVideoGenerating] = useState(false);
   const { optimizing:optimizingPrompt, optimize:optimizePrompt } = usePromptOptimization();
   const [persistedVideoGenerating, setPersistedVideoGenerating] = useState(false);
-  const [videoAssets, setVideoAssets] = useState<Media[]>([]);
-  const [videoAssetPage, setVideoAssetPage] = useState(1);
-  const [videoAssetTotal, setVideoAssetTotal] = useState(0);
   const [videoAssetPickerOpen, setVideoAssetPickerOpen] = useState(false);
-  const [selectedVideoAsset, setSelectedVideoAsset] = useState<number | undefined>();
   const [multiReferencePickerOpen, setMultiReferencePickerOpen] = useState(false);
   const [referenceRolePickerOpen, setReferenceRolePickerOpen] = useState(false);
   const [referenceSourcesOpen, setReferenceSourcesOpen] = useState(false);
@@ -1488,47 +1485,17 @@ export function SceneEditor({
       setVideoGenerating(false);
     }
   };
-  const openVideoAssetPicker = async () => {
-    try {
-      const result = await post<{items: Media[];total:number}>('/media/list', {project_id:data.project.id,kind:'video',page:1,limit:60});
-      setVideoAssets(result.items);
-      setVideoAssetPage(1);
-      setVideoAssetTotal(result.total);
-      setSelectedVideoAsset(undefined);
-      setVideoAssetPickerOpen(true);
-    } catch (e) { Message.error(String(e)); }
-  };
-  const loadVideoAssetPage = async (page:number) => {
-    try {
-      const result = await post<{items: Media[];total:number}>('/media/list', {project_id:data.project.id,kind:'video',page,limit:60});
-      setVideoAssets(result.items);
-      setVideoAssetPage(page);
-      setVideoAssetTotal(result.total);
-      setSelectedVideoAsset(undefined);
-    } catch (e) { Message.error(String(e)); }
-  };
+  const videoImportInProgress = useRef(false);
   const attachVideo = async (media: Media) => {
-    if (attachingVideo) return;
+    if (videoImportInProgress.current) return;
+    videoImportInProgress.current = true;
     setAttachingVideo(true);
     try {
       await post('/scenes/select-video', {project_id:data.project.id,scene_id:scene.id,media_id:media.id});
-      await reload();
       setVideoAssetPickerOpen(false);
-      Message.success('视频已关联到场景');
-    } catch (e) { Message.error(String(e)); }
-    finally { setAttachingVideo(false); }
-  };
-  const uploadSceneVideo = async () => {
-    const source = await open({multiple:false,filters:[{name:'视频',extensions:['mp4','mov','webm','mkv']}]});
-    if (typeof source !== 'string') return;
-    setAttachingVideo(true);
-    try {
-      const media = await post<Media>('/media/import',{project_id:data.project.id,source_path:source});
-      await post('/scenes/select-video',{project_id:data.project.id,scene_id:scene.id,media_id:media.id});
-      await reload();
-      Message.success('视频已上传并关联到场景');
-    } catch (e) { Message.error(String(e)); }
-    finally { setAttachingVideo(false); }
+      Message.success('已设为场景主视频，原视频保留为候选版本');
+      try { await reload(); } catch { Message.warning('主视频已保存，刷新失败，请稍后重试'); }
+    } finally { videoImportInProgress.current = false; setAttachingVideo(false); }
   };
   const optimizationDisabled=videoGenerating||persistedVideoGenerating||optimizingPrompt||pastingImages||uploadingReferences||savingScene||!description.trim();
   const optimizeVideoPrompt=(format:"minimax-h3"|"wan3.0")=>{
@@ -1713,8 +1680,7 @@ export function SceneEditor({
                 {options.video_mode === "t2v" ? "文生视频" : options.video_mode === "i2v" ? "全能参考生成" : "首尾帧生成"}
                 </span>
               <Space wrap>
-              <Button className="scene-video-import" icon={<Film size={15}/>} disabled={attachingVideo||videoGenerating||persistedVideoGenerating} onClick={()=>void openVideoAssetPicker()}>从素材库选择</Button>
-              <Button className="scene-video-import" icon={<Upload size={15}/>} loading={attachingVideo} disabled={videoGenerating||persistedVideoGenerating} onClick={()=>void uploadSceneVideo()}>上传视频</Button>
+              <Button className="scene-video-import" icon={<Film size={15}/>} disabled={attachingVideo||videoGenerating||persistedVideoGenerating} onClick={()=>setVideoAssetPickerOpen(true)}>选择已有视频</Button>
               <Button
                 type="primary"
                 icon={<Sparkles size={17} />}
@@ -1794,19 +1760,9 @@ export function SceneEditor({
           return count > 0;
         }} />}
       <ImagePreviewModal media={referencePreview} images={referenceImages} onMediaChange={setReferencePreview} title="参考图预览" onClose={()=>setReferencePreview(null)} />
-      <Modal
-        title="选择视频素材"
-        visible={videoAssetPickerOpen}
-        onCancel={()=>setVideoAssetPickerOpen(false)}
-        onOk={()=>{const media=videoAssets.find(item=>item.id===selectedVideoAsset);if(media)void attachVideo(media);}}
-        confirmLoading={attachingVideo}
-        okButtonProps={{disabled:selectedVideoAsset===undefined}}
-        okText="关联到场景"
-      >
-        {videoAssets.length ? <><Select showSearch placeholder="搜索并选择视频" value={selectedVideoAsset} onChange={setSelectedVideoAsset} style={{width:'100%'}}>
-          {videoAssets.map(media=><Select.Option key={media.id} value={media.id}>{media.name}</Select.Option>)}
-        </Select>{videoAssetTotal>60&&<Pagination sizeCanChange={false} size="small" current={videoAssetPage} total={videoAssetTotal} pageSize={60} onChange={page=>void loadVideoAssetPage(page)} style={{marginTop:16,textAlign:'right'}}/>}</> : <Empty description="素材库中还没有视频"/>}
-      </Modal>
+      {videoAssetPickerOpen && <SceneVideoPicker key={`${data.project.id}:${scene.id}`} projectId={data.project.id} sceneTitle={title}
+        primaryId={currentScene.video_media_id ?? null} linkedIds={sceneVideos(currentScene).map(video => video.id)} busy={attachingVideo}
+        onClose={() => setVideoAssetPickerOpen(false)} onConfirm={attachVideo} onImported={reload} />}
       <Modal
         title={`生成${imageTarget === "first" ? "首帧" : imageTarget === "last" ? "尾帧" : "参考图"}`}
         visible={!!imageTarget}
