@@ -1,4 +1,5 @@
 import { PreviewKeyboardNavigation } from "./PreviewKeyboardNavigation";
+import { RevealFileButton } from "./RevealFileButton";
 import { Button, Message, Modal, Select } from "@arco-design/web-react";
 import { ChevronLeft, ChevronRight, Download, Film, Maximize, Pause, Play, Repeat, RotateCcw, Scissors, Volume2, VolumeX, Undo2, Redo2, SkipBack, SkipForward, Save, CheckCircle2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode, type VideoHTMLAttributes } from "react";
@@ -243,7 +244,7 @@ function VideoPreview({ media, onClose, title = "视频预览", videos = noVideo
         <Button disabled={!ready || !allowLoop || editing || saving} aria-pressed={allowLoop && loop} className={allowLoop && loop ? "is-active" : ""} onClick={() => setLoop(value => !value)} icon={<Repeat size={16} />}>循环</Button>
         <Button disabled={!ready || saving} aria-label={muted ? "取消静音" : "静音"} title="静音" onClick={() => { if (player.current) player.current.muted = !player.current.muted; }} icon={muted ? <VolumeX size={16} /> : <Volume2 size={16} />} /></>}
       </div>
-      <div className="image-preview-tools image-preview-actions">{!editing && toolbar}{projectId && allowEdit && <Button type={editing ? "secondary" : "primary"} disabled={!canEdit || saving} aria-pressed={editing} icon={<Scissors size={16} />} onClick={() => {
+      <div className="image-preview-tools image-preview-actions">{!editing && <RevealFileButton path={media.path} disabled={saving} />}{!editing && toolbar}{projectId && allowEdit && <Button type={editing ? "secondary" : "primary"} disabled={!canEdit || saving} aria-pressed={editing} icon={<Scissors size={16} />} onClick={() => {
         player.current?.pause(); setLoop(false);
         if (!editing && range.end === 0) { const initial = {start:0,end:metadata.duration}; rangeRef.current=initial;setRange(initial); }
         setEditing(!editing);

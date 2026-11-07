@@ -4,6 +4,7 @@ import { GenerationSelector } from "./components/generation/GenerationSelector";
 import { ImageModelFields, VideoModelFields } from "./components/generation/ModelGenerationFields";
 import { channelsFor, generationChoice, modelImageSize, modelRatio, selectionPayload, useGenerationSelection, validateGeneration } from "./generation-channels";
 import { RoleAudioReferences } from "./components/RoleAudioReferences";
+import { RevealFileButton } from "./components/RevealFileButton";
 import AssetRelationships from "./AssetRelationships";
 import AssetThumbnail from "./AssetThumbnail";
 import { ASSET_CATEGORIES, assetCategoryLabel, supportsAudioReferences, type AssetCategory } from "./asset-categories";
@@ -1969,6 +1970,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
         <div className="role-detail-topbar">
           <Button  type="text" icon={<ArrowLeft size={16} />} onClick={closeRoleDetail}>资产列表</Button>
           <span>资产档案</span>
+          <RevealFileButton path={detailImages[0]?.path || (supportsAudioReferences(detail.category) ? detail.audios?.[0]?.path : undefined)} />
           <Button icon={<Pencil size={15} />} disabled={imageActionBusy} onClick={() => setEditing(detail)}>编辑设定</Button>
         </div>
         <div className="role-detail-hero">
@@ -1996,6 +1998,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
             </div>
             <figcaption title={media.name}>{media.name}</figcaption>
             <div className="role-detail-image-actions">
+              <RevealFileButton className="role-detail-image-reveal" size="mini" path={media.path} />
               <Button className="role-detail-image-rename" type="text" size="mini" icon={<Pencil size={13}/>} disabled={imageActionBusy} aria-label={`重命名 ${media.name}`} onClick={() => setRenamingMedia({id:media.id,name:media.name})}>重命名</Button>
               <ConfirmPopover title="移除这张资产图片？" content={media.id === detail.design_media_id ? "将立即解除图片关联并清除该资产的主图设置，素材库中的原文件会保留。" : "将立即解除图片关联，素材库中的原文件会保留。"} okText="移除图片" disabled={imageActionBusy} onOk={() => unlinkImage(detail, media)}>
                 <Button type="text" size="mini" status="danger" icon={<Trash2 size={13}/>} loading={unlinkingImageId === media.id} disabled={imageActionBusy} aria-label={`删除 ${media.name}`}>删除</Button>

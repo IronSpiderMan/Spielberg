@@ -1,4 +1,5 @@
 import { PreviewKeyboardNavigation } from "./PreviewKeyboardNavigation";
+import { RevealFileButton } from "./RevealFileButton";
 import { Button, Message, Modal } from "@arco-design/web-react";
 import { ChevronLeft, ChevronRight, Copy, Download, FolderOpen, Image as ImageIcon, Info, Maximize, Minus, Mouse, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, RotateCw, Undo2, WandSparkles } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -239,6 +240,7 @@ export function ImagePreviewModal({ media, onClose, afterClose, title = "参考�
           <dt>文件路径</dt><dd className="image-preview-path" title={media?.path}><span>{media?.path || "—"}</span><button type="button" aria-label="复制文件路径" disabled={!media} onClick={copyPath}><Copy size={15} /></button></dd>
         </dl>
         <section><h4>快速操作</h4><div className="image-preview-quick-actions">
+          <RevealFileButton className="image-preview-reveal" path={media?.path} />
           <Button disabled={!ready || failed} icon={<Copy size={16} />} onClick={copyImage}>复制图片</Button>
           <Button disabled={!media} icon={<FolderOpen size={16} />} onClick={copyPath}>复制路径</Button>
         </div></section>

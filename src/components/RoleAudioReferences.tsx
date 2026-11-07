@@ -1,4 +1,5 @@
 import { ConfirmPopover } from "./ConfirmAction";
+import { RevealFileButton } from "./RevealFileButton";
 import { useState } from "react";
 import { Button, Empty, Form, Input, Message, Modal, Select, Space } from "@arco-design/web-react";
 import { imageUrl, post, type Media, type Asset, type Snapshot } from "../core";
@@ -31,6 +32,7 @@ export function RoleAudioReferences({role,data,reload,editable=false}:{role:Asse
     {editable&&<Space wrap><Button disabled={busy} onClick={()=>setPicker(true)}>从素材库选择音频</Button><Button loading={busy} onClick={upload}>导入资产音频</Button></Space>}
     {audios.length?audios.map(audio=><article key={audio.id} className="role-audio-item">
       <b>{audio.name}</b><audio controls preload="none" src={imageUrl(audio)} aria-label={`试听 ${audio.name}`}/>
+      <RevealFileButton size="small" path={audio.path} />
       {editable&&<Space><Button size="small" disabled={busy} onClick={()=>setPending({id:audio.id,name:audio.name})}>修改名称</Button>
         <ConfirmPopover title="移除这段音频参考？" content={`将从资产中移除「${audio.name}」，素材库中的文件会保留。移除立即生效。`} okText="移除音频" disabled={busy} onOk={async()=>{try{await post("/assets/audio/delete",{project_id:data.project.id,asset_id:role.id,media_id:audio.id});await reload();}catch(e){Message.error(String(e));throw e;}}}><Button size="small" status="danger" disabled={busy}>移除</Button></ConfirmPopover></Space>}
     </article>):<Empty description="还没有音频参考，可添加多段音频并分别命名"/>}

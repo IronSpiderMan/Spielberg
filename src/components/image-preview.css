@@ -63,6 +63,7 @@ html .image-preview-modal .image-preview-toolbar .arco-btn.is-active { color: va
 .image-preview-info section { border-top: 1px solid var(--ui-border); margin-top: 26px; padding-top: 20px; }
 .image-preview-info h4 { margin: 0 0 12px; font-size: 13px; font-weight: 500; }
 .image-preview-quick-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.image-preview-quick-actions .image-preview-reveal { grid-column: 1 / -1; }
 html .image-preview-quick-actions .arco-btn { height: 44px; font-size: 12px; padding: 0 8px; }
 .image-preview-tool-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 html .image-preview-tool-grid .arco-btn { height: 82px; flex-direction: column; gap: 10px; padding: 10px 4px; font-size: 12px; }

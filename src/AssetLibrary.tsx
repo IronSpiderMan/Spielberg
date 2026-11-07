@@ -3,7 +3,7 @@ import { VideoPreviewModal } from "./components/VideoPreviewModal";
 import { ImagePreviewModal } from "./components/ImagePreviewModal";
 import { AssetAssignmentModal } from "./components/AssetAssignmentModal";
 import { Button,Drawer,Dropdown,Empty,Input,Menu,Message,Modal,Pagination,Select,Space,Spin,Tag } from "@arco-design/web-react";
-import { open,save } from "./platform";
+import { canRevealFile,open,revealFile,revealFileLabel,save } from "./platform";
 import { Eye,HardDrive,MoreHorizontal,Plus,RotateCcw,WandSparkles } from "lucide-react";
 import { useEffect,useRef,useState } from "react";
 import AssetThumbnail from "./AssetThumbnail";
@@ -88,6 +88,7 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
     onOk:()=>action(filter==="trash"?"/media/purge":"/media/delete",m,true),
   });
   const exportAsset=async(m:Media)=>{try{const path=await save({defaultPath:m.name});if(path)await post("/media/export",{project_id:pid,media_id:m.id,destination_path:path});}catch(e){Message.error(String(e));}};
+  const revealAsset=async(m:Media)=>{try{await revealFile(m.path);}catch(e){Message.error(`打开文件位置失败：${String(e)}`);}};
   const inspectDisk=async()=>{setScanning(true);try{setScan(await post<DiskScan>("/storage/scan",{project_id:pid}));}catch(e){Message.error(String(e));}finally{setScanning(false);}};
   const filtered=kind!=="all"||filter!=="all"||!!query.trim();
   const clearFilters=()=>{setQuery("");setSearch("");setKind("all");setFilter("all");setPage(1);};
@@ -134,7 +135,8 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
         {filter!=="trash"&&m.kind!=="file"&&<button type="button" className="asset-usage-link" data-used={m.usage_count>0} onClick={()=>setTracking(m)}>{m.usage_count?`使用中 · ${m.usage_count} 处用途`:"未使用 · 查看用途"}</button>}
         <div className="asset-card-actions">
           {filter==="trash"?<Button size="small" disabled={busy} icon={<RotateCcw size={14}/>} onClick={()=>action("/media/restore",m)}>恢复素材</Button>:m.kind==="image"?<><Button size="small" icon={<WandSparkles size={14}/>} onClick={()=>onImageToImage(m)}>图生图</Button><Button size="small" onClick={()=>beginAssignment(m)}>设置用途</Button></>:m.kind==="video"?<Button size="small" onClick={()=>beginAssignment(m)}>设置用途</Button>:<Button size="small" onClick={()=>exportAsset(m)}>导出文件</Button>}
-          <Dropdown trigger="click" droplist={<Menu onClickMenuItem={key=>{if(key==="rename")setRename({...m});if(key==="export")void exportAsset(m);if(key==="delete")confirmDelete(m);if(key==="usage")setTracking(m);}}>
+          <Dropdown trigger="click" droplist={<Menu onClickMenuItem={key=>{if(key==="reveal")void revealAsset(m);if(key==="rename")setRename({...m});if(key==="export")void exportAsset(m);if(key==="delete")confirmDelete(m);if(key==="usage")setTracking(m);}}>
+            {canRevealFile&&<Menu.Item key="reveal" disabled={!m.path?.trim()}>{revealFileLabel}</Menu.Item>}
             {filter!=="trash"&&<Menu.Item key="usage">查看用途</Menu.Item>}{filter!=="trash"&&<Menu.Item key="rename">重命名</Menu.Item>}<Menu.Item key="export">导出</Menu.Item><Menu.Item key="delete" disabled={busy || (filter!=="trash"&&m.usage_count>0)}>{filter==="trash"?"永久删除":"移入回收站"}</Menu.Item>
           </Menu>}><Button size="small" aria-label={`更多操作 ${m.name}`} icon={<MoreHorizontal size={16}/>}/></Dropdown>
         </div>

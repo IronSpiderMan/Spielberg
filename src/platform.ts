@@ -3,6 +3,14 @@ import { localId } from "./id";
 import { Input } from "@arco-design/web-react";
 import { createElement } from "react";
 import { isLocalDesktop } from "./transport";
+export const canRevealFile = isLocalDesktop;
+export const revealFileLabel = /Mac/i.test(navigator.platform) ? "在 Finder 中显示" : /Win/i.test(navigator.platform) ? "在文件资源管理器中显示" : "在文件管理器中显示";
+export async function revealFile(path: string): Promise<void> {
+  if (!canRevealFile) throw new Error("请在本机桌面应用中打开文件位置");
+  if (!path.trim()) throw new Error("文件路径不可用");
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("plugin:opener|reveal_item_in_dir", { paths: [path] });
+}
 type DialogOptions = { title?: string; directory?: boolean; multiple?: boolean; defaultPath?: string; filters?: { name: string; extensions: string[] }[] };
 const files = new Map<string, File>();
 export function selectedFile(token: string): File | undefined { return files.get(token); }

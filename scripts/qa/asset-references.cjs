@@ -64,7 +64,7 @@ const path = require('node:path');
     const checkActionRows = async () => {
       const rows = await page.locator('.role-detail-image-actions').evaluateAll(elements => elements.map(element => {
         const row = element.getBoundingClientRect();
-        const buttons = [...element.querySelectorAll('button')].map(button => {
+        const buttons = [...element.querySelectorAll('button:not(.role-detail-image-reveal)')].map(button => {
           const rect = button.getBoundingClientRect();
           return {top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, width: rect.width, scroll: button.scrollWidth, client: button.clientWidth};
         });
@@ -173,8 +173,8 @@ const path = require('node:path');
     await page.screenshot({path: path.join(screenshots, 'references-mobile.png'), fullPage: true});
     await page.setViewportSize({width: 1440, height: 1000});
     const unlink = async name => {
-      await gallery.getByRole('button', {name: `删除 ${name}`, exact: true}).click();
-      await page.locator('.arco-popconfirm:visible').getByRole('button', {name: '删除', exact: true}).click();
+      if (!await page.locator('.arco-popconfirm:visible').count()) await gallery.getByRole('button', {name: `删除 ${name}`, exact: true}).click();
+      await page.locator('.arco-popconfirm:visible').getByRole('button', {name: '移除图片', exact: true}).click();
     };
     await page.evaluate(() => {window.__qaFailUnlink = true;});
     await unlink('客厅全景.png');
