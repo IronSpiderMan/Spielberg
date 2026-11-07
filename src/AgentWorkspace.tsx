@@ -391,7 +391,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
       </div>
     </div>
     <ImagePreviewModal media={preview?.kind === "image" ? preview : null} images={gallery} title="对话图片预览" onMediaChange={setPreview} onClose={() => setPreview(null)} />
-    <VideoPreviewModal media={preview?.kind === "video" ? preview : null} onClose={() => setPreview(null)} />
+    <VideoPreviewModal projectId={pid} media={preview?.kind === "video" ? preview : null} onClose={() => setPreview(null)} />
     <Modal title="Agent 设置" visible={settingsOpen} onCancel={() => !saving && setSettingsOpen(false)} onOk={() => void saveSettings()} okText="保存设置" cancelText="取消" confirmLoading={saving} maskClosable={!saving} style={{ width: 580 }} className="agent-settings-modal">
       <div className="agent-settings-form">
         <label>搜索服务<Select aria-label="搜索服务" value={form.search_provider} disabled={saving} options={[{ label: "自动搜索 · DuckDuckGo / Bing（无需 Key）", value: "duckduckgo" }, { label: "Brave Search", value: "brave" }, { label: "Tavily", value: "tavily" }]} onChange={value => setForm(item => ({ ...item, search_provider: value }))} /></label>

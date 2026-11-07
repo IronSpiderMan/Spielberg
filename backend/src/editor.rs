@@ -19,8 +19,44 @@ fn probe(path: &str) -> Result<Value, String> {
 fn bounds(v: &Value, duration: f64) -> Result<(f64,f64,f64,f64),String> {
     let n = |key: &str| v[key].as_f64().filter(|n|n.is_finite()).ok_or_else(||format!("无效参数：{key}"));
     let (start,end,speed,volume)=(n("start")?,n("end")?,n("speed")?,n("volume")?);
-    if start<0.0 || end>duration+0.05 || end-start<0.05 || !(0.5..=2.0).contains(&speed) || !(0.0..=1.0).contains(&volume) {return Err("裁剪范围、速度或音量超出允许范围".into());}
+    if start<0.0 || end>duration+0.05 || end-start<0.05-1e-8 || !(0.5..=2.0).contains(&speed) || !(0.0..=1.0).contains(&volume) {return Err("裁剪范围、速度或音量超出允许范围".into());}
     Ok((start,end,speed,volume))
+}
+// A preview trim keeps the source geometry and frame rate, unlike timeline export.
+pub(super) fn trim_video(s: &AppState, v: &Value) -> Result<Value, String> {
+    let pid = project_id(v)?;
+    let c = db(s, &pid)?;
+    let item = media(&c, Some(intv(v, "media_id")?)).ok_or("视频素材不存在或已删除")?;
+    if item["kind"] != "video" { return Err("只能裁剪视频素材".into()); }
+    let path = item["path"].as_str().ok_or("视频路径无效")?;
+    let info = probe(path)?;
+    if info["video"] != true { return Err("素材没有视频轨道".into()); }
+    let duration = info["duration"].as_f64().unwrap();
+    let number = |key: &str| v[key].as_f64().filter(|n| n.is_finite()).ok_or_else(|| format!("无效参数：{key}"));
+    let (start, end) = (number("start")?, number("end")?);
+    if start < 0.0 || end > duration + 0.05 || end.min(duration) - start < 0.05 - 1e-8 {
+        return Err("裁剪范围无效，请保留至少 0.05 秒且不要超出原视频".into());
+    }
+    let name = strv(v, "name")?.trim().chars().take(100).collect::<String>();
+    if name.is_empty() { return Err("请输入保存名称".into()); }
+    let name = if name.to_lowercase().ends_with(".mp4") { name } else { format!("{name}.mp4") };
+    let dir = PathBuf::from(strv(&project(s, &pid)?, "path")?).join("assets/videos");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let out = dir.join(format!("trim-{}.mp4", Uuid::new_v4()));
+    let result = (|| {
+        // Re-encode for accurate cuts between keyframes; optional audio also supports silent videos.
+        run(crate::background_command(binary("ffmpeg")).args([
+            "-v", "error", "-nostdin", "-y", "-ss", &start.to_string(), "-i", path,
+            "-t", &(end.min(duration) - start).to_string(), "-map", "0:v:0", "-map", "0:a:0?",
+            "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", "-c:v", "libx264", "-preset", "veryfast",
+            "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart",
+        ]).arg(&out))?;
+        c.execute("INSERT INTO media(name,path,kind,created_at) VALUES(?,?,'video',?)",
+            params![name, out.to_string_lossy(), now()]).map_err(|e| e.to_string())?;
+        Ok(media(&c, Some(c.last_insert_rowid())).unwrap())
+    })();
+    if result.is_err() { let _ = fs::remove_file(&out); }
+    result
 }
 pub(super) fn projects(s: &AppState, v: &Value, save: bool) -> Result<Value,String> {
     let pid=project_id(v)?; let mut c=db(s,&pid)?;
@@ -164,6 +200,60 @@ pub(super) fn command(s: &AppState, v: &Value, export: bool) -> Result<Value,Str
 }
 #[cfg(test)] mod tests {
     use super::*;
+    #[test] fn preview_trim_preserves_sources_geometry_and_optional_audio() {
+        let root = std::env::temp_dir().join(format!("preview-trim-test-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let s = AppState { root: root.clone(), guard: std::sync::Arc::new(Mutex::new(())) };
+        let result = (|| -> Result<(), String> {
+            let p = create_project(&s, &json!({"name":"Preview trim"}))?;
+            let pid = p["id"].as_str().unwrap();
+            let other = create_project(&s, &json!({"name":"Other project"}))?;
+            for audio in [false, true] {
+                let source = root.join(format!("source-{audio}.mp4"));
+                let mut cmd = crate::background_command(binary("ffmpeg"));
+                cmd.args(["-v", "error", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=24"]);
+                if audio { cmd.args(["-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000"]); }
+                run(cmd.args(["-t", "2", "-c:v", "libx264", "-g", "240", "-c:a", "aac"]).arg(&source))?;
+                let item = import_media(&s, &json!({"project_id":pid,"source_path":source}))?;
+                let original = fs::read(item["path"].as_str().unwrap()).map_err(|e| e.to_string())?;
+                let request = json!({"project_id":pid,"media_id":item["id"],"start":0.375,"end":1.125,"name":"片段"});
+                // Exercise the same action route used by both browser and desktop clients.
+                let output = rest::action(&s, "/media/trim-video", request.clone()).map_err(|e| e.1)?;
+                assert_ne!(output["id"], item["id"]);
+                assert_eq!(output["name"], "片段.mp4");
+                let path = output["path"].as_str().unwrap();
+                let info = probe(path)?;
+                assert!((info["duration"].as_f64().unwrap() - 0.75).abs() < 0.06, "{info}");
+                assert_eq!(info["audio"], audio);
+                let details = run(crate::background_command(binary("ffprobe")).args(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate", "-of", "json", path]))?;
+                let details: Value = serde_json::from_slice(&details.stdout).unwrap();
+                assert_eq!(details["streams"][0]["width"], 320);
+                assert_eq!(details["streams"][0]["height"], 180);
+                assert_eq!(details["streams"][0]["r_frame_rate"], "24/1");
+                assert_eq!(fs::read(item["path"].as_str().unwrap()).unwrap(), original);
+                if !audio {
+                    // Decimal bounds must not reject 0.15 - 0.1 due to floating point rounding.
+                    trim_video(&s, &json!({"project_id":pid,"media_id":item["id"],"start":0.1,"end":0.15,"name":"最短片段"}))?;
+                }
+                for patch in [json!({"start":-0.1}), json!({"end":4}), json!({"start":1.2}), json!({"end":0.4}), json!({"start":"0"}), json!({"end":null}), json!({"name":" "}), json!({"project_id":other["id"]})] {
+                    let mut invalid = request.clone();
+                    invalid.as_object_mut().unwrap().extend(patch.as_object().unwrap().clone());
+                    assert!(trim_video(&s, &invalid).is_err(), "Accepted invalid trim: {invalid}");
+                }
+                let c = db(&s, pid)?;
+                catalog::trash(&c, item["id"].as_i64().unwrap())?;
+                assert!(trim_video(&s, &request).is_err());
+            }
+            let c = db(&s, pid)?;
+            let count: i64 = c.query_row("SELECT COUNT(*) FROM media", [], |row| row.get(0)).unwrap();
+            assert_eq!(count, 5, "Rejected trims must not create media records");
+            let dir = PathBuf::from(p["path"].as_str().unwrap()).join("assets/videos");
+            assert_eq!(fs::read_dir(dir).unwrap().filter_map(Result::ok).filter(|e| e.file_name().to_string_lossy().starts_with("trim-")).count(), 3);
+            Ok(())
+        })();
+        let _ = fs::remove_dir_all(root);
+        result.unwrap();
+    }
     #[test] fn exports_mixed_media() {
         let root=std::env::temp_dir().join(format!("editor-test-{}",Uuid::new_v4()));fs::create_dir_all(&root).unwrap();
         let s=AppState{root:root.clone(),guard:std::sync::Arc::new(Mutex::new(()))};
@@ -247,5 +337,9 @@ pub(super) fn command(s: &AppState, v: &Value, export: bool) -> Result<Value,Str
     #[test] fn validates_trim_parameters(){
         let valid=json!({"start":0,"end":5,"speed":1,"volume":1});assert!(bounds(&valid,5.0).is_ok());
         for (key,value) in [("start",-1.0),("end",6.0),("speed",0.0),("volume",2.0)] {let mut v=valid.clone();v[key]=json!(value);assert!(bounds(&v,5.0).is_err());}
+        let minimum=json!({"start":0.1,"end":0.15,"speed":1,"volume":1});
+        assert!(bounds(&minimum,1.0).is_ok(),"Decimal rounding must not reject a 0.05-second clip");
+        let shorter=json!({"start":0.1,"end":0.149,"speed":1,"volume":1});
+        assert!(bounds(&shorter,1.0).is_err(),"Clips shorter than 0.05 seconds must still be rejected");
     }
 }

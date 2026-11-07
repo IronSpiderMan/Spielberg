@@ -208,6 +208,13 @@ function App() {
     return next;
   }, []);
   useEffect(() => {
+    const mediaSaved = (event: Event) => {
+      if ((event as CustomEvent<{ projectId: string }>).detail?.projectId === activeRef.current) void refresh().catch(() => {});
+    };
+    window.addEventListener("spielberg:media-saved", mediaSaved);
+    return () => window.removeEventListener("spielberg:media-saved", mediaSaved);
+  }, [refresh]);
+  useEffect(() => {
     load().catch(e=>Message.error(String(e))).finally(()=>setBusy(false));
   }, []);
   useEffect(() => {

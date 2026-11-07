@@ -1,0 +1,240 @@
+// Disposable media and HTTP fixtures; never reads or edits user projects.
+const {chromium} = require(process.env.PLAYWRIGHT_PATH || 'playwright');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const {spawnSync} = require('node:child_process');
+
+(async () => {
+  const output = fs.mkdtempSync(path.join(os.tmpdir(), 'spielberg-preview-trim-'));
+  const fixture = path.join(output, 'fixture.mp4');
+  const generated = spawnSync(process.env.FFMPEG || 'ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=320x180:r=24', '-f', 'lavfi', '-i', 'sine=frequency=440', '-t', '3.04', '-c:v', 'libx264', '-c:a', 'aac', fixture]);
+  assert.equal(generated.status, 0, generated.stderr?.toString());
+  const bytes = fs.readFileSync(fixture);
+  const browser = await chromium.launch({headless: true, ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? {executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH} : {})});
+  const page = await browser.newPage({viewport: {width: 1440, height: 1000}});
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.setDefaultTimeout(10000);
+  const project = {id: 'preview-trim-qa', name: '视频裁剪测试', path: '/fixture', updated_at: '1'};
+  const media = {id: 1, name: '原视频.mp4', kind: 'video', path: '/fixture/source.mp4', created_at: '1'};
+  const data = {project, media: [media, {...media, id: 2, name: '另一个视频.mp4'}], assets: [], episodes: [], prompts: [], settings: {}, revisions: {media: 1}};
+  const requests = [];
+  let fail = false, hold = false, finish;
+  try {
+    await page.route('**/api/v1/**', async route => {
+      const pathname = new URL(route.request().url()).pathname;
+      let result = {};
+      if (pathname === '/api/v1/projects') result = [project];
+      else if (pathname.endsWith('/project') || pathname.endsWith('/project/changes')) result = data;
+      else if (pathname.endsWith('/tasks')) result = {items: [], has_more: false};
+      else if (pathname.endsWith('/skills/list')) result = {items: [], directory: '/fixture'};
+      else if (pathname.endsWith('/media/thumbnail')) result = {path: '/spielberg-logo-s.png'};
+      else if (pathname.endsWith('/media/trim-video')) {
+        const request = route.request().postDataJSON();
+        requests.push(request);
+        if (hold) await new Promise(resolve => {finish = resolve;});
+        if (fail) return route.fulfill({status: 400, json: {error: '测试保存失败'}});
+        result = {...media, id: 3, name: `${request.name}.mp4`, path: '/fixture/trim.mp4'};
+        data.media.push(result); data.revisions.media++;
+      }
+      await route.fulfill({json: {data: result}});
+    });
+    await page.route('**/media?*', route => {
+      const url = new URL(route.request().url());
+      if (url.searchParams.get('path') === '/spielberg-logo-s.png') return route.fulfill({status: 302, headers: {Location: '/spielberg-logo-s.png'}});
+      const match = /bytes=(\d+)-(\d*)/.exec(route.request().headers().range || '');
+      if (match) {
+        const start = Number(match[1]), end = match[2] ? Math.min(Number(match[2]), bytes.length - 1) : bytes.length - 1;
+        return route.fulfill({status: 206, headers: {'Content-Type': 'video/mp4', 'Accept-Ranges': 'bytes', 'Content-Range': `bytes ${start}-${end}/${bytes.length}`}, body: bytes.subarray(start, end + 1)});
+      }
+      return route.fulfill({contentType: 'video/mp4', body: bytes});
+    });
+    await page.goto(process.env.QA_URL || 'http://127.0.0.1:1420');
+    await page.getByRole('tab', {name: '视频生成', exact: true}).click();
+    const library = page.getByRole('region', {name: '视频素材', exact: true});
+    await library.getByRole('button', {name: '预览 原视频.mp4', exact: true}).click();
+    const modal = page.locator('.video-preview-modal:visible');
+    const video = modal.locator('video');
+    await page.waitForFunction(() => document.querySelector('.video-preview-modal video')?.readyState >= 2);
+    await modal.getByRole('button', {name: '关闭视频预览'}).focus();
+    await page.keyboard.press('ArrowRight');
+    await modal.locator('.video-preview-header strong').filter({hasText: '另一个视频.mp4'}).waitFor();
+    await modal.getByRole('button', {name: '上一个视频', exact: true}).click();
+    await page.waitForFunction(() => document.querySelector('.video-preview-modal video')?.readyState >= 2);
+    const edit = modal.getByRole('button', {name: '编辑 / 裁剪', exact: true});
+    await edit.click();
+    const panel = modal.locator('.video-trim-panel');
+    const start = modal.getByLabel('裁剪起点', {exact: true});
+    const end = modal.getByLabel('裁剪终点', {exact: true});
+    const track = panel.locator('.video-trim-track');
+    const startHandle = panel.getByRole('slider', {name: '拖动裁剪起点', exact: true});
+    const endHandle = panel.getByRole('slider', {name: '拖动裁剪终点', exact: true});
+    const undo = () => panel.getByRole('button', {name: '撤销裁剪', exact: true}).click();
+    const redo = () => panel.getByRole('button', {name: '重做裁剪', exact: true}).click();
+    const commit = async (field, value) => {await field.fill(String(value)); await field.press('Enter');};
+    const currentTime = () => video.evaluate(video => video.currentTime);
+    const seek = async value => {await video.evaluate((video, value) => {video.pause(); video.currentTime = value;}, value); await page.waitForFunction(value => {const video = document.querySelector('.video-preview-modal video'); return !video.seeking && video.readyState >= 2 && Math.abs(video.currentTime - value) < 0.01;}, value);};
+    const drag = async (handle, seconds) => {
+      const bounds = await handle.boundingBox(), timeline = await track.boundingBox();
+      const duration = await video.evaluate(video => video.duration);
+      const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
+      await page.mouse.move(x, y); await page.mouse.down();
+      await page.mouse.move(x + seconds / duration * timeline.width, y, {steps: 8});
+      await page.mouse.up();
+    };
+    assert.equal(await video.evaluate(video => video.controls), false, 'Editing uses custom playback controls without the native shaded overlay');
+    assert.match(await end.inputValue(), /^\d+\.\d{2}$/, 'A fractional media duration displays only two decimal places');
+    assert(Math.abs(Number(await end.inputValue()) - await video.evaluate(video => Number(video.duration.toFixed(2)))) < 0.001);
+
+    // Number entry stays editable until Enter or blur; empty or partial entry does not jump.
+    await start.fill(''); assert.equal(await start.inputValue(), '');
+    await start.fill('0.40'); await start.press('Enter');
+    await end.fill('1.20'); await end.blur();
+    assert.equal(Number(await start.inputValue()), 0.4); assert.equal(Number(await end.inputValue()), 1.2);
+    assert.match(await start.inputValue(), /^\d+\.\d{2}$/);
+    await commit(start, '0.375');
+    assert.equal(await start.inputValue(), '0.38', 'Display precision does not expose long fractions');
+    assert(Math.abs(await currentTime() - 0.375) < 0.001, 'Formatting the display preserves the precise range value');
+    await undo(); assert.equal(Number(await start.inputValue()), 0.4);
+    await start.fill('9'); await start.press('Enter');
+    assert(Number(await start.inputValue()) <= 1.15 + 1e-8, 'In point cannot cross the out point');
+    await undo(); assert.equal(Number(await start.inputValue()), 0.4);
+    await commit(end, '0.1');
+    assert(Number(await end.inputValue()) >= 0.45 - 1e-8, 'Out point cannot cross the in point');
+    await undo(); assert.equal(Number(await end.inputValue()), 1.2);
+
+    // A whole pointer gesture is one history entry, even when many moves fire.
+    await drag(startHandle, 0.2);
+    const draggedStart = Number(await start.inputValue());
+    assert(draggedStart >= 0.55 && draggedStart <= 0.65);
+    await startHandle.focus(); await page.keyboard.press('Control+z');
+    assert.equal(Number(await start.inputValue()), 0.4, 'Undo from a slider handle restores the whole gesture');
+    await redo(); assert.equal(Number(await start.inputValue()), draggedStart);
+    await undo();
+    await drag(startHandle, 2);
+    assert(Number(await start.inputValue()) <= Number(await end.inputValue()) - 0.05 + 1e-8);
+    await undo();
+    await drag(endHandle, -2);
+    assert(Number(await end.inputValue()) >= Number(await start.inputValue()) + 0.05 - 1e-8);
+    await undo();
+
+    // The shared timeline also owns the playhead, independently of its range handles.
+    const timeline = await track.boundingBox(), duration = await video.evaluate(video => video.duration);
+    await track.click({position: {x: timeline.width * 0.8 / duration, y: timeline.height / 2}});
+    assert(Math.abs(await currentTime() - 0.8) < 0.04, 'Clicking the timeline seeks to source time');
+    assert.equal(Number(await start.inputValue()), 0.4); assert.equal(Number(await end.inputValue()), 1.2);
+    assert.equal(await panel.locator('.video-trim-playhead').count(), 1);
+    await page.mouse.move(timeline.x + timeline.width * 0.8 / duration, timeline.y + timeline.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(timeline.x + timeline.width / duration, timeline.y + timeline.height / 2, {steps: 6});
+    await page.mouse.up();
+    assert(Math.abs(await currentTime() - 1) < 0.04, 'Dragging the shared timeline scrubs the playhead');
+    const beforeStep = await currentTime();
+    await panel.getByRole('button', {name: '下一帧', exact: true}).click();
+    assert(await currentTime() > beforeStep + 0.02 && await currentTime() < beforeStep + 0.05);
+    await panel.getByRole('button', {name: '上一帧', exact: true}).click();
+    assert(Math.abs(await currentTime() - beforeStep) < 0.01);
+    await panel.focus(); await page.keyboard.press('ArrowRight');
+    assert(await currentTime() > beforeStep + 0.02 && await currentTime() < beforeStep + 0.05);
+    await seek(0.6); await panel.focus(); await page.keyboard.press('i');
+    assert.equal(Number(await start.inputValue()), 0.6);
+    await undo();
+    await seek(1); await panel.focus(); await page.keyboard.press('o');
+    assert.equal(Number(await end.inputValue()), 1);
+    await undo();
+    await start.focus(); const beforeTyping = await currentTime(); await start.press('ArrowRight');
+    assert(Math.abs(await currentTime() - beforeTyping) < 0.01, 'Text input arrows must not seek the video');
+    assert.equal(await modal.locator('.video-preview-header strong').getAttribute('title'), '原视频.mp4', 'Editing arrows must not navigate away');
+    assert.equal(await modal.getByRole('button', {name: '下一个视频', exact: true}).count(), 0);
+
+    // Playback stops at the selection boundary, and optional loop plays that selection.
+    await panel.getByRole('button', {name: '预览选中片段', exact: true}).click();
+    await page.waitForFunction(() => {const video = document.querySelector('.video-preview-modal video'); return video.paused && Math.abs(video.currentTime - 1.2) < 0.025;});
+    const loop = panel.getByRole('button', {name: '循环片段', exact: true});
+    await loop.focus(); await page.keyboard.press('Space');
+    assert.equal(await loop.getAttribute('aria-pressed'), 'true', 'Space activates a focused loop button');
+    assert.equal(await video.evaluate(video => video.paused), true, 'Button Space does not also trigger the global playback shortcut');
+    await panel.getByRole('button', {name: '预览选中片段', exact: true}).click();
+    await page.waitForFunction(() => {const video = document.querySelector('.video-preview-modal video'); return !video.paused && video.currentTime > 1.1;});
+    await page.waitForFunction(() => {const video = document.querySelector('.video-preview-modal video'); return !video.paused && video.currentTime < 0.6;});
+    await panel.getByRole('button', {name: '暂停片段', exact: true}).click();
+    await loop.click();
+    await panel.focus(); await page.keyboard.press('Space');
+    await page.waitForFunction(() => !document.querySelector('.video-preview-modal video').paused);
+    await page.keyboard.press('Space');
+    assert.equal(await video.evaluate(video => video.paused), true);
+
+    await panel.getByRole('button', {name: '重置范围', exact: true}).click();
+    assert.equal(Number(await start.inputValue()), 0);
+    assert(Math.abs(Number(await end.inputValue()) - Number(duration.toFixed(2))) < 0.001);
+    await undo(); assert.equal(Number(await start.inputValue()), 0.4); assert.equal(Number(await end.inputValue()), 1.2);
+    await modal.getByRole('button', {name: '返回预览', exact: true}).click();
+    assert.equal(requests.length, 0, 'Leaving edit mode must not export');
+    assert.equal(await video.evaluate(video => video.controls), true);
+    await edit.click();
+    assert.equal(Number(await start.inputValue()), 0.4, 'Returning to edit mode preserves the in point');
+    assert.equal(Number(await end.inputValue()), 1.2, 'Returning to edit mode preserves the out point');
+    await video.evaluate(video => video.load());
+    await page.waitForFunction(() => document.querySelector('.video-preview-modal video')?.readyState >= 2);
+    assert.equal(Number(await start.inputValue()), 0.4, 'Reloading the same source preserves the in point');
+    assert.equal(Number(await end.inputValue()), 1.2, 'Reloading the same source preserves the out point');
+    await modal.getByLabel('裁剪视频名称').fill('保留片段');
+    fail = true;
+    const save = modal.getByRole('button', {name: '保存为新素材', exact: true});
+    await save.click();
+    await panel.getByRole('alert').filter({hasText: '测试保存失败'}).waitFor();
+    assert.equal(Number(await start.inputValue()), 0.4); assert.equal(Number(await end.inputValue()), 1.2);
+    fail = false; hold = true;
+    await panel.getByRole('button', {name: '重试保存', exact: true}).dblclick();
+    await page.waitForFunction(() => document.querySelector('.video-trim-panel input').disabled);
+    await page.keyboard.press('Escape');
+    assert.equal(await modal.count(), 1, 'Saving must remain open');
+    assert.equal(await modal.getByRole('button', {name: '关闭视频预览'}).isDisabled(), true);
+    assert.equal(requests.length, 2, 'Double click must submit once');
+    assert.deepEqual(requests[1], {project_id: project.id, media_id: 1, start: 0.4, end: 1.2, name: '保留片段'});
+    finish();
+    await panel.getByText(/已保存.*保留片段\.mp4/).waitFor();
+    const savedButton = panel.getByRole('button', {name: '已保存', exact: true});
+    assert.equal(await savedButton.isDisabled(), true, 'Unchanged completed trim should not create duplicates');
+    const sourcePlayer = await video.elementHandle();
+    await panel.getByRole('button', {name: '预览选中片段', exact: true}).click();
+    await page.waitForFunction(() => !document.querySelector('.video-preview-modal video').paused);
+    await panel.getByRole('button', {name: '预览结果', exact: true}).click();
+    const resultModal = page.locator('.video-preview-modal:visible').filter({has: page.locator('.video-preview-header strong', {hasText: '保留片段.mp4'})});
+    await resultModal.waitFor();
+    assert.equal(await sourcePlayer.evaluate(video => video.paused), true, 'Opening a saved result pauses source playback');
+    assert.equal(await resultModal.getByRole('button', {name: '编辑 / 裁剪', exact: true}).count(), 0, 'Result preview does not start a second edit session');
+    await resultModal.getByRole('button', {name: '关闭视频预览', exact: true}).click();
+    await resultModal.waitFor({state: 'hidden'});
+    await panel.waitFor();
+    await page.waitForTimeout(500);
+    await page.waitForFunction(() => document.querySelectorAll('.video-trim-frames img').length >= 6);
+    const restored = await modal.evaluate(node => {
+      const style = getComputedStyle(node);
+      return {display: style.display, visibility: style.visibility, opacity: Number(style.opacity), receivesPointer: node.contains(document.elementFromPoint(innerWidth / 2, innerHeight / 2))};
+    });
+    assert.notEqual(restored.display, 'none'); assert.equal(restored.visibility, 'visible'); assert.equal(restored.opacity, 1);
+    assert.equal(restored.receivesPointer, true, 'Closing result preview restores the source dialog as the visible interactive surface');
+    await page.screenshot({path: path.join(output, 'desktop.png'), animations: 'disabled'});
+    await page.evaluate(() => {document.documentElement.setAttribute('arco-theme', 'dark'); document.documentElement.setAttribute('data-theme', 'dark');});
+    await page.waitForTimeout(300);
+    await page.screenshot({path: path.join(output, 'dark.png'), animations: 'disabled'});
+    await page.setViewportSize({width: 390, height: 844});
+    await page.waitForTimeout(250);
+    assert(await modal.evaluate(node => node.scrollWidth <= node.clientWidth), 'Preview must fit narrow screens');
+    assert(await panel.evaluate(node => node.scrollWidth <= node.clientWidth), 'Trim controls must fit narrow screens');
+    await savedButton.scrollIntoViewIfNeeded();
+    await page.screenshot({path: path.join(output, 'mobile.png'), animations: 'disabled'});
+    await modal.getByRole('button', {name: '关闭视频预览'}).click();
+    await library.getByRole('button', {name: '预览 保留片段.mp4', exact: true}).waitFor();
+    assert(data.media.some(item => item.id === media.id), 'Original video stays in the library');
+    assert.deepEqual(errors, []);
+    console.log(`PASS: fixed precision and deferred numeric entry, shared trim timeline, noncrossing range handles, grouped history, frame/keyboard controls, range playback/loop, retained edits, inline failure/retry, save locking, result preview and responsive themes. Screenshots: ${output}`);
+  } catch (error) {
+    await page.screenshot({path: path.join(output, 'failure.png'), fullPage: true}).catch(() => {});
+    console.error(`Failure screenshot: ${path.join(output, 'failure.png')}`);
+    throw error;
+  } finally { await browser.close(); }
+})().catch(error => { console.error(error); process.exit(1); });
