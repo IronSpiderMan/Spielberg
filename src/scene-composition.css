@@ -437,11 +437,15 @@
 }
 .scene-settings-page-heading {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
 }
+.scene-settings-page-title { display: flex; align-items: center; gap: 12px; }
+.scene-settings-page-title .scene-workspace-back { padding-inline-start: 0; color: var(--ui-muted); }
+.scene-settings-page-title .scene-workspace-back:not(:disabled):hover { color: var(--ui-primary); }
 .scene-settings-page-heading h2 { margin: 0; font-size: 18px; }
 .scene-settings-page .scene-workspace-detail { scrollbar-gutter: stable; }
 .scene-settings-page .scene-one-take { margin-top: 20px; }

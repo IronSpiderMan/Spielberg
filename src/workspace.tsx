@@ -906,6 +906,7 @@ function EpisodeEditor({
   const focusedRow = sceneRows.find(row => row.scene.id === focusedSceneId);
   const focusedScene = focusedRow?.scene;
   const showingDetail = sceneView === "detail" && !!focusedScene && !selectingScenes;
+  const editingSceneDetail = view === "scenes" && showingDetail && !selecting;
   useEffect(() => {
     sceneDetailRef.current?.scrollTo({ top: 0 });
   }, [focusedScene?.id]);
@@ -1056,13 +1057,18 @@ function EpisodeEditor({
     </aside>;
   };
   if (!episode) return null;
+  const sceneBackButton = showingDetail && <Button type="text" className="scene-workspace-back" icon={<ArrowLeft size={16}/>}
+    disabled={editorLocked} onClick={() => {
+      const back = () => showSceneList(focusedSceneId);
+      if (sceneDraft.dirty) confirmDiscard(back); else back();
+    }}>返回场景列表</Button>;
   return (
     <section className="episode-editor-page">
-      <div className="section-title episode-editor-toolbar">
+      <div className="section-title episode-editor-toolbar" hidden={editingSceneDetail}>
         <div className="episode-editor-heading"><Button icon={<ArrowLeft size={16}/>} disabled={editorLocked} onClick={close}>返回</Button><h1 title={title}>{title || "未命名剧集"}</h1></div>
         <Space><Tag color={dirty ? "orange" : "green"}>{dirty ? "未保存" : "已保存"}</Tag><Button type={dirty || view !== "scenes" ? "primary" : "default"} icon={<Save size={16}/>} disabled={generatingBoard || scriptStatus.busy} loading={saving} onClick={save}>保存</Button></Space>
       </div>
-      <div className="episode-editor-navigation">
+      <div className="episode-editor-navigation" hidden={editingSceneDetail}>
         <div className="episode-editor-tabs" role="tablist" aria-label="剧集工作区">
           <button type="button" role="tab" aria-selected={view === "scenes"} disabled={editorLocked} onClick={() => setView("scenes")}>场景</button>
           <button type="button" role="tab" aria-selected={view === "markdown"} disabled={editorLocked} onClick={() => scriptEditor.current?.chooseFormat("markdown")}>剧本</button>
@@ -1074,13 +1080,9 @@ function EpisodeEditor({
         <ScreenplayManager key={episode.id} ref={scriptEditor} data={data} episodeId={episode.id} reload={async () => { await reload(); }} disabled={saving || generatingBoard} board={board} onBoard={setBoard} onBoardBusy={setGeneratingBoard} onStatus={onScriptStatus} onFormatChange={setView} />
       </div>
       <div className="episode-scene-browser" hidden={view !== "scenes"}>
-        <div className="scene-workspace-toolbar">
-          {showingDetail && <Button type="text" className="scene-workspace-back" icon={<ArrowLeft size={16}/>}
-            disabled={editorLocked} onClick={() => {
-              const back = () => showSceneList(focusedSceneId);
-              if (sceneDraft.dirty) confirmDiscard(back); else back();
-            }}>返回场景列表</Button>}
-          {(!showingDetail || selectingClips) && <div className="scene-workspace-toolbar-title">
+        {(!showingDetail || selecting) && <div className="scene-workspace-toolbar">
+          {sceneBackButton}
+          <div className="scene-workspace-toolbar-title">
             <h2>{selectingScenes ? "合并场景" : selectingClips ? "片段分组" : "场景"}</h2>
             <p className="subtle" aria-live="polite">
               {selectingScenes
@@ -1089,7 +1091,7 @@ function EpisodeEditor({
                   ? "打开场景选择片段，返回列表时会保留已选项。"
                   : `${sceneOrder.length} 个场景 · ${currentEpisode?.clips.length || 0} 个片段`}
             </p>
-          </div>}
+          </div>
           <div className="episode-scene-browser-actions">
             {selecting ? <>
               <Button disabled={editorLocked} onClick={resetSelection}>取消选择</Button>
@@ -1097,7 +1099,7 @@ function EpisodeEditor({
                 onClick={() => selectingScenes ? setMergeOpen(true) : setEditingScene("group")}>
                 {selectingScenes ? "合并所选场景" : "归为新场景"}（{selection.length}）
               </Button>
-            </> : !showingDetail && <>
+            </> : <>
               {!!currentEpisode && currentEpisode.clips.length > 1 && <Dropdown trigger="click" position="br"
                 disabled={editorLocked || !!clipCreation || copyingClip !== null}
                 droplist={<Menu onClickMenuItem={key => beginSelection(key === "scenes" ? "scenes" : "clips")}>
@@ -1112,7 +1114,7 @@ function EpisodeEditor({
                 onClick={() => setEditingScene("new")}>新建场景</Button>
             </>}
           </div>
-        </div>
+        </div>}
         {!showingDetail && <>
           {sceneOrder.length > 0 && !selecting && <div className="scene-workspace-search">
             <Input aria-label="搜索场景或片段" placeholder="搜索场景或片段" value={sceneQuery} onChange={setSceneQuery}
@@ -1164,7 +1166,7 @@ function EpisodeEditor({
         </>}
         {showingDetail && currentEpisode && focusedScene && (selecting ? renderSceneClips() : <SceneSettings
           key={focusedScene.id} data={data} episode={currentEpisode} scene={focusedScene} reload={reload}
-          onStatus={onSceneStatus} renderClips={renderSceneClips} />)}
+          onStatus={onSceneStatus} backButton={sceneBackButton} renderClips={renderSceneClips} />)}
       </div>
       {currentEpisode && editingScene && <SceneSettings
         key={typeof editingScene === "object" ? "insert" : editingScene} data={data} episode={currentEpisode} reload={reload}

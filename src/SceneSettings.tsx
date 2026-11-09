@@ -45,7 +45,7 @@ export function GenerationPreviewPanel({ preview, media }: { preview: Generation
 
 export type SceneInsertion = { anchor_scene_id: number; position: "before" | "after" };
 
-export function SceneSettings({ data, episode, scene, clipIds, insertion, reload, close, onSaved, onStatus, renderClips }: {
+export function SceneSettings({ data, episode, scene, clipIds, insertion, reload, close, onSaved, onStatus, backButton, renderClips }: {
   data: Snapshot;
   episode: Episode;
   scene?: Scene;
@@ -54,6 +54,7 @@ export function SceneSettings({ data, episode, scene, clipIds, insertion, reload
   reload: () => void;
   close?: () => void;
   onStatus?: (dirty: boolean, busy: boolean) => void;
+  backButton?: ReactNode;
   renderClips?: (afterSave: (action: () => void) => void, busy: boolean) => ReactNode;
   onSaved?: (scene: Scene) => void;
 }) {
@@ -272,7 +273,7 @@ export function SceneSettings({ data, episode, scene, clipIds, insertion, reload
   </>;
   if (renderClips) return <section className="scene-settings-page">
     <div className="scene-settings-page-heading">
-      <h2>编辑场景</h2>
+      <div className="scene-settings-page-title">{backButton}<h2>编辑场景</h2></div>
       <Space><Tag color={dirty ? "orange" : "green"}>{dirty ? "未保存" : "已保存"}</Tag>{saveButton}</Space>
     </div>
     <div className="scene-editor-content">
