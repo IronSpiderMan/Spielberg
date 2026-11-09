@@ -263,8 +263,12 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
   await page.getByTestId('agent-settings').click();
   await page.getByRole('dialog').getByText('Agent 设置',{exact:true}).waitFor();
   await page.screenshot({path:path.join(screenshots,'settings.png'),fullPage:true,animations:'disabled'});
-  await page.getByRole('dialog').getByRole('button',{name:'取消',exact:true}).click();
+  const stepLimit = page.getByRole('spinbutton',{name:'最多执行步数',exact:true});
+  assert.equal(await stepLimit.getAttribute('max'),'128');
+  await stepLimit.fill('128');
+  await page.getByRole('dialog').getByRole('button',{name:'保存设置',exact:true}).click();
   await page.locator('.agent-settings-modal:visible').waitFor({state:'hidden'});
+  assert.equal((await api('/actions/agent/config',{project_id:project.id})).max_steps,128);
   // A saved conversation remains usable after visiting the app's normal editors.
   await page.getByRole('menuitem',{name:'资产库',exact:true}).click();
   await page.locator('.role-card').getByText('Agent 主角',{exact:true}).waitFor();

@@ -37,7 +37,7 @@ type ConversationContext = { total_turns: number; recent_turns: number; summariz
 type PlanStep = { step: string; status: "pending" | "in_progress" | "completed" };
 type Execution = { active?: boolean; phase?: string; tool_calls?: number; max_steps?: number; retries?: number; active_tool?: string; plan?: PlanStep[]; stop_reason?: string; user_input?: UserInputRequest; user_input_response?: unknown };
 type Session = { id: string; title: string; status: string; messages: AgentMessage[]; error?: string; updated_at: string; context?: ConversationContext; execution?: Execution };
-type Config = { inherit_llm: boolean; base_url: string; model: string; has_api_key: boolean; search_provider: string; has_search_api_key: boolean; max_steps: number; request_timeout_seconds: number };
+type Config = { inherit_llm: boolean; base_url: string; model: string; has_api_key: boolean; search_provider: string; has_search_api_key: boolean; max_steps: number; max_steps_limit?: number; request_timeout_seconds: number };
 const initialConfig: Config = { inherit_llm: true, base_url: "", model: "", has_api_key: false, search_provider: "duckduckgo", has_search_api_key: false, max_steps: 16, request_timeout_seconds: 600 };
 const INDEPENDENT_CHANNEL = "__agent_independent__";
 const statusText: Record<string, string> = { idle: "准备就绪", running: "执行中", completed: "本轮结束", limited: "已暂停，可继续", failed: "执行失败", cancelled: "已停止" };
@@ -294,6 +294,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
     catch (e) { Message.error(String(e)); throw e; }
   } });
   const openSettings = () => { setForm({ ...config }); setSearchKey(""); setSettingsOpen(true); };
+  const maxToolSteps = form.max_steps_limit ?? 64;
   const saveSettings = async () => {
     if (saving) return;
     setSaving(true);
@@ -397,7 +398,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
         <label>搜索服务<Select aria-label="搜索服务" value={form.search_provider} disabled={saving} options={[{ label: "自动搜索 · DuckDuckGo / Bing（无需 Key）", value: "duckduckgo" }, { label: "Brave Search", value: "brave" }, { label: "Tavily", value: "tavily" }]} onChange={value => setForm(item => ({ ...item, search_provider: value }))} /></label>
         {form.search_provider !== "duckduckgo" && <label>搜索 API Key<Input.Password aria-label="搜索 API Key" value={searchKey} disabled={saving} placeholder={config.has_search_api_key ? "已保存，留空保留" : "输入搜索服务 API Key"} onChange={setSearchKey} /></label>}
         <label>模型请求等待时间（秒）<input aria-label="模型请求等待时间（秒）" type="number" min={30} max={1800} value={form.request_timeout_seconds ?? 600} disabled={saving} onChange={event => setForm(item => ({ ...item, request_timeout_seconds: Math.min(1800, Math.max(30, Number(event.target.value) || 30)) }))} /></label>
-        <label>最多执行步数<input aria-label="最多执行步数" type="number" min={1} max={64} value={form.max_steps} disabled={saving} onChange={event => setForm(item => ({ ...item, max_steps: Math.min(64, Math.max(1, Number(event.target.value) || 1)) }))} /></label>
+        <label>最多执行步数（1–{maxToolSteps}）<input aria-label="最多执行步数" type="number" min={1} max={maxToolSteps} value={form.max_steps} disabled={saving} onChange={event => setForm(item => ({ ...item, max_steps: Math.min(maxToolSteps, Math.max(1, Math.trunc(event.target.valueAsNumber) || 1)) }))} /></label>
         <p>模型服务需要支持 OpenAI Chat Completions 工具调用。项目内容和检索资料会发送至该服务；密钥仅保存在后端。停止后已完成的修改会保留，正在执行的生成或导出可能继续完成。</p>
       </div>
     </Modal>

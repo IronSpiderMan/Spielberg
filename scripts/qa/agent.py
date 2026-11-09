@@ -622,6 +622,18 @@ def main():
             assert wait(session)["execution"]["stop_reason"] == "budget_exhausted"
             assert wait(session)["messages"][-1]["role"] == "assistant", "No final report after budget exhaustion"
 
+            extended = agent("config/save", config={"max_steps": 128})
+            assert extended["max_steps"] == extended["max_steps_limit"] == 128, extended
+            rejected = api("/actions/agent/config/save", {"project_id": pid, "config": {"max_steps": 129}}, expected=400)
+            assert "1–128" in rejected["error"], rejected
+            long_run = agent("create")
+            running = agent("run", session_id=long_run["id"], message="LOOP")
+            assert running["execution"]["max_steps"] == 128, running
+            finished = wait(long_run)
+            assert finished["status"] == "limited", finished.get("error")
+            assert finished["execution"]["stop_reason"] == "budget_exhausted", finished["execution"]
+            assert finished["execution"]["tool_calls"] == 128, finished["execution"]
+
             # A batch may exceed the remaining budget: preserve call/result pairing,
             # execute only the permitted operation, and report skipped work honestly.
             agent("config/save", config={"max_steps": 1})
