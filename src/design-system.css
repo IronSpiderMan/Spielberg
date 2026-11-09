@@ -93,8 +93,7 @@
   -webkit-font-smoothing: antialiased;
 }
 .app { background: var(--ui-bg); }
-.app .side { width: 216px !important; min-width: 216px !important; flex-basis: 216px !important; padding: 24px 12px 16px; background: var(--ui-sidebar) !important; border-right: 1px solid var(--ui-border); color: var(--ui-text); }
-.topbar .sidebar-toggle { flex-shrink: 0; width: 32px; padding: 0; margin-right: 12px; }
+.app .side { padding: 24px 12px 16px; background: var(--ui-sidebar) !important; border-right: 1px solid var(--ui-border); color: var(--ui-text); }
 .logo { padding: 0 12px 28px; gap: 10px; color: var(--ui-text); }
 .logo b { font-size: 19px; letter-spacing: -.6px; font-weight: 650; }
 .logo small { color: var(--ui-muted); font-size: 8px; letter-spacing: 1.3px; }
@@ -297,21 +296,12 @@ button:focus-visible, [role=button]:focus-visible, video:focus-visible, .arco-me
   .summary-progress progress { display: none; }
 }
 @media (max-width: 1100px) {
-  .app .side { width: 184px !important; min-width: 184px !important; flex-basis: 184px !important; }
   .app .content { padding: 24px; }
   .app .topbar { padding: 12px 24px !important; height: auto !important; min-height: 60px; flex-wrap: wrap; }
   .topbar > div:first-child { flex: 1 1 160px; }
   .topbar > .arco-space { flex-shrink: 1; }
 }
 @media (max-width: 850px) {
-  .app .side { width: 64px !important; min-width: 64px !important; flex-basis: 64px !important; padding: 20px 8px; }
-  .side .logo { padding: 0 0 24px; justify-content: center; }
-  .logo > div, .nav-label, .project-switch > div, .project-switch > .project-dot, .side-bottom .arco-btn > span:not(.arco-btn-icon) { display: none; }
-  .side .project-switch { display: flex; justify-content: center; padding: 12px; }
-  .side .nav .arco-menu-item { font-size: 0; justify-content: center; }
-  .nav svg { margin: 0; }
-  .side .side-bottom { display: block; }
-  .side-bottom .arco-btn-text { justify-content: center; padding: 0; }
   .app .content { padding: 24px 20px; }
 }
 @media (max-width: 600px) {
@@ -752,55 +742,6 @@ html[data-theme="dark"] .cut-copy > b {
 }
 html[data-theme="dark"] .cut-copy p {
   color: var(--ui-secondary-text) !important;
-}
-
-/* Desktop navigation can shrink to an icon rail without losing its actions. */
-@media (min-width: 601px) {
-  .app .side.side-collapsed {
-    width: 64px !important;
-    min-width: 64px !important;
-    flex-basis: 64px !important;
-    padding: 24px 8px 16px;
-  }
-  .side-collapsed .logo { padding: 0 0 28px; justify-content: center; }
-  .side-collapsed .logo > div,
-  .side-collapsed .nav-label,
-  .side-collapsed .project-switch > div,
-  .side-collapsed .project-dot,
-  .side-collapsed .side-bottom .arco-btn > span:not(.arco-btn-icon) { display: none; }
-  .side-collapsed .project-switch { justify-content: center; padding: 12px; }
-  .side-collapsed .nav .arco-menu-item { font-size: 0; justify-content: center; }
-  .side-collapsed .nav svg { margin: 0; }
-  .side-collapsed .side-bottom .arco-btn { justify-content: center; padding: 0; }
-}
-@media (min-width: 601px) and (max-width: 850px) {
-  .app .side:not(.side-collapsed) {
-    width: 184px !important;
-    min-width: 184px !important;
-    flex-basis: 184px !important;
-    padding: 20px 12px;
-  }
-  .side:not(.side-collapsed) .logo { padding: 0 0 28px; justify-content: flex-start; }
-  .side:not(.side-collapsed) .logo > div,
-  .side:not(.side-collapsed) .nav-label,
-  .side:not(.side-collapsed) .project-switch > div,
-  .side:not(.side-collapsed) .project-dot,
-  .side:not(.side-collapsed) .side-bottom .arco-btn > span:not(.arco-btn-icon) { display: block; }
-  .side:not(.side-collapsed) .project-switch { justify-content: flex-start; }
-  .side:not(.side-collapsed) .nav .arco-menu-item { font-size: 13px; justify-content: flex-start; }
-  .side:not(.side-collapsed) .nav svg { margin-right: 11px; }
-  .side:not(.side-collapsed) .side-bottom .arco-btn { justify-content: flex-start; padding-left: 12px; }
-}
-.topbar .mobile-projects-button { display: none; }
-@media (max-width: 600px) {
-  .topbar .sidebar-toggle { display: none; }
-  .topbar .mobile-projects-button {
-    display: inline-flex;
-    flex-shrink: 0;
-    margin-right: 8px;
-    min-height: 36px;
-    color: var(--ui-primary);
-  }
 }
 
 /* Body portals inherit the same palette defined above. */

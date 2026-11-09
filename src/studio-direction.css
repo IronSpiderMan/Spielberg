@@ -8,15 +8,12 @@
   font-variant-numeric: tabular-nums;
 }
 html .app, html .app .app-main { background: var(--studio-frame) !important; }
-html .app .side { background: var(--studio-frame) !important; border-right: 1px solid var(--ui-border); padding-top: 28px; box-shadow: none; }
-.side .logo { padding-bottom: 28px; }
-.side .logo b { font-family: "Segoe UI", sans-serif; font-weight: 650; letter-spacing: -.7px; }
-.side .logo small { font-size: 11px; letter-spacing: .4px; margin-top: 5px; }
-html .side .project-switch { background: transparent !important; border-color: var(--studio-control-border); border-radius: 8px; margin-bottom: 28px; }
+html .app .side { background: var(--studio-frame) !important; border-right: 1px solid var(--ui-border); box-shadow: none; }
+html .side .project-switch { background: transparent !important; border-color: var(--studio-control-border); border-radius: 8px; margin: 0 0 20px; height: 44px; }
 .side .project-switch:hover { background: var(--ui-surface) !important; }
-.project-switch strong { font-size: 13px; }
+.side .project-switch strong { font-size: 13px; margin: 0; }
 .project-dot { background: var(--studio-accent) !important; }
-.side .nav-label { font-size: 12px; letter-spacing: 0; margin-bottom: 6px; }
+.side .nav-label { font-size: 12px; letter-spacing: 0; margin-bottom: 6px; white-space: nowrap; }
 .side .nav .arco-menu-item { font-size: 14px; font-weight: 400; height: 40px; line-height: 40px; margin-block: 4px; }
 html .side .nav .arco-menu-item:hover { background: var(--studio-selected) !important; color: var(--ui-text) !important; }
 html .side .nav .arco-menu-selected, html .side .nav .arco-menu-selected:hover {
@@ -28,8 +25,25 @@ html[data-theme="dark"] .arco-btn-primary.arco-btn-disabled { background: var(--
 .studio-local-note { display: flex; align-items: center; gap: 8px; padding: 0 12px 20px; color: var(--ui-muted); font-size: 11px; white-space: nowrap; }
 .studio-local-note .project-dot { width: 5px; height: 5px; border-radius: 50%; }
 .side-collapsed .studio-local-note { display: none; }
-.side-navigation-body { display: flex; flex-direction: column; min-height: 0; height: 100%; }
-.mobile-nav-heading { display: none; }
+.side-navigation-body, .side-navigation-links { display: flex; flex-direction: column; min-height: 0; }
+.side-navigation-body { height: 100%; }
+.side-navigation-links { flex: 1; }
+.side-header { display: flex; flex: none; align-items: center; gap: 6px; min-height: 48px; margin-bottom: 16px; }
+.side-header .logo { flex: 1; min-width: 0; gap: 8px; padding: 0; }
+.side-header .logo-mark { flex: none; width: 26px; height: 26px; }
+.side-header .logo > div { min-width: 0; }
+.side-header .logo b, .side-header .logo small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-header .logo b { font-family: "Segoe UI", sans-serif; font-size: 17px; font-weight: 650; letter-spacing: -.5px; }
+.side-header .logo small { font-size: 10px; letter-spacing: .2px; margin-top: 2px; }
+html .app .sidebar-toggle.arco-btn {
+  display: inline-flex; flex: none; align-items: center; justify-content: center;
+  width: 36px; height: 36px; padding: 0; border: 1px solid var(--studio-control-border);
+  border-radius: 8px; background: transparent; color: var(--ui-secondary-text);
+}
+html .app .sidebar-toggle.arco-btn:hover { background: var(--studio-selected); color: var(--ui-text); }
+html .app .mobile-nav-close.arco-btn, html .app .mobile-sidebar-toggle.arco-btn { display: none; }
+.side .nav-item-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side .nav .arco-menu-item:focus-visible { outline-offset: -2px; }
 html .app .topbar { min-height: 56px; height: 56px !important; padding: 0 28px !important; background: var(--studio-frame) !important; border-bottom: 1px solid var(--ui-border); }
 .topbar .arco-btn, .topbar b, .topbar .crumb { font-size: 12px; }
 html .app .content { margin: 0; border: 0; border-radius: 0; box-shadow: none; background: var(--ui-bg) !important; padding: 28px 28px 32px; }
@@ -339,9 +353,29 @@ html[data-theme="dark"] .task-state.task-failed { background: #ef8b8f; }
 }
 
 @media (min-width: 601px) {
-  .app .side.side-collapsed .nav .arco-menu-item { font-size: 0; }
+  html .app .side {
+    width: var(--studio-navigation-width, 216px) !important;
+    min-width: 0 !important;
+    flex: 0 0 auto !important;
+    padding: 16px 12px 18px;
+    transition: width 200ms var(--ui-ease);
+  }
+  html .app .side.side-collapsed { --studio-navigation-width: 64px; padding-inline: 8px; }
+  .side-collapsed .side-header { justify-content: center; }
+  .side-collapsed .side-header .logo,
+  .side-collapsed .project-switch > div,
+  .side-collapsed .project-chevron,
+  .side-collapsed .nav-item-label,
+  .side-collapsed .side-bottom .arco-btn > span:not(.arco-btn-icon) { display: none; }
+  .side-collapsed .nav-label { visibility: hidden; }
+  .side-collapsed .project-switch,
+  .side-collapsed .nav .arco-menu-item,
+  .side-collapsed .side-bottom .arco-btn { justify-content: center; }
+  .side-collapsed .nav svg { margin: 0; }
+  .side-collapsed .side-bottom .arco-btn { padding: 0; }
 }
 @media (min-width: 601px) and (max-width: 1100px) {
+  .app .side { --studio-navigation-width: 184px; }
   .app .content { padding: 24px 20px; }
   .creation-split { grid-template-columns: minmax(280px, 320px) minmax(0, 1fr); gap: 16px; }
   .creation-split > .creation-panel { padding: 16px; }
@@ -361,16 +395,14 @@ html[data-theme="dark"] .task-state.task-failed { background: #ef8b8f; }
   html .app .side { display: none; }
   html .app.mobile-nav-open .side { display: flex; position: fixed; z-index: 1001; inset: 0 auto 0 0; width: min(280px, calc(100vw - 48px)) !important; min-width: 0 !important; height: 100dvh !important; max-height: none; padding: max(12px, env(safe-area-inset-top)) 12px max(20px, env(safe-area-inset-bottom)); border-radius: 0; flex-direction: column; overflow-y: auto; box-shadow: 8px 0 24px #00000012; }
   .mobile-nav-open .side-navigation-body { height: auto; min-height: 100%; }
-  .mobile-nav-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 4px 16px 12px; color: var(--ui-secondary-text); }
-  .mobile-nav-heading b { font-size: 12px; font-weight: 500; }
-  .mobile-nav-heading .arco-btn { width: 40px; height: 40px; padding: 0; color: var(--ui-secondary-text); }
+  html .app .desktop-sidebar-toggle.arco-btn { display: none; }
+  html .app .mobile-nav-close.arco-btn, html .app .mobile-sidebar-toggle.arco-btn { display: inline-flex; width: 44px; height: 44px; }
   .mobile-nav-open .side .arco-layout-sider-children { width: 100%; height: auto; min-height: 100%; display: flex; flex-direction: column; overflow: visible; }
-  .mobile-nav-open .side .logo { display: flex; }
   .mobile-nav-open .side .nav { width: 100%; height: auto !important; max-height: none; flex: 0 0 auto; overflow: visible; }
   .mobile-nav-open .side .nav .arco-menu-inner { display: block; width: 100%; min-width: 0; height: auto !important; max-height: none; overflow: visible; }
   .mobile-nav-open .side .nav .arco-menu-item { width: 100%; flex: none; flex-direction: row; gap: 0; min-height: 44px; padding: 0 12px !important; }
   .mobile-nav-open .side .logo > div, .mobile-nav-open .side .nav-label, .mobile-nav-open .side .project-switch > div, .mobile-nav-open .side .side-bottom .arco-btn > span { display: block; }
-  .mobile-nav-open .side .logo { justify-content: flex-start; padding: 0 12px 24px; }
+  .mobile-nav-open .side .logo { display: flex; justify-content: flex-start; }
   .mobile-nav-open .side .nav .arco-menu-item { justify-content: flex-start; font-size: 14px; height: 44px; line-height: 44px; }
   .mobile-nav-open .side .nav svg { margin-right: 12px; }
   .mobile-nav-open .side .project-switch { display: flex; justify-content: flex-start; text-align: left; }
@@ -382,8 +414,8 @@ html[data-theme="dark"] .task-state.task-failed { background: #ef8b8f; }
   html .app .topbar { min-height: 56px; height: 56px !important; padding: 8px 12px !important; gap: 8px; flex-wrap: nowrap; }
   .app .topbar > div:first-child { flex: 1 1 0 !important; width: auto; }
   .app .topbar > .arco-space { flex: 0 0 auto; width: auto; }
-  .topbar .sidebar-toggle { display: inline-flex; width: 40px; height: 40px; margin-right: 4px; }
-  .topbar .mobile-projects-button, .topbar .crumb-sep, .topbar .crumb { display: none; }
+  .topbar .mobile-sidebar-toggle { margin-right: 10px; }
+  .topbar .crumb-sep, .topbar .crumb { display: none; }
   .topbar > .arco-space > .arco-space-item:not(:first-child) { display: none; }
   .topbar .theme-toggle { height: 40px; width: 40px; }
   html .app .content, .app .content.scene-page-content { margin: 0; padding: 20px 16px 32px; border: 0; border-radius: 0; }

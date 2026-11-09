@@ -32,6 +32,8 @@ const output = '/tmp/spielberg-ui-details';
         if (path === '/app/settings/load') return { projects_directory: '/fixture/projects' };
         if (path === '/skills/list') return { items: [], directory: '/fixture/skills' };
         if (path === '/screenplays' || path === '/editor/projects') return [];
+        if (path === '/agent/sessions') return { items: [] };
+        if (path === '/agent/config') return { inherit_llm: true };
         if (path === '/scripts/load') return null;
         if (path === '/prompts' || path === '/prompts/update') {
           if (window.__qaDelaySave) await new Promise(resolve => setTimeout(resolve, 250));
@@ -58,6 +60,42 @@ const output = '/tmp/spielberg-ui-details';
       const root = await page.evaluate(() => ({ width: innerWidth, scroll: document.documentElement.scrollWidth }));
       assert(root.scroll <= root.width + 1, `${name}: viewport overflows`);
     };
+
+    // The Agent view hides the desktop toolbar and still owns the same navigation.
+    await nav('Agent 助手');
+    await page.getByTestId('agent-workspace').waitFor();
+    await page.screenshot({ path: `${output}/desktop-agent-navigation.png` });
+    assert.equal(await page.locator('.topbar').isVisible(), false);
+    const desktopToggle = page.locator('.desktop-sidebar-toggle');
+    const sidebar = page.locator('.side');
+    const agentLink = page.getByRole('menuitem', { name: 'Agent 助手' });
+    const expandedWidth = (await sidebar.boundingBox()).width;
+    const expandedLinkY = (await agentLink.boundingBox()).y;
+    await desktopToggle.press('Enter');
+    assert.equal(await desktopToggle.getAttribute('aria-label'), '展开导航');
+    assert.equal(await desktopToggle.getAttribute('aria-expanded'), 'false');
+    assert.equal((await sidebar.boundingBox()).width, 64);
+    assert.equal((await agentLink.boundingBox()).y, expandedLinkY);
+    assert.equal(await agentLink.getAttribute('aria-current'), 'page');
+    await page.screenshot({ path: `${output}/desktop-agent-navigation-collapsed.png` });
+    await page.getByRole('menuitem', { name: '工作台' }).click();
+    await page.locator('.creation-desk').waitFor();
+    await page.reload();
+    await page.locator('.creation-desk').waitFor();
+    assert.equal(await desktopToggle.getAttribute('aria-expanded'), 'false');
+    await agentLink.click();
+    await page.getByTestId('agent-workspace').waitFor();
+    await page.setViewportSize({ width: 390, height: 760 });
+    await page.locator('.mobile-sidebar-toggle').click();
+    const drawer = page.getByRole('dialog', { name: '工作室导航' });
+    assert(await drawer.getByText('Agent 助手', { exact: true }).isVisible());
+    await page.keyboard.press('Escape');
+    await drawer.waitFor({ state: 'hidden' });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    assert.equal((await sidebar.boundingBox()).width, 64);
+    await desktopToggle.click();
+    assert.equal(await desktopToggle.getAttribute('aria-expanded'), 'true');
+    assert.equal((await sidebar.boundingBox()).width, expandedWidth);
 
     // Cancelling a new draft must not create a persisted blank Prompt.
     await nav('Prompt 库');

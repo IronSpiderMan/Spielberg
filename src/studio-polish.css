@@ -17,7 +17,6 @@ body { line-height: 1.6; }
   background: var(--ui-surface) !important;
   padding: 28px 14px 18px;
   box-shadow: 1px 0 0 #22365902;
-  transition: width 220ms var(--ui-ease), min-width 220ms var(--ui-ease), flex-basis 220ms var(--ui-ease);
 }
 html[data-theme="dark"] .app .side { background: var(--ui-surface) !important; }
 .side .logo { padding: 0 12px 30px; gap: 12px; }
@@ -135,12 +134,6 @@ button:focus-visible, [role=button]:focus-visible, .arco-menu-item:focus-visible
   .app .topbar { height: auto !important; min-height: 64px; padding: 12px 24px !important; gap: 12px; }
   .app .content { padding: 24px; }
   .topbar > .arco-space { margin-left: auto; }
-}
-@media (min-width: 601px) {
-  .app .side.side-collapsed { padding: 28px 8px 18px; }
-  .side-collapsed .logo { padding: 0 0 30px; }
-  .side-collapsed .project-switch { padding: 12px; }
-  .side-collapsed .nav .arco-menu-selected::before { left: -2px; }
 }
 @media (max-width: 600px) {
   .app .side { padding: 4px 6px env(safe-area-inset-bottom); border-top-color: var(--ui-border); box-shadow: 0 -4px 20px #22365908; }

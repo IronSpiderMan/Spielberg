@@ -5,7 +5,6 @@ Card,
 Form,
 Input,
 Layout,
-Menu,
 Message,
 Modal,
 Space,
@@ -15,25 +14,19 @@ Tag
 import "@arco-design/web-react/dist/css/arco.css";
 import { open } from "./platform";
 import {
-Bot,
-Boxes,
 ChevronRight,
 Clapperboard,
 Film,
 FolderOpen,
 FileText,
-ImagePlus,
 
-LayoutDashboard,
 Moon,
-PanelLeftClose,
 PanelLeftOpen,
 Plus,
 Settings,
 Sun,
 Sparkles,
 Users,
-WandSparkles,
 X
 } from "lucide-react";
 import { lazy,Suspense,useCallback,useEffect,useRef,useState } from "react";
@@ -67,6 +60,7 @@ import { PageHeading, PageLoading } from "./ui";
 import { FloatingImageGenerator } from "./components/FloatingImageGenerator";
 import { agentFloatPreferencesKey, readAgentFloatPreferences } from "./agent-float-preferences";
 import { AgentFloatButton } from "./components/AgentFloatButton";
+import { StudioNavigation, studioNavigationId } from "./components/StudioNavigation";
 const CreationDesk=lazy(()=>import("./creation").then(m=>({default:m.CreationDesk})));
 const InfiniteCanvas=lazy(()=>import("./InfiniteCanvas"));
 const MediaEditor=lazy(()=>import("./MediaEditor"));
@@ -84,20 +78,6 @@ const Prompts=lazy(()=>import("./workspace").then(m=>({default:m.Prompts})));
 const SettingsPage=lazy(()=>import("./SettingsPage"));
 const ListenerSettings=lazy(()=>import("./ListenerSettings"));
 
-const workspacePages = [
-  { id: "agent", label: "Agent 助手", icon: Bot },
-  { id: "studio", label: "工作台", icon: LayoutDashboard },
-  { id: "episodes", label: "剧集", icon: Clapperboard },
-  { id: "editor", label: "音视频剪辑", icon: Film },
-  { id: "assets", label: "素材库", icon: ImagePlus },
-  { id: "roles", label: "资产库", icon: Boxes },
-  { id: "project-config", label: "项目配置", icon: Settings },
-  { id: "tasks", label: "后台任务", icon: Film },
-  { id: "prompts", label: "Prompt 库", icon: WandSparkles },
-];
-
-
-
 function App() {
   const [agentFloat, setAgentFloat] = useState(readAgentFloatPreferences);
   useEffect(() => {
@@ -107,13 +87,28 @@ function App() {
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("spielberg-sidebar-collapsed") === "true");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(() => window.matchMedia("(max-width: 600px)").matches);
+  const mobileNavTrigger = useRef<HTMLButtonElement>(null);
+  const mainLayout = useRef<HTMLElement>(null);
   useEffect(() => {
     const media = window.matchMedia("(max-width: 600px)");
-    const update = () => { setIsMobile(media.matches); if (!media.matches) setMobileNavOpen(false); };
+    const update = () => { if (!media.matches) setMobileNavOpen(false); };
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, []);
+  useEffect(() => {
+    if (!mobileNavOpen || !mainLayout.current) return;
+    const workspace = mainLayout.current;
+    const trigger = mobileNavTrigger.current;
+    const drawer = document.getElementById(studioNavigationId)?.closest(".side-navigation-body");
+    workspace.inert = true;
+    drawer?.querySelector<HTMLButtonElement>(".mobile-nav-close")?.focus();
+    return () => {
+      workspace.inert = false;
+      if (document.activeElement === document.body || drawer?.contains(document.activeElement)) {
+        trigger?.focus();
+      }
+    };
+  }, [mobileNavOpen]);
 
   useEffect(() => {
     localStorage.setItem("spielberg-sidebar-collapsed", String(sidebarCollapsed));
@@ -334,76 +329,33 @@ function App() {
 
   return (
     <EditGuardContext.Provider value={registerDirty}>
-    <Layout className={`app${mobileNavOpen ? " mobile-nav-open" : ""}${page === "agent" && !sceneEditing ? " agent-page" : ""}${agentFloat.visible ? " agent-float-visible" : ""}${darkMode ? " dark-theme" : ""}${sceneEditing?.scene.creation_mode === "canvas" ? " canvas-mode" : ""}`}>
-      <a className="skip-to-content" href="#workspace-content">跳转到工作区</a>
-      {mobileNavOpen && <button className="mobile-nav-backdrop" aria-label="关闭导航" onClick={() => setMobileNavOpen(false)} />}
-      <Layout.Sider className={`side${sidebarCollapsed ? " side-collapsed" : ""}`} width={216}>
-        <div id="studio-navigation" className="side-navigation-body"   role={isMobile && mobileNavOpen ? "dialog" : "navigation"} aria-modal={isMobile && mobileNavOpen ? true : undefined} aria-label="工作室导航">
-        <div className="mobile-nav-heading"><b>工作室导航</b><Button className="mobile-nav-close" type="text" aria-label="关闭导航" icon={<X size={18}/>} onClick={() => setMobileNavOpen(false)}/></div>
-        <div className="logo">
-          <img className="logo-mark" src={logoSrc} alt="Spielberg" />
-          <div>
-            <b>Spielberg</b>
-            <small>漫剧制作工作室</small>
-          </div>
-        </div>
-        <button type="button" title={`切换项目：${active?.name}`} aria-label={`切换项目：${active?.name}`} aria-current={page === "projects" ? "page" : undefined} className="project-switch" onClick={() => navigate("projects")}>
-          <span className="project-dot" />
-          <div>
-            <strong>{active?.name}</strong>
-          </div>
-          <ChevronRight size={15} />
-        </button>
-        <div className="nav-label">制作空间</div>
-        <Menu selectedKeys={[page]} onClickMenuItem={key => navigate(key)} className="nav">
-          {workspacePages.map(({ id, label, icon: Icon }) => <Menu.Item key={id} title={label} aria-label={label} aria-current={page === id ? "page" : undefined} tabIndex={0}><Icon />{label}</Menu.Item>)}
-        </Menu>
-        <div className="mobile-project-actions">
-          <Button icon={<FolderOpen size={16}/>} onClick={() => { setMobileNavOpen(false); openProject(); }}>打开项目</Button>
-          <Button icon={<Plus size={16}/>} onClick={() => { setMobileNavOpen(false); leaveEditor(() => setCreating(true)); }}>新建项目</Button>
-        </div>
-        <div className="side-bottom">
-          <Button
-            type="text"
-            long
-            data-active={page === "settings"}
-            title="设置"
-            aria-label="设置"
-
-            aria-current={page === "settings" ? "page" : undefined}
-            tabIndex={0}
-            icon={<Settings size={18} />}
-            onClick={() => navigate("settings")}
-          >
-            <span>设置</span>
-          </Button>
-
-        </div>
-        </div>
-      </Layout.Sider>
-      <Layout className="app-main">
+    <Layout hasSider className={`app${mobileNavOpen ? " mobile-nav-open" : ""}${page === "agent" && !sceneEditing ? " agent-page" : ""}${agentFloat.visible ? " agent-float-visible" : ""}${darkMode ? " dark-theme" : ""}${sceneEditing?.scene.creation_mode === "canvas" ? " canvas-mode" : ""}`}>
+      <a className="skip-to-content" href="#workspace-content" tabIndex={mobileNavOpen ? -1 : undefined}>跳转到工作区</a>
+      {mobileNavOpen && <div className="mobile-nav-backdrop" aria-hidden="true" onClick={() => setMobileNavOpen(false)} />}
+      <StudioNavigation
+        collapsed={sidebarCollapsed}
+        mobileOpen={mobileNavOpen}
+        page={page}
+        projectName={data.project.name}
+        onToggle={() => setSidebarCollapsed(value => !value)}
+        onCloseMobile={() => setMobileNavOpen(false)}
+        onNavigate={navigate}
+        onOpenProject={() => { setMobileNavOpen(false); openProject(); }}
+        onCreateProject={() => { setMobileNavOpen(false); leaveEditor(() => setCreating(true)); }}
+      />
+      <Layout className="app-main" ref={mainLayout}>
         <Layout.Header className="topbar">
           <div>
             <Button
+              ref={mobileNavTrigger}
               type="text"
-              className="mobile-projects-button"
-              title={`最近项目 · 当前：${active?.name}`}
-              aria-label="最近项目"
-              aria-pressed={page === "projects" && !sceneEditing}
-              icon={<FolderOpen size={18} />}
-              onClick={() => navigate("projects")}
-            >
-              最近项目
-            </Button>
-            <Button
-              type="text"
-              className="sidebar-toggle"
-              title="切换导航"
+              className="sidebar-toggle mobile-sidebar-toggle"
+              title="打开工作室导航"
               aria-label="切换导航"
-              aria-controls="studio-navigation"
-              aria-expanded={isMobile ? mobileNavOpen : !sidebarCollapsed}
-              icon={(isMobile ? !mobileNavOpen : sidebarCollapsed) ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-              onClick={() => isMobile ? setMobileNavOpen(value => !value) : setSidebarCollapsed(value => !value)}
+              aria-controls={studioNavigationId}
+              aria-expanded={mobileNavOpen}
+              icon={<PanelLeftOpen size={18} />}
+              onClick={() => setMobileNavOpen(value => !value)}
             />
             <b>
               {sceneImageFlow
