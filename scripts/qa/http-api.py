@@ -64,7 +64,7 @@ def main():
             role = api("POST", scope + "/assets", {"name": "主角", "description": "保留描述"}, 201)
             assert api("PATCH", scope + f'/assets/{role["id"]}', {"name": "新名字"})["description"] == "保留描述"
             episode = api("POST", scope + "/episodes", {"title": "第一集", "description": "剧情"}, 201)
-            scene = api("POST", scope + "/scenes", {"episode_id": episode["id"], "title": "场景一", "description": "雨夜"}, 201)
+            scene = api("POST", scope + "/clips", {"episode_id": episode["id"], "title": "场景一", "description": "雨夜"}, 201)
             prompt = api("POST", scope + "/prompts", {"name": "风格", "content": "水墨", "category": "风格"}, 201)
             assert api("PATCH", scope + f'/prompts/{prompt["id"]}', {"name": "重命名"})["content"] == "水墨"
             # Screenplays persist Markdown, preserve content on rename, and refresh independently.
@@ -108,10 +108,38 @@ def main():
             contents, headers = raw("GET", content_path, headers={"Range": "bytes=0-7"}, expected=206)
             assert contents == PNG[:8] and headers["Content-Range"].startswith("bytes 0-7/")
             api("PATCH", scope + f'/episodes/{episode["id"]}', {"cover_media_id": mid})
-            api("PATCH", scope + f'/scenes/{scene["id"]}', {"first_media_id": mid})
-            assert api("PATCH", scope + f'/scenes/{scene["id"]}', {"title": "新场景"})["description"] == "雨夜"
-            assert api("GET", scope + "/scenes?episode_id=" + str(episode["id"]))[0]["id"] == scene["id"]
-            api("PATCH", scope + f'/scenes/{scene["id"]}', {"last_media_id": 999999}, 400)
+            api("PATCH", scope + f'/clips/{scene["id"]}', {"first_media_id": mid})
+            assert api("PATCH", scope + f'/clips/{scene["id"]}', {"title": "新场景"})["description"] == "雨夜"
+            assert api("GET", scope + "/clips?episode_id=" + str(episode["id"]))[0]["id"] == scene["id"]
+            api("PATCH", scope + f'/clips/{scene["id"]}', {"last_media_id": 999999}, 400)
+            # Narrative scenes own ordered clips and become one playback unit in one-take mode.
+            episode_path = scope + f'/episodes/{episode["id"]}'
+            parent = api("POST", episode_path + "/scenes", {
+                "title": "连续片段", "shared_prompt": "暖色顶光", "reference_media_ids": [mid]
+            }, 201)
+            second = parent["clips"][0]
+            third = api("POST", episode_path + "/clips", {"scene_id": parent["id"], "title": "后续动作"}, 201)
+            members = api("GET", scope + "/clips?scene_id=" + str(parent["id"]))
+            assert [clip["id"] for clip in members] == [second["id"], third["id"]]
+            api("POST", "/actions/clips/reorder", {"project_id": pid, "episode_id": episode["id"],
+                "clip_ids": [second["id"], scene["id"], third["id"]]}, 400)
+            parent_path = scope + f'/scenes/{parent["id"]}'
+            assert api("PATCH", parent_path, {"generation_mode": "one_take"})["shared_prompt"] == "暖色顶光"
+            assert [unit["kind"] for unit in api("GET", episode_path)["playback_units"]] == ["clip", "scene"]
+            api("POST", "/actions/scenes/reorder", {"project_id": pid, "episode_id": episode["id"],
+                "scene_ids": [parent["id"], scene["scene_id"]]})
+            assert [unit["kind"] for unit in api("GET", episode_path)["playback_units"]] == ["scene", "clip"]
+            split = api("POST", "/actions/scenes/ungroup", {"project_id": pid, "scene_id": parent["id"]})
+            assert len(split["scene_ids"]) == 2
+            assert api("GET", scope + f'/scenes/{split["scene_ids"][0]}')["shared_prompt"] == "暖色顶光"
+            api("GET", parent_path, expected=404)
+            grouped = api("POST", episode_path + "/scenes", {
+                "title": "重组", "clip_ids": [second["id"], third["id"]]
+            }, 201)
+            assert len(grouped["clips"]) == 2
+            api("DELETE", scope + f'/scenes/{grouped["id"]}')
+            api("GET", scope + f'/clips/{third["id"]}', expected=404)
+            assert api("GET", scope + f'/media/{mid}')["kind"] == "image"
             api("GET", scope + "/assets/999999", expected=404)
             api("PATCH", scope + "/assets/999999", {"name": "missing"}, 404)
             api("DELETE", scope + "/assets/999999", expected=404)
@@ -130,7 +158,7 @@ def main():
             restored = json.loads(restored_bytes)["data"]
             assert restored["id"] != pid
             assert api("GET", f'/projects/{restored["id"]}/assets')[0]["description"] == "新描述"
-            for resource, identifier in [("prompts", prompt["id"]), ("assets", role["id"]), ("scenes", scene["id"]), ("episodes", episode["id"])]:
+            for resource, identifier in [("prompts", prompt["id"]), ("assets", role["id"]), ("clips", scene["id"]), ("episodes", episode["id"])]:
                 api("GET", scope + f"/{resource}/{identifier}")
                 api("DELETE", scope + f"/{resource}/{identifier}")
                 api("GET", scope + f"/{resource}/{identifier}", expected=404)
@@ -165,7 +193,7 @@ def main():
             api("POST", "/actions/media/create-svg", {"project_id": svg_project["id"], "name": "bad", "svg": svg.decode().replace("<rect", '<script>alert(1)</script><rect')}, 400)
             assert api("GET", svg_scope + "/media?kind=image")["total"] == 2
             api("DELETE", svg_scope)
-            print("PASS: seven-resource CRUD, PATCH preservation, concurrent projects, binary uploads, references, ranges, backup restore, SVG upload/create/preview/download/thumbnail/validation, CORS, SPA hosting")
+            print("PASS: scene and clip hierarchy, eight-resource CRUD, PATCH preservation, concurrent projects, binary uploads, references, ranges, backup restore, SVG upload/create/preview/download/thumbnail/validation, CORS, SPA hosting")
         finally:
             process.terminate()
             try: process.wait(timeout=10)

@@ -17,9 +17,9 @@ const assert = require('node:assert/strict');
         { id: 103, name: '动作.mp4', kind: 'video' },
         { id: 104, name: '对白.wav', kind: 'audio' },
       ].map(item => ({ ...item, path: '/spielberg-logo-s.png', created_at: '2026-11-06' }));
-      const scene = { id: 1, title: '夜晚公寓', sort_order: 0, description: '夜晚，@角色 在 @卧室 中转身，说：“我回来了。”', prompt: '原有视频 Prompt', videos: [],
+      const scene = { id: 1, scene_id: 1, title: '夜晚公寓', sort_order: 0, description: '夜晚，@角色 在 @卧室 中转身，说：“我回来了。”', prompt: '原有视频 Prompt', videos: [],
         generation_options: { video_mode: 'i2v', duration: 15, aspect_ratio: '16:9', reference_media_ids: [102, 101], reference_video_media_ids: [103], reference_audio_media_ids: [104] } };
-      const data = { project, media, assets: [], episodes: [{ id: 1, title: '测试剧集', description: '', scenes: [scene] }], prompts: [],
+      const data = { project, media, assets: [], episodes: [{ id: 1, title: '测试剧集', description: '', clips: [scene], scenes: [{id:scene.id,title:scene.title,generation_mode:'clips',clips:[scene],reference_media_ids:[],reference_audio_media_ids:[]}], playback_units: [] }], prompts: [],
         settings: { ref2v: { url: 'https://example.invalid', api_key: '' }, fl2v: { url: 'https://example.invalid', api_key: '' } } };
       window.__qaData = data;
       window.__qaOptimizations = [];
@@ -30,7 +30,7 @@ const assert = require('node:assert/strict');
         if (args.path === '/tasks') return { items: [], has_more: false, next_cursor: null };
         if (args.path === '/screenplays') return [];
         if (args.path === '/scripts/load') return null;
-        if (args.path === '/scenes/update') Object.assign(scene, args.payload);
+        if (args.path === '/clips/update') Object.assign(scene, args.payload);
         if (args.path === '/prompts/optimize') {
           window.__qaOptimizations.push(args.payload);
           return await new Promise((resolve, reject) => { window.__qaCompleteOptimization = (prompt, error) => error ? reject(new Error(error)) : resolve({ prompt }); });
@@ -43,7 +43,8 @@ const assert = require('node:assert/strict');
     await page.getByRole('menuitem', { name: '剧集', exact: true }).click();
     await page.locator('.episode-card').getByRole('button', { name: '编辑', exact: true }).click();
     await page.getByRole('tab', { name: '场景', exact: true }).click();
-    await page.getByRole('button', { name: '编辑场景：夜晚公寓', exact: true }).click();
+    await page.getByRole('button', { name: '查看场景「夜晚公寓」', exact: true }).click();
+    await page.getByRole('button', { name: '编辑片段：夜晚公寓', exact: true }).click();
     const editor = page.locator('.scene-editor-page');
     const description = editor.locator('textarea').nth(0);
     const prompt = editor.locator('textarea').nth(1);
@@ -56,7 +57,7 @@ const assert = require('node:assert/strict');
     const hint = editor.getByText('可在此粘贴图片，自动添加到全能参考（最多 9 张）', { exact: true });
     await hint.waitFor();
     assert.equal(await hint.evaluate(node => !!node.closest('.scene-description-label')), true);
-    const titleBox = await editor.getByText('场景描述', { exact: true }).boundingBox();
+    const titleBox = await editor.getByText('片段描述', { exact: true }).boundingBox();
     const hintBox = await hint.boundingBox();
     assert(hintBox.x >= titleBox.x + titleBox.width, 'Paste hint should sit to the right of the title on desktop');
     assert(Math.abs(hintBox.y - titleBox.y) < 8, 'Paste hint should share the title row on desktop');
@@ -70,7 +71,7 @@ const assert = require('node:assert/strict');
     assert(await editor.getByRole('button', { name: '正在优化…', exact: true }).isDisabled());
     assert(await description.isDisabled());
     assert(await prompt.isDisabled());
-    assert(await editor.getByRole('button', { name: '保存场景', exact: true }).isDisabled());
+    assert(await editor.getByRole('button', { name: '保存片段', exact: true }).isDisabled());
     const first = await page.evaluate(() => window.__qaOptimizations[0]);
     assert.equal(first.prompt_format, 'minimax-h3');
     assert.equal(first.h3_mode, 'ref2va');

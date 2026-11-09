@@ -1,8 +1,8 @@
-import { defaultOptions, normalizeGenerationSize, type GenerationOptions, type Scene } from "./core";
+import { defaultOptions, normalizeGenerationSize, type GenerationOptions, type Clip } from "./core";
 
 // Stored projects may use the API name ref2v for the UI's i2v mode.
 // Resolve it once for editor tabs, script drafts, previews and batch requests.
-export function sceneGenerationOptions(scene: Pick<Scene, "generation_options" | "reference_media_id" | "script">): GenerationOptions & { video_mode: "t2v" | "fl2v" | "i2v" } {
+export function sceneGenerationOptions(scene: Pick<Clip, "generation_options" | "reference_media_id" | "script">): GenerationOptions & { video_mode: "t2v" | "fl2v" | "i2v" } {
   const stored = scene.generation_options;
   const referenceIds = stored?.reference_media_ids ?? (scene.reference_media_id ? [scene.reference_media_id] : []);
   const hasReferences = referenceIds.length || stored?.reference_video_media_ids?.length || stored?.reference_audio_media_ids?.length || stored?.reference || scene.script?.reference || scene.script?.references?.some(Boolean);

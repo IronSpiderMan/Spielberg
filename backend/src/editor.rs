@@ -480,7 +480,7 @@ pub(super) fn command(s: &AppState, v: &Value, export: bool) -> Result<Value,Str
         })();let _=fs::remove_dir_all(root);result.unwrap();
     }
     #[test] fn upgrades_existing_version_six_projects() {
-        let c=Connection::open_in_memory().unwrap();migrate(&c).unwrap();
+        let c=Connection::open_in_memory().unwrap();migrate_to(&c,16).unwrap();
         c.execute_batch("INSERT INTO media VALUES(1,'original.mp4','/original.mp4','video','1',NULL,NULL);
             INSERT INTO prompts(name,content,created_at,updated_at) VALUES('原有提示词','保留内容','1','1');
             DROP VIEW asset_usage; DROP TABLE edit_outputs; DROP TABLE edit_sources; DROP TABLE edit_projects;
@@ -488,7 +488,7 @@ pub(super) fn command(s: &AppState, v: &Value, export: bool) -> Result<Value,Str
             DROP TABLE scene_canvas_sources; DROP TABLE scene_canvases; ALTER TABLE scenes DROP COLUMN prompt; ALTER TABLE scenes DROP COLUMN creation_mode;
             PRAGMA user_version=6;").unwrap();
         migrate(&c).unwrap();migrate(&c).unwrap();
-        assert_eq!(c.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),16);
+        assert_eq!(c.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),17);
         assert_eq!(c.query_row("SELECT content FROM prompts",[],|r|r.get::<_,String>(0)).unwrap(),"保留内容");
         c.execute("INSERT INTO edit_projects VALUES('cut','剪辑','{}','draft','1','1')",[]).unwrap();
         c.execute("INSERT INTO edit_sources VALUES('cut',1)",[]).unwrap();

@@ -49,7 +49,7 @@ fn validate_timelines(value: &Value) -> ApiResult<()> {
     Ok(())
 }
 fn table(resource: &str) -> ApiResult<&'static str> {
-    match resource { "assets"=>Ok("assets"),"media"=>Ok("media"),"episodes"=>Ok("episodes"),"scenes"=>Ok("scenes"),"prompts"=>Ok("prompts"),"screenplays"=>Ok("screenplays"),_=>Err(missing()) }
+    match resource { "assets"=>Ok("assets"),"media"=>Ok("media"),"episodes"=>Ok("episodes"),"scenes"=>Ok("scenes"),"clips"=>Ok("clips"),"prompts"=>Ok("prompts"),"screenplays"=>Ok("screenplays"),_=>Err(missing()) }
 }
 fn rows(c: &Connection, table: &str, id: Option<i64>) -> ApiResult<Vec<Value>> {
     // table is selected exclusively by table(), never interpolated from a request.
@@ -79,18 +79,52 @@ fn enrich(c: &Connection, resource: &str, mut value: Value) -> ApiResult<Value> 
         let mut q=c.prepare("SELECT m.id FROM media m WHERE m.deleted_at IS NULL AND (m.id=? OR EXISTS(SELECT 1 FROM role_media r WHERE r.role_id=? AND r.media_id=m.id)) ORDER BY CASE WHEN m.id=? THEN 0 ELSE 1 END,m.id DESC").map_err(sql_error)?;
         let ids=q.query_map(params![opti(&value,"design_media_id"),id,opti(&value,"design_media_id")],|r|r.get::<_,i64>(0)).map_err(sql_error)?.collect::<Result<Vec<_>,_>>().map_err(sql_error)?;
         value["images"]=json!(ids.into_iter().filter_map(|id|media(c,Some(id))).collect::<Vec<_>>());
-    } else if resource=="scenes" {
+    } else if resource=="clips" {
         for key in ["first","last","reference","video"] {value[format!("{key}_media")]=json!(media(c,opti(&value,&format!("{key}_media_id"))));}
-        value["videos"]=json!(scene_videos(c,id)?);
-        value["generation_options"]=scene_options(c,id)?;
-        value["script"]=scene_script(c,id)?;
+        value["videos"]=json!(clip_videos(c,id)?);
+        value["generation_options"]=clip_options(c,id)?;
+        value["script"]=clip_script(c,id)?;
+    } else if resource=="scenes" {
+        let clips=episode_clips(c,intv(&value,"episode_id")?)?;
+        value=enrich_scene(c,value,&clips)?;
     } else if resource=="episodes" {
         value["storyboard"]=storyboard::load(c,id)?;
         value["cover_media"]=json!(media(c,opti(&value,"cover_media_id")));
-        value["scenes"]=json!(rows(c,"scenes",None)?.into_iter().filter(|s|s["episode_id"]==id).map(|s|enrich(c,"scenes",s)).collect::<ApiResult<Vec<_>>>()?);
-        if let Some(scenes)=value["scenes"].as_array_mut() {scenes.sort_by_key(|s|s["sort_order"].as_i64().unwrap_or(0));}
+        let clips=episode_clips(c,id)?;
+        let mut scenes=rows(c,"scenes",None)?.into_iter().filter(|s|s["episode_id"]==id)
+            .map(|s|enrich_scene(c,s,&clips)).collect::<ApiResult<Vec<_>>>()?;
+        scenes.sort_by_key(|s|s["sort_order"].as_i64().unwrap_or(0));
+        value["scenes"]=json!(scenes);
+        value["clips"]=json!(clips);
+        value["playback_units"]=json!(scenes::episode_playback_units(c,id)?);
     }
     Ok(value)
+}
+fn episode_clips(c: &Connection, episode: i64) -> ApiResult<Vec<Value>> {
+    scenes::clip_order(c,episode)?.into_iter().map(|(id,_)|get(c,"clips",id)).collect()
+}
+fn enrich_scene(c: &Connection, mut value: Value, clips: &[Value]) -> ApiResult<Value> {
+    let id=intv(&value,"id")?;
+    let clips:Vec<_>=clips.iter().filter(|clip|clip["scene_id"]==id).collect();
+    value["sort_order"]=clips.first().map(|clip|clip["sort_order"].clone()).unwrap_or(json!(0));
+    value["clips"]=json!(clips);
+    for (field,default) in [("reference_media_ids",json!([])),("reference_audio_media_ids",json!([])),("generation_options",json!({}))] {
+        value[field]=value[field].as_str().and_then(|raw|serde_json::from_str(raw).ok()).unwrap_or(default);
+    }
+    value["video_media"]=json!(media(c,opti(&value,"video_media_id")));
+    value["videos"]=json!(scenes::videos(c,id)?);
+    Ok(value)
+}
+pub(super) fn list_episodes(c: &Connection) -> Result<Vec<Value>,String> {
+    let mut episodes=rows(c,"episodes",None).map_err(|e|e.1)?;
+    episodes.sort_by_key(|episode|episode["sort_order"].as_i64().unwrap_or(0));
+    episodes.into_iter().map(|episode|enrich(c,"episodes",episode).map_err(|e|e.1)).collect()
+}
+pub(super) fn get_clip(c: &Connection, id: i64) -> Result<Value,String> {
+    get(c,"clips",id).map_err(|e|e.1)
+}
+pub(super) fn get_scene(c: &Connection, id: i64) -> Result<Value,String> {
+    get(c,"scenes",id).map_err(|e|e.1)
 }
 fn get(c: &Connection, resource: &str, id: i64) -> ApiResult<Value> {
     enrich(c,resource,rows(c,table(resource)?,Some(id))?.into_iter().next().ok_or_else(missing)?)
@@ -99,7 +133,7 @@ fn validate(c: &Connection, resource: &str, value: &Value, create: bool) -> ApiR
     let fields: &[&str]=match resource {
         "assets"=>&["name","description","enabled","category","design_media_id"],
         "episodes"=>&["title","description","cover_media_id","storyboard"],
-        "scenes"=>&["creation_mode","title","description","prompt","episode_id","first_media_id","last_media_id","reference_media_id","generation_options"],
+        "clips"=>&["creation_mode","title","description","prompt","episode_id","scene_id","first_media_id","last_media_id","reference_media_id","generation_options"],
         "prompts"=>&["name","content","category"],
         "screenplays"=>&["title","content","format","episode_id"],
         "media"=>&["name","extension","data_base64","asset_id"],_=>return Err(missing()),
@@ -107,7 +141,7 @@ fn validate(c: &Connection, resource: &str, value: &Value, create: bool) -> ApiR
     for (key,item) in value.as_object().ok_or_else(||bad("JSON 必须是对象"))? {
         if ["project_id","id"].contains(&key.as_str()) {continue}
         if resource=="media" && !create && key!="name" {return Err(bad("素材更新仅支持 name"))}
-        let scene_placement = create && resource == "scenes" && ["anchor_scene_id", "position"].contains(&key.as_str());
+        let scene_placement = create && resource == "clips" && ["anchor_clip_id", "position"].contains(&key.as_str());
         if !scene_placement && !fields.contains(&key.as_str()) {return Err(bad(&format!("不支持的字段：{key}")))}
         if ["name","title","description","content","format","category","extension","data_base64"].contains(&key.as_str()) && !item.is_string(){return Err(bad(&format!("{key} 必须是字符串")))}
         if ["name","title"].contains(&key.as_str()) && item.as_str().unwrap_or("").trim().is_empty(){return Err(bad("名称不能为空"))}
@@ -120,17 +154,17 @@ fn validate(c: &Connection, resource: &str, value: &Value, create: bool) -> ApiR
             let m=media(c,Some(mid)).ok_or_else(||bad("引用的素材不存在或已删除"))?;
             if m["kind"]!="image" {return Err(bad("该字段必须引用图片素材"))}
         }
-        if ["asset_id","episode_id"].contains(&key.as_str()) && !item.as_i64().is_some_and(|n|n>0) {return Err(bad(&format!("{key} 必须是正整数")))}
+        if ["asset_id","episode_id","scene_id"].contains(&key.as_str()) && !item.as_i64().is_some_and(|n|n>0) {return Err(bad(&format!("{key} 必须是正整数")))}
         if key=="creation_mode" && !["default","canvas"].contains(&item.as_str().unwrap_or("")){return Err(bad("创建方式必须为 default 或 canvas"))}
-        if key=="creation_mode" && !create && get(c,"scenes",value["id"].as_i64().unwrap_or(0))?["creation_mode"]!=*item{return Err(bad("场景创建方式不可更改"))}
+        if key=="creation_mode" && !create && get(c,"clips",value["id"].as_i64().unwrap_or(0))?["creation_mode"]!=*item{return Err(bad("片段创建方式不可更改"))}
         if key=="format" && !["markdown","csv"].contains(&item.as_str().unwrap_or("")) {return Err(bad("剧本格式必须为 markdown 或 csv"))}
         if key=="generation_options" && !item.is_object(){return Err(bad("generation_options 必须是对象"))}
     }
     if create {
-        let name=if resource=="scenes" || resource=="episodes" || resource=="screenplays" {"title"} else {"name"};
+        let name=if resource=="clips" || resource=="episodes" || resource=="screenplays" {"title"} else {"name"};
         if value[name].as_str().unwrap_or("").trim().is_empty(){return Err(bad(&format!("缺少 {name}")))}
     }
-    if ["scenes","screenplays"].contains(&resource) && (create || value.get("episode_id").is_some()) {
+    if ["clips","screenplays"].contains(&resource) && (create || value.get("episode_id").is_some()) {
         let id=value["episode_id"].as_i64().ok_or_else(||bad("缺少有效的 episode_id"))?;
         get(c,"episodes",id)?;
     }
@@ -222,7 +256,7 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
             _=>Err(ApiError(StatusCode::METHOD_NOT_ALLOWED,"不支持的方法".into())),
         }
     } else {
-        let (pid,resource,id)=if parts.first()==Some(&"projects") && parts.len()==5 && parts[2]=="episodes" && ["scenes","screenplays"].contains(&parts[4]) {
+        let (pid,resource,id)=if parts.first()==Some(&"projects") && parts.len()==5 && parts[2]=="episodes" && ["scenes","clips","screenplays"].contains(&parts[4]) {
             let episode_id=parts[3].parse::<i64>().ok().filter(|n|*n>0).ok_or_else(||bad("剧集 ID 无效"))?;
             if value.get("episode_id").is_some_and(|v|v.as_i64()!=Some(episode_id)) {return Err(bad("episode_id 与路径不一致"))}
             value["episode_id"]=json!(episode_id);
@@ -234,7 +268,7 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
         } else {return Err(missing())};
         if !["asset-relations","asset-graph"].contains(&resource) { table(resource)?; }
         if method == "DELETE" && parts.len() == 3 && parts[0] == "projects"
-            && ["assets", "asset-relations", "media", "episodes", "scenes", "prompts"].contains(&resource)
+            && ["assets", "asset-relations", "media", "episodes", "scenes", "clips", "prompts"].contains(&resource)
         {
             let result = batch_delete(&mut db(state, &pid)?, resource, &value)?;
             touch(state, &pid);
@@ -253,12 +287,15 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
             match method {
                 "GET"=>Ok(current),
                 "PATCH"=>{
+                    if resource=="scenes" { return Ok(scenes::update(state,&value)?); }
                     validate(&c,resource,&value,false)?;
-                    if resource=="scenes" && value.get("episode_id").is_some() && value["episode_id"]!=current["episode_id"] {return Err(bad("场景不能跨剧集移动，请使用场景排序接口"))}
+                    if resource=="clips" && ["episode_id","scene_id"].iter().any(|key|value.get(*key).is_some_and(|v|v!=&current[*key])) {
+                        return Err(bad("片段不能直接更改所属剧集或场景，请在场景中调整成员"));
+                    }
                     let mut merged=current;
                     for (key,item) in value.as_object().unwrap() {merged[key]=item.clone();}
                     match resource {
-                        "screenplays"=>{screenplays::update(state,&merged)?;},"assets"=>{update_role(state,&merged)?;},"episodes"=>{update_episode(state,&merged)?;},"scenes"=>{update_scene(state,&merged)?;},"prompts"=>{update_prompt(state,&merged)?;},"media"=>{manage_media(state,&merged,false)?;},_=>unreachable!(),
+                        "screenplays"=>{screenplays::update(state,&merged)?;},"assets"=>{update_role(state,&merged)?;},"episodes"=>{update_episode(state,&merged)?;},"clips"=>{update_clip(state,&merged)?;},"prompts"=>{update_prompt(state,&merged)?;},"media"=>{manage_media(state,&merged,false)?;},_=>unreachable!(),
                     }
                     get(&c,resource,id)
                 },
@@ -274,7 +311,7 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
             match method {
                 "GET"=>{
                     if resource=="media" {return Ok(catalog::list(&c,&value)?)}
-                    if let Some(ep)=value.get("episode_id") { if ["scenes","screenplays"].contains(&resource) { get(&c,"episodes",ep.as_i64().ok_or_else(||bad("剧集 ID 无效"))?)?; } }
+                    if let Some(ep)=value.get("episode_id") { if ["scenes","clips","screenplays"].contains(&resource) { get(&c,"episodes",ep.as_i64().ok_or_else(||bad("剧集 ID 无效"))?)?; } }
                     let mut all=rows(&c,table,None)?;
                     if resource=="assets" {
                         if let Some(category)=value.get("category") {
@@ -290,13 +327,22 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
                             all.retain(|role|["name","description"].iter().any(|key|role[key].as_str().unwrap_or("").to_lowercase().contains(&query)));
                         }
                     }
-                    if ["scenes","screenplays"].contains(&resource) {if let Some(ep)=value.get("episode_id") {all.retain(|s|s["episode_id"]==*ep);}}
-                    if resource=="episodes" || resource=="scenes" {all.sort_by_key(|s|s["sort_order"].as_i64().unwrap_or(0));}
-                    all.into_iter().map(|v|enrich(&c,resource,v)).collect::<ApiResult<Vec<_>>>().map(|v|json!(v))
+                    if ["scenes","clips","screenplays"].contains(&resource) {if let Some(ep)=value.get("episode_id") {all.retain(|s|s["episode_id"]==*ep);}}
+                    if resource=="clips" {
+                        if let Some(scene)=value.get("scene_id") {
+                            let id=scene.as_i64().ok_or_else(||bad("场景 ID 无效"))?;
+                            if !c.query_row("SELECT EXISTS(SELECT 1 FROM scenes WHERE id=?)",[id],|row|row.get::<_,bool>(0)).map_err(sql_error)? { return Err(missing()); }
+                            all.retain(|clip|clip["scene_id"]==id);
+                        }
+                    }
+                    let mut all=all.into_iter().map(|v|enrich(&c,resource,v)).collect::<ApiResult<Vec<_>>>()?;
+                    if ["episodes","scenes","clips"].contains(&resource) {all.sort_by_key(|s|s["sort_order"].as_i64().unwrap_or(0));}
+                    Ok(json!(all))
                 },
                 "POST"=>{
+                    if resource=="scenes" { return Ok(scenes::create(state,&value)?); }
                     validate(&c,resource,&value,true)?;
-                    let item=match resource {"screenplays"=>screenplays::insert(state,&value)?,"assets"=>insert_role(state,&value)?,"episodes"=>insert_episode(state,&value)?,"scenes"=>insert_scene(state,&value)?,"prompts"=>insert_prompt(state,&value)?,"media"=>{
+                    let item=match resource {"screenplays"=>screenplays::insert(state,&value)?,"assets"=>insert_role(state,&value)?,"episodes"=>insert_episode(state,&value)?,"clips"=>insert_clip(state,&value)?,"prompts"=>insert_prompt(state,&value)?,"media"=>{
                         let bytes=base64::engine::general_purpose::STANDARD.decode(strv(&value,"data_base64")?).map_err(|_|bad("Base64 数据无效"))?;
                         if bytes.len()>100*1024*1024{return Err(ApiError(StatusCode::PAYLOAD_TOO_LARGE,"素材不能超过 100 MB".into()))}
                         let ext=strv(&value,"extension")?;
@@ -308,7 +354,7 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
                     // Apply optional create-time references using the same validation as PATCH.
                     let mut merged=get(&c,resource,id)?;
                     for (key,item) in value.as_object().unwrap(){merged[key]=item.clone();}
-                    match resource {"assets"=>{update_role(state,&merged)?;},"episodes"=>{update_episode(state,&merged)?;},"scenes"=>{update_scene(state,&merged)?;},_=>{}}
+                    match resource {"assets"=>{update_role(state,&merged)?;},"episodes"=>{update_episode(state,&merged)?;} ,_=>{}}
                     get(&c,resource,id)
                 },
                 _=>Err(ApiError(StatusCode::METHOD_NOT_ALLOWED,"集合支持 GET/POST".into())),
@@ -336,7 +382,15 @@ pub(crate) fn action(state:&AppState,path:&str,value:Value)->ApiResult<Value>{
     if ["/agent/config", "/agent/config/save", "/agent/sessions", "/agent/create", "/agent/session", "/agent/run", "/agent/cancel", "/agent/delete", "/agent/respond"].contains(&path) {
         return Ok(agent::command(state, path, &value)?);
     }
-    const ALLOWED:&[&str]=&["/canvas/load","/canvas/save","/editor/projects","/editor/save","/editor/probe","/editor/export","/app/settings/load","/app/settings/save","/project","/project/changes","/projects/open","/projects/migrate","/projects/backup","/projects/restore","/media/import","/media/export","/media/pose-reference","/media/thumbnail","/media/create-svg","/media/usage","/media/restore","/media/purge","/media/video-frame","/media/trim-video","/media/extract-audio","/media/trim-audio","/media/audio-waveform","/storage/scan","/storage/cleanup","/assets/media/add","/assets/media/delete","/assets/audio/save","/assets/audio/delete","/scripts/load","/scripts/save","/scripts/publish","/tasks","/generations/image","/generations/video","/generations/tts","/generations/asr","/speech/transcribe","/speech/synthesize","/prompts/optimize","/storyboard/generate","/storyboard/plan","/storyboard/validate","/scenes/reorder","/scenes/duplicate","/scenes/select-video","/scenes/delete-video","/episodes/reorder","/episodes/merge","/settings"];
+    if let Some(resource)=["scenes","clips"].into_iter().find(|resource| path==format!("/{resource}") || path==format!("/{resource}/update") || path==format!("/{resource}/delete")) {
+        if path.ends_with("/update") || path.ends_with("/delete") {
+            let id=intv(&value,"id")?;
+            let method=if path.ends_with("/update") {"PATCH"} else {"DELETE"};
+            return crud(state,method,&format!("{resource}/{id}"),value);
+        }
+        return crud(state,"POST",resource,value);
+    }
+    const ALLOWED:&[&str]=&["/canvas/load","/canvas/save","/editor/projects","/editor/save","/editor/probe","/editor/export","/app/settings/load","/app/settings/save","/project","/project/changes","/projects/open","/projects/migrate","/projects/backup","/projects/restore","/media/import","/media/export","/media/pose-reference","/media/thumbnail","/media/create-svg","/media/usage","/media/restore","/media/purge","/media/video-frame","/media/trim-video","/media/extract-audio","/media/trim-audio","/media/audio-waveform","/storage/scan","/storage/cleanup","/assets/media/add","/assets/media/delete","/assets/audio/save","/assets/audio/delete","/scripts/load","/scripts/save","/scripts/publish","/tasks","/tasks/resume-video","/generations/image","/generations/video","/generations/clip-preview","/generations/scene-preview","/generations/scene-video","/generations/tts","/generations/asr","/speech/transcribe","/speech/synthesize","/prompts/optimize","/storyboard/generate","/storyboard/plan","/storyboard/validate","/clips/reorder","/clips/duplicate","/clips/select-video","/clips/delete-video","/scenes/reorder","/scenes/ungroup","/scenes/merge","/scenes/select-video","/scenes/delete-video","/episodes/reorder","/episodes/merge","/settings"];
     if !ALLOWED.contains(&path){return Err(missing())}
     Ok(dispatch(state,"POST".into(),path.into(),Some(value))?)
 }
@@ -357,14 +411,14 @@ mod project_config_tests {
     fn scene_actions_insert_beside_middle_scene() {
         let (state, pid, path) = timeline_fixture();
         let episode = crud(&state, "POST", &format!("{path}/episodes"), json!({"title":"Episode"})).unwrap();
-        let scenes = format!("{path}/episodes/{}/scenes", episode["id"]);
+        let scenes = format!("{path}/episodes/{}/clips", episode["id"]);
         let create = |body| crud(&state, "POST", &scenes, body).unwrap()["id"].clone();
         let first = create(json!({"title":"First"}));
         let middle = create(json!({"title":"Middle"}));
         let last = create(json!({"title":"Last"}));
-        let before = create(json!({"title":"Before","anchor_scene_id":middle,"position":"before"}));
-        let after = create(json!({"title":"After","anchor_scene_id":middle,"position":"after"}));
-        let copy = |position| action(&state, "/scenes/duplicate", json!({"project_id":pid,"id":middle,"position":position})).unwrap()["id"].clone();
+        let before = create(json!({"title":"Before","anchor_clip_id":middle,"position":"before"}));
+        let after = create(json!({"title":"After","anchor_clip_id":middle,"position":"after"}));
+        let copy = |position| action(&state, "/clips/duplicate", json!({"project_id":pid,"id":middle,"position":position})).unwrap()["id"].clone();
         let copy_before = copy("before");
         let copy_after = copy("after");
         let list = crud(&state, "GET", &scenes, json!({})).unwrap();

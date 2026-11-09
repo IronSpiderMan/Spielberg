@@ -3,7 +3,8 @@ import { downloadName, releaseFile, selectedFile } from "./platform";
 const resourceFields: Record<string, string[]> = {
   assets: ["name", "description", "enabled", "category", "design_media_id"],
   episodes: ["title", "description", "cover_media_id", "storyboard"],
-  scenes: ["creation_mode", "prompt", "title", "description", "episode_id", "first_media_id", "last_media_id", "reference_media_id", "generation_options"],
+  scenes: ["title", "description", "episode_id", "shared_prompt", "reference_media_ids", "reference_audio_media_ids", "generation_mode", "generation_options", "clip_ids"],
+  clips: ["creation_mode", "prompt", "title", "description", "episode_id", "scene_id", "first_media_id", "last_media_id", "reference_media_id", "generation_options"],
   screenplays: ["title", "content", "format", "episode_id"],
   prompts: ["name", "content", "category"],
   projects: ["name", "outline", "agents_md", "documents", "timelines"], media: ["name"],
@@ -61,11 +62,11 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   const resource = parts[0];
   const operation = parts[1];
   if (resourceFields[resource] && (parts.length === 1 && method === "POST" || parts.length === 2 && ["update", "rename", "delete"].includes(operation))) {
-    if (["scenes", "screenplays"].includes(resource) && !operation && method === "POST") {
-      const { episode_id, ...scene } = fields(resource, data);
-      if (!episode_id) throw new Error("创建场景或剧本需要 episode_id");
-      const placement = resource === "scenes" ? { anchor_scene_id: data.anchor_scene_id, position: data.position } : {};
-      return jsonRequest<T>(`${projectPath(data.project_id, `episodes/${encodeURIComponent(episode_id)}/${resource}`)}`, "POST", { ...scene, ...placement });
+    if (["scenes", "clips", "screenplays"].includes(resource) && !operation && method === "POST") {
+      const { episode_id, ...values } = fields(resource, data);
+      if (!episode_id) throw new Error("创建场景、片段或剧本需要 episode_id");
+      const placement = resource === "clips" ? { anchor_clip_id: data.anchor_clip_id, position: data.position } : {};
+      return jsonRequest<T>(`${projectPath(data.project_id, `episodes/${encodeURIComponent(episode_id)}/${resource}`)}`, "POST", { ...values, ...placement });
     }
     const root = resource === "projects" ? "/api/v1/projects" : projectPath(data.project_id, resource);
     if (!operation) return jsonRequest<T>(root, "POST", fields(resource, data));

@@ -243,23 +243,7 @@ pub(super) fn generate(s: &AppState, c: &Connection, pid: &str, v: &Value, opera
         let bytes = generation_http::submission_client_builder(remote).timeout(Duration::from_secs(300)).build().map_err(|e| e.to_string())?
             .get(remote).send().and_then(|r| r.error_for_status()).and_then(|r| r.bytes()).map_err(|e| format!("下载千问视频失败：{e}"))?;
         if bytes.is_empty() { return Err("千问返回的视频文件为空".into()) }
-        let dir = PathBuf::from(project(s, pid)?["path"].as_str().ok_or("无效项目路径")?).join("assets/videos");
-        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let out = dir.join(format!("{}.mp4", Uuid::new_v4()));
-        fs::write(&out, &bytes).map_err(|e| e.to_string())?;
-        let tx = c.unchecked_transaction().map_err(|e| e.to_string())?;
-        let name = format!("{operation}-{gid}.mp4");let created = now();
-        tx.execute("INSERT INTO media(name,path,kind,created_at) VALUES(?,?,'video',?)", params![name, out.to_string_lossy(), created]).map_err(|e| e.to_string())?;
-        let mid = tx.last_insert_rowid();
-        if let Some(scene) = opti(v, "scene_id") { attach_video(&tx, scene, mid)? }
-        tx.execute("UPDATE generations SET status='completed',result_json=?,error=NULL,updated_at=? WHERE id=?", params![result.to_string(), now(), gid]).map_err(|e| e.to_string())?;
-        let saved = json!({"id": mid, "name": name, "path": out, "kind": "video", "created_at": created});
-        if let Some(job) = opti(v, "_job_id") {
-            tx.execute("UPDATE background_jobs SET status='completed',result_json=?,error=NULL,updated_at=? WHERE id=?", params![saved.to_string(), now(), job]).map_err(|e| e.to_string())?;
-        }
-        tx.commit().map_err(|e| e.to_string())?;
-        let _guard = s.guard.lock().map_err(|_| "本地数据锁不可用")?;touch(s, pid);
-        Ok(saved)
+        save_generated_video(s, c, pid, v, operation, gid, "mp4", &bytes, &result)
     })();
     if let Err(error) = &result { mark_failed(c, gid, error); }
     result
@@ -406,6 +390,44 @@ pub(super) mod tests {
         let (root,mock)=server(vec![("POST /api/v1/services/aigc/video-generation/video-synthesis ",401,json!({"code":"InvalidApiKey","message":"invalid key"}).to_string())]);
         let error=generate(&f.state,&c,&f.pid,&json!({}),"t2v","test",&config(&root,"wan3.0-video")).unwrap_err();
         assert!(error.contains("InvalidApiKey"));assert_eq!(c.query_row("SELECT status FROM generations",[],|r|r.get::<_,String>(0)).unwrap(),"failed");mock.join().unwrap();
+    }
+
+    #[test]
+    fn manual_resume_reuses_the_original_job_and_completion() {
+        let fixture = Fixture::new();
+        let c = db(&fixture.state, &fixture.pid).unwrap();
+        let (root, mock) = server(vec![
+            ("GET /api/v1/tasks/accepted ", 200, completed()),
+            ("GET /clip.mp4 ", 200, "one video from the accepted job".into()),
+        ]);
+        save_settings(&fixture.state, &json!({"project_id":fixture.pid,"settings":multi_channel_config(&root)})).unwrap();
+        c.execute(
+            "INSERT INTO generations(operation,status,prompt,request_json,created_at,updated_at) VALUES('t2v','failed','test','{}','1','1')",
+            [],
+        ).unwrap();
+        let resume = json!({
+            "provider":"qianwen-token-plan","url":root,"operation":"t2v","generation_id":"accepted",
+            "generation_row_id":c.last_insert_rowid(),"payload":{"project_id":fixture.pid,"prompt":"test",
+                "channel_id":"original","model":"wan3.0-video"}
+        });
+        c.execute(
+            "INSERT INTO background_jobs(operation,status,prompt,created_at,updated_at,resume_json) VALUES('/generations/video','running','test','1','1',?)",
+            [resume.to_string()],
+        ).unwrap();
+        let id = c.last_insert_rowid();
+        let input = json!({"project_id":fixture.pid,"job_id":id});
+        assert!(resume_video_job(&fixture.state, &input).unwrap_err().contains("正在运行"));
+        c.execute("UPDATE background_jobs SET status='failed' WHERE id=?", [id]).unwrap();
+
+        let saved = resume_video_job(&fixture.state, &input).unwrap();
+        assert_eq!(resume_video_job(&fixture.state, &input).unwrap(), saved);
+        assert_eq!(fs::read(strv(&saved,"path").unwrap()).unwrap(), b"one video from the accepted job");
+        assert_eq!(c.query_row("SELECT COUNT(*) FROM background_jobs", [], |r| r.get::<_,i64>(0)).unwrap(), 1);
+        assert_eq!(c.query_row("SELECT COUNT(*) FROM media WHERE kind='video'", [], |r| r.get::<_,i64>(0)).unwrap(), 1);
+        assert_eq!(mock.join().unwrap().len(), 2);
+        assert!(tracked_generation(&fixture.state, "/generations/video", &json!({
+            "project_id":fixture.pid,"_resume":resume
+        })).unwrap_err().contains("/tasks/resume-video"));
     }
 
     #[test]

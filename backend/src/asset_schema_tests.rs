@@ -17,8 +17,8 @@ fn version_15_rename_preserves_assets_foreign_keys_views_and_triggers() {
         INSERT INTO role_media VALUES(42,7);
         INSERT INTO role_audio VALUES(42,8,'平静');
         PRAGMA user_version=15;").unwrap();
-    migrate(&c).unwrap();
-    migrate(&c).unwrap();
+    migrate_to(&c,16).unwrap();
+    migrate_to(&c,16).unwrap();
     assert_eq!(c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).unwrap(), 16);
     assert!(!c.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='roles')", [], |r| r.get::<_, bool>(0)).unwrap());
     let asset: (String,String,i64,bool,String) = c.query_row("SELECT name,description,design_media_id,enabled,category FROM assets WHERE id=42", [], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).unwrap();

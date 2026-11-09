@@ -13,32 +13,43 @@
 | 资产关系 | `/projects/{pid}/asset-relations` | `source_asset_id`, `target_asset_id`, `label`, `directed?`, `description?` | 同创建字段 |
 | 素材 | `/projects/{pid}/media` | `name`, `extension`, `data_base64`, `asset_id?`；推荐二进制上传 | `name` |
 | 剧集 | `/projects/{pid}/episodes` | `title`, `description?`, `cover_media_id?` | 同创建字段 |
-| 场景 | `/projects/{pid}/episodes/{episode_id}/scenes` | `title`, `description?`, `prompt?`, `first_media_id?`, `last_media_id?`, `reference_media_id?`, `generation_options?` | `/projects/{pid}/scenes/{scene_id}`，不能改变所属剧集 |
+| 场景 | `/projects/{pid}/episodes/{episode_id}/scenes` | `title`, `description?`, `shared_prompt?`, `reference_media_ids?`, `reference_audio_media_ids?`, `generation_mode?`, `generation_options?`, `clip_ids?` | `/projects/{pid}/scenes/{scene_id}`，支持调整成员，归属剧集固定 |
+| 片段 | `/projects/{pid}/episodes/{episode_id}/clips` | `title`, `scene_id?`, `description?`, `prompt?`, `creation_mode?`, `first_media_id?`, `last_media_id?`, `reference_media_id?`, `generation_options?`, `anchor_clip_id?`, `position?` | `/projects/{pid}/clips/{clip_id}`，用场景的 `clip_ids` 调整归属 |
 | 剧本 / 分镜头剧本 | `/projects/{pid}/episodes/{episode_id}/screenplays` | `title`, `content?`, `format?`（`markdown/csv`） | `/projects/{pid}/screenplays/{id}`；支持 `episode_id` 移至其他剧集 |
 | Prompt | `/projects/{pid}/prompts` | `name`, `content?`, `category?` | 同创建字段 |
 
-- `GET {集合}`：列表。项目、资产、剧集、场景、剧本、Prompt 返回数组；素材返回 `{items,total}`。
+- `GET {集合}`：列表。项目、资产、剧集、场景、片段、剧本、Prompt 返回数组；素材返回 `{items,total}`。
 - `POST {集合}`：创建并返回完整资源。
 - `GET {集合}/{id}`：读取单个资源。
 - `PATCH {集合}/{id}`：仅更新请求中的字段，返回更新后的资源；可空引用字段传 `null` 清除。
 - `DELETE {集合}/{id}`：删除并返回 `{deleted:true}`。
 
 批量删除使用 `DELETE /api/v1/projects/{pid}/{resource}`，其中 `resource` 为
-`assets`、`asset-relations`、`media`、`episodes`、`scenes` 或 `prompts`。
+`assets`、`asset-relations`、`media`、`episodes`、`scenes`、`clips` 或 `prompts`。
 请求体示例为 `{"ids":[1,2]}`，接受 1–100 个不重复的正整数 ID。成功返回 HTTP 200，
 响应为 `{"data":{"deleted":true,"ids":[1,2],"count":2}}`。
 参数无效返回 400，任一 ID 不存在返回 404，素材仍被引用或存在运行中的后台任务时返回 409。
 整个批次在同一事务中处理，失败时回滚。素材移入回收站，剧集沿用级联删除规则。
 
-场景列表和创建通过剧集子资源路径访问：`GET/POST /projects/{pid}/episodes/{episode_id}/scenes`。单个场景的读取、更新和删除使用 `/projects/{pid}/scenes/{scene_id}`。
+### 场景与片段
+
+场景是剧集下的叙事单元，拥有有序的 `clips`。场景保存共享 `shared_prompt`、参考图片 `reference_media_ids`、参考音频 `reference_audio_media_ids`、`generation_mode`（`clips` 或 `one_take`）与生成参数。新建场景省略 `clip_ids` 时会创建一个初始片段。创建或更新时可用 `clip_ids` 指定本集连续的片段，数组必须和剧集顺序一致。被移出目标场景的片段成为独立的单片段场景，被移空的场景会删除。如果调整后其他场景的成员不再连续，整个操作回滚。
+
+片段保存局部动作、对白、运镜、参考素材及视频版本。片段返回 `episode_id`、`scene_id`、引用图片、`videos`、`script` 和 `generation_options`。POST 片段省略 `scene_id` 时创建独立的单片段场景；指定 `anchor_clip_id` 和 `position: "before"` 或 `"after"` 可在同集锚点旁插入。GET 片段集合可按 `episode_id` 或 `scene_id` 筛选。删除场景会删除其成员片段，媒体文件留在素材库。`scenes/ungroup` 将多片段场景拆成各自独立的单片段场景，并将共享 Prompt 与参考素材复制到各新场景。
+
+`scenes/merge` 将同一剧集里至少两个相邻场景合并到目标场景。目标默认取剧集顺序中的首个所选场景，也可通过 `target_scene_id` 选择任一所选场景。合并按剧集顺序移动原有片段，沿用目标场景的共享设定、生成方式和候选视频，并清除已选主视频。其他场景的记录及视频关联会移除，素材仍可在素材库中选用。
+
+剧集包含按顺序排列的 `scenes`、`clips` 和 `playback_units`。每个播放项有 `kind`（`scene` 或 `clip`）、`id`、`scene_id`、`title` 和视频版本信息。`clips` 模式的场景按成员片段依次播放，`one_take` 模式的场景作为一个播放项。剧集预览和合并使用同一顺序。
+
+项目升级时，旧 `scenes` 表与关联表改为 `clips`、`clip_options`、`clip_scripts`、`clip_videos`、`clip_canvases` 和 `clip_canvas_sources`，原片段 ID 继续对应旧记录。迁移为每个旧片段创建一个场景，并更新草稿、分镜、画布和历史工具调用的结构化字段。分镜与脚本草稿的成员数组改为 `clips`，绑定片段用 `clip_id`。引用片段图的 `@` 写法为 `@剧集名.clip001.first`、`.last`、`.ref`。
 
 每个剧集最多一份 Markdown 剧本和一份 CSV 分镜头剧本，重复创建或移动到已有同类型内容的剧集返回 409；请读取已有资源并 PATCH。剧本按剧集归属：`GET/POST /projects/{pid}/episodes/{episode_id}/screenplays` 列出或创建该集剧本，路径指定归属。兼容 `/projects/{pid}/screenplays`，创建时必须提交有效 `episode_id`，GET 可用 `?episode_id=...` 筛选；单个资源的 GET/PATCH/DELETE 使用 `/projects/{pid}/screenplays/{id}`。PATCH 省略字段保持原值，更新 `episode_id` 可移动到当前项目的其他剧集，不能脱离剧集。资源包含 `id,episode_id,title,content,format,created_at,updated_at`。
 
 资产的 `category` 为 `person`（人物）、`location`（地点）、`object`（物品）、`creature`（生物）、`vehicle`（载具）或 `other`（其他），默认 `person`。旧项目自动迁移为人物，PATCH 省略类别时保留原值，其他类别值会被拒绝。资产列表 GET 支持 `category`、`enabled`（true/false）、`query`（名称或描述，不区分大小写）筛选；省略筛选返回所有资产，包括禁用项。资产库使用 `/assets` 接口和 `assets` 数据字段；素材库使用 `/media` 接口和 `media` 数据字段，关联参数统一为 `asset_id` 与 `media_id`。数据库版本 16 将旧 `roles` 表原地更名为 `assets`，保留资产 ID、图片和音频关联及素材路径；`role_media`、`role_audio` 关联表沿用原名称，其外键更新为引用 `assets`。旧 Agent 会话的结构化工具参数会一次性迁移，用户原文不改写。
 
-资产的 `enabled` 为布尔值，默认 `true`（包含旧项目资产）。设为 `false` 后，资产及其命名图片不再支持 `@` 引用；省略该字段的更新保留原状态。资产返回 `enabled` 和 `images`，剧集返回排序后的 `scenes` 和 `cover_media`，场景返回引用图片、`videos`、`script` 和 `generation_options`。资产、图片、场景等 ID 为项目内整数，项目 ID 为 UUID。
+资产的 `enabled` 为布尔值，默认 `true`（包含旧项目资产）。设为 `false` 后，资产及其命名图片不再支持 `@` 引用；省略该字段的更新保留原状态。资产返回 `enabled` 和 `images`，剧集封面在 `cover_media`。资产、素材、场景和片段 ID 为项目内整数，项目 ID 为 UUID。
 
-项目 DELETE 仅移除项目注册信息，返回额外的 `data_retained:true`，磁盘目录保留，可重新打开。素材 DELETE 使用回收站；使用中的素材拒绝删除。删除剧集会级联删除所属剧本、分镜头剧本、场景及其关联；删除资产不会删除素材文件。
+项目 DELETE 仅移除项目注册信息，返回额外的 `data_retained:true`，磁盘目录保留，可重新打开。素材 DELETE 使用回收站；使用中的素材拒绝删除。删除剧集会级联删除所属剧本、分镜头剧本、场景和片段及其关联；删除资产不会删除素材文件。
 
 ### 资产关系图
 
@@ -112,20 +123,32 @@ curl 'http://127.0.0.1:8080/api/v1/projects/PID/media/1/content?download=1' -o p
 | `media/thumbnail` | `project_id, id` |
 | `media/usage` | `project_id, id` |
 | `media/restore`, `media/purge` | `project_id, id`，恢复/永久清理回收站素材 |
-| `media/video-frame` | `project_id, scene_id, media_id, frame`（first/last） |
+| `media/video-frame` | `project_id, clip_id, media_id, frame`（first/last） |
 | `assets/media/add`, `assets/media/delete` | `project_id, asset_id, media_id`；新增可传 `name` 重命名图片素材 |
 | `assets/audio/save` | `project_id, asset_id, media_id, name`；新增或修改该资产的音频参考名，不重命名源素材 |
 | `assets/audio/delete` | `project_id, asset_id, media_id`；仅解除音频关联 |
-| `scripts/load` | `project_id` |
-| `scripts/save`, `scripts/publish` | `project_id, draft` |
-| `scenes/reorder` | `project_id, episode_id, scene_ids` |
-| `scenes/select-video`, `scenes/delete-video` | `project_id, scene_id, media_id` |
-| `generations/image`, `generations/video` | 原有生成参数，包括 `project_id, operation, prompt` 等 |
+| `scripts/load` | `project_id, episode_id?` |
+| `scripts/save`, `scripts/publish` | `project_id, episode_id?, draft`，草稿成员在 `draft.clips` |
+| `canvas/load`, `canvas/save` | `project_id, clip_id`，保存时还需 `draft, revision` |
+| `storyboard/generate` | `project_id, script`，返回 `clips` 分镜结构 |
+| `storyboard/plan`, `storyboard/validate` | `project_id, clip`，校验时还需 `plan` |
+| `clips/reorder` | `project_id, episode_id, clip_ids`，提交完整片段顺序且各场景保持连续 |
+| `clips/duplicate` | `project_id, id, position?` |
+| `clips/select-video`, `clips/delete-video` | `project_id, clip_id, media_id` |
+| `scenes/reorder` | `project_id, episode_id, scene_ids`，提交完整场景顺序，成员随场景移动 |
+| `scenes/merge` | `project_id, episode_id, scene_ids, target_scene_id?, title?`，返回合并后的场景 |
+| `scenes/ungroup` | `project_id, scene_id`，返回新的 `scene_ids` |
+| `scenes/select-video`, `scenes/delete-video` | `project_id, scene_id, media_id`，选择或解除场景的视频版本 |
+| `generations/image` | `project_id, operation, prompt` 等图片生成参数 |
+| `generations/video` | `project_id` 和视频生成参数，带 `clip_id` 时继承场景设定并将产物归入片段 |
+| `generations/clip-preview` | `project_id, clip_id`，可覆写本次视频生成参数 |
+| `generations/scene-preview`, `generations/scene-video` | `project_id, scene_id, generation_options?`，目标场景须为 `one_take` |
 | `generations/tts` | `project_id, text`，可选 `channel_id, model, voice, format`；OpenAI 另支持 `speed`，支持风格指令的模型可传 `instructions` |
 | `episodes/merge` | `project_id, episode_id` |
 | `prompts/optimize` | `project_id, prompt, kind, image_media_ids, instruction?`；H3 转换另传 `prompt_format: "minimax-h3", h3_mode, duration, reference_video_media_ids?, reference_audio_media_ids?`；Wan 中文优化另传 `prompt_format: "wan3.0", duration?, video_mode?`（保留原文及 `@` 引用，正数时长约束总时长，自动时长 `-1` 保留原文时长） |
 | `settings` | `project_id, settings` |
 | `tasks` | `status?, limit?, before?, through?`，返回 `{items,next_cursor,has_more}` |
+| `tasks/resume-video` | `project_id, job_id`，根据服务端已保存的远端任务编号继续查询及下载视频，同步返回素材 |
 | `storage/scan` | `project_id` |
 | `storage/cleanup` | `project_id, files, clear_cache` |
 
@@ -161,13 +184,21 @@ OpenAI Base URL 支持服务根地址、`/v1` 地址或完整 `/v1/audio/speech`
 
 `generations/video` 沿用 `video_mode: "fl2v"`（`first_media_id`、可选 `last_media_id`）、`video_mode: "i2v"` 或 `operation: "ref2v"`（`image_media_ids`、可选音视频参考）；省略模式与参考素材时为文生视频。Wan 3.0 的 `duration` 为 2–30 或 `-1`，可传布尔值 `audio`、`prompt_extend`、`watermark`；HappyHorse 各模型仅支持对应方式，时长 3–15。Token Plan 视频可传 `resolution: "480P"/"720P"/"1080P"`（默认 720P），不使用像素 `size`。千问图片使用 `size: "宽x高"`，后端转换为 DashScope 格式，并按模型校验像素面积、参考图数量与蒙版支持。
 
-场景 `generation_options`、画布节点可保存 `channel_id`、`model`、`resolution`、`audio`，画布视频还可保存 `video_mode`。场景 `video_mode: "t2v"` 支持纯文生视频。后台任务持久化实际渠道、模型和远程任务编号，恢复时使用原选择。
+场景、片段的 `generation_options` 及画布节点可以保存模型选择与参数。后台任务持久化实际渠道、模型和远程任务编号，恢复时使用原选择。
+
+`tasks/resume-video` 适用于已经取得远端任务编号、后来失败或中断的片段或场景视频任务。恢复操作只继续查询和下载已有任务。已完成的任务返回原结果，仍在执行的任务需要等待。
+
+`generations/clip-preview` 解析片段的实际请求，返回 Prompt、参考素材、参数及警告。片段 `generation_options` 可设 `inherit_shared_prompt: false`，并用 `exclude_shared_reference_media_ids` 和 `exclude_shared_reference_audio_media_ids` 排除指定共享素材。全能参考的共享素材与局部素材按 ID 去重，参考编号在合并后解析。文生视频和首尾帧模式按各自的输入约束发送素材。片段生成时可用 `clip_id` 读取已保存的输入，也可传入本次参数。
+
+`generations/scene-preview` 将 `one_take` 场景的片段编排成单镜头的连续动作，返回编译后的 Prompt、实际参考素材、模型参数、警告及 `beats`（每个片段的 `clip_id`、`start`、`end`、`title`）。总时长来自各片段的具体时长，并按所选模型校验。`generations/scene-video` 使用同一编排逻辑提交视频，结果作为该场景的视频版本。两种预览动作只解析输入。
 
 `GET /api/v1/health` 返回服务状态和 API 版本。原来的 `/api` RPC 包装路由和 Tauri 业务 IPC 不再提供。
 
 ## Agent
 
 Agent 的 `app_request` 使用 `resource=assets` 操作六类创作资产，使用 `resource=media` 操作图片、视频、音频素材；`get_project` 对应返回 `assets` 和 `media`。资产支持类别、启用状态和名称查询，图片关联使用 `assets/media/*`，音频关联使用 `assets/audio/*`。解除关联或删除创作资产保留源素材；素材删除沿用引用保护及回收站语义。
+
+Agent 通过 `app_request` 的 `scenes` 和 `clips` 读写场景与片段，通过 `app_action` 的 `clips/*` 管理片段顺序与版本，通过 `scenes/*` 管理场景顺序、合并、解组与一镜到底版本。生成前可以用 `generations/clip-preview` 或 `generations/scene-preview` 核对实际请求。用 `app_describe` 读取当前工具字段和数据结构。
 
 Agent 接口使用 `POST /api/v1/actions/agent/{动作}`，全部传入 `project_id`，会话 ID 为 UUID 且只在所属项目有效。
 
@@ -202,7 +233,7 @@ Agent 接口使用 `POST /api/v1/actions/agent/{动作}`，全部传入 `project
 
 `app_request` 使用现有 REST 校验，`app_action` 使用白名单业务操作，项目 ID 由服务端绑定；模型不能跨项目访问、直接运行系统命令或读取任意本地文件。网页工具仅允许公开 HTTP/HTTPS 地址，并限制响应体和请求时长。搜索 Key 仅由后端用于搜索服务请求。
 
-`app_action` 的 `resource/text/read` 支持完整分页读取创作正文，`data` 必填 `resource,id,field`，可选 `offset`（默认 0，Unicode 字符下标）和 `max_chars`（1–1500，默认 1500）。支持 `screenplays/prompts.content`、`assets/episodes.description`、`scenes.description/prompt`，ID 必须为当前项目内对应资源的正整数。返回 `{resource,id,field,content,offset,total_chars,next_offset}`；按顺序拼接各页 `content`，直至 `next_offset` 为 null。普通资源查询仍有输出长度限制，按 ID 查询不能替代正文分页；修改前读取全文，保留未要求修改的内容，不用节选覆盖整个字段。
+`app_action` 的 `resource/text/read` 支持完整分页读取创作正文，`data` 必填 `resource,id,field`，可选 `offset`（默认 0，Unicode 字符下标）和 `max_chars`（1–1500，默认 1500）。支持 `screenplays/prompts.content`、`assets/episodes.description`、`scenes.description/shared_prompt`、`clips.description/prompt`，ID 必须为当前项目内对应资源的正整数。返回 `{resource,id,field,content,offset,total_chars,next_offset}`；按顺序拼接各页 `content`，直至 `next_offset` 为 null。普通资源查询仍有输出长度限制，按 ID 查询不能替代正文分页；修改前读取全文，保留未要求修改的内容，不用节选覆盖整个字段。
 
 ## Skills
 
@@ -229,11 +260,11 @@ Agent 的 `list_skills` 工具读取当前启用目录（含内置技能），�
 
 ### 全能参考视频
 
-“全能参考”继续兼容已有场景的 `video_mode: "i2v"`，实际调用视频服务 `POST /v1/generations/ref2v`。可使用 `operation: "ref2v"` 或 `video_mode: "ref2v"` 直接调用。
+“全能参考”继续兼容已有片段的 `video_mode: "i2v"`，实际调用视频服务 `POST /v1/generations/ref2v`。可使用 `operation: "ref2v"` 或 `video_mode: "ref2v"` 直接调用。
 
 本地请求支持 `image_media_ids`（最多 9 张）、`reference_video_media_ids`（最多 3 个）和 `reference_audio_media_ids`（最多 3 个）。至少选择一种参考素材；音视频均可省略。后端读取素材并按顺序编码为 Base64，发送 `reference_images`、`reference_videos`、`reference_audios`，未提供的类型不发送空数组。服务配置继续使用视频 Base URL，并兼容原有 `i2v` 地址配置。
 
-音频支持上传 MP3、WAV、M4A、AAC、OGG、FLAC，保存为 `kind: "audio"` 的项目素材；场景的音视频参考 ID 保存在 `generation_options` 对应字段中。
+音频支持上传 MP3、WAV、M4A、AAC、OGG、FLAC，保存为 `kind: "audio"` 的项目素材。场景的共享参考音频存于 `reference_audio_media_ids`，片段的局部参考音频和视频存于 `generation_options` 对应字段中。
 
 ## 简易剪辑
 
@@ -248,7 +279,7 @@ Agent 的 `list_skills` 工具读取当前启用目录（含内置技能），�
 
 导出可额外传入 `audio_clips` 数组，每项为 `{media_id,start,end,speed,volume,at}`，其中 `at` 为输出时间线上的起始秒数（非负）。独立音轨按时间位置混入主轨声音，成片时长取主轨和所有音轨的最大结束时间；主轨视频不足部分补黑。分离音轨时客户端将对应主轨片段的 `volume` 设为 `0`，避免重复播放。允许 `clips: []` 且 `audio_clips` 非空；两者合计最多 100 个片段，成片最长两小时。省略 `audio_clips` 保持原有单轨导出行为。
 
-场景 `description` 保存手工描述，`prompt` 保存视频生成提示词。视频生成时优先使用非空 `prompt`，为空或只有空白时回退到 `description`；优化描述只更新 `prompt`。
+片段 `description` 保存手工描述，`prompt` 保存局部视频提示词。视频生成优先采用非空的 `prompt`，为空时使用 `description`，再按生成方式与场景的 `shared_prompt` 组合。优化片段描述将结果写入该片段的 `prompt`。
 
 ## 项目创作配置
 

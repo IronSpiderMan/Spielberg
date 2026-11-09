@@ -1,6 +1,6 @@
 import {useId,useRef,useState} from "react";
 import type {ReactNode} from "react";
-import {findMentions,mentionPattern,promptMentions,savedPromptMentions,templateMentions} from "./prompt-mentions";
+import {findMentions,mentionPattern,namedMention,promptMentions,savedPromptMentions,templateMentions} from "./prompt-mentions";
 import type {SavedPrompt} from "./prompt-mentions";
 import type {Asset,Snapshot} from "./core";
 import {assetCategoryLabel} from "./asset-categories";
@@ -20,7 +20,7 @@ export function PromptInput({value,onChange,roles,data,prompts=[],templates=[],p
   for(const match of pattern?value.matchAll(pattern):[]) {
     const start=match.index!;
     parts.push(value.slice(offset,start));
-    const item=items.find(item=>item.name===match[1])!;
+    const item=namedMention(items, match[1])!;
     parts.push(<mark key={start} className={`prompt-mention ${item.kind}${data&&item.kind!=="prompt"&&!item.media?" missing":""}`}>{match[0]}</mark>);
     offset=start+match[0].length;
   }
@@ -38,7 +38,7 @@ export function PromptInput({value,onChange,roles,data,prompts=[],templates=[],p
     <div className={`prompt-editor${disabled?" disabled":""}`}>
       <div ref={backdrop} className="prompt-backdrop" aria-hidden="true">{parts}</div>
       <textarea ref={input} value={value} disabled={disabled} rows={4} aria-label={ariaLabel} aria-autocomplete="list" aria-controls={show?listId:undefined} aria-activedescendant={show?`${listId}-${selected}`:undefined}
-        placeholder={placeholder||(data?"描述画面，@ 引用资产或剧集.scene001.first / last / ref":"描述画面，输入 @ 引用资产")}
+        placeholder={placeholder||(data?"描述画面，@ 引用资产或剧集.clip001.first / last / ref":"描述画面，输入 @ 引用资产")}
         onPaste={event=>{if(disabled||!onPasteImages)return;const files=Array.from(event.clipboardData.items).filter(item=>item.kind==="file"&&item.type.startsWith("image/")).map(item=>item.getAsFile()).filter((file):file is File=>file!==null);if(!files.length)return;event.preventDefault();onPasteImages(files);}}
         onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}
         onSelect={event=>setCaret(event.currentTarget.selectionStart)}
@@ -68,6 +68,6 @@ export function PromptInput({value,onChange,roles,data,prompts=[],templates=[],p
         />
     </div>
     {show&&<div className="prompt-suggestions" role="listbox" id={listId}>{options.map((item,index)=><button type="button" role="option" aria-selected={index===selected} id={`${listId}-${index}`} key={item.id} className={index===selected?"active":""} ref={node=>{if(index===selected)node?.scrollIntoView({block:"nearest"});}} onMouseDown={event=>event.preventDefault()} onClick={()=>choose(index)}><b>@{item.name}</b><small>{item.kind==="role"?assetCategoryLabel(item.category):item.description}{data&&item.kind!=="prompt"&&!item.media?" · 缺少图片":""}</small></button>)}</div>}
-    {data&&findMentions(value,items).some(item=>item.kind!=="prompt"&&!item.media)&&<p className="prompt-missing">橙色引用缺少图片，请先为对应资产或场景添加图片。</p>}
+    {data&&findMentions(value,items).some(item=>item.kind!=="prompt"&&!item.media)&&<p className="prompt-missing">橙色引用缺少图片，请先为对应资产或片段添加图片。</p>}
   </div>;
 }

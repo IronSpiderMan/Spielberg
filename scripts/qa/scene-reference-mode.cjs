@@ -23,7 +23,8 @@ const assert = require('node:assert/strict');
         { ...base, id: 3, title: '音视频参考推断', sort_order: 2, generation_options: { reference_video_media_ids: [103], reference_audio_media_ids: [104] } },
         { ...base, id: 4, title: '保留首尾帧选择', sort_order: 3, first_media_id: 102, generation_options: { video_mode: 'fl2v', reference_media_ids: [101] } },
       ];
-      const data = { project, media, assets: [], episodes: [{ id: 1, title: '测试剧集', description: '', scenes }], prompts: [], settings: { ref2v: { url: 'https://example.invalid', api_key: '' }, fl2v: { url: 'https://example.invalid', api_key: '' } } };
+      for (const clip of scenes) clip.scene_id = clip.id;
+      const data = { project, media, assets: [], episodes: [{ id: 1, title: '测试剧集', description: '', clips: scenes, scenes: scenes.map(clip => ({id:clip.id,title:clip.title,generation_mode:'clips',clips:[clip],reference_media_ids:[],reference_audio_media_ids:[]})), playback_units: scenes.map(clip => ({kind:'clip',id:clip.id,title:clip.title,videos:[]})) }], prompts: [], settings: { ref2v: { url: 'https://example.invalid', api_key: '' }, fl2v: { url: 'https://example.invalid', api_key: '' } } };
       window.__qaData = data;
       window.__qaGenerations = [];
       window.__TAURI_INTERNALS__ = { invoke: async (command, args) => {
@@ -33,7 +34,7 @@ const assert = require('node:assert/strict');
         if (args.path === '/tasks') return { items: [], has_more: false, next_cursor: null };
         if (args.path === '/screenplays') return [];
         if (args.path === '/scripts/load') return null;
-        if (args.path === '/scenes/update') Object.assign(scenes.find(scene => scene.id === args.payload.id), args.payload);
+        if (args.path === '/clips/update') Object.assign(scenes.find(scene => scene.id === args.payload.id), args.payload);
         if (args.path === '/generations/video') {
           window.__qaGenerations.push(args.payload);
           return { id: 201, kind: 'video', name: '测试视频.mp4', path: '/fixture.mp4', created_at: '2026-10-30' };
@@ -69,7 +70,8 @@ const assert = require('node:assert/strict');
 
     await page.locator('.episode-card').getByRole('button', { name: '编辑', exact: true }).click();
     await page.getByRole('tab', { name: '场景', exact: true }).click();
-    const openLegacy = () => page.getByRole('button', { name: '编辑场景：历史 ref2v', exact: true }).click();
+    await page.getByRole('button', { name: '查看场景「历史 ref2v」', exact: true }).click();
+    const openLegacy = () => page.getByRole('button', { name: '编辑片段：历史 ref2v', exact: true }).click();
     await openLegacy();
     const editor = page.locator('.scene-editor-page');
     await editor.getByRole('tab', { name: '全能参考', exact: true }).waitFor();
@@ -81,7 +83,7 @@ const assert = require('node:assert/strict');
     if (process.env.QA_SCREENSHOT) await editor.screenshot({ path: process.env.QA_SCREENSHOT });
     await editor.getByRole('button', { name: '生成新视频', exact: true }).click();
     await page.waitForFunction(() => window.__qaGenerations.length === 5);
-    const saved = await page.evaluate(() => window.__qaData.episodes[0].scenes[0]);
+    const saved = await page.evaluate(() => window.__qaData.episodes[0].clips[0]);
     assert.equal(saved.generation_options.video_mode, 'i2v');
     assert.deepEqual(saved.generation_options.reference_media_ids, [102, 101]);
     assert.equal(saved.description, '');
@@ -93,9 +95,9 @@ const assert = require('node:assert/strict');
     await editor.getByRole('button', { name: '选择首帧', exact: true }).waitFor();
     await editor.getByRole('tab', { name: '全能参考', exact: true }).click();
     assert.equal(await editor.locator('.scene-reference-thumb').count(), 2);
-    await editor.getByRole('button', { name: '保存场景', exact: true }).click();
+    await editor.getByRole('button', { name: '保存片段', exact: true }).click();
     await editor.waitFor({ state: 'hidden' });
-    // Saving returns to this episode's scene list.
+    // Saving returns to the selected scene's clip list.
     await openLegacy();
     await editor.locator('.scene-reference-thumb').nth(1).waitFor();
     assert.equal(await editor.getByRole('tab', { name: '全能参考', exact: true }).getAttribute('aria-selected'), 'true');

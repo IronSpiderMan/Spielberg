@@ -12,9 +12,10 @@ pub fn install(c: &Connection) -> Result<(), String> {
     CREATE TABLE IF NOT EXISTS edit_sources(edit_id TEXT NOT NULL REFERENCES edit_projects(id) ON DELETE CASCADE,media_id INTEGER NOT NULL REFERENCES media(id),PRIMARY KEY(edit_id,media_id));
     CREATE TABLE IF NOT EXISTS edit_outputs(edit_id TEXT NOT NULL REFERENCES edit_projects(id) ON DELETE CASCADE,media_id INTEGER NOT NULL REFERENCES media(id),created_at TEXT NOT NULL,PRIMARY KEY(edit_id,media_id));").map_err(|e|e.to_string())?;
     let _=c.execute("ALTER TABLE edit_outputs ADD COLUMN request TEXT",[]);
+    let clip_schema = c.prepare("SELECT id FROM clips LIMIT 0").is_ok();
     let view_sql:Option<String>=c.query_row("SELECT sql FROM sqlite_master WHERE type='view' AND name='asset_usage'",[],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
     if view_sql.is_some_and(|sql|!sql.contains("edit_sources") || !sql.contains("role_audio")){c.execute_batch("DROP VIEW asset_usage;").map_err(|e|e.to_string())?;}
-    c.execute_batch(&asset_sql("CREATE INDEX IF NOT EXISTS media_active ON media(deleted_at,id);
+    let mut view = asset_sql("CREATE INDEX IF NOT EXISTS media_active ON media(deleted_at,id);
     CREATE TABLE IF NOT EXISTS revisions(section TEXT PRIMARY KEY, version INTEGER NOT NULL DEFAULT 0);
     CREATE VIEW IF NOT EXISTS asset_usage AS
     SELECT design_media_id AS media_id,'role' AS kind,id AS target_id,name AS title,NULL AS episode_id,NULL AS episode_title,'资产主图' AS purpose FROM roles WHERE design_media_id IS NOT NULL
@@ -29,14 +30,28 @@ pub fn install(c: &Connection) -> Result<(), String> {
     UNION ALL SELECT DISTINCT CAST(j.value AS INTEGER),'scene',s.id,s.title,e.id,e.title,'场景参考音频' FROM scene_options o JOIN scenes s ON s.id=o.scene_id JOIN episodes e ON e.id=s.episode_id JOIN json_each(CASE WHEN json_valid(o.value) THEN o.value ELSE '{}' END,'$.reference_audio_media_ids') j
     UNION ALL SELECT sv.media_id,'scene',s.id,s.title,e.id,e.title,CASE WHEN s.video_media_id=sv.media_id THEN '当前视频' ELSE '候选视频' END FROM scene_videos sv JOIN scenes s ON s.id=sv.scene_id JOIN episodes e ON e.id=s.episode_id
     UNION ALL SELECT es.media_id,'edit',0,p.name,NULL,NULL,'剪辑素材' FROM edit_sources es JOIN edit_projects p ON p.id=es.edit_id
-    UNION ALL SELECT eo.media_id,'edit',0,p.name,NULL,NULL,'剪辑产出' FROM edit_outputs eo JOIN edit_projects p ON p.id=eo.edit_id;")).map_err(|e| e.to_string())?;
+    UNION ALL SELECT eo.media_id,'edit',0,p.name,NULL,NULL,'剪辑产出' FROM edit_outputs eo JOIN edit_projects p ON p.id=eo.edit_id");
+    let (clip_table, clip_videos, clip_scripts, clip_options) = if clip_schema {
+        view = view.replace("'scene'", "'clip'").replace("场景", "片段").replace("scene_", "clip_").replace("FROM scenes s", "FROM clips s").replace("JOIN scenes s", "JOIN clips s");
+        view.push_str("
+            UNION ALL SELECT cs.media_id,'canvas',c.id,c.title,e.id,e.title,'画布素材' FROM clip_canvas_sources cs JOIN clips c ON c.id=cs.clip_id JOIN episodes e ON e.id=c.episode_id
+            UNION ALL SELECT j.value,'scene',s.id,s.title,e.id,e.title,'场景共享参考图' FROM scenes s JOIN episodes e ON e.id=s.episode_id JOIN json_each(s.reference_media_ids) j
+            UNION ALL SELECT j.value,'scene',s.id,s.title,e.id,e.title,'场景共享参考音频' FROM scenes s JOIN episodes e ON e.id=s.episode_id JOIN json_each(s.reference_audio_media_ids) j
+            UNION ALL SELECT j.value,'scene',s.id,s.title,e.id,e.title,'场景参考视频' FROM scenes s JOIN episodes e ON e.id=s.episode_id JOIN json_each(s.generation_options,'$.reference_video_media_ids') j
+            UNION ALL SELECT json_extract(s.generation_options,'$.first_media_id'),'scene',s.id,s.title,e.id,e.title,'场景首帧' FROM scenes s JOIN episodes e ON e.id=s.episode_id WHERE json_extract(s.generation_options,'$.first_media_id') IS NOT NULL
+            UNION ALL SELECT json_extract(s.generation_options,'$.last_media_id'),'scene',s.id,s.title,e.id,e.title,'场景尾帧' FROM scenes s JOIN episodes e ON e.id=s.episode_id WHERE json_extract(s.generation_options,'$.last_media_id') IS NOT NULL
+            UNION ALL SELECT sv.media_id,'scene',s.id,s.title,e.id,e.title,CASE WHEN s.video_media_id=sv.media_id THEN '当前视频' ELSE '候选视频' END FROM scene_videos sv JOIN scenes s ON s.id=sv.scene_id JOIN episodes e ON e.id=s.episode_id");
+        ("clips","clip_videos","clip_scripts","clip_options")
+    } else { ("scenes","scene_videos","scene_scripts","scene_options") };
+    view.push(';');
+    c.execute_batch(&view).map_err(|e|e.to_string())?;
     for (table, sections) in [
         ("media", vec!["media", "roles", "episodes"]), ("roles",vec!["roles"]),
-        ("role_audio",vec!["roles"]), ("role_media",vec!["roles"]), ("episodes",vec!["episodes"]), ("scenes",vec!["episodes"]),
-        ("scene_videos",vec!["episodes"]), ("scene_scripts",vec!["episodes"]),
-        ("scene_options",vec!["episodes"]), ("prompts",vec!["prompts"]),
+        ("role_audio",vec!["roles"]), ("role_media",vec!["roles"]), ("episodes",vec!["episodes"]), (clip_table,vec!["episodes"]),
+        (clip_videos,vec!["episodes"]), (clip_scripts,vec!["episodes"]),
+        (clip_options,vec!["episodes"]), ("prompts",vec!["prompts"]),
         ("settings",vec!["settings"]), ("background_jobs",vec!["jobs"]),
-    ] {
+    ].into_iter().chain(clip_schema.then_some([("scenes",vec!["episodes"]),("scene_videos",vec!["episodes"])]).into_iter().flatten()) {
         let sql_table = if table == "roles" { asset_table } else { table };
         for section in &sections { c.execute("INSERT OR IGNORE INTO revisions(section) VALUES(?)",[section]).map_err(|e|e.to_string())?; }
         for event in ["INSERT", "UPDATE", "DELETE"] {
@@ -45,7 +60,8 @@ pub fn install(c: &Connection) -> Result<(), String> {
         }
     }
     // Foreign keys also need to reject references to soft-deleted assets.
-    for (table, columns) in [("roles",vec!["design_media_id"]),("role_audio",vec!["media_id"]),("role_media",vec!["media_id"]),("episodes",vec!["cover_media_id"]),("scenes",vec!["first_media_id","last_media_id","reference_media_id","video_media_id"]),("scene_videos",vec!["media_id"])] {
+    for (table, columns) in [("roles",vec!["design_media_id"]),("role_audio",vec!["media_id"]),("role_media",vec!["media_id"]),("episodes",vec!["cover_media_id"]),(clip_table,vec!["first_media_id","last_media_id","reference_media_id","video_media_id"]),(clip_videos,vec!["media_id"])]
+        .into_iter().chain(clip_schema.then_some([("scenes",vec!["video_media_id"]),("scene_videos",vec!["media_id"])]).into_iter().flatten()) {
         let sql_table = if table == "roles" { asset_table } else { table };
         for event in ["INSERT","UPDATE"] {
             for column in &columns {
@@ -188,8 +204,9 @@ mod tests {
         INSERT INTO assets(id,name,design_media_id,created_at) VALUES(1,'Hero',1,'1');
         INSERT INTO role_media VALUES(1,1);
         INSERT INTO episodes(id,title,sort_order,created_at,cover_media_id) VALUES(1,'Episode',0,'1',1);
-        INSERT INTO scenes(id,episode_id,title,sort_order,created_at,first_media_id,last_media_id,reference_media_id,video_media_id) VALUES(1,1,'Scene',0,'1',1,1,1,2);
-        INSERT INTO scene_videos VALUES(1,2);").unwrap();c
+        INSERT INTO scenes(id,episode_id,title,created_at) VALUES(1,1,'Scene','1');
+        INSERT INTO clips(id,episode_id,scene_id,title,sort_order,created_at,first_media_id,last_media_id,reference_media_id,video_media_id) VALUES(1,1,1,'Clip',0,'1',1,1,1,2);
+        INSERT INTO clip_videos VALUES(1,2);").unwrap();c
     }
     #[test]
     fn usage_covers_all_references_and_deletion_is_guarded() {
@@ -197,17 +214,17 @@ mod tests {
         let image=usages(&c,1).unwrap();
         assert_eq!(image.len(),5); // Main image is not duplicated as a gallery image.
         assert!(image.iter().any(|u|u["purpose"]=="剧集封面"));
-        assert!(image.iter().any(|u|u["episode_title"]=="Episode"&&u["purpose"]=="场景参考图"));
+        assert!(image.iter().any(|u|u["episode_title"]=="Episode"&&u["purpose"]=="片段参考图"));
         assert_eq!(usages(&c,2).unwrap()[0]["purpose"],"当前视频");
         assert!(trash(&c,1).is_err());assert!(trash(&c,2).is_err());
-        c.execute_batch("UPDATE scenes SET video_media_id=NULL;").unwrap();
+        c.execute_batch("UPDATE clips SET video_media_id=NULL;").unwrap();
         assert_eq!(usages(&c,2).unwrap()[0]["purpose"],"候选视频");
-        c.execute_batch("DELETE FROM scene_videos;").unwrap();trash(&c,2).unwrap();
+        c.execute_batch("DELETE FROM clip_videos;").unwrap();trash(&c,2).unwrap();
         assert!(media(&c,Some(2)).is_none());
-        assert!(select_asset_video(&c,1,2).is_err());
-        assert!(c.execute("UPDATE scenes SET video_media_id=2 WHERE id=1",[]).is_err());
+        assert!(select_clip_asset_video(&c,1,2).is_err());
+        assert!(c.execute("UPDATE clips SET video_media_id=2 WHERE id=1",[]).is_err());
         c.execute("UPDATE media SET deleted_at=NULL WHERE id=2",[]).unwrap();
-        select_asset_video(&c,1,2).unwrap();
+        select_clip_asset_video(&c,1,2).unwrap();
     }
     #[test]
     fn optional_reference_usage_survives_existing_view_upgrade() {
@@ -215,12 +232,12 @@ mod tests {
         c.execute_batch("DROP VIEW asset_usage; CREATE VIEW asset_usage AS SELECT 999 AS media_id;").unwrap();
         install(&c).unwrap();
         c.execute_batch("INSERT INTO media(id,name,path,kind,created_at) VALUES(3,'voice','/voice.wav','audio','1');
-        INSERT INTO scene_options VALUES(1,'{\"reference_media_ids\":[1],\"reference_video_media_ids\":[2],\"reference_audio_media_ids\":[3]}');").unwrap();
+        INSERT INTO clip_options VALUES(1,'{\"reference_media_ids\":[1],\"reference_video_media_ids\":[2],\"reference_audio_media_ids\":[3]}');").unwrap();
         assert_eq!(usages(&c,1).unwrap().len(),5);
-        assert!(usages(&c,2).unwrap().iter().any(|u|u["purpose"]=="场景参考视频"));
-        assert_eq!(usages(&c,3).unwrap()[0]["purpose"],"场景参考音频");
+        assert!(usages(&c,2).unwrap().iter().any(|u|u["purpose"]=="片段参考视频"));
+        assert_eq!(usages(&c,3).unwrap()[0]["purpose"],"片段参考音频");
         assert!(trash(&c,3).is_err());
-        c.execute("DELETE FROM scene_options",[]).unwrap();trash(&c,3).unwrap();
+        c.execute("DELETE FROM clip_options",[]).unwrap();trash(&c,3).unwrap();
     }
     #[test]
     fn filters_apply_before_pagination_and_revisions_track_only_changes() {

@@ -6,7 +6,7 @@ import { PreviewImage } from "./components/ImagePreviewModal";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Button, Form, Input, Message, Modal, Select } from "@arco-design/web-react";
 import { Plus, Save, Undo2, Redo2, Maximize, Download, StickyNote, Trash2, ArrowLeft, Image, Film, Music, Upload, RotateCcw } from "lucide-react";
-import { defaultGenerationSize, normalizeGenerationSize, imageUrl, post, type Media, type Scene, type Snapshot } from "./core";
+import { defaultGenerationSize, normalizeGenerationSize, imageUrl, post, type Media, type Clip, type Snapshot } from "./core";
 import { uploadMedia } from "./api";
 import { buildVideoRequest } from "./generation-request";
 import { resolvePrompt } from "./resolve-prompt";
@@ -16,7 +16,7 @@ import { confirmDiscard, useEditGuard } from "./edit-guard";
 import "./infinite-canvas.css";
 
 type MediaKind = "image" | "audio" | "video";
-type Kind = MediaKind | "note" | "scene" | "asset" | "media" | "prompt";
+type Kind = MediaKind | "note" | "clip" | "asset" | "media" | "prompt";
 type Node = { channel_id?:string; model?:string; resolution?:string; audio?:boolean; video_mode?:"t2v"|"i2v"|"fl2v"; id: string; kind: Kind; ref_id?: number; text?: string; prompt?: string; duration?: number; ratio?: string; size?: string; x: number; y: number };
 type Edge = { id: string; from: string; to: string };
 type Draft = { version: 1; nodes: Node[]; edges: Edge[]; viewport: { x: number; y: number; zoom: number } };
@@ -29,13 +29,13 @@ function normalizeDraftSizes(draft: Draft): Draft {
     return { ...node, ratio, size: normalizeGenerationSize(ratio, node.size) };
   }) };
 }
-const labels: Record<Kind, string> = { image: "图片", audio: "音频", video: "视频", scene: "场景", asset: "资产", media: "素材", prompt: "Prompt", note: "便签" };
+const labels: Record<Kind, string> = { image: "图片", audio: "音频", video: "视频", clip: "片段", asset: "资产", media: "素材", prompt: "Prompt", note: "便签" };
 const mediaKind = (kind: Kind): kind is MediaKind => ["image", "video", "audio"].includes(kind);
 const uid = () => crypto.randomUUID();
 const clamp = (n: number) => Math.max(.2, Math.min(2, n));
 const WIDTH = 300;
 export default function InfiniteCanvas({ data, scene, reload, onClose }: {
-  data: Snapshot; scene: Scene; reload: () => Promise<void>; onClose: () => void;
+  data: Snapshot; scene: Clip; reload: () => Promise<void>; onClose: () => void;
 }) {
   const [draft, setDraft] = useState<Draft>(empty), [saved, setSaved] = useState("");
   const [title, setTitle] = useState(scene.title), [savedTitle, setSavedTitle] = useState(scene.title);
@@ -56,7 +56,7 @@ export default function InfiniteCanvas({ data, scene, reload, onClose }: {
   const drag = useRef<{ pointer: number; x: number; y: number; before: Draft; node?: string }>();
   const dirty = !!saved && (JSON.stringify(draft) !== saved || title !== savedTitle);
   useEditGuard(dirty || !!busyNode);
-  const payload = { project_id: data.project.id, scene_id: scene.id };
+  const payload = { project_id: data.project.id, clip_id: scene.id };
   const load = async () => {
     setLoading(true); setError("");
     try {
@@ -87,13 +87,13 @@ export default function InfiniteCanvas({ data, scene, reload, onClose }: {
   const redo = () => { const next = future[0]; if (!next) return; setPast(p => [...p, current.current]); setFuture(f => f.slice(1)); setDraft(next); setSelected(""); setLinkFrom(""); setLinkTo(""); setLinkPoint(null); };
   const save = async () => {
     if (saving || loading || error || drag.current || busy.current) return;
-    if (!title.trim()) return void Message.warning("请填写场景名称");
+    if (!title.trim()) return void Message.warning("请填写片段名称");
     const value = current.current; setSaving(true);
     try {
       const b = await post<Board>("/canvas/save", { ...payload, draft: value, revision });
       setRevision(b.revision); setSaved(JSON.stringify(value));
-      if (title !== savedTitle) { await post("/scenes/update", { project_id: data.project.id, id: scene.id, title: title.trim() }); setTitle(title.trim()); setSavedTitle(title.trim()); await reload(); }
-      Message.success("画布场景已保存");
+      if (title !== savedTitle) { await post("/clips/update", { project_id: data.project.id, id: scene.id, title: title.trim() }); setTitle(title.trim()); setSavedTitle(title.trim()); await reload(); }
+      Message.success("画布片段已保存");
     } catch (e) { Message.error(String(e)); } finally { setSaving(false); }
   };
   const zoomAt = (zoom: number, x: number, y: number) => {
@@ -134,7 +134,7 @@ export default function InfiniteCanvas({ data, scene, reload, onClose }: {
       const media = available.find(m => m.id === node.ref_id);
       return { title: media?.name || `${labels[node.kind]}节点`, text: media ? `已选择${labels[node.kind]}素材` : node.ref_id ? "素材已移除，请替换素材" : "选择已有素材或上传文件", media };
     }
-    const original = node.kind === "scene" ? data.episodes.flatMap(e => e.scenes).find(s => s.id === node.ref_id) : node.kind === "asset" ? data.assets.find(r => r.id === node.ref_id) : data.prompts.find(p => p.id === node.ref_id);
+    const original = node.kind === "clip" ? data.episodes.flatMap(e => e.clips).find(s => s.id === node.ref_id) : node.kind === "asset" ? data.assets.find(r => r.id === node.ref_id) : data.prompts.find(p => p.id === node.ref_id);
     return { title: node.kind === "note" ? "创作便签" : original ? ("title" in original ? original.title : original.name) : `${labels[node.kind]}已移除`, text: node.text || (original ? ("description" in original ? original.description : original.content) : "") };
   };
   const remove = () => { if (busy.current) return; commit({ ...draft, nodes: draft.nodes.filter(n => n.id !== selected), edges: draft.edges.filter(e => e.from !== selected && e.to !== selected && e.id !== selected) }); setSelected(""); setLinkFrom(""); setLinkTo(""); setLinkPoint(null); };
@@ -199,7 +199,7 @@ export default function InfiniteCanvas({ data, scene, reload, onClose }: {
         if (mode === "fl2v" && (references.some(m=>m?.kind!=="image") || imageIds.length>2)) throw new Error("首尾帧模式仅支持一张首帧和可选的一张尾帧图片");
         const videoIds=references.filter(m=>m?.kind==="video").map(m=>m!.id),audioIds=references.filter(m=>m?.kind==="audio").map(m=>m!.id);
         validateGeneration(choice,mode==="i2v"?"ref2v":mode,{images:mode==="i2v"?imageIds.length:0,videos:videoIds.length,audios:audioIds.length,last:mode==="fl2v"&&imageIds.length>1,duration:node.duration || 5});
-        request=buildVideoRequest({mode,prompt:resolvePrompt(prompt,data.assets,data.prompts),duration:node.duration || 5,ratio:modelRatio(choice,node.ratio || "16:9"),size:node.size,sceneId:scene.id,firstId:imageIds[0],lastId:imageIds[1],referenceIds:imageIds,referenceVideoIds:videoIds,referenceAudioIds:audioIds});
+        request=buildVideoRequest({mode,prompt:prompt,duration:node.duration || 5,ratio:modelRatio(choice,node.ratio || "16:9"),size:node.size,clipId:scene.id,firstId:imageIds[0],lastId:imageIds[1],referenceIds:imageIds,referenceVideoIds:videoIds,referenceAudioIds:audioIds});
         request={...request,...(cap?.size_mode==="resolution"?{resolution:node.resolution || "720P"}:{}),...(cap?.audio?{audio:node.audio ?? true}:{})};
       }
       request={...request,...selectionPayload(choice)};
@@ -218,12 +218,12 @@ export default function InfiniteCanvas({ data, scene, reload, onClose }: {
   };
   const selectVideo = async (media: Media) => {
     if (busy.current) return; busy.current = true; setBusyNode("select-video");
-    try { await post("/scenes/select-video", { ...payload, media_id: media.id }); await reload(); Message.success("已设为场景视频，可参与剧集合并"); }
+    try { await post("/clips/select-video", { ...payload, media_id: media.id }); await reload(); Message.success("已设为片段视频，可参与剧集合并"); }
     catch (e) { Message.error(String(e)); } finally { busy.current = false; setBusyNode(""); }
   };
-  const exportDraft = () => { const url = URL.createObjectURL(new Blob([JSON.stringify({ ...payload, ...draft }, null, 2)], { type: "application/json" })); const a = document.createElement("a"); a.href = url; a.download = `spielberg-scene-${scene.id}-canvas.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); };
+  const exportDraft = () => { const url = URL.createObjectURL(new Blob([JSON.stringify({ ...payload, ...draft }, null, 2)], { type: "application/json" })); const a = document.createElement("a"); a.href = url; a.download = `spielberg-clip-${scene.id}-canvas.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); };
   return <section className="infinite-canvas">
-    <header className="ic-heading"><div><Button type="text" title="返回场景列表" aria-label="返回场景列表" icon={<ArrowLeft size={15} />} disabled={!!busyNode} onClick={onClose}>返回场景列表</Button><h1>画布场景</h1><Input aria-label="画布场景名称" value={title} onChange={setTitle} disabled={!!busyNode} /><p>右键添加节点 · 图片 / 音频 / 视频 → 视频</p></div><div className="ic-actions"><span className={`ic-save-state${dirty ? " is-dirty" : ""}`} role="status">{dirty ? "未保存" : saved ? "已保存" : ""}</span><Button onClick={exportDraft} disabled={loading || !!error} title="导出草稿" aria-label="导出草稿" icon={<Download size={16} />}>导出草稿</Button><Button disabled={!!busyNode} title="重新加载画布" aria-label="重新加载画布" icon={<RotateCcw size={15} />} onClick={() => dirty ? confirmDiscard(() => void load()) : void load()}>重新加载</Button><Button type="primary" loading={saving} disabled={loading || !!error || !dirty || !!busyNode} onClick={() => void save()} icon={<Save size={16} />}>保存画布</Button></div></header>
+    <header className="ic-heading"><div><Button type="text" title="返回片段列表" aria-label="返回片段列表" icon={<ArrowLeft size={15} />} disabled={!!busyNode} onClick={onClose}>返回片段列表</Button><h1>画布片段</h1><Input aria-label="画布片段名称" value={title} onChange={setTitle} disabled={!!busyNode} /><p>右键添加节点 · 图片 / 音频 / 视频 → 视频</p></div><div className="ic-actions"><span className={`ic-save-state${dirty ? " is-dirty" : ""}`} role="status">{dirty ? "未保存" : saved ? "已保存" : ""}</span><Button onClick={exportDraft} disabled={loading || !!error} title="导出草稿" aria-label="导出草稿" icon={<Download size={16} />}>导出草稿</Button><Button disabled={!!busyNode} title="重新加载画布" aria-label="重新加载画布" icon={<RotateCcw size={15} />} onClick={() => dirty ? confirmDiscard(() => void load()) : void load()}>重新加载</Button><Button type="primary" loading={saving} disabled={loading || !!error || !dirty || !!busyNode} onClick={() => void save()} icon={<Save size={16} />}>保存画布</Button></div></header>
     {loading ? <p role="status">正在加载画布…</p> : error ? <p role="alert">{error}</p> : <>
     <div className="ic-toolbar"><div className="ic-tool-group" role="group" aria-label="添加节点"><Button icon={<Plus size={16} />} disabled={!!busyNode} onClick={() => { const el = stage.current; if (!el) return; const v = draft.viewport; setMenu({ x: 20, y: Math.max(80, el.clientHeight - (el.clientWidth <= 700 ? 310 : 270)), worldX: (el.clientWidth / 2 - v.x) / v.zoom, worldY: (el.clientHeight / 2 - v.y) / v.zoom }); }}>添加节点</Button></div><div className="ic-tool-group" role="group" aria-label="编辑历史"><Button title="撤销" aria-label="撤销画布操作" disabled={!past.length || !!busyNode} onClick={undo} icon={<Undo2 size={16} />} /><Button title="重做" aria-label="重做画布操作" disabled={!future.length || !!busyNode} onClick={redo} icon={<Redo2 size={16} />} /></div><div className="ic-tool-group" role="group" aria-label="移除节点"><Button status="danger" disabled={!selected || !!busyNode} onClick={remove} icon={<Trash2 size={16} />}>移除选中</Button></div><span>{draft.nodes.length} 个节点 · {draft.edges.length} 条连线</span><small>拖动标题移动 · 空白处平移 · Ctrl / ⌘ + 滚轮缩放</small></div>
     <div className="ic-workspace"><div ref={stage} className="ic-stage" tabIndex={0} aria-label="创作画布" style={{ backgroundSize: `${24 * draft.viewport.zoom}px ${24 * draft.viewport.zoom}px`, backgroundPosition: `${draft.viewport.x}px ${draft.viewport.y}px` }} onContextMenu={e => {
@@ -282,7 +282,7 @@ export default function InfiniteCanvas({ data, scene, reload, onClose }: {
                 {choice&&choice.capabilities.modes.length>1&&<Form.Item label="生成方式"><Select aria-label="视频节点生成方式" value={nodeMode} disabled={!!busyNode} options={choice.capabilities.modes.map(mode=>({value:mode==="ref2v"?"i2v":mode,label:mode==="t2v"?"文生视频":mode==="fl2v"?"首尾帧":"全能参考"}))} onChange={video_mode=>patch(node.id,{video_mode})}/></Form.Item>}
                 <div className="ic-video-options"><VideoModelFields choice={choice} mode={nodeMode} duration={node.duration || 5} disabled={!!busyNode} onDuration={duration=>patch(node.id,{duration})} ratio={node.ratio || "16:9"} size={node.size} onSize={value=>patch(node.id,{ratio:value.ratio,size:value.size})} resolution={node.resolution} onResolution={resolution=>patch(node.id,{resolution})} audio={node.audio} onAudio={audio=>patch(node.id,{audio})}/></div></Form>
               <Button type="primary" long loading={busyNode === node.id} disabled={!!busyNode && busyNode !== node.id} onClick={() => void generate(node)}>生成视频</Button>
-              {info.media?.kind === "video" && <Button long size="small" disabled={!!busyNode || scene.video_media_id === info.media.id} onClick={() => void selectVideo(info.media!)}>{scene.video_media_id === info.media.id ? "当前场景视频" : "设为场景视频"}</Button>}
+              {info.media?.kind === "video" && <Button long size="small" disabled={!!busyNode || scene.video_media_id === info.media.id} onClick={() => void selectVideo(info.media!)}>{scene.video_media_id === info.media.id ? "当前片段视频" : "设为片段视频"}</Button>}
             </div> : node.kind === "image" && info.media ? null : <p>{info.text}</p>}
           </article>;
         })}

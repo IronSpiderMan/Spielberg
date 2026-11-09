@@ -29,10 +29,10 @@ def test_uncertain_submission_is_not_retried(monkeypatch, tmp_path):
     monkeypatch.setattr(batch, 'action', submit)
     monkeypatch.setattr(batch, 'existing_job', lambda *args: None)
     with pytest.raises(OSError):
-        batch.tracked_action(marker, 'generations/video', {}, scene_id=1)
+        batch.tracked_action(marker, 'generations/video', {}, clip_id=1)
     assert json.loads(marker.read_text())['status'] == 'submitting'
     with pytest.raises(RuntimeError, match='禁止重复提交'):
-        batch.tracked_action(marker, 'generations/video', {}, scene_id=1)
+        batch.tracked_action(marker, 'generations/video', {}, clip_id=1)
     assert len(calls) == 1
 
 
@@ -41,11 +41,36 @@ def test_completed_backend_job_is_reused_after_restart(monkeypatch, tmp_path):
     batch.save(marker, {'started_at': 100, 'status': 'submitting'})
     monkeypatch.setattr(batch, 'existing_job', lambda *args: {'status': 'completed', 'result_json': '{"id":42}'})
     monkeypatch.setattr(batch, 'action', lambda *args, **kwargs: pytest.fail('duplicated generation'))
-    assert batch.tracked_action(marker, 'generations/video', {}, scene_id=1) == {'id': 42}
+    assert batch.tracked_action(marker, 'generations/video', {}, clip_id=1) == {'id': 42}
     assert json.loads(marker.read_text())['status'] == 'completed'
 
 
-def test_scene_preserves_references_and_duration_and_sets_requested_output(monkeypatch, tmp_path):
+@pytest.mark.parametrize('request_key', ['scene_id', 'clip_id'])
+def test_job_lookup_matches_historical_and_migrated_clip_requests(monkeypatch, request_key):
+    clip_job = {'operation': '/generations/video', 'request_json': json.dumps({request_key: 9})}
+    scene_job = {'operation': '/generations/scene-video', 'request_json': '{"scene_id":9}'}
+    monkeypatch.setattr(batch, 'rows', lambda *args: [scene_job, clip_job])
+    assert batch.existing_job({'started_at': 100}, clip_id=9) is clip_job
+
+
+@pytest.mark.parametrize('table', ['scenes', 'clips'])
+def test_read_only_preflight_supports_both_schemas(monkeypatch, tmp_path, capsys, table):
+    database = tmp_path / 'project.sqlite'
+    with batch.sqlite3.connect(database) as connection:
+        connection.executescript(f'''
+            CREATE TABLE episodes(id,title,sort_order);
+            INSERT INTO episodes VALUES(1,'Episode',0);
+            CREATE TABLE screenplays(episode_id,content,format);
+            CREATE TABLE {table}(id,episode_id);
+            INSERT INTO {table} VALUES(9,1);
+        ''')
+    monkeypatch.setattr(batch, 'DB', database)
+    monkeypatch.setattr(batch, 'PROVIDER', 'native')
+    assert batch.check()[0]['id'] == 1
+    assert json.loads(capsys.readouterr().out)['existing_clips'] == 1
+
+
+def test_clip_preserves_references_and_duration_and_sets_requested_output(monkeypatch, tmp_path):
     monkeypatch.setattr(batch, 'OUT', tmp_path)
     monkeypatch.setattr(batch, 'rows', lambda *args: [{'value': json.dumps({
         'video_mode': 'ref2v', 'reference_media_ids': [56, 42], 'duration': 15})}])
@@ -57,12 +82,13 @@ def test_scene_preserves_references_and_duration_and_sets_requested_output(monke
         captured.append(payload)
         return {'id': 42}
     monkeypatch.setattr(batch, 'tracked_action', track)
-    batch.generate_scene({'id': 1, 'title': 'scene', 'prompt': 'validated H3 prompt 768p', 'description': '', 'reference_media_id': 56})
+    batch.generate_clip({'id': 1, 'title': 'scene', 'prompt': 'validated H3 prompt 768p', 'description': '', 'reference_media_id': 56})
     assert captured[0]['image_media_ids'] == [56, 42]
     assert captured[0]['duration'] == 15
     assert captured[0]['aspect_ratio'] == '16:9'
     assert captured[0]['resolution'] == '768p'
     assert '768p' in captured[0]['prompt']
+    assert captured[0]['clip_id'] == 1 and 'scene_id' not in captured[0]
 
 
 def test_failed_poll_resumes_existing_upstream_id_without_submission(monkeypatch, tmp_path):
@@ -70,16 +96,15 @@ def test_failed_poll_resumes_existing_upstream_id_without_submission(monkeypatch
     batch.save(marker, {'started_at': 100, 'status': 'submitting'})
     resume = {'url': 'http://zack-4090:8001/v1/generations/ref2v', 'generation_id': 'accepted-id',
               'payload': {'scene_id': 1, 'prompt': 'unchanged'}, 'generation_row_id': 7}
-    monkeypatch.setattr(batch, 'existing_job', lambda *args: {'status': 'failed',
+    monkeypatch.setattr(batch, 'existing_job', lambda *args: {'id': 24, 'status': 'failed',
         'error': '查询生成进度失败：temporary network failure', 'resume_json': json.dumps(resume)})
-    monkeypatch.setattr(batch, 'request', lambda *args, **kwargs: {'status': 'completed'})
     calls = []
     def action(name, body, **kwargs):
-        calls.append(body)
+        calls.append((name, body))
         return {'id': 42}
     monkeypatch.setattr(batch, 'action', action)
-    assert batch.tracked_action(marker, 'generations/video', {}, scene_id=1) == {'id': 42}
-    assert calls[0]['_resume']['generation_id'] == 'accepted-id'
+    assert batch.tracked_action(marker, 'generations/video', {}, clip_id=1) == {'id': 42}
+    assert calls == [('tasks/resume-video', {'job_id': 24})]
 
 
 def test_old_uncompiled_prompt_is_blocked_before_video_submission(monkeypatch, tmp_path):
@@ -87,4 +112,4 @@ def test_old_uncompiled_prompt_is_blocked_before_video_submission(monkeypatch, t
     monkeypatch.setattr(batch, 'rows', lambda *args: [{'value': '{"reference_media_ids":[42]}'}])
     monkeypatch.setattr(batch, 'tracked_action', lambda *args, **kwargs: pytest.fail('submitted uncompiled prompt'))
     with pytest.raises(ValueError, match='禁止直接提交旧描述'):
-        batch.generate_scene({'id': 1, 'prompt': '旧中文描述', 'reference_media_id': 42})
+        batch.generate_clip({'id': 1, 'prompt': '旧中文描述', 'reference_media_id': 42})

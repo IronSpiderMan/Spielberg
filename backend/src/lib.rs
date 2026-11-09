@@ -4,6 +4,8 @@ mod audio_waveform;
 mod canvas;
 mod rest;
 mod storyboard;
+mod scenes;
+mod scene_generation;
 mod h3_prompt;
 mod wan_prompt;
 mod generation_http;
@@ -40,10 +42,12 @@ fn registry_path(s:&AppState)->PathBuf{s.root.join("projects.json")}
 fn registry(s:&AppState)->Result<Vec<Value>,String>{let p=registry_path(s);if !p.exists(){return Ok(vec![])}serde_json::from_str(&fs::read_to_string(p).map_err(|e|e.to_string())?).map_err(|e|e.to_string())}
 fn save_registry(s:&AppState,x:&[Value])->Result<(),String>{let temp=s.root.join("projects.json.tmp");fs::write(&temp,serde_json::to_string_pretty(x).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;fs::rename(temp,registry_path(s)).map_err(|e|e.to_string())}
 fn project(s:&AppState,id:&str)->Result<Value,String>{registry(s)?.into_iter().find(|x|x["id"]==id).ok_or("项目不存在".into())}
-fn migrate(c:&Connection)->Result<(),String>{
+fn migrate(c:&Connection)->Result<(),String>{ migrate_to(c,17) }
+fn migrate_to(c:&Connection,target:i64)->Result<(),String>{
  c.execute_batch("PRAGMA foreign_keys=ON;").map_err(|e|e.to_string())?;
  let version:i64=c.query_row("PRAGMA user_version",[],|r|r.get(0)).map_err(|e|e.to_string())?;
- if version>=16{return Ok(())}
+ if version>=target{return Ok(())}
+ if version==16{return scenes::migrate(c)}
  if version==15{
    c.execute_batch("BEGIN IMMEDIATE").map_err(|e|e.to_string())?;
    let result=(||{
@@ -57,7 +61,7 @@ fn migrate(c:&Connection)->Result<(),String>{
      c.execute_batch("PRAGMA user_version=16; COMMIT").map_err(|e|e.to_string())
    })();
    if result.is_err(){let _=c.execute_batch("ROLLBACK");}
-   return result;
+   result?;return migrate_to(c,target);
  }
  if version==14{
    c.execute_batch("BEGIN IMMEDIATE").map_err(|e|e.to_string())?;
@@ -69,7 +73,7 @@ fn migrate(c:&Connection)->Result<(),String>{
      c.execute_batch("UPDATE revisions SET version=version+1 WHERE section='roles'; PRAGMA user_version=15; COMMIT").map_err(|e|e.to_string())
    })();
    if result.is_err(){let _=c.execute_batch("ROLLBACK");}
-   result?;return migrate(c);
+   result?;return migrate_to(c,target);
  }
  if version==13{
    c.execute_batch("BEGIN IMMEDIATE").map_err(|e|e.to_string())?;
@@ -81,33 +85,33 @@ fn migrate(c:&Connection)->Result<(),String>{
      c.execute_batch("UPDATE revisions SET version=version+1 WHERE section='roles'; PRAGMA user_version=14; COMMIT").map_err(|e|e.to_string())
    })();
    if result.is_err(){let _=c.execute_batch("ROLLBACK");}
-   result?;return migrate(c);
+   result?;return migrate_to(c,target);
  }
- if version==12{c.execute_batch("BEGIN IMMEDIATE").map_err(|e|e.to_string())?;let result=(||{catalog::install(c)?;c.execute_batch("PRAGMA user_version=13; COMMIT").map_err(|e|e.to_string())})();if result.is_err(){let _=c.execute_batch("ROLLBACK");}result?;return migrate(c)}
- if version==11{screenplays::install_single_documents(c)?;return migrate(c)}
- if version==10{screenplays::install_episodes(c)?;return migrate(c)}
+ if version==12{c.execute_batch("BEGIN IMMEDIATE").map_err(|e|e.to_string())?;let result=(||{catalog::install(c)?;c.execute_batch("PRAGMA user_version=13; COMMIT").map_err(|e|e.to_string())})();if result.is_err(){let _=c.execute_batch("ROLLBACK");}result?;return migrate_to(c,target)}
+ if version==11{screenplays::install_single_documents(c)?;return migrate_to(c,target)}
+ if version==10{screenplays::install_episodes(c)?;return migrate_to(c,target)}
  if version==9{
    c.execute_batch("BEGIN IMMEDIATE").map_err(|e|e.to_string())?;
    let result=(||{canvas::install_scenes(c)?;c.execute_batch("PRAGMA user_version=10; COMMIT").map_err(|e|e.to_string())})();
    if result.is_err(){let _=c.execute_batch("ROLLBACK");}
-   result?;return migrate(c);
+   result?;return migrate_to(c,target);
  }
  if version==8{
    c.execute_batch("BEGIN IMMEDIATE").map_err(|e|e.to_string())?;
    let result=(||{canvas::install(c)?;c.execute_batch("PRAGMA user_version=9; COMMIT").map_err(|e|e.to_string())})();
    if result.is_err(){let _=c.execute_batch("ROLLBACK");}
-   result?;return migrate(c);
+   result?;return migrate_to(c,target);
  }
- if version==7{c.execute_batch("ALTER TABLE scenes ADD COLUMN prompt TEXT NOT NULL DEFAULT ''; PRAGMA user_version=8;").map_err(|e|e.to_string())?;return migrate(c)}
+ if version==7{c.execute_batch("ALTER TABLE scenes ADD COLUMN prompt TEXT NOT NULL DEFAULT ''; PRAGMA user_version=8;").map_err(|e|e.to_string())?;return migrate_to(c,target)}
  if version==6{
    c.execute_batch("BEGIN IMMEDIATE").map_err(|e|e.to_string())?;
    let result=(||{catalog::install(c)?;c.execute_batch("PRAGMA user_version=7; COMMIT").map_err(|e|e.to_string())})();
    if result.is_err(){let _=c.execute_batch("ROLLBACK");}
-   result?;return migrate(c);
+   result?;return migrate_to(c,target);
  }
- if version==5{screenplays::install_format(c)?;return migrate(c)}
- if version==4{screenplays::install(c)?;screenplays::install_format(c)?;return migrate(c)}
- if version==3 {c.execute_batch("ALTER TABLE episodes ADD COLUMN storyboard TEXT NOT NULL DEFAULT 'null'; PRAGMA user_version=4;").map_err(|e|e.to_string())?;return migrate(c)}
+ if version==5{screenplays::install_format(c)?;return migrate_to(c,target)}
+ if version==4{screenplays::install(c)?;screenplays::install_format(c)?;return migrate_to(c,target)}
+ if version==3 {c.execute_batch("ALTER TABLE episodes ADD COLUMN storyboard TEXT NOT NULL DEFAULT 'null'; PRAGMA user_version=4;").map_err(|e|e.to_string())?;return migrate_to(c,target)}
  c.execute_batch("PRAGMA foreign_keys=ON;
  CREATE TABLE IF NOT EXISTS media(id INTEGER PRIMARY KEY,name TEXT NOT NULL,path TEXT NOT NULL,kind TEXT NOT NULL,created_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS roles(id INTEGER PRIMARY KEY,name TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',design_media_id INTEGER REFERENCES media(id),created_at TEXT NOT NULL);
@@ -123,7 +127,7 @@ CREATE INDEX IF NOT EXISTS background_jobs_order ON background_jobs(CAST(created
 CREATE INDEX IF NOT EXISTS background_jobs_status_order ON background_jobs(status,CAST(created_at AS INTEGER) DESC,id DESC);
 CREATE TABLE IF NOT EXISTS scene_scripts(scene_id INTEGER PRIMARY KEY REFERENCES scenes(id) ON DELETE CASCADE,value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS scene_options(scene_id INTEGER PRIMARY KEY REFERENCES scenes(id) ON DELETE CASCADE,value TEXT NOT NULL);
-INSERT OR IGNORE INTO scene_videos SELECT id,video_media_id FROM scenes WHERE video_media_id IS NOT NULL;").map_err(|e|e.to_string())?;let _=c.execute("ALTER TABLE background_jobs ADD COLUMN resume_json TEXT",[]);let _=c.execute("ALTER TABLE background_jobs ADD COLUMN request_json TEXT",[]);catalog::install(c)?;c.execute_batch("ALTER TABLE episodes ADD COLUMN storyboard TEXT NOT NULL DEFAULT 'null'; PRAGMA user_version=4").map_err(|e|e.to_string())?;screenplays::install(c)?;screenplays::install_format(c)?;migrate(c)}
+INSERT OR IGNORE INTO scene_videos SELECT id,video_media_id FROM scenes WHERE video_media_id IS NOT NULL;").map_err(|e|e.to_string())?;let _=c.execute("ALTER TABLE background_jobs ADD COLUMN resume_json TEXT",[]);let _=c.execute("ALTER TABLE background_jobs ADD COLUMN request_json TEXT",[]);catalog::install(c)?;c.execute_batch("ALTER TABLE episodes ADD COLUMN storyboard TEXT NOT NULL DEFAULT 'null'; PRAGMA user_version=4").map_err(|e|e.to_string())?;screenplays::install(c)?;screenplays::install_format(c)?;migrate_to(c,target)}
 fn db(s:&AppState,id:&str)->Result<Connection,String>{let p=project(s,id)?["path"].as_str().ok_or("无效项目路径")?.to_string();let c=storage::open_database(Path::new(&p)).map_err(|e|e.to_string())?;c.busy_timeout(std::time::Duration::from_secs(10)).map_err(|e|e.to_string())?;migrate(&c)?;Ok(c)}
 fn strv(v:&Value,k:&str)->Result<String,String>{v.get(k).and_then(Value::as_str).map(str::to_string).ok_or(format!("缺少字段 {k}"))}
 fn intv(v:&Value,k:&str)->Result<i64,String>{v.get(k).and_then(Value::as_i64).ok_or(format!("缺少字段 {k}"))}
@@ -137,9 +141,9 @@ fn touch(s:&AppState, id:&str) {
   }
 }
 fn media(c:&Connection,id:Option<i64>)->Option<Value>{id.and_then(|x|c.query_row("SELECT id,name,path,kind,created_at FROM media WHERE id=? AND deleted_at IS NULL",[x],|r|Ok(json!({"id":r.get::<_,i64>(0)?,"name":r.get::<_,String>(1)?,"path":r.get::<_,String>(2)?,"kind":r.get::<_,String>(3)?,"created_at":r.get::<_,String>(4)?}))).optional().ok().flatten())}
-fn scene_videos(c:&Connection,id:i64)->Result<Vec<Value>,String>{let mut q=c.prepare("SELECT media_id FROM scene_videos WHERE scene_id=? ORDER BY media_id").map_err(|e|e.to_string())?;let ids=q.query_map([id],|r|r.get::<_,i64>(0)).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;Ok(ids.into_iter().filter_map(|id|media(c,Some(id))).collect())}
-fn scene_options(c:&Connection,id:i64)->Result<Value,String>{let raw=c.query_row("SELECT value FROM scene_options WHERE scene_id=?",[id],|r|r.get::<_,String>(0)).optional().map_err(|e|e.to_string())?;Ok(raw.and_then(|v|serde_json::from_str(&v).ok()).unwrap_or(json!({"first":true,"last":true,"reference":false,"duration":5,"aspect_ratio":"16:9"})))}
-fn attach_video(c:&Connection,scene:i64,mid:i64)->Result<(),String>{c.execute("INSERT INTO scene_videos(scene_id,media_id) VALUES(?,?)",params![scene,mid]).map_err(|e|e.to_string())?;c.execute("UPDATE scenes SET video_media_id=COALESCE(video_media_id,?) WHERE id=?",params![mid,scene]).map_err(|e|e.to_string())?;Ok(())}
+fn clip_videos(c:&Connection,id:i64)->Result<Vec<Value>,String>{let mut q=c.prepare("SELECT media_id FROM clip_videos WHERE clip_id=? ORDER BY media_id").map_err(|e|e.to_string())?;let ids=q.query_map([id],|r|r.get::<_,i64>(0)).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;Ok(ids.into_iter().filter_map(|id|media(c,Some(id))).collect())}
+fn clip_options(c:&Connection,id:i64)->Result<Value,String>{let raw=c.query_row("SELECT value FROM clip_options WHERE clip_id=?",[id],|r|r.get::<_,String>(0)).optional().map_err(|e|e.to_string())?;Ok(raw.and_then(|v|serde_json::from_str(&v).ok()).unwrap_or(json!({"first":true,"last":true,"reference":false,"duration":5,"aspect_ratio":"16:9"})))}
+fn attach_clip_video(c:&Connection,clip:i64,mid:i64)->Result<(),String>{c.execute("INSERT INTO clip_videos(clip_id,media_id) VALUES(?,?)",params![clip,mid]).map_err(|e|e.to_string())?;c.execute("UPDATE clips SET video_media_id=COALESCE(video_media_id,?) WHERE id=?",params![mid,clip]).map_err(|e|e.to_string())?;Ok(())}
 fn snapshot(s:&AppState,pid:&str)->Result<Value,String>{snapshot_changes(s,pid,&Value::Null)}
 fn snapshot_changes(s:&AppState,pid:&str,known:&Value)->Result<Value,String>{
  let p=project(s,pid)?;let mut connection=db(s,pid)?;snapshot_database(&mut connection,p,known)
@@ -162,8 +166,9 @@ fn snapshot_database(connection:&mut Connection,p:Value,known:&Value)->Result<Va
  result["media"]=json!(media_items); }
  if known["assets"]!=versions["assets"] || known.is_null() { let mut roles=Vec::new();let mut qr=c.prepare("SELECT id,name,description,design_media_id,enabled,category FROM assets ORDER BY id DESC").map_err(|e|e.to_string())?;for x in qr.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<i64>>(3)?,r.get::<_,bool>(4)?,r.get::<_,String>(5)?))).map_err(|e|e.to_string())?{let(id,name,description,design,enabled,category)=x.map_err(|e|e.to_string())?;let mut qi=c.prepare("SELECT m.id,m.name,m.path,m.kind,m.created_at FROM media m WHERE m.deleted_at IS NULL AND (m.id=? OR EXISTS(SELECT 1 FROM role_media rm WHERE rm.role_id=? AND rm.media_id=m.id)) ORDER BY CASE WHEN m.id=? THEN 0 ELSE 1 END,m.id DESC").map_err(|e|e.to_string())?;let images=qi.query_map(params![design,id,design],|r|Ok(json!({"id":r.get::<_,i64>(0)?,"name":r.get::<_,String>(1)?,"path":r.get::<_,String>(2)?,"kind":r.get::<_,String>(3)?,"created_at":r.get::<_,String>(4)?}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;roles.push(json!({"id":id,"name":name,"description":description,"enabled":enabled,"category":category,"design_media_id":design,"images":images,"audios":role_audios(&c,id)?}));}
  result["assets"]=json!(roles); }
- if known["episodes"]!=versions["episodes"] || known.is_null() { let mut episodes=Vec::new();let mut qe=c.prepare("SELECT id,title,description FROM episodes ORDER BY sort_order,id").map_err(|e|e.to_string())?;for x in qe.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(|e|e.to_string())?{let(eid,title,description)=x.map_err(|e|e.to_string())?;let mut qs=c.prepare("SELECT id,title,description,sort_order,first_media_id,last_media_id,reference_media_id,video_media_id,prompt,creation_mode FROM scenes WHERE episode_id=? ORDER BY sort_order,id").map_err(|e|e.to_string())?;let mut scenes=Vec::new();for z in qs.query_map([eid],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,i64>(3)?,r.get::<_,Option<i64>>(4)?,r.get::<_,Option<i64>>(5)?,r.get::<_,Option<i64>>(6)?,r.get::<_,Option<i64>>(7)?,r.get::<_,String>(8)?,r.get::<_,String>(9)?))).map_err(|e|e.to_string())?{let(id,t,d,o,f,l,rf,vid,prompt,mode)=z.map_err(|e|e.to_string())?;scenes.push(json!({"id":id,"title":t,"description":d,"prompt":prompt,"creation_mode":mode,"sort_order":o,"first_media_id":f,"last_media_id":l,"reference_media_id":rf,"video_media_id":vid,"first_media":media(&c,f),"last_media":media(&c,l),"reference_media":media(&c,rf),"video_media":media(&c,vid),"videos":scene_videos(&c,id)?,"generation_options":scene_options(&c,id)?,"script":scene_script(&c,id)?}));}episodes.push(json!({"id":eid,"title":title,"description":description,"scenes":scenes,"storyboard":storyboard::load(&c,eid)?,"cover_media":media(&c,c.query_row("SELECT cover_media_id FROM episodes WHERE id=?",[eid],|r|r.get::<_,Option<i64>>(0)).map_err(|e|e.to_string())?)}));}
- result["episodes"]=json!(episodes); }
+ if known["episodes"]!=versions["episodes"] || known.is_null() {
+   result["episodes"]=json!(rest::list_episodes(&c)?);
+ }
  if known["prompts"]!=versions["prompts"] || known.is_null() { let mut qp=c.prepare("SELECT id,name,content,category FROM prompts ORDER BY id DESC").map_err(|e|e.to_string())?;let prompts=qp.query_map([],|r|Ok(json!({"id":r.get::<_,i64>(0)?,"name":r.get::<_,String>(1)?,"content":r.get::<_,String>(2)?,"category":r.get::<_,String>(3)?}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
  result["prompts"]=json!(prompts); }
  if known["screenplays"]!=versions["screenplays"] || known.is_null() { result["screenplays"]=json!(screenplays::list(&c)?); }
@@ -194,11 +199,11 @@ fn video_frame(s: &AppState, v: &Value) -> Result<Value, String> {
     let pid = project_id(v)?;
     let c = db(s, &pid)?;
     let mid = intv(v, "media_id")?;
-    let sid = intv(v, "scene_id")?;
+    let sid = intv(v, "clip_id")?;
     let frame = strv(v, "frame")?;
     if frame != "first" && frame != "last" { return Err("请选择首帧或尾帧".into()); }
-    let belongs: bool = c.query_row("SELECT EXISTS(SELECT 1 FROM scene_videos WHERE scene_id=? AND media_id=?)", params![sid, mid], |r|r.get(0)).map_err(|e|e.to_string())?;
-    if !belongs { return Err("该视频不属于所选场景".into()); }
+    let belongs: bool = c.query_row("SELECT EXISTS(SELECT 1 FROM clip_videos WHERE clip_id=? AND media_id=?)", params![sid, mid], |r|r.get(0)).map_err(|e|e.to_string())?;
+    if !belongs { return Err("该视频不属于所选片段".into()); }
     let video = media(&c, Some(mid)).ok_or("视频不存在")?;
     if video["kind"] != "video" { return Err("请选择视频素材".into()); }
     let name = format!("视频{}-{}.png", mid, if frame == "last" { "尾帧" } else { "首帧" });
@@ -267,52 +272,92 @@ fn update_episode(s:&AppState,v:&Value)->Result<Value,String>{
  tx.commit().map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
 
 fn delete_episode(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;db(s,&pid)?.execute("DELETE FROM episodes WHERE id=?",[intv(v,"id")?]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
-fn insert_scene(s:&AppState,v:&Value)->Result<Value,String>{
- let pid=project_id(v)?;let mut c=db(s,&pid)?;let tx=c.transaction().map_err(|e|e.to_string())?;let ep=intv(v,"episode_id")?;
- let mut ids={let mut q=tx.prepare("SELECT id FROM scenes WHERE episode_id=? ORDER BY sort_order,id").map_err(|e|e.to_string())?;let rows=q.query_map([ep],|r|r.get::<_,i64>(0)).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;rows};
- let n=if let Some(anchor)=v.get("anchor_scene_id") {let anchor=anchor.as_i64().ok_or("场景 ID 无效")?;let index=ids.iter().position(|id|*id==anchor).ok_or("指定场景不存在于当前剧集")?;match v["position"].as_str(){Some("before")=>index,Some("after")=>index+1,_=>return Err("插入位置无效".into())}} else if v.get("position").is_some() {return Err("缺少目标场景".into())} else {ids.len()};
- let title=strv(v,"title")?;let d=v.get("description").and_then(Value::as_str).unwrap_or("");tx.execute("INSERT INTO scenes(episode_id,title,description,prompt,sort_order,created_at,creation_mode) VALUES(?,?,?,?,?,?,?)",params![ep,title,d,v["prompt"].as_str().unwrap_or(""),n as i64,now(),v["creation_mode"].as_str().unwrap_or("default")]).map_err(|e|e.to_string())?;let id=tx.last_insert_rowid();ids.insert(n,id);
- for (order,id) in ids.iter().enumerate(){tx.execute("UPDATE scenes SET sort_order=? WHERE id=?",params![order as i64,id]).map_err(|e|e.to_string())?;}tx.commit().map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"id":id,"title":title,"description":d,"prompt":v["prompt"].as_str().unwrap_or(""),"creation_mode":v["creation_mode"].as_str().unwrap_or("default"),"sort_order":n,"first_media_id":null,"last_media_id":null,"reference_media_id":null}))
+fn insert_clip(s:&AppState,v:&Value)->Result<Value,String>{
+    let pid=project_id(v)?;
+    let mut c=db(s,&pid)?;
+    let tx=c.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+    let ep=intv(v,"episode_id")?;
+    let title=strv(v,"title")?;
+    let order=scenes::clip_order(&tx,ep)?;
+    let anchor=v.get("anchor_clip_id").map(|id| {
+        let id=id.as_i64().ok_or("片段 ID 无效")?;
+        let index=order.iter().position(|(clip,_)|*clip==id).ok_or("指定片段不存在于当前剧集")?;
+        let after=match v["position"].as_str(){Some("before")=>false,Some("after")=>true,_=>return Err("插入位置无效")};
+        Ok::<_,&str>((index+usize::from(after),order[index].1))
+    }).transpose()?;
+    if anchor.is_none() && v.get("position").is_some(){return Err("缺少目标片段".into());}
+    let parent=match opti(v,"scene_id").or(anchor.map(|(_,scene)|scene)) {
+        Some(id)=>id,
+        None=>scenes::insert_parent(&tx,ep,&title)?,
+    };
+    let position=anchor.map(|(index,_)|index).unwrap_or_else(||order.iter().rposition(|(_,id)|*id==parent).map(|i|i+1).unwrap_or(order.len()));
+    let id=scenes::next_clip_id(&tx)?;
+    tx.execute("INSERT INTO clips(id,episode_id,scene_id,title,description,prompt,sort_order,created_at,creation_mode,first_media_id,last_media_id,reference_media_id)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",params![id,ep,parent,title,v["description"].as_str().unwrap_or(""),
+        v["prompt"].as_str().unwrap_or(""),position as i64,now(),v["creation_mode"].as_str().unwrap_or("default"),
+        opti(v,"first_media_id"),opti(v,"last_media_id"),opti(v,"reference_media_id")]).map_err(|e|e.to_string())?;
+    if let Some(options)=v.get("generation_options") {
+        tx.execute("INSERT INTO clip_options VALUES(?,?)",params![id,options.to_string()]).map_err(|e|e.to_string())?;
+    }
+    let mut ids:Vec<_>=order.into_iter().map(|(id,_)|id).collect();
+    ids.insert(position,id);
+    scenes::set_clip_order(&tx,ep,&ids)?;
+    tx.commit().map_err(|e|e.to_string())?;
+    touch(s,&pid);
+    rest::get_clip(&c,id)
 }
-fn duplicate_scene(s:&AppState,v:&Value)->Result<Value,String>{
- let pid=project_id(v)?;let mut c=db(s,&pid)?;let tx=c.transaction().map_err(|e|e.to_string())?;let source=intv(v,"id")?;
- let ep:i64=tx.query_row("SELECT episode_id FROM scenes WHERE id=?",[source],|r|r.get(0)).optional().map_err(|e|e.to_string())?.ok_or("场景不存在")?;
- let order:i64=tx.query_row("SELECT COALESCE(MAX(sort_order),-1)+1 FROM scenes WHERE episode_id=?",[ep],|r|r.get(0)).map_err(|e|e.to_string())?;
- tx.execute("INSERT INTO scenes(episode_id,title,description,prompt,sort_order,created_at,first_media_id,last_media_id,reference_media_id,creation_mode) SELECT episode_id,title || '（副本）',description,prompt,?,?,first_media_id,last_media_id,reference_media_id,creation_mode FROM scenes WHERE id=?",params![order,now(),source]).map_err(|e|e.to_string())?;
- let id=tx.last_insert_rowid();
- for table in ["scene_options","scene_scripts"] {
-  tx.execute(&format!("INSERT INTO {table}(scene_id,value) SELECT ?,value FROM {table} WHERE scene_id=?"),params![id,source]).map_err(|e|e.to_string())?;
- }
- tx.execute("INSERT INTO scene_canvases SELECT ?,draft,1 FROM scene_canvases WHERE scene_id=?",params![id,source]).map_err(|e|e.to_string())?;
- tx.execute("INSERT INTO scene_canvas_sources SELECT ?,media_id FROM scene_canvas_sources WHERE scene_id=?",params![id,source]).map_err(|e|e.to_string())?;
- if let Some(position)=v.get("position") {
-  let after=match position.as_str(){Some("before")=>false,Some("after")=>true,_=>return Err("插入位置无效".into())};
-  let mut ids={
-   let mut q=tx.prepare("SELECT id FROM scenes WHERE episode_id=? AND id<>? ORDER BY sort_order,id").map_err(|e|e.to_string())?;
-   let rows=q.query_map(params![ep,id],|r|r.get::<_,i64>(0)).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
-   rows
-  };
-  let index=ids.iter().position(|scene_id|*scene_id==source).ok_or("场景不存在")?;
-  ids.insert(index+usize::from(after),id);
-  for (index,scene_id) in ids.into_iter().enumerate(){
-   tx.execute("UPDATE scenes SET sort_order=? WHERE id=?",params![index as i64,scene_id]).map_err(|e|e.to_string())?;
-  }
- }
- tx.commit().map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"id":id,"episode_id":ep}))
+fn duplicate_clip(s:&AppState,v:&Value)->Result<Value,String>{
+    let pid=project_id(v)?;
+    let mut c=db(s,&pid)?;
+    let tx=c.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+    let source=intv(v,"id")?;
+    let (ep,parent):(i64,i64)=tx.query_row("SELECT episode_id,scene_id FROM clips WHERE id=?",[source],|r|Ok((r.get(0)?,r.get(1)?)))
+        .optional().map_err(|e|e.to_string())?.ok_or("片段不存在")?;
+    let order=scenes::clip_order(&tx,ep)?;
+    let position=match v.get("position").and_then(Value::as_str) {
+        None=>order.iter().rposition(|(_,scene)|*scene==parent).unwrap()+1,
+        Some(position @ ("before"|"after"))=>order.iter().position(|(clip,_)|*clip==source).unwrap()+usize::from(position=="after"),
+        _=>return Err("插入位置无效".into()),
+    };
+    let id=scenes::next_clip_id(&tx)?;
+    tx.execute("INSERT INTO clips(id,episode_id,scene_id,title,description,prompt,sort_order,created_at,first_media_id,last_media_id,reference_media_id,creation_mode)
+        SELECT ?,episode_id,scene_id,title || '（副本）',description,prompt,?,?,first_media_id,last_media_id,reference_media_id,creation_mode FROM clips WHERE id=?",
+        params![id,position as i64,now(),source]).map_err(|e|e.to_string())?;
+    for table in ["clip_options","clip_scripts"] {
+        tx.execute(&format!("INSERT INTO {table}(clip_id,value) SELECT ?,value FROM {table} WHERE clip_id=?"),params![id,source]).map_err(|e|e.to_string())?;
+    }
+    tx.execute("INSERT INTO clip_canvases SELECT ?,draft,1 FROM clip_canvases WHERE clip_id=?",params![id,source]).map_err(|e|e.to_string())?;
+    tx.execute("INSERT INTO clip_canvas_sources SELECT ?,media_id FROM clip_canvas_sources WHERE clip_id=?",params![id,source]).map_err(|e|e.to_string())?;
+    let mut ids:Vec<_>=order.into_iter().map(|(id,_)|id).collect();
+    ids.insert(position,id);
+    scenes::set_clip_order(&tx,ep,&ids)?;
+    tx.commit().map_err(|e|e.to_string())?;
+    touch(s,&pid);
+    Ok(json!({"id":id,"episode_id":ep,"scene_id":parent}))
 }
-fn update_scene(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let mut c=db(s,&pid)?;let tx=c.transaction().map_err(|e|e.to_string())?;let id=intv(v,"id")?;if tx.execute("UPDATE scenes SET title=?,description=?,prompt=COALESCE(?,prompt),first_media_id=?,last_media_id=?,reference_media_id=? WHERE id=?",params![strv(v,"title")?,strv(v,"description")?,v.get("prompt").and_then(Value::as_str),opti(v,"first_media_id"),opti(v,"last_media_id"),opti(v,"reference_media_id"),id]).map_err(|e|e.to_string())?!=1{return Err("场景不存在".into())}if let Some(options)=v.get("generation_options"){tx.execute("INSERT INTO scene_options VALUES(?,?) ON CONFLICT(scene_id) DO UPDATE SET value=excluded.value",params![id,options.to_string()]).map_err(|e|e.to_string())?;}tx.commit().map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
-fn reorder_scenes(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let mut c=db(s,&pid)?;let tx=c.transaction().map_err(|e|e.to_string())?;let ep=intv(v,"episode_id")?;let ids=v["scene_ids"].as_array().ok_or("缺少场景顺序")?;let count:i64=tx.query_row("SELECT COUNT(*) FROM scenes WHERE episode_id=?",[ep],|r|r.get(0)).map_err(|e|e.to_string())?;let mut seen=std::collections::HashSet::new();if ids.len()!=count as usize{return Err("请提交完整场景顺序".into())}for (i,id) in ids.iter().enumerate(){let id=id.as_i64().ok_or("场景 ID 无效")?;if !seen.insert(id)||tx.execute("UPDATE scenes SET sort_order=? WHERE id=? AND episode_id=?",params![i as i64,id,ep]).map_err(|e|e.to_string())?!=1{return Err("场景顺序无效".into())}}tx.commit().map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
+fn update_clip(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let mut c=db(s,&pid)?;let tx=c.transaction().map_err(|e|e.to_string())?;let id=intv(v,"id")?;if tx.execute("UPDATE clips SET title=?,description=?,prompt=COALESCE(?,prompt),first_media_id=?,last_media_id=?,reference_media_id=? WHERE id=?",params![strv(v,"title")?,strv(v,"description")?,v.get("prompt").and_then(Value::as_str),opti(v,"first_media_id"),opti(v,"last_media_id"),opti(v,"reference_media_id"),id]).map_err(|e|e.to_string())?!=1{return Err("片段不存在".into())}if let Some(options)=v.get("generation_options"){tx.execute("INSERT INTO clip_options VALUES(?,?) ON CONFLICT(clip_id) DO UPDATE SET value=excluded.value",params![id,options.to_string()]).map_err(|e|e.to_string())?;}tx.commit().map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
+fn reorder_clips(s:&AppState,v:&Value)->Result<Value,String>{
+    let pid=project_id(v)?;
+    let mut c=db(s,&pid)?;
+    let tx=c.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+    let ids=v["clip_ids"].as_array().ok_or("缺少片段顺序")?.iter()
+        .map(|id|id.as_i64().ok_or("片段 ID 无效")).collect::<Result<Vec<_>,_>>()?;
+    scenes::set_clip_order(&tx,intv(v,"episode_id")?,&ids)?;
+    tx.commit().map_err(|e|e.to_string())?;
+    touch(s,&pid);
+    Ok(json!({"ok":true}))
+}
 fn reorder_episodes(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let mut c=db(s,&pid)?;let tx=c.transaction().map_err(|e|e.to_string())?;let ids=v["episode_ids"].as_array().ok_or("缺少剧集顺序")?;let count:i64=tx.query_row("SELECT COUNT(*) FROM episodes",[],|r|r.get(0)).map_err(|e|e.to_string())?;let mut seen=std::collections::HashSet::new();if ids.len()!=count as usize{return Err("请提交完整剧集顺序".into())}for (i,id) in ids.iter().enumerate(){let id=id.as_i64().ok_or("剧集 ID 无效")?;if !seen.insert(id)||tx.execute("UPDATE episodes SET sort_order=? WHERE id=?",params![i as i64,id]).map_err(|e|e.to_string())?!=1{return Err("剧集顺序无效".into())}}tx.commit().map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
-fn select_video(s:&AppState,v:&Value)->Result<Value,String>{
+fn select_clip_video(s:&AppState,v:&Value)->Result<Value,String>{
  let mut c=db(s,&project_id(v)?)?; let tx=c.transaction().map_err(|e|e.to_string())?;
- let id=intv(v,"scene_id")?;let mid=intv(v,"media_id")?;
- select_asset_video(&tx,id,mid)?;
+ let id=intv(v,"clip_id")?;let mid=intv(v,"media_id")?;
+ select_clip_asset_video(&tx,id,mid)?;
  tx.commit().map_err(|e|e.to_string())?;Ok(json!({"ok":true}))
 }
-fn select_asset_video(tx:&Connection,id:i64,mid:i64)->Result<(),String>{
+fn select_clip_asset_video(tx:&Connection,id:i64,mid:i64)->Result<(),String>{
  if media(&tx,Some(mid)).map(|m|m["kind"]!="video").unwrap_or(true){return Err("请选择有效的视频素材".into())}
- tx.execute("INSERT OR IGNORE INTO scene_videos(scene_id,media_id) VALUES(?,?)",params![id,mid]).map_err(|e|e.to_string())?;
- if tx.execute("UPDATE scenes SET video_media_id=? WHERE id=?",params![mid,id]).map_err(|e|e.to_string())?!=1{return Err("场景不存在".into())}
+ tx.execute("INSERT OR IGNORE INTO clip_videos(clip_id,media_id) VALUES(?,?)",params![id,mid]).map_err(|e|e.to_string())?;
+ if tx.execute("UPDATE clips SET video_media_id=? WHERE id=?",params![mid,id]).map_err(|e|e.to_string())?!=1{return Err("片段不存在".into())}
  Ok(())
 }
 fn merge_video_files(paths:&[String],out:&Path,width:i64,height:i64)->Result<(),String>{
@@ -328,7 +373,26 @@ fn merge_video_files(paths:&[String],out:&Path,width:i64,height:i64)->Result<(),
  let result=cmd.args(["-filter_complex",&filters.join(";"),"-map","[outv]","-map","[outa]","-c:v","libx264","-preset","fast","-c:a","aac","-pix_fmt","yuv420p","-movflags","+faststart"]).arg(out).output().map_err(|e|format!("合并需要 FFmpeg：{e}"))?;
  if !result.status.success(){let _=fs::remove_file(out);return Err(format!("视频合并失败：{}",String::from_utf8_lossy(&result.stderr)))}Ok(())
 }
-fn merge_episode(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let c=db(s,&pid)?;let ep=intv(v,"episode_id")?;let mut q=c.prepare("SELECT m.path FROM scenes sc LEFT JOIN scene_videos sv ON sv.scene_id=sc.id AND sv.media_id=sc.video_media_id LEFT JOIN media m ON m.id=sv.media_id WHERE sc.episode_id=? ORDER BY sc.sort_order,sc.id").map_err(|e|e.to_string())?;let paths=q.query_map([ep],|r|r.get::<_,Option<String>>(0)).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;if paths.is_empty()||paths.iter().any(Option::is_none){return Err("请为每个场景选择一个视频后合并".into())}let root=PathBuf::from(strv(&project(s,&pid)?,"path")?);let dir=root.join("assets/videos");fs::create_dir_all(&dir).map_err(|e|e.to_string())?;let out=dir.join(format!("episode-{}-{}.mp4",ep,Uuid::new_v4()));merge_video_files(&paths.into_iter().flatten().collect::<Vec<_>>(),&out,v["width"].as_i64().unwrap_or(1280),v["height"].as_i64().unwrap_or(720))?;let name=format!("剧集{}-合并.mp4",ep);c.execute("INSERT INTO media(name,path,kind,created_at) VALUES(?,?,?,?)",params![name,out.to_string_lossy(),"video",now()]).map_err(|e|e.to_string())?;Ok(media(&c,Some(c.last_insert_rowid())).unwrap())}
+fn merge_episode(s: &AppState, v: &Value) -> Result<Value, String> {
+ let pid = project_id(v)?;
+ let c = db(s, &pid)?;
+ let episode = intv(v, "episode_id")?;
+ let units = scenes::episode_playback_units(&c, episode)?;
+ if units.is_empty() { return Err("剧集没有可合并的片段".into()); }
+ let paths = units.iter().map(|unit| {
+   unit["video_media"]["path"].as_str().map(str::to_string)
+     .ok_or_else(|| format!("请为「{}」选择视频后合并", unit["title"].as_str().unwrap_or("未命名")))
+ }).collect::<Result<Vec<_>, _>>()?;
+ let root = PathBuf::from(strv(&project(s, &pid)?, "path")?);
+ let dir = root.join("assets/videos");
+ fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+ let out = dir.join(format!("episode-{episode}-{}.mp4", Uuid::new_v4()));
+ merge_video_files(&paths, &out, v["width"].as_i64().unwrap_or(1280), v["height"].as_i64().unwrap_or(720))?;
+ let name = format!("剧集{episode}-合并.mp4");
+ c.execute("INSERT INTO media(name,path,kind,created_at) VALUES(?,?,'video',?)", params![name, out.to_string_lossy(), now()])
+   .map_err(|e| e.to_string())?;
+ media(&c, Some(c.last_insert_rowid())).ok_or("合并视频入库失败".into())
+}
 fn insert_prompt(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let c=db(s,&pid)?;let name=strv(v,"name")?;let content=v.get("content").and_then(Value::as_str).unwrap_or("");let cat=v.get("category").and_then(Value::as_str).unwrap_or("通用");let t=now();c.execute("INSERT INTO prompts(name,content,category,created_at,updated_at) VALUES(?,?,?,?,?)",params![name,content,cat,t,t]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"id":c.last_insert_rowid(),"name":name,"content":content,"category":cat}))}
 fn update_prompt(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;db(s,&pid)?.execute("UPDATE prompts SET name=?,content=?,category=?,updated_at=? WHERE id=?",params![strv(v,"name")?,v.get("content").and_then(Value::as_str).unwrap_or(""),v.get("category").and_then(Value::as_str).unwrap_or("通用"),now(),intv(v,"id")?]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
 fn save_settings(s:&AppState,v:&Value)->Result<Value,String>{generation_channels::validate_settings(v.get("settings").unwrap_or(&json!({})))?;let pid=project_id(v)?;db(s,&pid)?.execute("INSERT INTO settings(key,value) VALUES('models',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[v.get("settings").unwrap_or(&json!({})).to_string()]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
@@ -473,42 +537,164 @@ let submission_client=generation_http::submission_client_builder(url).build().ma
  (gid,submission)
  };
  let generation_id=submission.get("generation_id").and_then(Value::as_str).ok_or("生成服务未返回 generation_id；请确认地址是 /v1/generations/t2v、i2v、ref2v 或 fl2v")?;if let Some(job)=opti(v,"_job_id") {
-  let resume=json!({"payload":v,"generation_row_id":gid,"generation_id":generation_id,"url":url,"operation":operation});
+  let mut payload = v.clone();
+  payload.as_object_mut().ok_or("视频请求无效")?.remove("_resume");
+  let resume=json!({"payload":payload,"generation_row_id":gid,"generation_id":generation_id,"url":url,"operation":operation});
   c.execute("UPDATE background_jobs SET resume_json=?,updated_at=? WHERE id=?",params![resume.to_string(),now(),job]).map_err(|e|e.to_string())?;
  }
  let base=url.split("/v1/generations/").next().unwrap_or(url).trim_end_matches('/');
  let result=loop {std::thread::sleep(std::time::Duration::from_secs(2));let item:Value=client.get(format!("{base}/v1/generations/{generation_id}")).bearer_auth(api_key).send().and_then(|r|r.error_for_status()).and_then(|r|r.json()).map_err(|e|format!("查询生成进度失败：{e}"))?;match item.get("status").and_then(Value::as_str){Some("completed")=>{break item},Some("failed")|Some("cancelled")=>{let err=item.get("error").map(Value::to_string).unwrap_or_else(||"任务失败".into());let _=c.execute("UPDATE generations SET status='failed',error=?,updated_at=? WHERE id=?",params![err,now(),gid]);return Err(format!("视频生成失败：{err}"))},_=>{}}}
  ;let output_url=result.get("result").and_then(Value::as_array).and_then(|x|x.first()).and_then(|x|x.get("url")).and_then(Value::as_str).ok_or("视频任务已完成，但未返回可下载的视频地址")?;let output_url=remote_comfy_url(url,output_url);let download_client=generation_http::submission_client_builder(&output_url).build().map_err(|e|e.to_string())?;let video=download_client.get(&output_url).send().and_then(|r|r.error_for_status()).and_then(|r|r.bytes()).map_err(|e|format!("下载生成视频失败：{e}"))?;
- let root=PathBuf::from(project(s,pid)?["path"].as_str().ok_or("无效项目路径")?);let dir=root.join("assets").join("videos");fs::create_dir_all(&dir).map_err(|e|e.to_string())?;let out=dir.join(format!("{}.mp4",Uuid::new_v4()));fs::write(&out,&video).map_err(|e|e.to_string())?;let tx=c.unchecked_transaction().map_err(|e|e.to_string())?;let name=format!("{}-{}.mp4",operation,gid);tx.execute("INSERT INTO media(name,path,kind,created_at) VALUES(?,?,?,?)",params![name,out.to_string_lossy(),"video",now()]).map_err(|e|e.to_string())?;let mid=tx.last_insert_rowid();if let Some(scene)=opti(v,"scene_id"){attach_video(&tx,scene,mid)?;}tx.execute("UPDATE generations SET status='completed',result_json=?,updated_at=? WHERE id=?",params![result.to_string(),now(),gid]).map_err(|e|e.to_string())?;let saved=json!({"id":mid,"name":name,"path":out,"kind":"video","created_at":now()});
- if let Some(job)=opti(v,"_job_id"){tx.execute("UPDATE background_jobs SET status='completed',result_json=?,error=NULL,updated_at=? WHERE id=?",params![saved.to_string(),now(),job]).map_err(|e|e.to_string())?;}
- tx.commit().map_err(|e|e.to_string())?;
- {let _guard=s.guard.lock().map_err(|_|"本地数据锁不可用")?;touch(s,pid);}Ok(json!({"id":mid,"name":name,"path":out,"kind":"video","created_at":now()}))
+ save_generated_video(s, c, pid, v, operation, gid, "mp4", &video, &result)
 }
 fn reference_media_ids(v:&Value,key:&str)->Result<Vec<i64>,String>{
  match v.get(key){None|Some(Value::Null)=>Ok(vec![]),Some(Value::Array(xs))=>{let mut ids=Vec::new();for x in xs{let id=x.as_i64().ok_or_else(||format!("{key} 必须是媒体 ID 数组"))?;if !ids.contains(&id){ids.push(id)}}Ok(ids)},_=>Err(format!("{key} 必须是媒体 ID 数组"))}
 }
-fn generate_video(s:&AppState,v:&Value)->Result<Value,String>{
- let image_ids=reference_media_ids(v,"image_media_ids")?;let video_ids=reference_media_ids(v,"reference_video_media_ids")?;let audio_ids=reference_media_ids(v,"reference_audio_media_ids")?;let pid=project_id(v)?;let reference_mode=v["operation"]=="ref2v"||!video_ids.is_empty()||!audio_ids.is_empty();let operation=if let Some(mode)=v.get("video_mode").and_then(Value::as_str).or(if reference_mode{Some("ref2v")}else{None}){match mode {
- "fl2v"=>{if opti(v,"first_media_id").is_none(){return Err("请选择首帧".into())}if !image_ids.is_empty()||opti(v,"image_media_id").is_some(){return Err("首尾帧模式不支持参考图".into())}"fl2v"},
- "i2v"|"ref2v"=>{if image_ids.is_empty()&&video_ids.is_empty()&&audio_ids.is_empty(){return Err("全能参考至少需要一种参考素材（图片、视频或音频）".into())}if image_ids.len()>9||video_ids.len()>3||audio_ids.len()>3{return Err("全能参考最多支持 9 张图片、3 个视频和 3 个音频".into())}if opti(v,"first_media_id").is_some()||opti(v,"last_media_id").is_some(){return Err("全能参考模式不支持首尾帧".into())}"ref2v"},
- _=>return Err("未知视频生成模式".into())
- }}else if !image_ids.is_empty()||opti(v,"image_media_id").is_some(){"i2v"}else if opti(v,"first_media_id").is_some()||opti(v,"last_media_id").is_some(){"fl2v"}else{"t2v"}.to_string();let prompt=strv(v,"prompt")?;if prompt.trim().is_empty(){return Err("请输入视频画面描述".into())}
- if operation!="ref2v"&&(!video_ids.is_empty()||!audio_ids.is_empty()){return Err("音视频参考仅支持全能参考模式".into())}
- let c=db(s,&pid)?;for (ids,kind,label) in [(&video_ids,"video","参考视频"),(&audio_ids,"audio","参考音频")]{for id in ids{if media(&c,Some(*id)).map(|m|m["kind"]!=kind).unwrap_or(true){return Err(format!("所选{}不存在或类型不符",label))}}}if let Some(scene)=opti(v,"scene_id"){c.query_row("SELECT id FROM scenes WHERE id=?",[scene],|r|r.get::<_,i64>(0)).map_err(|_|"场景不存在")?;}for id in image_ids.iter().copied().chain(["image_media_id","first_media_id","last_media_id"].iter().filter_map(|key|opti(v,key))){if media(&c,Some(id)).map(|m|m["kind"]!="image").unwrap_or(true){return Err("所选媒体不存在".into())}}let raw:String=c.query_row("SELECT value FROM settings WHERE key='models'",[],|r|r.get(0)).optional().map_err(|e|e.to_string())?.ok_or("请先在「设置」中配置视频生成服务")?;let settings:Value=serde_json::from_str(&raw).map_err(|e|e.to_string())?;let legacy=if operation=="ref2v"&&!settings["ref2v"].is_object(){&settings["i2v"]}else if operation=="fl2v"&&settings[&operation]["url"].as_str().unwrap_or("").is_empty(){&settings["fl2v"]}else{&settings[&operation]};let selected=generation_channels::resolve(&settings,v,"video",&operation)?;let model=&selected;let legacy=if model.get("_channel_id").is_some(){model}else{legacy};if model["provider"]=="qianwen-token-plan"{return qianwen_video::generate(s,&c,&pid,v,&operation,&prompt,model)}let configured=model["base_url"].as_str().filter(|x|!x.trim().is_empty()).or_else(||model["url"].as_str().filter(|x|!x.trim().is_empty())).or_else(||legacy["url"].as_str().filter(|x|!x.trim().is_empty())).unwrap_or("");if configured.is_empty(){return Err("请先配置视频生成 Base URL".into())}let url=if configured.contains("/v1/generations/"){if operation=="ref2v"{format!("{}/v1/generations/ref2v",configured.split("/v1/generations/").next().unwrap_or(configured))}else{configured.to_string()}}else{format!("{}/v1/generations/{}",configured.trim_end_matches('/'),operation)};if url.contains("/v1/generations/"){let mut request=v.clone();if let Some(id)=model.get("_channel_id"){request["channel_id"]=id.clone();request["model"]=model["model"].clone();}if model["send_model"]==true{request["_send_model"]=model["model"].clone();}return generate_comfy_video(s,&c,&pid,&request,&operation,&prompt,&url,model["api_key"].as_str().or_else(||legacy["api_key"].as_str()).unwrap_or(""))}
- let mut body=json!({"prompt":prompt,"duration":v.get("duration").and_then(Value::as_i64).unwrap_or(5),"aspect_ratio":v.get("aspect_ratio").and_then(Value::as_str).unwrap_or("16:9")});
- if operation=="i2v"{let ids=if image_ids.is_empty(){opti(v,"image_media_id").into_iter().collect::<Vec<_>>()}else{image_ids};let images=ids.into_iter().filter_map(|id|media(&c,Some(id))).map(|m|svg::reference_path(Path::new(m["path"].as_str().unwrap_or(""))).map(|p|p.to_string_lossy().into_owned())).collect::<Result<Vec<_>,_>>()?;body["reference_images"]=json!(images)}else{for (field,key) in [("first_image","first_media_id"),("last_image","last_media_id")] {if let Some(id)=opti(v,key){if let Some(m)=media(&c,Some(id)){body[field]=Value::String(svg::reference_path(Path::new(m["path"].as_str().unwrap_or("")))?.to_string_lossy().into_owned());}}}}
- let t=now();c.execute("INSERT INTO generations(operation,status,prompt,request_json,created_at,updated_at) VALUES(?,?,?,?,?,?)",params![operation,"running",prompt,body.to_string(),t,t]).map_err(|e|e.to_string())?;let gid=c.last_insert_rowid();
- let client=generation_http::client_builder(&url).connect_timeout(std::time::Duration::from_secs(15)).timeout(None).build().map_err(|e|e.to_string())?;let mut req=client.post(url).json(&body);if let Some(key)=model["api_key"].as_str().filter(|x|!x.is_empty()){req=req.bearer_auth(key)}let response=req.send().map_err(|e|format!("视频生成请求失败：{e}"))?;let status=response.status();let content_type=response.headers().get(reqwest::header::CONTENT_TYPE).and_then(|x|x.to_str().ok()).unwrap_or("").to_string();let bytes=response.bytes().map_err(|e|e.to_string())?;if !status.is_success(){let err=String::from_utf8_lossy(&bytes).to_string();let _=c.execute("UPDATE generations SET status='failed',error=?,updated_at=? WHERE id=?",params![err,now(),gid]);return Err(format!("生成服务返回 {}：{}",status,err))}
- let (video,ext,result):(Vec<u8>,String,Value)=if bytes.starts_with(b"{"){let result:Value=serde_json::from_slice(&bytes).map_err(|e|format!("无法解析生成结果：{e}"))?;let encoded=result.pointer("/data/0/b64_json").or_else(||result.pointer("/data/0/base64")).or_else(||result.get("b64_json")).or_else(||result.get("base64")).and_then(Value::as_str).map(str::to_string);if let Some(encoded)=encoded{(base64::engine::general_purpose::STANDARD.decode(encoded).map_err(|e|format!("视频数据解码失败：{e}"))?,"mp4".into(),result)}else if let Some(remote)=result.pointer("/data/0/url").or_else(||result.get("url")).and_then(Value::as_str).map(str::to_string){let ext=Path::new(&remote).extension().and_then(|x|x.to_str()).unwrap_or("mp4").to_string();let downloaded=client.get(&remote).send().and_then(|r|r.error_for_status()).and_then(|r|r.bytes()).map_err(|e|format!("下载生成视频失败：{e}"))?;(downloaded.to_vec(),ext,result)}else{return Err("生成服务未返回视频 URL 或 base64 数据".into())}}else{(bytes.to_vec(),if content_type.contains("webm"){"webm".into()}else{"mp4".into()},json!({"binary":true}))};
- let root=PathBuf::from(project(s,&pid)?["path"].as_str().ok_or("无效项目路径")?);let dir=root.join("assets").join("videos");fs::create_dir_all(&dir).map_err(|e|e.to_string())?;let out=dir.join(format!("{}.{}",Uuid::new_v4(),ext));fs::write(&out,video).map_err(|e|e.to_string())?;let name=format!("{}-{}.{}",operation,gid,ext);c.execute("INSERT INTO media(name,path,kind,created_at) VALUES(?,?,?,?)",params![name,out.to_string_lossy(),"video",now()]).map_err(|e|e.to_string())?;let mid=c.last_insert_rowid();if let Some(scene)=opti(v,"scene_id"){attach_video(&c,scene,mid)?;}c.execute("UPDATE generations SET status='completed',result_json=?,updated_at=? WHERE id=?",params![result.to_string(),now(),gid]).map_err(|e|e.to_string())?;{let _guard=s.guard.lock().map_err(|_|"本地数据锁不可用")?;touch(s,&pid);}Ok(json!({"id":mid,"name":name,"path":out,"kind":"video","created_at":now()}))
+fn validate_video_request(c: &Connection, v: &Value) -> Result<(String, Value), String> {
+ let images = reference_media_ids(v, "image_media_ids")?;
+ let videos = reference_media_ids(v, "reference_video_media_ids")?;
+ let audios = reference_media_ids(v, "reference_audio_media_ids")?;
+ let reference_mode = v["operation"] == "ref2v" || !videos.is_empty() || !audios.is_empty();
+ let mode = v["video_mode"].as_str().or(reference_mode.then_some("ref2v"));
+ let operation = match mode {
+  Some("t2v") => {
+   if !images.is_empty() || opti(v, "image_media_id").is_some() || opti(v, "first_media_id").is_some() || opti(v, "last_media_id").is_some() {
+    return Err("文生视频不使用参考图或首尾帧".into());
+   }
+   "t2v"
+  }
+  Some("fl2v") => {
+   if opti(v, "first_media_id").is_none() { return Err("请选择首帧".into()); }
+   if !images.is_empty() || opti(v, "image_media_id").is_some() { return Err("首尾帧模式不支持参考图".into()); }
+   "fl2v"
+  }
+  Some("i2v" | "ref2v") => {
+   if images.is_empty() && videos.is_empty() && audios.is_empty() {
+    return Err("全能参考至少需要一种参考素材（图片、视频或音频）".into());
+   }
+   if images.len() > 9 || videos.len() > 3 || audios.len() > 3 {
+    return Err("全能参考最多支持 9 张图片、3 个视频和 3 个音频".into());
+   }
+   if opti(v, "first_media_id").is_some() || opti(v, "last_media_id").is_some() {
+    return Err("全能参考模式不支持首尾帧".into());
+   }
+   "ref2v"
+  }
+  Some(_) => return Err("未知视频生成模式".into()),
+  None if !images.is_empty() || opti(v, "image_media_id").is_some() => "i2v",
+  None if opti(v, "first_media_id").is_some() || opti(v, "last_media_id").is_some() => "fl2v",
+  None => "t2v",
+ };
+ if strv(v, "prompt")?.trim().is_empty() { return Err("请输入视频画面描述".into()); }
+ if operation != "ref2v" && (!videos.is_empty() || !audios.is_empty()) {
+  return Err("音视频参考仅支持全能参考模式".into());
+ }
+ for (ids, kind, label) in [(&videos, "video", "参考视频"), (&audios, "audio", "参考音频")] {
+  for id in ids {
+   if media(c, Some(*id)).is_none_or(|item| item["kind"] != kind) {
+    return Err(format!("所选{label}不存在或类型不符"));
+   }
+  }
+ }
+ for id in images.iter().copied().chain(["image_media_id", "first_media_id", "last_media_id"].iter().filter_map(|key| opti(v,key))) {
+  if media(c, Some(id)).is_none_or(|item| item["kind"] != "image") {
+   return Err("所选媒体不存在".into());
+  }
+ }
+ for (field, table, label) in [("clip_id", "clips", "片段"), ("scene_id", "scenes", "场景")] {
+  if let Some(id) = opti(v, field) {
+   let exists: bool = c.query_row(&format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE id=?)"), [id], |r| r.get(0))
+    .map_err(|e| e.to_string())?;
+   if !exists { return Err(format!("{label}不存在")); }
+  }
+ }
+ let raw: String = c.query_row("SELECT value FROM settings WHERE key='models'", [], |r| r.get(0))
+  .optional().map_err(|e| e.to_string())?.ok_or("请先在「设置」中配置视频生成服务")?;
+ let settings: Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+ let mut config = generation_channels::resolve(&settings, v, "video", operation)?;
+ if config.get("_channel_id").is_none() {
+  let legacy = if operation == "ref2v" && !settings["ref2v"].is_object() { &settings["i2v"] } else { &settings[operation] };
+  if let Some(legacy) = legacy.as_object() {
+   if config.is_null() { config = json!({}); }
+   for (key, value) in legacy {
+    if config.get(key).is_none_or(|existing| existing.is_null() || existing.as_str() == Some("")) {
+     config[key] = value.clone();
+    }
+   }
+  }
+ }
+ if config["provider"] != "qianwen-token-plan" && ["base_url", "url"].iter().all(|key| config[key].as_str().is_none_or(|url|url.trim().is_empty())) {
+  return Err("请先配置视频生成 Base URL".into());
+ }
+ Ok((operation.into(), config))
 }
-fn delete_scene_video(s:&AppState,v:&Value)->Result<Value,String>{
- let mut c=db(s,&project_id(v)?)?;remove_scene_video(&mut c,intv(v,"scene_id")?,intv(v,"media_id")?)?;Ok(json!({"ok":true}))
+
+fn generate_video(s: &AppState, v: &Value) -> Result<Value, String> {
+ let pid = project_id(v)?;
+ let c = db(s, &pid)?;
+ let (operation, model) = validate_video_request(&c, v)?;
+ let prompt = strv(v, "prompt")?;
+ if model["provider"] == "qianwen-token-plan" {
+  return qianwen_video::generate(s, &c, &pid, v, &operation, &prompt, &model);
+ }
+ let configured = model["base_url"].as_str().filter(|url|!url.trim().is_empty()).or_else(||model["url"].as_str())
+  .ok_or("请先配置视频生成 Base URL")?;
+ let url = if configured.contains("/v1/generations/") && operation != "ref2v" {
+  configured.to_string()
+ } else {
+  let root = configured.split("/v1/generations/").next().unwrap_or(configured).trim_end_matches('/');
+  format!("{root}/v1/generations/{operation}")
+ };
+ let mut request = v.clone();
+ if let Some(id) = model.get("_channel_id") {
+  request["channel_id"] = id.clone();
+  request["model"] = model["model"].clone();
+ }
+ if model["send_model"] == true { request["_send_model"] = model["model"].clone(); }
+ generate_comfy_video(s, &c, &pid, &request, &operation, &prompt, &url, model["api_key"].as_str().unwrap_or(""))
 }
-fn remove_scene_video(c:&mut Connection,scene:i64,mid:i64)->Result<(),String>{
+
+fn save_generated_video(
+ s: &AppState, c: &Connection, pid: &str, v: &Value, operation: &str, gid: i64,
+ ext: &str, bytes: &[u8], result: &Value,
+) -> Result<Value, String> {
+ if bytes.is_empty() { return Err("生成服务返回的视频为空".into()); }
+ let dir = PathBuf::from(strv(&project(s, pid)?, "path")?).join("assets/videos");
+ fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+ let out = dir.join(format!("{}.{ext}", Uuid::new_v4()));
+ fs::write(&out, bytes).map_err(|e| e.to_string())?;
+ let saved = (|| {
+  let tx = c.unchecked_transaction().map_err(|e| e.to_string())?;
+  let name = format!("{operation}-{gid}.{ext}");
+  let created = now();
+  tx.execute("INSERT INTO media(name,path,kind,created_at) VALUES(?,?,'video',?)",
+   params![name, out.to_string_lossy(), created]).map_err(|e| e.to_string())?;
+  let id = tx.last_insert_rowid();
+  let context_changed = scene_generation::attach_result(&tx, v, id)?;
+  let mut saved = json!({"id":id,"name":name,"path":out,"kind":"video","created_at":created});
+  if context_changed { saved["generation_context_changed"] = json!(true); }
+  tx.execute("UPDATE generations SET status='completed',result_json=?,error=NULL,updated_at=? WHERE id=?",
+   params![result.to_string(), now(), gid]).map_err(|e| e.to_string())?;
+  if let Some(job) = opti(v, "_job_id") {
+   tx.execute("UPDATE background_jobs SET status='completed',result_json=?,error=NULL,updated_at=? WHERE id=?",
+    params![saved.to_string(), now(), job]).map_err(|e| e.to_string())?;
+  }
+  tx.commit().map_err(|e| e.to_string())?;
+  Ok(saved)
+ })();
+ if saved.is_err() { let _ = fs::remove_file(&out); }
+ let _guard = s.guard.lock().map_err(|_|"本地数据锁不可用")?;
+ if saved.is_ok() { touch(s, pid); }
+ saved
+}
+
+fn delete_clip_video(s:&AppState,v:&Value)->Result<Value,String>{
+ let mut c=db(s,&project_id(v)?)?;remove_clip_video(&mut c,intv(v,"clip_id")?,intv(v,"media_id")?)?;Ok(json!({"ok":true}))
+}
+fn remove_clip_video(c:&mut Connection,clip:i64,mid:i64)->Result<(),String>{
  let tx=c.transaction().map_err(|e|e.to_string())?;
- tx.execute("DELETE FROM scene_videos WHERE scene_id=? AND media_id=?",params![scene,mid]).map_err(|e|e.to_string())?;
- tx.execute("UPDATE scenes SET video_media_id=(SELECT MIN(media_id) FROM scene_videos WHERE scene_id=?) WHERE id=? AND video_media_id=?",params![scene,scene,mid]).map_err(|e|e.to_string())?;
+ tx.execute("DELETE FROM clip_videos WHERE clip_id=? AND media_id=?",params![clip,mid]).map_err(|e|e.to_string())?;
+ tx.execute("UPDATE clips SET video_media_id=(SELECT MIN(media_id) FROM clip_videos WHERE clip_id=?) WHERE id=? AND video_media_id=?",params![clip,clip,mid]).map_err(|e|e.to_string())?;
  tx.commit().map_err(|e|e.to_string())?;Ok(())
 }
 // A total order across project databases keeps equal-second jobs stable between pages.
@@ -529,7 +715,7 @@ fn project_jobs(c:&Connection,p:&Value,v:&Value)->Result<Vec<Value>,String>{
  ((?6=0 AND (CAST(created_at AS INTEGER),?5,id)<(?2,?3,?4)) OR
   (?6=1 AND (CAST(created_at AS INTEGER),?5,id)>=(?2,?3,?4)))
  ORDER BY CAST(created_at AS INTEGER) DESC,id DESC LIMIT ?7").map_err(|e|e.to_string())?;
- let rows=q.query_map(params![status, time, cursor_pid, cursor_id, pid, through, limit + 1],|r|{let request=r.get::<_,Option<String>>(8)?.and_then(|s|serde_json::from_str::<Value>(&s).ok());Ok(json!({"id":r.get::<_,i64>(0)?,"operation":r.get::<_,String>(1)?,"status":r.get::<_,String>(2)?,"prompt":r.get::<_,String>(3)?,"created_at":r.get::<_,String>(4)?,"updated_at":r.get::<_,String>(5)?,"result":r.get::<_,Option<String>>(6)?.and_then(|s|serde_json::from_str::<Value>(&s).ok()),"error":r.get::<_,Option<String>>(7)?,"scene_id":request.as_ref().and_then(|v|opti(v,"scene_id")),"project_id":pid,"project_name":p["name"]}))}).map_err(|e|e.to_string())?;
+ let rows=q.query_map(params![status, time, cursor_pid, cursor_id, pid, through, limit + 1],|r|{let request=r.get::<_,Option<String>>(8)?.and_then(|s|serde_json::from_str::<Value>(&s).ok());Ok(json!({"id":r.get::<_,i64>(0)?,"operation":r.get::<_,String>(1)?,"status":r.get::<_,String>(2)?,"prompt":r.get::<_,String>(3)?,"created_at":r.get::<_,String>(4)?,"updated_at":r.get::<_,String>(5)?,"result":r.get::<_,Option<String>>(6)?.and_then(|s|serde_json::from_str::<Value>(&s).ok()),"error":r.get::<_,Option<String>>(7)?,"scene_id":request.as_ref().and_then(|v|opti(v,"scene_id")),"clip_id":request.as_ref().and_then(|v|opti(v,"clip_id")),"project_id":pid,"project_name":p["name"]}))}).map_err(|e|e.to_string())?;
 
  rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
 }
@@ -553,45 +739,150 @@ fn list_jobs(s:&AppState,v:&Value)->Result<Value,String>{
  let next=items.last().map(|j|json!({"created_at":j["created_at"],"project_id":j["project_id"],"id":j["id"]}));
  Ok(json!({"items":items,"next_cursor":next,"has_more":has_more}))
 }
-fn tracked_generation(s:&AppState,path:&str,v:&Value)->Result<Value,String>{
- let admission=s.guard.lock().map_err(|_|"本地数据锁不可用")?;
- let c=db(s,&project_id(v)?)?;let t=now();
- c.execute("INSERT INTO background_jobs(operation,status,prompt,created_at,updated_at,request_json) VALUES(?,'running',?,?,?,?)",params![path,v["prompt"].as_str().or_else(||v["text"].as_str()).unwrap_or(if path=="/generations/asr" {"音频转写"} else {"剧集合并"}),t,t,v.to_string()]).map_err(|e|e.to_string())?;let id=c.last_insert_rowid();drop(admission);
- let mut payload=v.clone();payload["_job_id"]=json!(id);let v=&payload;
- let result=match path {"/generations/image"=>generate_image(s,v),"/generations/video"=>generate_video(s,v),"/generations/tts"=>tts::generate(s,v),"/generations/asr"=>asr::transcribe(s,v),_=>merge_episode(s,v)};
- let (status,output,error)=match &result{Ok(value)=>("completed",Some(value.to_string()),None),Err(error)=>("failed",None,Some(error.clone()))};
- c.execute("UPDATE background_jobs SET status=?,result_json=?,error=?,updated_at=? WHERE id=?",params![status,output,error,now(),id]).map_err(|e|e.to_string())?;result
+fn tracked_generation(s: &AppState, path: &str, v: &Value) -> Result<Value, String> {
+ if v.get("_resume").is_some() {
+  return Err("请通过 /tasks/resume-video 提交本地 job_id 恢复视频任务".into());
+ }
+ let admission = s.guard.lock().map_err(|_| "本地数据锁不可用")?;
+ let pid = project_id(v)?;
+ let c = db(s, &pid)?;
+ let mut request = v.clone();
+ let fields = request.as_object_mut().ok_or("任务参数必须为对象")?;
+ fields.retain(|key, _| !key.starts_with('_'));
+ if path == "/generations/video" && !request["scene_id"].is_null() {
+  return Err("一镜到底请使用场景视频生成接口，片段视频使用 clip_id".into());
+ }
+ let mut request = match path {
+  "/generations/scene-video" => scene_generation::prepare_scene(s, &c, &pid, &request)?,
+  "/generations/video" if !request["clip_id"].is_null() => scene_generation::prepare_clip(s, &c, &pid, &request)?,
+  _ => request,
+ };
+ let t = now();
+ c.execute("INSERT INTO background_jobs(operation,status,prompt,created_at,updated_at,request_json) VALUES(?,'running',?,?,?,?)",
+  params![path, request["prompt"].as_str().or_else(|| request["text"].as_str())
+   .unwrap_or(if path == "/generations/asr" { "音频转写" } else { "剧集合并" }), t, t, request.to_string()])
+  .map_err(|e| e.to_string())?;
+ let id = c.last_insert_rowid();
+ drop(admission);
+ request["_job_id"] = json!(id);
+ let result = match path {
+  "/generations/image" => generate_image(s, &request),
+  "/generations/video" | "/generations/scene-video" => generate_video(s, &request),
+  "/generations/tts" => tts::generate(s, &request),
+  "/generations/asr" => asr::transcribe(s, &request),
+  _ => merge_episode(s, &request),
+ };
+ let (status, output, error) = match &result {
+  Ok(value) => ("completed", Some(value.to_string()), None),
+  Err(error) => ("failed", None, Some(error.clone())),
+ };
+ c.execute("UPDATE background_jobs SET status=?,result_json=?,error=?,updated_at=? WHERE id=?",
+  params![status, output, error, now(), id]).map_err(|e| e.to_string())?;
+ result
 }
-fn recover_jobs(s:&AppState,pid:&str,c:&Connection)->Result<(),String>{
- let rows={let mut q=c.prepare("SELECT id,resume_json FROM background_jobs WHERE status IN ('running','interrupted')").map_err(|e|e.to_string())?;
- let rows=q.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,Option<String>>(1)?))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;rows};
- for (id,raw) in rows {
-  let Some(resume)=raw.and_then(|r|serde_json::from_str::<Value>(&r).ok()) else {
-   c.execute("UPDATE background_jobs SET status='interrupted',error='缺少远程任务编号，无法自动恢复查询；服务端任务可能仍在执行，请勿重复提交',updated_at=? WHERE id=?",params![now(),id]).map_err(|e|e.to_string())?;continue;
+fn stored_video_resume(c: &Connection, raw: Option<String>) -> Result<Value, String> {
+ let missing = "缺少有效的远程任务记录，服务端任务可能仍在执行，请勿重复提交";
+ let resume: Value = raw.and_then(|data| serde_json::from_str(&data).ok()).ok_or(missing)?;
+ let operation = resume["operation"].as_str().ok_or(missing)?;
+ if !["t2v", "i2v", "ref2v", "fl2v"].contains(&operation)
+  || !resume["generation_id"].as_str().is_some_and(|id| !id.trim().is_empty())
+  || !resume["payload"]["prompt"].is_string()
+  || !(resume["provider"].is_null() || resume["provider"] == "qianwen-token-plan")
+ {
+  return Err(missing.into());
+ }
+ let url = reqwest::Url::parse(resume["url"].as_str().ok_or(missing)?).map_err(|_| missing)?;
+ if !["http", "https"].contains(&url.scheme()) || url.host_str().is_none() {
+  return Err(missing.into());
+ }
+ let generation = resume["generation_row_id"].as_i64().ok_or(missing)?;
+ let exists: bool = c.query_row("SELECT EXISTS(SELECT 1 FROM generations WHERE id=? AND operation=?)",
+  params![generation, operation], |r| r.get(0)).map_err(|e| e.to_string())?;
+ if !exists { return Err(missing.into()); }
+ Ok(resume)
+}
+
+fn resume_existing_video(s: &AppState, c: &Connection, pid: &str, id: i64, resume: &Value) -> Result<Value, String> {
+ let result = (|| {
+  let mut payload = resume["payload"].clone();
+  payload["_job_id"] = json!(id);
+  payload["_resume"] = resume.clone();
+  let operation = strv(resume, "operation")?;
+  let raw: String = c.query_row("SELECT value FROM settings WHERE key='models'", [], |r| r.get(0)).map_err(|e| e.to_string())?;
+  let settings: Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+  let model = generation_channels::resolve(&settings, &payload, "video", &operation)?;
+  let prompt = strv(&payload, "prompt")?;
+  if resume["provider"] == "qianwen-token-plan" {
+   qianwen_video::generate(s, c, pid, &payload, &operation, &prompt, &model)
+  } else {
+   let legacy = if model.get("_channel_id").is_some() { &model } else { &settings[&operation] };
+   let key = model["api_key"].as_str().or_else(|| legacy["api_key"].as_str()).unwrap_or("");
+   generate_comfy_video(s, c, pid, &payload, &operation, &prompt, &strv(resume, "url")?, key)
+  }
+ })();
+ if let Err(error) = &result {
+  c.execute("UPDATE background_jobs SET status='failed',error=?,updated_at=? WHERE id=? AND status='running'",
+   params![error, now(), id]).map_err(|e| e.to_string())?;
+ }
+ result
+}
+
+fn resume_video_job(s: &AppState, v: &Value) -> Result<Value, String> {
+ let pid = project_id(v)?;
+ let id = intv(v, "job_id")?;
+ let mut c = db(s, &pid)?;
+ let tx = c.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e| e.to_string())?;
+ let (operation, status, result, raw): (String, String, Option<String>, Option<String>) = tx.query_row(
+  "SELECT operation,status,result_json,resume_json FROM background_jobs WHERE id=?", [id],
+  |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+ ).optional().map_err(|e| e.to_string())?.ok_or("视频任务不存在")?;
+ if !["/generations/video", "/generations/scene-video"].contains(&operation.as_str()) {
+  return Err("任务类型无法恢复为视频".into());
+ }
+ match status.as_str() {
+  "completed" => return result.and_then(|value| serde_json::from_str(&value).ok()).ok_or("已完成任务缺少视频结果".into()),
+  "running" => return Err("视频任务正在运行，请查询后台任务状态".into()),
+  "failed" | "interrupted" => {}
+  _ => return Err("当前视频任务状态无法恢复".into()),
+ }
+ let resume = stored_video_resume(&tx, raw)?;
+ tx.execute("UPDATE background_jobs SET status='running',error=NULL,updated_at=? WHERE id=?",
+  params![now(), id]).map_err(|e| e.to_string())?;
+ tx.commit().map_err(|e| e.to_string())?;
+ resume_existing_video(s, &c, &pid, id, &resume)
+}
+
+fn recover_jobs(s: &AppState, pid: &str, c: &Connection) -> Result<(), String> {
+ let rows = {
+  let mut query = c.prepare("SELECT id,resume_json FROM background_jobs WHERE status IN ('running','interrupted')")
+   .map_err(|e| e.to_string())?;
+  let rows = query.query_map([], |r| Ok((r.get::<_,i64>(0)?,r.get::<_,Option<String>>(1)?))).map_err(|e| e.to_string())?;
+  rows.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?
+ };
+ for (id, raw) in rows {
+  let resume = match stored_video_resume(c, raw) {
+   Ok(resume) => resume,
+   Err(error) => {
+    c.execute("UPDATE background_jobs SET status='interrupted',error=?,updated_at=? WHERE id=?",
+     params![error, now(), id]).map_err(|e| e.to_string())?;
+    continue;
+   }
   };
-  c.execute("UPDATE background_jobs SET status='running',error=NULL,updated_at=? WHERE id=?",params![now(),id]).map_err(|e|e.to_string())?;
-  let state=s.clone();let pid=pid.to_string();
+  c.execute("UPDATE background_jobs SET status='running',error=NULL,updated_at=? WHERE id=?",
+   params![now(), id]).map_err(|e| e.to_string())?;
+  let state = s.clone();
+  let pid = pid.to_string();
   std::thread::spawn(move || {
-   let result=(||->Result<Value,String>{
-    let c=db(&state,&pid)?;let mut payload=resume["payload"].clone();payload["_job_id"]=json!(id);payload["_resume"]=resume.clone();
-    let operation=strv(&resume,"operation")?;
-    let raw:String=c.query_row("SELECT value FROM settings WHERE key='models'",[],|r|r.get(0)).map_err(|e|e.to_string())?;
-    let settings:Value=serde_json::from_str(&raw).map_err(|e|e.to_string())?;
-    let selected=generation_channels::resolve(&settings,&payload,"video",&operation)?;let model=&selected;let legacy=if model.get("_channel_id").is_some(){model}else{&settings[&operation]};
-    if resume["provider"]=="qianwen-token-plan" {
-     qianwen_video::generate(&state,&c,&pid,&payload,&operation,&strv(&payload,"prompt")?,model)
-    }else{
-     generate_comfy_video(&state,&c,&pid,&payload,&operation,&strv(&payload,"prompt")?,&strv(&resume,"url")?,model["api_key"].as_str().or_else(||legacy["api_key"].as_str()).unwrap_or(""))
-    }
-   })();
-   if let Err(error)=result {if let Ok(c)=db(&state,&pid){let _=c.execute("UPDATE background_jobs SET status='failed',error=?,updated_at=? WHERE id=? AND status='running'",params![error,now(),id]);}}
+   if let Ok(c) = db(&state, &pid) {
+    let _ = resume_existing_video(&state, &c, &pid, id, &resume);
+   }
   });
  }
  Ok(())
 }
 
-fn scene_script(c:&Connection,id:i64)->Result<Value,String>{
- let raw=c.query_row("SELECT value FROM scene_scripts WHERE scene_id=?",[id],|r|r.get::<_,String>(0)).optional().map_err(|e|e.to_string())?;
+fn clip_script(c:&Connection,id:i64)->Result<Value,String>{
+ let raw=c.query_row("SELECT value FROM clip_scripts WHERE clip_id=?",[id],|r|r.get::<_,String>(0)).optional().map_err(|e|e.to_string())?;
  Ok(raw.and_then(|v|serde_json::from_str(&v).ok()).unwrap_or(json!({})))
 }
 fn script_command(s:&AppState,v:&Value,action:&str)->Result<Value,String>{
@@ -601,7 +892,7 @@ fn script_command(s:&AppState,v:&Value,action:&str)->Result<Value,String>{
  if let Some(id)=episode_id{if c.query_row("SELECT id FROM episodes WHERE id=?",[id],|r|r.get::<_,i64>(0)).optional().map_err(|e|e.to_string())?.is_none(){return Err("剧集不存在".into())}}
  if action=="load"{let raw=c.query_row("SELECT value FROM settings WHERE key=?",[&key],|r|r.get::<_,String>(0)).optional().map_err(|e|e.to_string())?;return Ok(raw.and_then(|v|serde_json::from_str(&v).ok()).unwrap_or(Value::Null))}
  let draft=v.get("draft").ok_or("缺少脚本")?;
- strv(draft,"title")?;draft["scenes"].as_array().ok_or("缺少场景")?;
+ strv(draft,"title")?;draft["clips"].as_array().ok_or("缺少片段")?;
  let tx=c.transaction().map_err(|e|e.to_string())?;
  let result=if action=="publish"{if let Some(id)=episode_id{update_script_episode(&tx,id,draft)?}else{publish_script(&tx,draft)?}}else{json!({"ok":true})};
  let saved=result.get("draft").unwrap_or(draft);
@@ -609,52 +900,62 @@ fn script_command(s:&AppState,v:&Value,action:&str)->Result<Value,String>{
  tx.commit().map_err(|e|e.to_string())?;touch(s,&pid);Ok(result)
 }
 fn validate_script(draft:&Value)->Result<(),String>{
- let title=strv(draft,"title")?;let scenes=draft["scenes"].as_array().ok_or("缺少场景")?;
- if title.trim().is_empty()||scenes.is_empty()||scenes.iter().any(|scene|scene["description"].as_str().unwrap_or("").trim().is_empty()){return Err("请填写剧集标题和每个场景的描述".into())}
- if scenes.iter().any(|scene|scene.get("references").is_some_and(|refs|refs.as_array().map(|items|items.iter().any(|item|!item.is_string())).unwrap_or(true))){return Err("参考图描述必须为文字列表".into())}
- if scenes.iter().any(|scene|scene.get("mode").is_some_and(|mode|mode!="t2v"&&mode!="fl2v"&&mode!="i2v")){return Err("场景模式无效".into())}
+ let title=strv(draft,"title")?;let clips=draft["clips"].as_array().ok_or("缺少片段")?;
+ if title.trim().is_empty()||clips.is_empty()||clips.iter().any(|clip|clip["description"].as_str().unwrap_or("").trim().is_empty()){return Err("请填写剧集标题和每个片段的描述".into())}
+ if clips.iter().any(|clip|clip.get("references").is_some_and(|refs|refs.as_array().map(|items|items.iter().any(|item|!item.is_string())).unwrap_or(true))){return Err("参考图描述必须为文字列表".into())}
+ if clips.iter().any(|clip|clip.get("mode").is_some_and(|mode|mode!="t2v"&&mode!="fl2v"&&mode!="i2v")){return Err("片段模式无效".into())}
  Ok(())
 }
-fn save_script_scene(c:&Connection,id:i64,scene:&Value)->Result<(),String>{
- let references=scene.get("references").and_then(Value::as_array).cloned().unwrap_or_else(||vec![json!(scene["reference"].as_str().unwrap_or(""))]);
+fn save_script_clip(c:&Connection,id:i64,clip:&Value)->Result<(),String>{
+ let references=clip.get("references").and_then(Value::as_array).cloned().unwrap_or_else(||vec![json!(clip["reference"].as_str().unwrap_or(""))]);
  let reference=references.first().and_then(Value::as_str).unwrap_or("");
- let script=json!({"first":scene["first"].as_str().unwrap_or(""),"last":scene["last"].as_str().unwrap_or(""),"reference":reference,"references":references});
- c.execute("INSERT INTO scene_scripts VALUES(?,?) ON CONFLICT(scene_id) DO UPDATE SET value=excluded.value",params![id,script.to_string()]).map_err(|e|e.to_string())?;
- let raw=c.query_row("SELECT value FROM scene_options WHERE scene_id=?",[id],|r|r.get::<_,String>(0)).optional().map_err(|e|e.to_string())?;
+ let script=json!({"first":clip["first"].as_str().unwrap_or(""),"last":clip["last"].as_str().unwrap_or(""),"reference":reference,"references":references});
+ c.execute("INSERT INTO clip_scripts VALUES(?,?) ON CONFLICT(clip_id) DO UPDATE SET value=excluded.value",params![id,script.to_string()]).map_err(|e|e.to_string())?;
+ let raw=c.query_row("SELECT value FROM clip_options WHERE clip_id=?",[id],|r|r.get::<_,String>(0)).optional().map_err(|e|e.to_string())?;
  let mut options=raw.and_then(|v|serde_json::from_str::<Value>(&v).ok()).filter(Value::is_object).unwrap_or(json!({"duration":5,"aspect_ratio":"16:9","size":"1344x768"}));
- let mode=scene["mode"].as_str().unwrap_or(if references.iter().any(|item|!item.as_str().unwrap_or("").is_empty()){"i2v"}else{"fl2v"});
+ let mode=clip["mode"].as_str().unwrap_or(if references.iter().any(|item|!item.as_str().unwrap_or("").is_empty()){"i2v"}else{"fl2v"});
  options["video_mode"]=json!(mode);options["custom"]=json!(true);
  options["first"]=json!(mode=="fl2v");options["last"]=json!(mode=="fl2v");options["reference"]=json!(mode=="i2v");
- c.execute("INSERT INTO scene_options VALUES(?,?) ON CONFLICT(scene_id) DO UPDATE SET value=excluded.value",params![id,options.to_string()]).map_err(|e|e.to_string())?;
+ c.execute("INSERT INTO clip_options VALUES(?,?) ON CONFLICT(clip_id) DO UPDATE SET value=excluded.value",params![id,options.to_string()]).map_err(|e|e.to_string())?;
  Ok(())
 }
 fn update_script_episode(c:&Connection,eid:i64,draft:&Value)->Result<Value,String>{
  validate_script(draft)?;
  if c.execute("UPDATE episodes SET title=? WHERE id=?",params![strv(draft,"title")?,eid]).map_err(|e|e.to_string())?!=1{return Err("剧集不存在".into())}
- let existing={let mut query=c.prepare("SELECT id FROM scenes WHERE episode_id=?").map_err(|e|e.to_string())?;let rows=query.query_map([eid],|row|row.get::<_,i64>(0)).map_err(|e|e.to_string())?;rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?};
+ let existing={let mut query=c.prepare("SELECT id FROM clips WHERE episode_id=?").map_err(|e|e.to_string())?;let rows=query.query_map([eid],|row|row.get::<_,i64>(0)).map_err(|e|e.to_string())?;rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?};
  let mut kept=std::collections::HashSet::new();let mut saved=draft.clone();
- for (i,scene) in saved["scenes"].as_array_mut().ok_or("缺少场景")?.iter_mut().enumerate(){
-  let id=if let Some(id)=opti(scene,"scene_id"){
-   if !existing.contains(&id)||!kept.insert(id){return Err("场景不属于当前剧集或重复引用".into())}
-   c.execute("UPDATE scenes SET description=?,sort_order=? WHERE id=? AND episode_id=?",params![strv(scene,"description")?,i as i64,id,eid]).map_err(|e|e.to_string())?;id
+ for (i,clip) in saved["clips"].as_array_mut().ok_or("缺少片段")?.iter_mut().enumerate(){
+  let id=if let Some(id)=opti(clip,"clip_id"){
+   if !existing.contains(&id)||!kept.insert(id){return Err("片段不属于当前剧集或重复引用".into())}
+   c.execute("UPDATE clips SET description=?,sort_order=? WHERE id=? AND episode_id=?",params![strv(clip,"description")?,i as i64,id,eid]).map_err(|e|e.to_string())?;id
   }else{
-   c.execute("INSERT INTO scenes(episode_id,title,description,sort_order,created_at) VALUES(?,?,?,?,?)",params![eid,format!("scene{:03}",i+1),strv(scene,"description")?,i as i64,now()]).map_err(|e|e.to_string())?;
-   let id=c.last_insert_rowid();kept.insert(id);id
+   let id=insert_script_clip(c,eid,i,clip)?;
+   kept.insert(id);id
   };
-  save_script_scene(c,id,scene)?;scene["scene_id"]=json!(id);
+  save_script_clip(c,id,clip)?;clip["clip_id"]=json!(id);
  }
- for id in existing{if !kept.contains(&id){c.execute("DELETE FROM scenes WHERE id=? AND episode_id=?",params![id,eid]).map_err(|e|e.to_string())?;}}
+ for id in existing{if !kept.contains(&id){c.execute("DELETE FROM clips WHERE id=? AND episode_id=?",params![id,eid]).map_err(|e|e.to_string())?;}}
+ scenes::check_contiguous(scenes::clip_order(c,eid)?.into_iter().map(|(_,scene)|scene))?;
  Ok(json!({"episode_id":eid,"draft":saved}))
+}
+fn insert_script_clip(c:&Connection,eid:i64,index:usize,clip:&Value)->Result<i64,String>{
+ let fallback=format!("clip{:03}",index+1);
+ let title=clip["title"].as_str().filter(|title|!title.trim().is_empty()).unwrap_or(&fallback);
+ let parent=scenes::insert_parent(c,eid,title)?;
+ let id=scenes::next_clip_id(c)?;
+ c.execute("INSERT INTO clips(id,episode_id,scene_id,title,description,sort_order,created_at) VALUES(?,?,?,?,?,?,?)",
+    params![id,eid,parent,title,strv(clip,"description")?,index as i64,now()]).map_err(|e|e.to_string())?;
+ Ok(id)
 }
 fn publish_script(c:&Connection,draft:&Value)->Result<Value,String>{
  validate_script(draft)?;
- let title=strv(draft,"title")?;let scenes=draft["scenes"].as_array().ok_or("缺少场景")?;
+ let title=strv(draft,"title")?;let clips=draft["clips"].as_array().ok_or("缺少片段")?;
  let previous=c.query_row("SELECT value FROM settings WHERE key='script_publication'",[],|r|r.get::<_,String>(0)).optional().map_err(|e|e.to_string())?.and_then(|v|serde_json::from_str::<Value>(&v).ok());
  if let Some(previous)=previous{if previous["draft"]==*draft{let id=intv(&previous,"episode_id")?;if c.query_row("SELECT id FROM episodes WHERE id=?",[id],|r|r.get::<_,i64>(0)).optional().map_err(|e|e.to_string())?.is_some(){return Ok(json!({"episode_id":id}))}}}
  c.execute("INSERT INTO episodes(title,description,sort_order,created_at) VALUES(?,'',(SELECT COALESCE(MAX(sort_order),-1)+1 FROM episodes),?)",params![title,now()]).map_err(|e|e.to_string())?;let eid=c.last_insert_rowid();
- for (i,scene) in scenes.iter().enumerate(){
-  c.execute("INSERT INTO scenes(episode_id,title,description,sort_order,created_at) VALUES(?,?,?,?,?)",params![eid,format!("scene{:03}",i+1),strv(scene,"description")?,i as i64,now()]).map_err(|e|e.to_string())?;
-  save_script_scene(c,c.last_insert_rowid(),scene)?;
+ for (i,clip) in clips.iter().enumerate(){
+  let id=insert_script_clip(c,eid,i,clip)?;
+  save_script_clip(c,id,clip)?;
  }
  c.execute("INSERT INTO settings(key,value) VALUES('script_publication',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[json!({"draft":draft,"episode_id":eid}).to_string()]).map_err(|e|e.to_string())?;Ok(json!({"episode_id":eid}))
 }
@@ -666,7 +967,7 @@ fn manage_media(s:&AppState,v:&Value,delete:bool)->Result<Value,String>{
  }else{let name=strv(v,"name")?;if name.trim().is_empty(){return Err("名称不能为空".into())}tx.execute("UPDATE media SET name=? WHERE id=?",params![name.trim(),id]).map_err(|e|e.to_string())?;}
  tx.commit().map_err(|e|e.to_string())?;Ok(json!({"ok":true}))
 }
-fn dispatch(state:&AppState,method:String,path:String,payload:Option<Value>)->Result<Value,String>{let v=payload.unwrap_or(Value::Null);if method=="POST" && ["/canvas/load","/canvas/save"].contains(&path.as_str()){let _lock=state.guard.lock().map_err(|_|"本地数据锁不可用")?;return canvas::command(state,&v,path=="/canvas/save")}if method=="POST" && ["/editor/projects","/editor/save"].contains(&path.as_str()){let _lock=state.guard.lock().map_err(|_|"本地数据锁不可用")?;return editor::projects(state,&v,path=="/editor/save")}if method=="POST" && path=="/media/audio-waveform"{return audio_waveform::get(state,&v)}if method=="POST" && path=="/media/trim-video"{return editor::trim_video(state,&v)}if method=="POST" && ["/media/extract-audio","/media/trim-audio"].contains(&path.as_str()){return editor::process_audio(state,&v,path=="/media/extract-audio")}if method=="POST" && path=="/editor/probe"{return editor::command(state,&v,false)}if method=="POST" && path=="/editor/export"{return editor::command(state,&v,true)}if method=="POST" && path=="/storyboard/validate"{return storyboard::validate(state,&v)}if method=="POST" && path=="/storyboard/generate"{return storyboard::generate(state,&v)}if method=="POST" && path=="/storyboard/plan"{return storyboard::plan(state,&v)}if method=="POST" && path=="/speech/transcribe"{return asr::transcribe(state,&v)}if method=="POST" && path=="/speech/synthesize"{return tts::synthesize(state,&v)}if method=="POST" && path=="/prompts/optimize"{return optimize_prompt(state,&v)}if method=="POST" && ["/generations/image","/generations/video","/generations/tts","/generations/asr","/episodes/merge"].contains(&path.as_str()){return tracked_generation(state,&path,&v)}if method=="POST" && path=="/media/create-svg"{return svg::create(state,&v)}if method=="POST" && path=="/media/thumbnail" {return thumbnails::get(state,&v)}if method=="POST" && path=="/media/video-frame" {return video_frame(state,&v)}let _lock=state.guard.lock().map_err(|_|"本地数据锁不可用")?;match(method.as_str(),path.as_str()){("POST","/project/changes")=>snapshot_changes(state,&strv(&v,"id")?,&v["revisions"]),
+fn dispatch(state:&AppState,method:String,path:String,payload:Option<Value>)->Result<Value,String>{let v=payload.unwrap_or(Value::Null);if method=="POST" && ["/canvas/load","/canvas/save"].contains(&path.as_str()){let _lock=state.guard.lock().map_err(|_|"本地数据锁不可用")?;return canvas::command(state,&v,path=="/canvas/save")}if method=="POST" && ["/editor/projects","/editor/save"].contains(&path.as_str()){let _lock=state.guard.lock().map_err(|_|"本地数据锁不可用")?;return editor::projects(state,&v,path=="/editor/save")}if method=="POST" && path=="/media/audio-waveform"{return audio_waveform::get(state,&v)}if method=="POST" && path=="/media/trim-video"{return editor::trim_video(state,&v)}if method=="POST" && ["/media/extract-audio","/media/trim-audio"].contains(&path.as_str()){return editor::process_audio(state,&v,path=="/media/extract-audio")}if method=="POST" && path=="/editor/probe"{return editor::command(state,&v,false)}if method=="POST" && path=="/editor/export"{return editor::command(state,&v,true)}if method=="POST" && path=="/storyboard/validate"{return storyboard::validate(state,&v)}if method=="POST" && path=="/storyboard/generate"{return storyboard::generate(state,&v)}if method=="POST" && path=="/storyboard/plan"{return storyboard::plan(state,&v)}if method=="POST" && path=="/speech/transcribe"{return asr::transcribe(state,&v)}if method=="POST" && path=="/speech/synthesize"{return tts::synthesize(state,&v)}if method=="POST" && path=="/prompts/optimize"{return optimize_prompt(state,&v)}if method=="POST" && ["/generations/image","/generations/video","/generations/scene-video","/generations/tts","/generations/asr","/episodes/merge"].contains(&path.as_str()){return tracked_generation(state,&path,&v)}if method=="POST" && path=="/media/create-svg"{return svg::create(state,&v)}if method=="POST" && path=="/media/thumbnail" {return thumbnails::get(state,&v)}if method=="POST" && path=="/media/video-frame" {return video_frame(state,&v)}if method=="POST" && path=="/tasks/resume-video"{return resume_video_job(state,&v)}if method=="POST" && path=="/generations/clip-preview"{return scene_generation::clip_preview(state,&v)}if method=="POST" && path=="/generations/scene-preview"{return scene_generation::scene_preview(state,&v)}let _lock=state.guard.lock().map_err(|_|"本地数据锁不可用")?;match(method.as_str(),path.as_str()){("POST","/project/changes")=>snapshot_changes(state,&strv(&v,"id")?,&v["revisions"]),
 ("POST","/projects/migrate")=>project_backup::relocate(state,&v),
 ("POST","/app/settings/load")=>app_settings::load(state),
 ("POST","/app/settings/save")=>app_settings::save(state,&v),
@@ -678,7 +979,7 @@ fn dispatch(state:&AppState,method:String,path:String,payload:Option<Value>)->Re
 ("POST","/media/purge")=>{let pid=project_id(&v)?;catalog::purge(&db(state,&pid)?,Path::new(&strv(&project(state,&pid)?,"path")?),intv(&v,"id")?)?;Ok(json!({"ok":true}))},
 ("POST","/storage/scan")=>{let pid=project_id(&v)?;catalog::disk_scan(&db(state,&pid)?,Path::new(&strv(&project(state,&pid)?,"path")?))},
 ("POST","/storage/cleanup")=>{let pid=project_id(&v)?;catalog::cleanup(&db(state,&pid)?,Path::new(&strv(&project(state,&pid)?,"path")?),&v)},
-("GET","/tasks")|("POST","/tasks")=>list_jobs(state,&v),("POST","/scripts/load")=>script_command(state,&v,"load"),("POST","/scripts/save")=>script_command(state,&v,"save"),("POST","/scripts/publish")=>script_command(state,&v,"publish"),("POST","/media/rename")=>manage_media(state,&v,false),("POST","/media/delete")=>manage_media(state,&v,true),("POST","/scenes/delete")=>{db(state,&project_id(&v)?)?.execute("DELETE FROM scenes WHERE id=?",[intv(&v,"id")?]).map_err(|e|e.to_string())?;Ok(json!({"ok":true}))},("POST","/scenes/delete-video")=>delete_scene_video(state,&v),("GET","/projects")=>Ok(Value::Array(registry(&state)?)),("POST","/project")=>snapshot(&state,v.get("id").and_then(Value::as_str).ok_or("缺少项目 ID")?),("POST","/projects")=>create_project(&state,&v),("POST","/projects/open")=>open_project(&state,&v),("POST","/media/import")=>import_media(&state,&v),("POST","/media/pose-reference")=>import_pose_reference(&state,&v),("POST","/media/export")=>export_media(&state,&v),("POST","/generations/image")=>generate_image(&state,&v),("POST","/generations/video")=>generate_video(&state,&v),("POST","/assets")=>insert_role(&state,&v),("POST","/assets/update")=>update_role(&state,&v),("POST","/assets/delete")=>delete_role(&state,&v),("POST","/assets/audio/save")=>manage_role_audio(state,&v,false),("POST","/assets/audio/delete")=>manage_role_audio(state,&v,true),("POST","/assets/media/add")=>add_role_media(&state,&v),("POST","/assets/media/delete")=>delete_role_media(&state,&v),("POST","/episodes")=>insert_episode(&state,&v),("POST","/episodes/update")=>update_episode(&state,&v),("POST","/episodes/reorder")=>reorder_episodes(&state,&v),("POST","/episodes/delete")=>delete_episode(&state,&v),("POST","/scenes")=>insert_scene(&state,&v),("POST","/scenes/duplicate")=>duplicate_scene(&state,&v),("POST","/scenes/update")=>update_scene(&state,&v),("POST","/scenes/reorder")=>reorder_scenes(&state,&v),("POST","/scenes/select-video")=>select_video(&state,&v),("POST","/episodes/merge")=>merge_episode(&state,&v),("POST","/prompts")=>insert_prompt(&state,&v),("POST","/prompts/update")=>update_prompt(&state,&v),("POST","/settings")=>save_settings(&state,&v),_=>Err(format!("未实现的本地命令：{method} {path}"))} }
+("GET","/tasks")|("POST","/tasks")=>list_jobs(state,&v),("POST","/scripts/load")=>script_command(state,&v,"load"),("POST","/scripts/save")=>script_command(state,&v,"save"),("POST","/scripts/publish")=>script_command(state,&v,"publish"),("POST","/media/rename")=>manage_media(state,&v,false),("POST","/media/delete")=>manage_media(state,&v,true),("POST","/clips/delete")=>{db(state,&project_id(&v)?)?.execute("DELETE FROM clips WHERE id=?",[intv(&v,"id")?]).map_err(|e|e.to_string())?;Ok(json!({"ok":true}))},("POST","/clips/delete-video")=>delete_clip_video(state,&v),("GET","/projects")=>Ok(Value::Array(registry(&state)?)),("POST","/project")=>snapshot(&state,v.get("id").and_then(Value::as_str).ok_or("缺少项目 ID")?),("POST","/projects")=>create_project(&state,&v),("POST","/projects/open")=>open_project(&state,&v),("POST","/media/import")=>import_media(&state,&v),("POST","/media/pose-reference")=>import_pose_reference(&state,&v),("POST","/media/export")=>export_media(&state,&v),("POST","/generations/image")=>generate_image(&state,&v),("POST","/generations/video")=>generate_video(&state,&v),("POST","/assets")=>insert_role(&state,&v),("POST","/assets/update")=>update_role(&state,&v),("POST","/assets/delete")=>delete_role(&state,&v),("POST","/assets/audio/save")=>manage_role_audio(state,&v,false),("POST","/assets/audio/delete")=>manage_role_audio(state,&v,true),("POST","/assets/media/add")=>add_role_media(&state,&v),("POST","/assets/media/delete")=>delete_role_media(&state,&v),("POST","/episodes")=>insert_episode(&state,&v),("POST","/episodes/update")=>update_episode(&state,&v),("POST","/episodes/reorder")=>reorder_episodes(&state,&v),("POST","/episodes/delete")=>delete_episode(&state,&v),("POST","/clips")=>insert_clip(&state,&v),("POST","/clips/duplicate")=>duplicate_clip(&state,&v),("POST","/clips/update")=>update_clip(&state,&v),("POST","/scenes")=>scenes::create(state,&v),("POST","/scenes/update")=>scenes::update(state,&v),("POST","/scenes/delete")=>scenes::delete(state,&v),("POST","/scenes/ungroup")=>scenes::ungroup(state,&v),("POST","/scenes/merge")=>scenes::merge(state,&v),("POST","/scenes/reorder")=>scenes::reorder(state,&v),("POST","/scenes/select-video")=>scenes::select_video(state,&v),("POST","/scenes/delete-video")=>scenes::delete_video(state,&v),("POST","/clips/reorder")=>reorder_clips(&state,&v),("POST","/clips/select-video")=>select_clip_video(&state,&v),("POST","/episodes/merge")=>merge_episode(&state,&v),("POST","/prompts")=>insert_prompt(&state,&v),("POST","/prompts/update")=>update_prompt(&state,&v),("POST","/settings")=>save_settings(&state,&v),_=>Err(format!("未实现的本地命令：{method} {path}"))} }
 
 #[cfg(test)]
 mod task_project_tests {
@@ -729,18 +1030,18 @@ mod merge_output_size_tests {
 mod standalone_video_tests {
  use super::*;
  #[test]
- fn video_generation_accepts_no_scene_and_still_validates_supplied_scene() {
+ fn video_generation_accepts_no_clip_and_still_validates_supplied_clip() {
   let root=std::env::temp_dir().join(format!("spielberg-video-tab-test-{}",Uuid::new_v4()));
   storage::initialize_root(&root).unwrap();
   let state=AppState{root:root.clone(),guard:std::sync::Arc::new(Mutex::new(()))};
   let project=create_project(&state,&json!({"name":"Standalone video"})).unwrap();
   let mut payload=json!({"project_id":project["id"],"prompt":"A moving camera","operation":"t2v"});
-  // Reaching service configuration proves an empty project needs no scene.
+  // Reaching service configuration proves an empty project needs no clip.
   let error=generate_video(&state,&payload).unwrap_err();
   assert!(error.contains("配置视频生成"),"{error}");
-  payload["scene_id"]=json!(999);
-  assert_eq!(generate_video(&state,&payload).unwrap_err(),"场景不存在");
-  payload["scene_id"]=Value::Null;
+  payload["clip_id"]=json!(999);
+  assert_eq!(generate_video(&state,&payload).unwrap_err(),"片段不存在");
+  payload["clip_id"]=Value::Null;
   payload["video_mode"]=json!("fl2v");
   assert_eq!(generate_video(&state,&payload).unwrap_err(),"请选择首帧");
   payload["video_mode"]=json!("i2v");
@@ -853,67 +1154,67 @@ mod native_video_tests {
 mod script_edit_tests {
  use super::*;
  #[test]
- fn insert_scene_before_and_after_preserves_order() {
+ fn insert_clip_before_and_after_preserves_order() {
   let root=std::env::temp_dir().join(format!("spielberg-insert-test-{}",Uuid::new_v4()));
   storage::initialize_root(&root).unwrap();
   let state=AppState{root:root.clone(),guard:std::sync::Arc::new(Mutex::new(()))};
   let project=create_project(&state,&json!({"name":"Insert fixture"})).unwrap();let pid=project["id"].as_str().unwrap();
   let ep=insert_episode(&state,&json!({"project_id":pid,"title":"Episode"})).unwrap();
-  let first=insert_scene(&state,&json!({"project_id":pid,"episode_id":ep["id"],"title":"first"})).unwrap();
-  let last=insert_scene(&state,&json!({"project_id":pid,"episode_id":ep["id"],"title":"last"})).unwrap();
-  let before=insert_scene(&state,&json!({"project_id":pid,"episode_id":ep["id"],"title":"before","anchor_scene_id":first["id"],"position":"before"})).unwrap();
-  let after=insert_scene(&state,&json!({"project_id":pid,"episode_id":ep["id"],"title":"after","anchor_scene_id":first["id"],"position":"after"})).unwrap();
-  let c=db(&state,pid).unwrap();let mut q=c.prepare("SELECT id,sort_order FROM scenes ORDER BY sort_order,id").unwrap();
+  let first=insert_clip(&state,&json!({"project_id":pid,"episode_id":ep["id"],"title":"first"})).unwrap();
+  let last=insert_clip(&state,&json!({"project_id":pid,"episode_id":ep["id"],"title":"last"})).unwrap();
+  let before=insert_clip(&state,&json!({"project_id":pid,"episode_id":ep["id"],"title":"before","anchor_clip_id":first["id"],"position":"before"})).unwrap();
+  let after=insert_clip(&state,&json!({"project_id":pid,"episode_id":ep["id"],"title":"after","anchor_clip_id":first["id"],"position":"after"})).unwrap();
+  let c=db(&state,pid).unwrap();let mut q=c.prepare("SELECT id,sort_order FROM clips ORDER BY sort_order,id").unwrap();
   let rows=q.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,i64>(1)?))).unwrap().collect::<Result<Vec<_>,_>>().unwrap();
   assert_eq!(rows,vec![(before["id"].as_i64().unwrap(),0),(first["id"].as_i64().unwrap(),1),(after["id"].as_i64().unwrap(),2),(last["id"].as_i64().unwrap(),3)]);
-  assert!(insert_scene(&state,&json!({"project_id":pid,"episode_id":ep["id"],"title":"invalid","anchor_scene_id":99999,"position":"before"})).is_err());
+  assert!(insert_clip(&state,&json!({"project_id":pid,"episode_id":ep["id"],"title":"invalid","anchor_clip_id":99999,"position":"before"})).is_err());
   drop(q);drop(c);fs::remove_dir_all(root).unwrap();
  }
 
  #[test]
- fn duplicate_scene_preserves_content_without_videos() {
+ fn duplicate_clip_preserves_content_without_videos() {
   let root=std::env::temp_dir().join(format!("spielberg-copy-test-{}",Uuid::new_v4()));
   storage::initialize_root(&root).unwrap();
   let state=AppState{root:root.clone(),guard:std::sync::Arc::new(Mutex::new(()))};
   let project=create_project(&state,&json!({"name":"Copy fixture"})).unwrap();let pid=project["id"].as_str().unwrap();
   let ep=insert_episode(&state,&json!({"project_id":pid,"title":"Episode"})).unwrap();
-  let source=insert_scene(&state,&json!({"project_id":pid,"episode_id":ep["id"],"title":"场景 1","description":"Description","prompt":"Prompt"})).unwrap();let id=source["id"].as_i64().unwrap();
+  let source=insert_clip(&state,&json!({"project_id":pid,"episode_id":ep["id"],"title":"片段 1","description":"Description","prompt":"Prompt"})).unwrap();let id=source["id"].as_i64().unwrap();
   let c=db(&state,pid).unwrap();
   for kind in ["image","video","video"] {c.execute("INSERT INTO media(name,path,kind,created_at) VALUES(?,?,?,?)",params![kind,kind,kind,now()]).unwrap();}
-  c.execute("UPDATE scenes SET first_media_id=1,last_media_id=1,reference_media_id=1,video_media_id=3 WHERE id=?",[id]).unwrap();
-  attach_video(&c,id,2).unwrap();attach_video(&c,id,3).unwrap();
-  c.execute("INSERT INTO scene_options VALUES(?,?)",params![id,r#"{"duration":10,"reference_media_ids":[1]}"#]).unwrap();
-  c.execute("INSERT INTO scene_scripts VALUES(?,?)",params![id,r#"{"description":"Script"}"#]).unwrap();drop(c);
-  let copy=duplicate_scene(&state,&json!({"project_id":pid,"id":id})).unwrap();let copied=copy["id"].as_i64().unwrap();assert_ne!(id,copied);
-  let saved=snapshot(&state,pid).unwrap();let scenes=saved["episodes"][0]["scenes"].as_array().unwrap();assert_eq!(scenes.len(),2);
-  for key in ["description","prompt","first_media_id","last_media_id","reference_media_id","generation_options","script"] {assert_eq!(scenes[0][key],scenes[1][key],"{key}");}
-  assert_eq!(scenes[1]["title"],"场景 1（副本）");assert_eq!(scenes[1]["sort_order"],1);
-  assert!(scenes[1]["video_media_id"].is_null());assert!(scenes[1]["video_media"].is_null());
-  let c=db(&state,pid).unwrap();assert_eq!(scene_videos(&c,id).unwrap().len(),2);assert!(scene_videos(&c,copied).unwrap().is_empty());assert_eq!(scenes[0]["video_media_id"],3);
-  assert!(duplicate_scene(&state,&json!({"project_id":pid,"id":-1})).is_err());
+  c.execute("UPDATE clips SET first_media_id=1,last_media_id=1,reference_media_id=1,video_media_id=3 WHERE id=?",[id]).unwrap();
+  attach_clip_video(&c,id,2).unwrap();attach_clip_video(&c,id,3).unwrap();
+  c.execute("INSERT INTO clip_options VALUES(?,?)",params![id,r#"{"duration":10,"reference_media_ids":[1]}"#]).unwrap();
+  c.execute("INSERT INTO clip_scripts VALUES(?,?)",params![id,r#"{"description":"Script"}"#]).unwrap();drop(c);
+  let copy=duplicate_clip(&state,&json!({"project_id":pid,"id":id})).unwrap();let copied=copy["id"].as_i64().unwrap();assert_ne!(id,copied);
+  let saved=snapshot(&state,pid).unwrap();let clips=saved["episodes"][0]["clips"].as_array().unwrap();assert_eq!(clips.len(),2);
+  for key in ["description","prompt","first_media_id","last_media_id","reference_media_id","generation_options","script"] {assert_eq!(clips[0][key],clips[1][key],"{key}");}
+  assert_eq!(clips[1]["title"],"片段 1（副本）");assert_eq!(clips[1]["sort_order"],1);
+  assert!(clips[1]["video_media_id"].is_null());assert!(clips[1]["video_media"].is_null());
+  let c=db(&state,pid).unwrap();assert_eq!(clip_videos(&c,id).unwrap().len(),2);assert!(clip_videos(&c,copied).unwrap().is_empty());assert_eq!(clips[0]["video_media_id"],3);
+  assert!(duplicate_clip(&state,&json!({"project_id":pid,"id":-1})).is_err());
   fs::remove_dir_all(root).unwrap();
  }
 
  #[test]
- fn scene_prompt_is_persisted_and_optional_updates_preserve_it() {
+ fn clip_prompt_is_persisted_and_optional_updates_preserve_it() {
   let root=std::env::temp_dir().join(format!("spielberg-prompt-test-{}",Uuid::new_v4()));
   storage::initialize_root(&root).unwrap();
   let state=AppState{root:root.clone(),guard:std::sync::Arc::new(Mutex::new(()))};
   let project=create_project(&state,&json!({"name":"Prompt fixture"})).unwrap();let pid=project["id"].as_str().unwrap();
   let ep=insert_episode(&state,&json!({"project_id":pid,"title":"Episode"})).unwrap();
-  let scene=insert_scene(&state,&json!({"project_id":pid,"episode_id":ep["id"],"title":"Scene","description":"Manual","prompt":"Generated"})).unwrap();
-  assert_eq!(scene["prompt"],"Generated");
-  let mut update=json!({"project_id":pid,"id":scene["id"],"title":"Scene","description":"Manual edit"});
-  update_scene(&state,&update).unwrap();
-  assert_eq!(snapshot(&state,pid).unwrap()["episodes"][0]["scenes"][0]["prompt"],"Generated");
+  let clip=insert_clip(&state,&json!({"project_id":pid,"episode_id":ep["id"],"title":"Scene","description":"Manual","prompt":"Generated"})).unwrap();
+  assert_eq!(clip["prompt"],"Generated");
+  let mut update=json!({"project_id":pid,"id":clip["id"],"title":"Scene","description":"Manual edit"});
+  update_clip(&state,&update).unwrap();
+  assert_eq!(snapshot(&state,pid).unwrap()["episodes"][0]["clips"][0]["prompt"],"Generated");
   let before=snapshot(&state,pid).unwrap();
-  update["prompt"]=json!("Optimized video prompt");update_scene(&state,&update).unwrap();
+  update["prompt"]=json!("Optimized video prompt");update_clip(&state,&update).unwrap();
   let changes=snapshot_changes(&state,pid,&before["revisions"]).unwrap();
-  assert_eq!(changes["episodes"][0]["scenes"][0]["prompt"],"Optimized video prompt");
+  assert_eq!(changes["episodes"][0]["clips"][0]["prompt"],"Optimized video prompt");
   let reopened=AppState{root:root.clone(),guard:std::sync::Arc::new(Mutex::new(()))};
-  assert_eq!(snapshot(&reopened,pid).unwrap()["episodes"][0]["scenes"][0]["prompt"],"Optimized video prompt");
-  update["prompt"]=json!("");update_scene(&state,&update).unwrap();
-  let saved=snapshot(&state,pid).unwrap();assert_eq!(saved["episodes"][0]["scenes"][0]["prompt"],"");assert_eq!(saved["episodes"][0]["scenes"][0]["description"],"Manual edit");
+  assert_eq!(snapshot(&reopened,pid).unwrap()["episodes"][0]["clips"][0]["prompt"],"Optimized video prompt");
+  update["prompt"]=json!("");update_clip(&state,&update).unwrap();
+  let saved=snapshot(&state,pid).unwrap();assert_eq!(saved["episodes"][0]["clips"][0]["prompt"],"");assert_eq!(saved["episodes"][0]["clips"][0]["description"],"Manual edit");
   fs::remove_dir_all(root).unwrap();
  }
 
@@ -923,39 +1224,39 @@ mod script_edit_tests {
   storage::initialize_root(&root).unwrap();
   let state=AppState{root:root.clone(),guard:std::sync::Arc::new(Mutex::new(()))};
   let project=create_project(&state,&json!({"name":"Script fixture"})).unwrap();let pid=project["id"].as_str().unwrap();
-  let draft=json!({"title":"Original","scenes":[{"id":"a","mode":"fl2v","description":"One","first":"Start","last":"End","reference":"Ref"},{"id":"b","mode":"i2v","description":"Two","references":["Image one","Image two"]}]});
+  let draft=json!({"title":"Original","clips":[{"id":"a","mode":"fl2v","description":"One","first":"Start","last":"End","reference":"Ref"},{"id":"b","mode":"i2v","description":"Two","references":["Image one","Image two"]}]});
   script_command(&state,&json!({"project_id":pid,"draft":draft}),"save").unwrap();
   let published=script_command(&state,&json!({"project_id":pid,"draft":draft}),"publish").unwrap();let eid=published["episode_id"].as_i64().unwrap();
   assert_eq!(script_command(&state,&json!({"project_id":pid,"draft":draft}),"publish").unwrap()["episode_id"],eid);
   let c=db(&state,pid).unwrap();
-  let ids={let mut q=c.prepare("SELECT id FROM scenes WHERE episode_id=? ORDER BY sort_order").unwrap();q.query_map([eid],|r|r.get::<_,i64>(0)).unwrap().collect::<Result<Vec<_>,_>>().unwrap()};
-  assert_eq!(scene_script(&c,ids[0]).unwrap()["first"],"Start");
-  assert_eq!(scene_script(&c,ids[0]).unwrap()["references"],json!(["Ref"]));
-  assert_eq!(scene_script(&c,ids[1]).unwrap()["references"],json!(["Image one","Image two"]));
+  let ids={let mut q=c.prepare("SELECT id FROM clips WHERE episode_id=? ORDER BY sort_order").unwrap();q.query_map([eid],|r|r.get::<_,i64>(0)).unwrap().collect::<Result<Vec<_>,_>>().unwrap()};
+  assert_eq!(clip_script(&c,ids[0]).unwrap()["first"],"Start");
+  assert_eq!(clip_script(&c,ids[0]).unwrap()["references"],json!(["Ref"]));
+  assert_eq!(clip_script(&c,ids[1]).unwrap()["references"],json!(["Image one","Image two"]));
   c.execute("INSERT INTO media(name,path,kind,created_at) VALUES('Asset','fixture.png','image','1')",[]).unwrap();let mid=c.last_insert_rowid();
-  c.execute("UPDATE scenes SET first_media_id=?,video_media_id=? WHERE id=?",params![mid,mid,ids[0]]).unwrap();
+  c.execute("UPDATE clips SET first_media_id=?,video_media_id=? WHERE id=?",params![mid,mid,ids[0]]).unwrap();
   c.execute("UPDATE episodes SET description='Keep description',cover_media_id=?,storyboard='{}' WHERE id=?",params![mid,eid]).unwrap();
-  c.execute("UPDATE scene_options SET value=? WHERE scene_id=?",params![json!({"duration":12,"aspect_ratio":"9:16","reference_media_ids":[mid]}).to_string(),ids[0]]).unwrap();
-  let edited=json!({"title":"Edited","scenes":[{"id":"a","scene_id":ids[0],"mode":"i2v","description":"Updated","first":"Start","last":"End","reference":"New ref","references":["New ref","Second ref","Third ref"]},{"id":"c","mode":"fl2v","description":"Added"}]});
+  c.execute("UPDATE clip_options SET value=? WHERE clip_id=?",params![json!({"duration":12,"aspect_ratio":"9:16","reference_media_ids":[mid]}).to_string(),ids[0]]).unwrap();
+  let edited=json!({"title":"Edited","clips":[{"id":"a","clip_id":ids[0],"mode":"i2v","description":"Updated","first":"Start","last":"End","reference":"New ref","references":["New ref","Second ref","Third ref"]},{"id":"c","mode":"fl2v","description":"Added"}]});
   let saved=script_command(&state,&json!({"project_id":pid,"episode_id":eid,"draft":edited}),"publish").unwrap();
-  assert_eq!(saved["draft"]["scenes"][0]["scene_id"],ids[0]);
-  assert_eq!(scene_script(&c,ids[0]).unwrap()["references"],json!(["New ref","Second ref","Third ref"]));
-  assert_eq!(scene_script(&c,ids[0]).unwrap()["reference"],"New ref");
-  let asset:(i64,i64)=c.query_row("SELECT first_media_id,video_media_id FROM scenes WHERE id=?",[ids[0]],|r|Ok((r.get(0)?,r.get(1)?))).unwrap();assert_eq!(asset,(mid,mid));
-  assert_eq!(c.query_row("SELECT COUNT(*) FROM scenes WHERE id=?",[ids[1]],|r|r.get::<_,i64>(0)).unwrap(),0);
-  let options:Value=serde_json::from_str(&c.query_row("SELECT value FROM scene_options WHERE scene_id=?",[ids[0]],|r|r.get::<_,String>(0)).unwrap()).unwrap();
+  assert_eq!(saved["draft"]["clips"][0]["clip_id"],ids[0]);
+  assert_eq!(clip_script(&c,ids[0]).unwrap()["references"],json!(["New ref","Second ref","Third ref"]));
+  assert_eq!(clip_script(&c,ids[0]).unwrap()["reference"],"New ref");
+  let asset:(i64,i64)=c.query_row("SELECT first_media_id,video_media_id FROM clips WHERE id=?",[ids[0]],|r|Ok((r.get(0)?,r.get(1)?))).unwrap();assert_eq!(asset,(mid,mid));
+  assert_eq!(c.query_row("SELECT COUNT(*) FROM clips WHERE id=?",[ids[1]],|r|r.get::<_,i64>(0)).unwrap(),0);
+  let options:Value=serde_json::from_str(&c.query_row("SELECT value FROM clip_options WHERE clip_id=?",[ids[0]],|r|r.get::<_,String>(0)).unwrap()).unwrap();
   assert_eq!(options["video_mode"],"i2v");assert_eq!(options["duration"],12);assert_eq!(options["reference_media_ids"],json!([mid]));assert_eq!(options["first"],false);
   assert_eq!(c.query_row("SELECT description FROM episodes WHERE id=?",[eid],|r|r.get::<_,String>(0)).unwrap(),"Keep description");
   assert_eq!(script_command(&state,&json!({"project_id":pid}),"load").unwrap(),draft);
   assert_eq!(script_command(&state,&json!({"project_id":pid,"episode_id":eid}),"load").unwrap(),saved["draft"]);
   script_command(&state,&json!({"project_id":pid,"episode_id":eid,"draft":saved["draft"]}),"publish").unwrap();
-  assert_eq!(c.query_row("SELECT COUNT(*) FROM scenes WHERE episode_id=?",[eid],|r|r.get::<_,i64>(0)).unwrap(),2);
+  assert_eq!(c.query_row("SELECT COUNT(*) FROM clips WHERE episode_id=?",[eid],|r|r.get::<_,i64>(0)).unwrap(),2);
   let other=insert_episode(&state,&json!({"project_id":pid,"title":"Other"})).unwrap();
-  let alien=insert_scene(&state,&json!({"project_id":pid,"episode_id":other["id"],"title":"Foreign"})).unwrap();
-  let bad=json!({"title":"Should roll back","scenes":[{"scene_id":ids[0],"description":"Should roll back"},{"scene_id":alien["id"],"description":"Foreign"}]});
+  let alien=insert_clip(&state,&json!({"project_id":pid,"episode_id":other["id"],"title":"Foreign"})).unwrap();
+  let bad=json!({"title":"Should roll back","clips":[{"clip_id":ids[0],"description":"Should roll back"},{"clip_id":alien["id"],"description":"Foreign"}]});
   assert!(script_command(&state,&json!({"project_id":pid,"episode_id":eid,"draft":bad}),"publish").is_err());
   assert_eq!(c.query_row("SELECT title FROM episodes WHERE id=?",[eid],|r|r.get::<_,String>(0)).unwrap(),"Edited");
-  assert_eq!(c.query_row("SELECT description FROM scenes WHERE id=?",[ids[0]],|r|r.get::<_,String>(0)).unwrap(),"Updated");
+  assert_eq!(c.query_row("SELECT description FROM clips WHERE id=?",[ids[0]],|r|r.get::<_,String>(0)).unwrap(),"Updated");
   drop(c);fs::remove_dir_all(root).unwrap();
  }
 }
@@ -1038,12 +1339,17 @@ mod role_audio_tests {
   let root=std::env::temp_dir().join(format!("spielberg-role-audio-{}",Uuid::new_v4()));
   storage::initialize_root(&root).unwrap();
   let state=AppState{root:root.clone(),guard:std::sync::Arc::new(Mutex::new(()))};
-  let project=create_project(&state,&json!({"name":"Audio"})).unwrap();let pid=project["id"].as_str().unwrap();
-  let role=insert_role(&state,&json!({"project_id":pid,"name":"Hero"})).unwrap();let rid=role["id"].as_i64().unwrap();
-  let c=db(&state,pid).unwrap();
+  let pid="legacy-audio";
+  let path=root.join(pid);
+  fs::create_dir_all(&path).unwrap();
+  save_registry(&state,&[json!({"id":pid,"name":"Audio","path":path})]).unwrap();
+  let c=storage::open_database(&path).unwrap();
+  migrate_to(&c,12).unwrap();
+  c.execute("INSERT INTO roles(name,created_at) VALUES('Hero','1')",[]).unwrap();
+  let rid=c.last_insert_rowid();
   c.execute_batch("INSERT INTO media(id,name,path,kind,created_at) VALUES(1,'one.wav','/one.wav','audio','1'),(2,'two.mp3','/two.mp3','audio','2'),(3,'image.png','/image.png','image','3');").unwrap();
   // Simulate opening an existing project before audio references were introduced.
-  c.execute_batch("DROP TABLE role_audio; PRAGMA user_version=12;").unwrap();drop(c);
+  c.execute_batch("DROP TABLE role_audio;").unwrap();drop(c);
   for (id,name) in [(1,"平静"),(2,"激动")] {manage_role_audio(&state,&json!({"project_id":pid,"asset_id":rid,"media_id":id,"name":name}),false).unwrap();}
   let c=db(&state,pid).unwrap();assert_eq!(role_audios(&c,rid).unwrap().len(),2);
   assert!(manage_role_audio(&state,&json!({"project_id":pid,"asset_id":rid,"media_id":3,"name":"图片"}),false).is_err());
@@ -1067,7 +1373,7 @@ mod role_enablement_tests {
  fn legacy_roles_default_to_enabled() {
   let c=Connection::open_in_memory().unwrap();
   c.execute_batch("CREATE TABLE roles(id INTEGER PRIMARY KEY,name TEXT); INSERT INTO roles VALUES(1,'原角色'); CREATE TABLE revisions(section TEXT PRIMARY KEY,version INTEGER); INSERT INTO revisions VALUES('roles',3); PRAGMA user_version=13;").unwrap();
-  migrate(&c).unwrap();migrate(&c).unwrap();
+  migrate_to(&c,16).unwrap();migrate_to(&c,16).unwrap();
   assert!(c.query_row("SELECT enabled FROM assets WHERE id=1",[],|r|r.get::<_,bool>(0)).unwrap());
   assert_eq!(catalog::revisions(&c).unwrap()["assets"],5);
   assert_eq!(c.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),16);
@@ -1142,7 +1448,7 @@ mod creative_asset_categories_tests {
  fn legacy_assets_keep_status_and_image_links_when_defaulting_to_people() {
   let c=Connection::open_in_memory().unwrap();
   c.execute_batch("CREATE TABLE roles(id INTEGER PRIMARY KEY,name TEXT,enabled INTEGER,design_media_id INTEGER); INSERT INTO roles VALUES(1,'旧角色',0,7); CREATE TABLE role_media(role_id INTEGER,media_id INTEGER); INSERT INTO role_media VALUES(1,7); CREATE TABLE revisions(section TEXT PRIMARY KEY,version INTEGER); INSERT INTO revisions VALUES('roles',3); PRAGMA user_version=14;").unwrap();
-  migrate(&c).unwrap();migrate(&c).unwrap();
+  migrate_to(&c,16).unwrap();migrate_to(&c,16).unwrap();
   let saved=c.query_row("SELECT name,enabled,design_media_id,category FROM assets WHERE id=1",[],|r|Ok((r.get::<_,String>(0)?,r.get::<_,bool>(1)?,r.get::<_,i64>(2)?,r.get::<_,String>(3)?))).unwrap();
   assert_eq!(saved,("旧角色".into(),false,7,"person".into()));
   assert_eq!(c.query_row("SELECT media_id FROM role_media WHERE role_id=1",[],|r|r.get::<_,i64>(0)).unwrap(),7);

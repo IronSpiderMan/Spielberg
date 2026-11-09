@@ -117,8 +117,8 @@ const ScreenplayManager = forwardRef<ScreenplayEditorHandle, Props>(function Scr
     link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const copyBoardToTable = () => {
-    if (!board?.scenes.length || busy) return;
-    const next = board.scenes.flatMap(scene => scene.shots.map(shot => ({
+    if (!board?.clips.length || busy) return;
+    const next = board.clips.flatMap(scene => scene.shots.map(shot => ({
       ...newShot(""),
       size: [...shotSizes].sort((a, b) => b.length - a.length).find(size => shot.camera.includes(size)) || "中景",
       camera: cameraMoves.find(camera => shot.camera.includes(camera)) || "固定",
@@ -131,9 +131,9 @@ const ScreenplayManager = forwardRef<ScreenplayEditorHandle, Props>(function Scr
   };
   return <section className="screenplay-page episode-single-script">
     {format === "csv" && <details className="episode-storyboard-tools">
-      <summary>AI 分镜与场景制作{board?.scenes.length ? ` · ${board.scenes.length} 个场景` : ""}</summary>
+      <summary>AI 分镜与片段制作{board?.clips.length ? ` · ${board.clips.length} 个片段` : ""}</summary>
       <div className="episode-storyboard-body">
-        {!!board?.scenes.length && <Button disabled={busy} onClick={copyBoardToTable}>转为分镜表</Button>}
+        {!!board?.clips.length && <Button disabled={busy} onClick={copyBoardToTable}>转为分镜表</Button>}
         <p className="subtle">使用本集剧本生成分镜；编辑完成后统一点击顶部「保存」。</p>
         <StoryboardEditor data={data} episodeId={episodeId} script={state.drafts.markdown.content} onScript={() => {}} readOnlySource board={board} onChange={onBoard} onBusy={onBoardBusy} reload={reload} disabled={busy} />
       </div>
@@ -152,7 +152,7 @@ const ScreenplayManager = forwardRef<ScreenplayEditorHandle, Props>(function Scr
             </tr>)}
           </tbody></table>}{!csvError && !shots.length && <Empty description="添加镜头，开始编写分镜头剧本" />}</div>
           <footer className="screenplay-footer"><span>共 {shots.length} 个镜头 · {shots.filter(shot => shot.picture).length} 个已配画面</span><span>画面可从素材、资产或本地文件添加</span></footer>
-        </> : <MarkdownEditor value={draft.content} onChange={content => editContent("markdown", content)} disabled={busy} mentions={mentions} screenplay template={template} onExport={exportDocument} label="Markdown 剧本内容" previewLabel="剧本实时预览" placeholder="输入剧本，使用 @ 引用资产、场景或提示词…" />}
+        </> : <MarkdownEditor value={draft.content} onChange={content => editContent("markdown", content)} disabled={busy} mentions={mentions} screenplay template={template} onExport={exportDocument} label="Markdown 剧本内容" previewLabel="剧本实时预览" placeholder="输入剧本，使用 @ 引用资产、片段或提示词…" />}
     </div></div>
   </section>;
 });

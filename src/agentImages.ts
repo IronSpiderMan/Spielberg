@@ -16,7 +16,7 @@ export function toolMedia(message: ImageMessage, currentMedia: Map<number, Media
   }
   if (["running", "failed", "skipped", "cancelled"].includes(message.status || "") || !message.arguments || typeof message.arguments !== "object") return [];
   const args = message.arguments as Record<string, unknown>;
-  const output = message.tool_name === "app_action" && ["generations/image", "generations/video", "generations/tts", "media/create-svg"].includes(String(args.operation));
+  const output = message.tool_name === "app_action" && ["generations/image", "generations/video", "generations/scene-video", "generations/tts", "media/create-svg"].includes(String(args.operation));
   if (!output) return [];
   try {
     const result = JSON.parse(message.content);

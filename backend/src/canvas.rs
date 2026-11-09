@@ -34,8 +34,8 @@ pub fn install_scenes(c: &Connection) -> Result<(), String> {
     }
     Ok(())
 }
-fn load(c: &Connection, scene:i64) -> Result<Value, String> {
-    c.query_row("SELECT draft,revision FROM scene_canvases WHERE scene_id=?", [scene], |r| Ok((r.get::<_,String>(0)?,r.get::<_,i64>(1)?)))
+fn load(c: &Connection, clip:i64) -> Result<Value, String> {
+    c.query_row("SELECT draft,revision FROM clip_canvases WHERE clip_id=?", [clip], |r| Ok((r.get::<_,String>(0)?,r.get::<_,i64>(1)?)))
         .optional().map_err(|e|e.to_string())?.map(|(draft,revision)| {
             let mut draft=serde_json::from_str::<Value>(&draft).map_err(|e|e.to_string())?;
             normalize_asset_nodes(&mut draft);
@@ -45,7 +45,8 @@ fn load(c: &Connection, scene:i64) -> Result<Value, String> {
 }
 pub(super) fn normalize_asset_nodes(draft: &mut Value) {
     if let Some(nodes)=draft.get_mut("nodes").and_then(Value::as_array_mut) {
-        for node in nodes { if node["kind"]=="role" { node["kind"]=json!("asset"); } }
+        for node in nodes { if node["kind"]=="role" { node["kind"]=json!("asset"); }
+            if node["kind"]=="scene" { node["kind"]=json!("clip"); } }
     }
 }
 fn validate(c: &Connection, draft: &Value) -> Result<HashSet<i64>, String> {
@@ -68,7 +69,7 @@ fn validate(c: &Connection, draft: &Value) -> Result<HashSet<i64>, String> {
             } else if !node["ref_id"].is_null(){return Err("画布素材 ID 无效".into());}
             if let Some(prompt)=node.get("prompt"){if !prompt.as_str().is_some_and(|s|s.len()<=20_000){return Err("视频描述无效或过长".into());}}
             if let Some(duration)=node.get("duration"){if !duration.as_i64().is_some_and(|n|n==-1 || (1..=120).contains(&n)){return Err("视频时长无效".into());}}},
-            Some("scene"|"asset"|"prompt")=>{if !node["ref_id"].as_i64().is_some_and(|id|id>0){return Err("画布引用 ID 无效".into());}},
+            Some("clip"|"asset"|"prompt")=>{if !node["ref_id"].as_i64().is_some_and(|id|id>0){return Err("画布引用 ID 无效".into());}},
             Some("note")=>{if !node["text"].as_str().is_some_and(|t|t.len()<=20_000){return Err("便签内容无效或过长".into());}},
             _=>return Err("画布节点类型无效".into())
         }
@@ -92,21 +93,21 @@ fn validate(c: &Connection, draft: &Value) -> Result<HashSet<i64>, String> {
     Ok(sources)
 }
 pub fn command(s:&AppState,v:&Value,save:bool)->Result<Value,String> {
-    let pid=project_id(v)?;let mut c=db(s,&pid)?;let scene=intv(v,"scene_id")?;
-    let mode:Option<String>=c.query_row("SELECT creation_mode FROM scenes WHERE id=?",[scene],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
-    if mode.as_deref()!=Some("canvas"){return Err("画布场景不存在，请先创建画布场景".into());}
+    let pid=project_id(v)?;let mut c=db(s,&pid)?;let clip=intv(v,"clip_id")?;
+    let mode:Option<String>=c.query_row("SELECT creation_mode FROM clips WHERE id=?",[clip],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
+    if mode.as_deref()!=Some("canvas"){return Err("画布片段不存在，请先创建画布片段".into());}
     if save {
         let draft=&v["draft"]; let sources=validate(&c,draft)?;
         let revision=intv(v,"revision")?;
         let tx=c.transaction().map_err(|e|e.to_string())?;
-        let current:i64=tx.query_row("SELECT revision FROM scene_canvases WHERE scene_id=?",[scene],|r|r.get(0)).optional().map_err(|e|e.to_string())?.unwrap_or(0);
+        let current:i64=tx.query_row("SELECT revision FROM clip_canvases WHERE clip_id=?",[clip],|r|r.get(0)).optional().map_err(|e|e.to_string())?.unwrap_or(0);
         if revision!=current {return Err("画布已在其他窗口更新，请重新加载后再编辑；当前草稿可先导出保存".into());}
-        tx.execute("INSERT INTO scene_canvases VALUES(?,?,?) ON CONFLICT(scene_id) DO UPDATE SET draft=excluded.draft,revision=excluded.revision",params![scene,draft.to_string(),current+1]).map_err(|e|e.to_string())?;
-        tx.execute("DELETE FROM scene_canvas_sources WHERE scene_id=?",[scene]).map_err(|e|e.to_string())?;
-        for mid in sources {tx.execute("INSERT INTO scene_canvas_sources VALUES(?,?)",params![scene,mid]).map_err(|e|e.to_string())?;}
+        tx.execute("INSERT INTO clip_canvases VALUES(?,?,?) ON CONFLICT(clip_id) DO UPDATE SET draft=excluded.draft,revision=excluded.revision",params![clip,draft.to_string(),current+1]).map_err(|e|e.to_string())?;
+        tx.execute("DELETE FROM clip_canvas_sources WHERE clip_id=?",[clip]).map_err(|e|e.to_string())?;
+        for mid in sources {tx.execute("INSERT INTO clip_canvas_sources VALUES(?,?)",params![clip,mid]).map_err(|e|e.to_string())?;}
         tx.commit().map_err(|e|e.to_string())?;touch(s,&pid);
     }
-    load(&c,scene)
+    load(&c,clip)
 }
 
 #[cfg(test)]
@@ -119,12 +120,12 @@ mod tests {
         let ep=insert_episode(&state,&json!({"project_id":p["id"],"title":"Episode"})).unwrap();
         (state,p,ep)
     }
-    fn canvas_scene(s:&AppState,p:&Value,ep:&Value)->Value {
-        insert_scene(s,&json!({"project_id":p["id"],"episode_id":ep["id"],"title":"Canvas","creation_mode":"canvas"})).unwrap()
+    fn canvas_clip(s:&AppState,p:&Value,ep:&Value)->Value {
+        insert_clip(s,&json!({"project_id":p["id"],"episode_id":ep["id"],"title":"Canvas","creation_mode":"canvas"})).unwrap()
     }
     #[test]
     fn legacy_project_board_migrates_to_scene_without_losing_layout() {
-        let c=Connection::open_in_memory().unwrap();migrate(&c).unwrap();
+        let c=Connection::open_in_memory().unwrap();migrate_to(&c,16).unwrap();
         c.execute_batch("DROP VIEW asset_usage; DROP TABLE scene_canvas_sources; DROP TABLE scene_canvases; ALTER TABLE scenes DROP COLUMN creation_mode; PRAGMA user_version=9;").unwrap();
         catalog::install(&c).unwrap();install(&c).unwrap();
         c.execute("INSERT INTO media(id,name,path,kind,created_at) VALUES(1,'image','/image','image','1')",[]).unwrap();
@@ -134,13 +135,13 @@ mod tests {
         ]);
         c.execute("INSERT INTO canvas_board VALUES(1,?,7)",[draft.to_string()]).unwrap();c.execute("INSERT INTO canvas_sources VALUES(1)",[]).unwrap();
         migrate(&c).unwrap();migrate(&c).unwrap();
-        let id:i64=c.query_row("SELECT id FROM scenes WHERE creation_mode='canvas'",[],|r|r.get(0)).unwrap();
+        let id:i64=c.query_row("SELECT id FROM clips WHERE creation_mode='canvas'",[],|r|r.get(0)).unwrap();
         draft["nodes"][1]["kind"]=json!("asset");
         assert_eq!(load(&c,id).unwrap(),json!({"draft":draft,"revision":7}));
         assert_eq!(validate(&c,&draft).unwrap(),HashSet::from([1]));
         let uses=catalog::usages(&c,1).unwrap();assert_eq!(uses.len(),1);assert_eq!(uses[0]["target_id"],id);
         assert_eq!(c.query_row("SELECT COUNT(*) FROM canvas_board",[],|r|r.get::<_,i64>(0)).unwrap(),0);
-        assert_eq!(c.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),16);
+        assert_eq!(c.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),17);
     }
     #[test]
     fn only_media_to_video_and_acyclic_connections_are_valid() {
@@ -159,23 +160,23 @@ mod tests {
         draft["edges"]=json!([{"id":"image-edge","from":"a","to":"image-out"}]);assert!(validate(&c,&draft).is_err());
         draft["edges"]=json!([{"id":"e","from":"v","to":"i"}]);assert!(validate(&c,&draft).is_err());
         draft["edges"]=json!([{"id":"e1","from":"v","to":"out"},{"id":"e2","from":"out","to":"v"}]);assert!(validate(&c,&draft).is_err());
-        draft["nodes"].as_array_mut().unwrap().push(json!({"id":"text","kind":"note","text":"A scene","x":-400,"y":0}));
+        draft["nodes"].as_array_mut().unwrap().push(json!({"id":"text","kind":"note","text":"A clip","x":-400,"y":0}));
         draft["edges"]=json!([{"id":"text-edge","from":"text","to":"out"}]);assert!(validate(&c,&draft).is_ok());
         draft["edges"]=json!([]);draft["nodes"][0]["ref_id"]=json!(2);assert!(validate(&c,&draft).is_err());
     }
     #[test]
-    fn scenes_are_isolated_and_copy_delete_preserve_reference_integrity() {
-        let (s,p,ep)=fixture();let first=canvas_scene(&s,&p,&ep);let second=canvas_scene(&s,&p,&ep);let pid=p["id"].as_str().unwrap();
+    fn clips_are_isolated_and_copy_delete_preserve_reference_integrity() {
+        let (s,p,ep)=fixture();let first=canvas_clip(&s,&p,&ep);let second=canvas_clip(&s,&p,&ep);let pid=p["id"].as_str().unwrap();
         let c=db(&s,pid).unwrap();c.execute("INSERT INTO media(id,name,path,kind,created_at) VALUES(1,'image','/image','image','1')",[]).unwrap();drop(c);
         let mut draft=empty();draft["nodes"]=json!([{"id":"image","kind":"image","ref_id":1,"x":0,"y":0,"channel_id":"image-channel","model":"qwen-image-3.0-pro"},
             {"id":"output","kind":"video","x":500,"y":0,"channel_id":"video-channel","model":"wan3.0-video","video_mode":"t2v","duration":-1,"resolution":"1080P","audio":false}]);
-        let request=json!({"project_id":pid,"scene_id":first["id"],"revision":0,"draft":draft});
+        let request=json!({"project_id":pid,"clip_id":first["id"],"revision":0,"draft":draft});
         assert_eq!(command(&s,&request,true).unwrap()["revision"],1);assert!(command(&s,&request,true).is_err());
-        assert_eq!(command(&s,&json!({"project_id":pid,"scene_id":second["id"]}),false).unwrap()["draft"],empty());
-        let copy=duplicate_scene(&s,&json!({"project_id":pid,"id":first["id"]})).unwrap();
-        assert_eq!(command(&s,&json!({"project_id":pid,"scene_id":copy["id"]}),false).unwrap()["draft"],draft);
+        assert_eq!(command(&s,&json!({"project_id":pid,"clip_id":second["id"]}),false).unwrap()["draft"],empty());
+        let copy=duplicate_clip(&s,&json!({"project_id":pid,"id":first["id"]})).unwrap();
+        assert_eq!(command(&s,&json!({"project_id":pid,"clip_id":copy["id"]}),false).unwrap()["draft"],draft);
         let c=db(&s,pid).unwrap();assert_eq!(catalog::usages(&c,1).unwrap().len(),2);assert!(catalog::trash(&c,1).is_err());
-        c.execute("DELETE FROM scenes WHERE id IN (?,?)",params![first["id"].as_i64(),copy["id"].as_i64()]).unwrap();
+        c.execute("DELETE FROM clips WHERE id IN (?,?)",params![first["id"].as_i64(),copy["id"].as_i64()]).unwrap();
         assert!(catalog::usages(&c,1).unwrap().is_empty());catalog::trash(&c,1).unwrap();drop(c);fs::remove_dir_all(s.root).unwrap();
     }
     #[test]
@@ -185,16 +186,16 @@ mod tests {
         let api=|path:&str,value:Value|->Value{client.post(format!("{}/api/v1{path}",server.url)).json(&value).send().unwrap().error_for_status().unwrap().json::<Value>().unwrap()["data"].clone()};
         let p=api("/projects",json!({"name":"HTTP canvas"}));let pid=p["id"].as_str().unwrap();
         let ep=api(&format!("/projects/{pid}/episodes"),json!({"title":"Episode"}));
-        let path=format!("/projects/{pid}/episodes/{}/scenes",ep["id"]);
+        let path=format!("/projects/{pid}/episodes/{}/clips",ep["id"]);
         let normal=api(&path,json!({"title":"Normal"}));assert_eq!(normal["creation_mode"],"default");
-        let scene=api(&path,json!({"title":"Canvas","creation_mode":"canvas"}));assert_eq!(scene["creation_mode"],"canvas");
+        let clip=api(&path,json!({"title":"Canvas","creation_mode":"canvas"}));assert_eq!(clip["creation_mode"],"canvas");
         let mut draft=empty();draft["nodes"]=json!([{"id":"video","kind":"video","x":0,"y":0,"prompt":"Video"}]);
-        let body=json!({"project_id":pid,"scene_id":scene["id"],"revision":0,"draft":draft});
+        let body=json!({"project_id":pid,"clip_id":clip["id"],"revision":0,"draft":draft});
         assert_eq!(api("/actions/canvas/save",body.clone())["revision"],1);
-        assert_eq!(api("/actions/canvas/load",json!({"project_id":pid,"scene_id":scene["id"]}))["draft"],draft);
+        assert_eq!(api("/actions/canvas/load",json!({"project_id":pid,"clip_id":clip["id"]}))["draft"],draft);
         assert_eq!(client.post(format!("{}/api/v1/actions/canvas/save",server.url)).json(&body).send().unwrap().status(),reqwest::StatusCode::BAD_REQUEST);
-        assert_eq!(client.post(format!("{}/api/v1/actions/canvas/load",server.url)).json(&json!({"project_id":pid,"scene_id":normal["id"]})).send().unwrap().status(),reqwest::StatusCode::NOT_FOUND);
-        let snap=api("/actions/project",json!({"id":pid}));assert_eq!(snap["episodes"][0]["scenes"][1]["creation_mode"],"canvas");
+        assert_eq!(client.post(format!("{}/api/v1/actions/canvas/load",server.url)).json(&json!({"project_id":pid,"clip_id":normal["id"]})).send().unwrap().status(),reqwest::StatusCode::NOT_FOUND);
+        let snap=api("/actions/project",json!({"id":pid}));assert_eq!(snap["episodes"][0]["clips"][1]["creation_mode"],"canvas");
         drop(server);fs::remove_dir_all(root).unwrap();
     }
 }

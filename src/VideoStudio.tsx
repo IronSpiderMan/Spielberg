@@ -85,7 +85,7 @@ export function VideoStudio({ data, reload }: { data: Snapshot; reload: () => vo
 
   const generate = async () => {
     if (generating.current || importing.current || optimizing || uploadingReferences) return;
-    if (mode === "i2v" && mentions.some(item => !item.media)) return void Message.warning("引用的资产或场景尚无图片");
+    if (mode === "i2v" && mentions.some(item => !item.media)) return void Message.warning("引用的资产或片段尚无图片");
     let request: ReturnType<typeof buildVideoRequest>;
     try {
       validateGeneration(generation.choice,mode==="i2v"?"ref2v":mode,{images:mode==="i2v"?referenceIds.length:0,videos:mode==="i2v"?referenceVideos.length:0,audios:mode==="i2v"?referenceAudios.length:0,last:mode==="fl2v"&&!!last,duration});

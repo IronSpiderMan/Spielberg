@@ -195,7 +195,7 @@ mod tests {
     #[test]
     fn episode_migration_preserves_legacy_documents_and_cascades_deletion() {
         let c = Connection::open_in_memory().unwrap();
-        migrate(&c).unwrap();
+        migrate_to(&c,16).unwrap();
         c.execute_batch("DROP INDEX screenplays_episode_format; DROP TRIGGER screenplay_requires_episode_insert; DROP TRIGGER screenplay_requires_episode_update;
             DROP INDEX screenplays_episode; ALTER TABLE screenplays DROP COLUMN episode_id;
             INSERT INTO episodes(id,title,description,storyboard,sort_order,created_at) VALUES(20,'第一集','# 原剧集正文','null',0,'1');
@@ -221,7 +221,7 @@ mod tests {
 
     #[test]
     fn duplicate_legacy_drafts_are_preserved_before_enforcing_one_per_kind() {
-        let c = Connection::open_in_memory().unwrap(); migrate(&c).unwrap();
+        let c = Connection::open_in_memory().unwrap(); migrate_to(&c,16).unwrap();
         c.execute_batch("DROP INDEX screenplays_episode_format; PRAGMA user_version=11;
             INSERT INTO episodes(id,title,sort_order,created_at) VALUES(1,'第一集',0,'1');
             INSERT INTO screenplays(id,episode_id,title,content,format,created_at,updated_at) VALUES
@@ -251,7 +251,7 @@ mod tests {
     #[test]
     fn upgrades_markdown_format_with_existing_content() {
         let c = Connection::open_in_memory().unwrap();
-        migrate(&c).unwrap();
+        migrate_to(&c,16).unwrap();
         c.execute_batch("DROP VIEW asset_usage; DROP TABLE scene_canvas_sources; DROP TABLE scene_canvases; ALTER TABLE scenes DROP COLUMN prompt; ALTER TABLE scenes DROP COLUMN creation_mode;").unwrap();
         c.execute_batch("DROP TABLE screenplays; CREATE TABLE screenplays(id INTEGER PRIMARY KEY,title TEXT,content TEXT,created_at TEXT,updated_at TEXT); INSERT INTO screenplays VALUES(1,'旧剧本','# 故事','1','1'); PRAGMA user_version=5;").unwrap();
         migrate(&c).unwrap();
@@ -263,7 +263,7 @@ mod tests {
     #[test]
     fn upgrades_existing_projects_without_losing_data() {
         let mut c = Connection::open_in_memory().unwrap();
-        migrate(&c).unwrap();
+        migrate_to(&c,16).unwrap();
         c.execute("INSERT INTO prompts(name,content,created_at,updated_at) VALUES('风格','水墨','1','1')", []).unwrap();
         c.execute_batch("DROP VIEW asset_usage; DROP TABLE scene_canvas_sources; DROP TABLE scene_canvases; ALTER TABLE scenes DROP COLUMN prompt; ALTER TABLE scenes DROP COLUMN creation_mode;").unwrap();
         c.execute_batch("DROP TRIGGER revision_screenplays_insert; DROP TRIGGER revision_screenplays_update;
@@ -278,6 +278,6 @@ mod tests {
         let changes = snapshot_database(&mut c, json!({"id":"test"}), &before).unwrap();
         assert_eq!(changes["screenplays"][0]["content"], "# 标题");
         assert!(changes.get("prompts").is_none());
-        assert_eq!(c.query_row("PRAGMA user_version", [], |r| r.get::<_,i64>(0)).unwrap(), 16);
+        assert_eq!(c.query_row("PRAGMA user_version", [], |r| r.get::<_,i64>(0)).unwrap(), 17);
     }
 }

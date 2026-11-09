@@ -110,9 +110,9 @@ function EditWorkspace({data,reload,project,back}:{data:Snapshot;reload:()=>Prom
   const activeAudios=audios.filter(c=>cursor>=(c.at||0)&&cursor<(c.at||0)+length(c));
   const episode=data.episodes.find(e=>String(e.id)===episodeId);
   useEffect(()=>{if(episodeId!=="all"&&!episode)setEpisodeId("all");},[episodeId,episode]);
-  const assets:{media:Media;label:string;key:string}[]=episode?[...episode.scenes].sort((a,b)=>a.sort_order-b.sort_order||a.id-b.id).flatMap(scene=>{
+  const assets:{media:Media;label:string;key:string}[]=episode?episode.playback_units.flatMap(scene=>{
     const media=scene.video_media?.id===scene.video_media_id?scene.video_media:scene.videos?.find(m=>m.id===scene.video_media_id)||data.media.find(m=>m.id===scene.video_media_id);
-    return media?.kind==="video"?[{media,label:scene.title,key:`scene-${scene.id}`}]:[];
+    return media?.kind==="video"?[{media,label:scene.title,key:`${scene.kind}-${scene.id}`}]:[];
   }):data.media.filter(m=>m.kind==="video"||m.kind==="audio").map(media=>({media,label:media.kind==="video"?"视频 · 追加到主轨":"音频 · 添加到播放头",key:`media-${media.id}`}));
   const filtered=assets.filter(({media,label})=>(kind==="all"||media.kind===kind)&&`${media.name} ${label}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
 

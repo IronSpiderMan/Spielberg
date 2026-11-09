@@ -52,8 +52,8 @@ fn rewrite_database(c:&Connection,paths:&HashMap<String,String>,strip_secrets:bo
     screenplays::rewrite_pictures(c,paths)?;
     for (old,new) in paths { c.execute("UPDATE media SET path=? WHERE path=?",params![new,old]).map_err(|e|e.to_string())?; }
     for (table,key,columns) in [
-        ("settings","key",vec!["value"]),("scene_scripts","scene_id",vec!["value"]),
-        ("scene_options","scene_id",vec!["value"]),("generations","id",vec!["request_json","result_json"]),
+        ("settings","key",vec!["value"]),("clip_scripts","clip_id",vec!["value"]),
+        ("clip_options","clip_id",vec!["value"]),("scenes","id",vec!["generation_options"]),("generations","id",vec!["request_json","result_json"]),
         ("background_jobs","id",vec!["request_json","result_json","resume_json"]),
         ("agent_sessions","id",vec!["messages"]),
     ] {
@@ -240,10 +240,10 @@ mod tests {
         let shot_csv=format!("编号,景别,运镜,画面,描述\r\n001,中景,固定,{},\"逗号,与\"\"引号\"\"\n换行\"",file.to_string_lossy());
 
         let board=json!({"version":1,"nodes":[{"id":"image","kind":"media","ref_id":1,"x":30,"y":40}],"edges":[],"viewport":{"x":80,"y":80,"zoom":1}});
-        c.execute_batch("INSERT INTO episodes(id,title,sort_order,created_at) VALUES(1,'画布剧集',0,'1'); INSERT INTO scenes(id,episode_id,title,sort_order,created_at,creation_mode) VALUES(1,1,'画布场景',0,'1','canvas');").unwrap();
+        c.execute_batch("INSERT INTO episodes(id,title,sort_order,created_at) VALUES(1,'画布剧集',0,'1'); INSERT INTO scenes(id,episode_id,title,created_at) VALUES(1,1,'画布场景','1'); INSERT INTO clips(id,episode_id,scene_id,title,sort_order,created_at,creation_mode) VALUES(1,1,1,'画布片段',0,'1','canvas');").unwrap();
         c.execute("INSERT INTO screenplays(title,content,format,created_at,updated_at,episode_id) VALUES('分镜',?,'csv','1','1',1)",[&shot_csv]).unwrap();
-        c.execute("INSERT INTO scene_canvases VALUES(1,?,3)",[board.to_string()]).unwrap();
-        c.execute("INSERT INTO scene_canvas_sources VALUES(1,1)",[]).unwrap();
+        c.execute("INSERT INTO clip_canvases VALUES(1,?,3)",[board.to_string()]).unwrap();
+        c.execute("INSERT INTO clip_canvas_sources VALUES(1,1)",[]).unwrap();
         let backup=base.join("portable.spielberg-backup");export(&c,&root,&backup,"Test",false).unwrap();
         let extracted=base.join("extracted");unpack_archive(&backup,&extracted).unwrap();
         let copy=Connection::open(extracted.join("spielberg.sqlite")).unwrap();
@@ -269,8 +269,8 @@ mod tests {
         assert_eq!(c.query_row("SELECT messages FROM agent_sessions",[],|r|r.get::<_,String>(0)).unwrap(),messages.to_string());
         assert_eq!(catalog::usages(&restored_db,1).unwrap().len(),2);
         assert!(catalog::usages(&restored_db,1).unwrap().iter().any(|u|u["kind"]=="canvas"));
-        assert_eq!(restored_db.query_row("SELECT draft FROM scene_canvases",[],|r|r.get::<_,String>(0)).unwrap(),board.to_string());
-        assert_eq!(restored_db.query_row("SELECT revision FROM scene_canvases",[],|r|r.get::<_,i64>(0)).unwrap(),3);
+        assert_eq!(restored_db.query_row("SELECT draft FROM clip_canvases",[],|r|r.get::<_,String>(0)).unwrap(),board.to_string());
+        assert_eq!(restored_db.query_row("SELECT revision FROM clip_canvases",[],|r|r.get::<_,i64>(0)).unwrap(),3);
         assert_eq!(catalog::list(&restored_db,&json!({"usage":"trash"})).unwrap()["total"],1);
         let path:String=restored_db.query_row("SELECT path FROM media WHERE id=1",[],|r|r.get(0)).unwrap();assert!(Path::new(&path).starts_with(&restored));assert_eq!(fs::read(path).unwrap(),b"image content");
         let restored_csv:String=restored_db.query_row("SELECT content FROM screenplays WHERE format='csv'",[],|r|r.get(0)).unwrap();

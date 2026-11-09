@@ -12,7 +12,7 @@ import { Media,Snapshot,imageUrl,post } from "./core";
 import { EmptyState } from "./ui";
 import "./creation.css";
 
-export type AssetUsage = {kind:"asset"|"episode"|"scene"|"canvas";target_id:number;title:string;episode_id?:number;episode_title?:string;purpose:string};
+export type AssetUsage = {kind:"asset"|"episode"|"scene"|"clip"|"canvas";target_id:number;title:string;episode_id?:number;episode_title?:string;purpose:string};
 type Asset = Media & {usage_count:number;deleted_at?:string};
 type DiskScan = {files:{path:string;size:number}[];cache_bytes:number};
 const bytes = (value:number) => value < 1048576 ? `${(value/1024).toFixed(1)} KB` : `${(value/1048576).toFixed(1)} MB`;
@@ -145,7 +145,7 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
       </article>)}</div>
       {!items.length&&!loading&&<div className="asset-empty"><EmptyState
         title={filter==="trash"?"回收站为空":filtered?"没有符合条件的素材":"素材库还是空的"}
-        description={filter==="trash"?"删除的素材会先进入回收站，可随时恢复。":filtered?"调整类型、用途或搜索词，再试一次。":"导入图片、视频或音频，在资产、场景与剪辑中重复使用。"}
+        description={filter==="trash"?"删除的素材会先进入回收站，可随时恢复。":filtered?"调整类型、用途或搜索词，再试一次。":"导入图片、视频或音频，在资产、场景、片段与剪辑中重复使用。"}
         action={<Button type={filtered?"secondary":"primary"} icon={filtered?undefined:<Plus size={16}/>} onClick={filtered?clearFilters:importFiles}>{filtered?"清除筛选":"导入素材"}</Button>}
       /></div>}
     </Spin>}
@@ -156,7 +156,7 @@ export default function AssetLibrary({data,reload,onLocate,onImageToImage}: {dat
     </div>
     <Drawer className="asset-usage-drawer" width={460} visible={!!tracking} title="素材用途" footer={null} onCancel={()=>setTracking(null)}>
       <h3>{tracking?.name}</h3><Spin loading={usageLoading} style={{display:"block"}}>
-        {usageError?<p role="alert">{usageError}</p>:uses.length?uses.map((use,index)=><div className="usage-record" key={index}><Tag>{use.purpose}</Tag><b>{use.episode_title&&use.kind==="scene"?`${use.episode_title} / `:""}{use.title}</b><Button size="small" onClick={()=>{setTracking(null);onLocate(use);}}>前往{use.kind==="asset"?"资产":use.kind==="episode"?"剧集":use.kind==="canvas"?"画布":"场景"}</Button></div>):!usageLoading&&<Empty description="尚未被资产、剧集或场景使用"/>}
+        {usageError?<p role="alert">{usageError}</p>:uses.length?uses.map((use,index)=><div className="usage-record" key={index}><Tag>{use.purpose}</Tag><b>{use.episode_title&&(use.kind==="scene"||use.kind==="clip")?`${use.episode_title} / `:""}{use.title}</b><Button size="small" onClick={()=>{setTracking(null);onLocate(use);}}>前往{use.kind==="asset"?"资产":use.kind==="episode"?"剧集":use.kind==="canvas"?"画布":use.kind==="clip"?"片段":"场景"}</Button></div>):!usageLoading&&<Empty description="尚未被资产、剧集、场景或片段使用"/>}
       </Spin>
     </Drawer>
     <ImagePreviewModal media={preview?.kind==="image"?preview:null} images={items.filter(item=>item.kind==="image")} onMediaChange={setPreview} onClose={()=>setPreview(null)} footer={filter==="trash"?null:<Button type="primary" onClick={()=>preview&&beginAssignment(preview)}>设置用途</Button>}/>

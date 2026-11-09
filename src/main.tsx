@@ -46,7 +46,7 @@ import "./studio-modern.css";
 const logoSrc = "/spielberg-logo-s.png";
 
 import type { AssetUsage } from "./AssetLibrary";
-import { api,Media,post,Project,Scene,Snapshot } from "./core";
+import { api,Media,post,Project,Clip,Snapshot } from "./core";
 import { confirmDiscard,EditGuardContext } from "./edit-guard";
 import "./creation.css";
 import "./assets.css";
@@ -78,7 +78,7 @@ const AgentWorkspace=lazy(()=>import("./AgentWorkspace"));
 const Studio=lazy(()=>import("./workspace").then(m=>({default:m.Studio})));
 const Tasks=lazy(()=>import("./workspace").then(m=>({default:m.Tasks})));
 const Episodes=lazy(()=>import("./workspace").then(m=>({default:m.Episodes})));
-const SceneEditor=lazy(()=>import("./workspace").then(m=>({default:m.SceneEditor})));
+const ClipEditor=lazy(()=>import("./workspace").then(m=>({default:m.ClipEditor})));
 const Roles=lazy(()=>import("./workspace").then(m=>({default:m.Roles})));
 const Prompts=lazy(()=>import("./workspace").then(m=>({default:m.Prompts})));
 const SettingsPage=lazy(()=>import("./SettingsPage"));
@@ -138,12 +138,12 @@ function App() {
   const [agentViewVersion, setAgentViewVersion] = useState(0);
   const [studioTab, setStudioTab] = useState("images");
   const [imageSource, setImageSource] = useState<Media | undefined>();
-  const [sceneEditing, setSceneEditing] = useState<{
-    scene: Scene;
+  const [sceneEditing, setClipEditing] = useState<{
+    scene: Clip;
     isNew: boolean;
   } | null>(null);
-  const [episodeSceneReturnId, setEpisodeSceneReturnId] = useState<number | null>(null);
-  const [sceneImageFlow, setSceneImageFlow] = useState<{ key: "first" | "last"; media?: Media } | null>(null);
+  const [episodeClipReturn, setEpisodeClipReturn] = useState<{episodeId: number; sceneId: number} | null>(null);
+  const [sceneImageFlow, setClipImageFlow] = useState<{ key: "first" | "last"; media?: Media } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   useEffect(() => { contentRef.current?.scrollTo({top: 0}); }, [page, sceneEditing, active?.id]);
   const [creating, setCreating] = useState(false);
@@ -169,8 +169,8 @@ function App() {
       const s = await post<Snapshot>("/project", { id: target });
       if (version !== loadVersion.current) return;
       if (activeRef.current !== s.project.id) {
-        setSceneEditing(null);
-        setEpisodeSceneReturnId(null);
+        setClipEditing(null);
+        setEpisodeClipReturn(null);
         setStudioTab("images");
         setPage("studio");
       }
@@ -317,22 +317,19 @@ function App() {
       </>
     );
   const locateAsset=(usage:AssetUsage)=>leaveEditor(()=>{
-    setEpisodeSceneReturnId(null);
+    setEpisodeClipReturn(null);
     setLocate(usage);
-    if(usage.kind==="canvas"){
-      const scene=data.episodes.flatMap(e=>e.scenes).find(item=>item.id===usage.target_id);
-      if(scene){setSceneEditing({scene,isNew:false});setPage("episodes");}return;
+    if(usage.kind==="canvas" || usage.kind==="clip"){
+      const episode=data.episodes.find(item=>item.clips.some(clip=>clip.id===usage.target_id));
+      const scene=episode?.clips.find(item=>item.id===usage.target_id);
+      if(episode && scene){setEpisodeClipReturn({episodeId:episode.id,sceneId:scene.scene_id});setClipEditing({scene,isNew:false});setPage("episodes");}return;
     }
-    if(usage.kind==="scene"){
-      const scene=data.episodes.flatMap(e=>e.scenes).find(item=>item.id===usage.target_id);
-      if(scene){setSceneEditing({scene,isNew:false});return;}
-    }
-    setSceneEditing(null);setPage(usage.kind==="asset"?"roles":"episodes");
+    setClipEditing(null);setPage(usage.kind==="asset"?"roles":"episodes");
   });
   const navigate = (next: string, afterNavigate?: () => void) => {
     setMobileNavOpen(false);
     if (next === page && !sceneEditing) { afterNavigate?.(); return; }
-    leaveEditor(() => { setLocate(null);setEpisodeSceneReturnId(null);setImageSource(undefined);setSceneEditing(null);setSceneImageFlow(null); setPage(next); }, afterNavigate);
+    leaveEditor(() => { setLocate(null);setEpisodeClipReturn(null);setImageSource(undefined);setClipEditing(null);setClipImageFlow(null); setPage(next); }, afterNavigate);
   };
 
   return (
@@ -413,8 +410,8 @@ function App() {
                 ? "工作台 · 图片生成"
                 : sceneEditing
                 ? sceneEditing.isNew
-                  ? (sceneEditing.scene.creation_mode === "canvas" ? "创建画布场景" : "创建场景")
-                  : (sceneEditing.scene.creation_mode === "canvas" ? "画布场景" : "编辑场景")
+                  ? (sceneEditing.scene.creation_mode === "canvas" ? "创建画布片段" : "创建片段")
+                  : (sceneEditing.scene.creation_mode === "canvas" ? "画布片段" : "编辑片段")
                 : (
                     {
                       studio: "工作台",
@@ -464,26 +461,26 @@ function App() {
         >
           <Suspense fallback={<PageLoading/>}>
           {sceneEditing ? (
-            sceneEditing.scene.creation_mode === "canvas" ? <InfiniteCanvas key={`${data.project.id}:${sceneEditing.scene.id}`} data={data} scene={data.episodes.flatMap(e=>e.scenes).find(s=>s.id===sceneEditing.scene.id)||sceneEditing.scene} reload={refresh} onClose={()=>leaveEditor(()=>setSceneEditing(null))} /> : <>
+            sceneEditing.scene.creation_mode === "canvas" ? <InfiniteCanvas key={`${data.project.id}:${sceneEditing.scene.id}`} data={data} scene={data.episodes.flatMap(e=>e.clips).find(s=>s.id===sceneEditing.scene.id)||sceneEditing.scene} reload={refresh} onClose={()=>leaveEditor(()=>setClipEditing(null))} /> : <>
             <div className="scene-editor-host" hidden={!!sceneImageFlow}>
-            <SceneEditor
+            <ClipEditor
               key={`${data.project.id}:${sceneEditing.scene.id}`}
               scene={sceneEditing.scene}
               isNew={sceneEditing.isNew}
               data={data}
-              onClose={() => setSceneEditing(null)}
+              onClose={() => setClipEditing(null)}
               reload={refresh}
-              onGenerateFrame={key => { if (key === "reference") return; setSceneImageFlow({ key }); setStudioTab("images"); }}
+              onGenerateFrame={key => { if (key === "reference") return; setClipImageFlow({ key }); setStudioTab("images"); }}
               generatedFrame={sceneImageFlow?.media ? { key: sceneImageFlow.key, media: sceneImageFlow.media } : null}
-              onGeneratedApplied={() => setSceneImageFlow(null)}
+              onGeneratedApplied={() => setClipImageFlow(null)}
             />
             </div>
             {sceneImageFlow && <div className="scene-image-workbench">
-              <div className="scene-editor-heading"><div className="scene-editor-heading-title"><Button type="text" onClick={() => setSceneImageFlow(null)}>← 返回场景编辑</Button></div></div>
-              <CreationDesk data={data} reload={refresh} activeTab="images" onTabChange={setStudioTab} changePage={navigate} editScene={() => {}} renderSequence={() => null}
+              <div className="scene-editor-heading"><div className="scene-editor-heading-title"><Button type="text" onClick={() => setClipImageFlow(null)}>← 返回片段编辑</Button></div></div>
+              <CreationDesk data={data} reload={refresh} activeTab="images" onTabChange={setStudioTab} changePage={navigate} editClip={() => {}} renderSequence={() => null}
                 initialPrompt={sceneEditing.scene.script?.[sceneImageFlow.key] || sceneEditing.scene.description}
                 initialRatio={sceneEditing.scene.generation_options?.aspect_ratio || "16:9"}
-                onImageUse={media => { void refresh().then(() => setSceneImageFlow(current => current ? { ...current, media } : current)).catch(e => Message.error(String(e))); }} />
+                onImageUse={media => { void refresh().then(() => setClipImageFlow(current => current ? { ...current, media } : current)).catch(e => Message.error(String(e))); }} />
             </div>}
             </>
           ) : (
@@ -493,31 +490,34 @@ function App() {
                   key={data.project.id}
                   activeTab={studioTab}
                   onTabChange={setStudioTab}
-                  renderSequence={() => <Studio data={data} reload={refresh} changePage={navigate} editScene={scene => setSceneEditing({scene, isNew: false})} />}
+                  renderSequence={() => <Studio data={data} reload={refresh} changePage={navigate} editClip={scene => setClipEditing({scene, isNew: false})} />}
                   data={data}
                   reload={refresh}
                   changePage={navigate}
                   imageSource={imageSource}
-                  editScene={(scene) =>
-                    setSceneEditing({ scene, isNew: false })
+                  editClip={(scene) =>
+                    setClipEditing({ scene, isNew: false })
                   }
                 />
               )}{" "}
               {page === "agent" && <AgentWorkspace key={`${data.project.id}:${agentViewVersion}`} data={data} reload={refresh} onNavigate={navigate} />}
               {page === "episodes" && (
                 <Episodes
-                  initialEpisodeId={episodeSceneReturnId ?? (locate?.kind==="episode"?locate.target_id:undefined)}
-                  initialView={episodeSceneReturnId !== null ? "scenes" : undefined}
+                  initialEpisodeId={episodeClipReturn?.episodeId ?? (locate?.kind==="episode" ? locate.target_id : locate?.kind==="scene" ? locate.episode_id : undefined)}
+                  initialSceneId={locate?.kind==="scene" ? locate.target_id : undefined}
+                  initialFocusedSceneId={episodeClipReturn?.sceneId}
+                  initialView={episodeClipReturn !== null || locate?.kind==="scene" ? "scenes" : undefined}
                   data={data}
                   reload={refresh}
-                  editScene={(scene, isNew, episodeId) => {
-                    setEpisodeSceneReturnId(episodeId);
-                    setSceneEditing({ scene, isNew });
+                  editClip={(scene, isNew, episodeId) => {
+                    setLocate(null);
+                    setEpisodeClipReturn({episodeId,sceneId:scene.scene_id});
+                    setClipEditing({ scene, isNew });
                   }}
                 />
               )}{" "}
               {page === "editor" && <MediaEditor key={data.project.id} data={data} reload={refresh} />}
-              {page === "assets" && <AssetLibrary key={data.project.id} data={data} reload={refresh} onLocate={locateAsset} onImageToImage={media=>leaveEditor(()=>{setLocate(null);setImageSource(media);setStudioTab("images");setSceneEditing(null);setPage("studio");})} />}
+              {page === "assets" && <AssetLibrary key={data.project.id} data={data} reload={refresh} onLocate={locateAsset} onImageToImage={media=>leaveEditor(()=>{setLocate(null);setImageSource(media);setStudioTab("images");setClipEditing(null);setPage("studio");})} />}
               {page === "tasks" && <Tasks key={data.project.id} projectId={data.project.id} />}
               {page === "roles" && <Roles data={data} reload={refresh} initialRoleId={locate?.kind==="asset"?locate.target_id:undefined} />}{" "}
               {page === "prompts" && (

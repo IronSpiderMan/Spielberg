@@ -2,7 +2,7 @@ import type {Media, Asset, Snapshot} from "./core";
 import type {AssetCategory} from "./asset-categories";
 
 export type SavedPrompt = {id:number|string; name:string; content:string; category:string};
-export type PromptMention = {id:string; name:string; description:string; media?:Media; content?:string; category?:AssetCategory; kind:"role"|"scene"|"prompt"|"template"};
+export type PromptMention = {id:string; name:string; aliases?:string[]; description:string; media?:Media; content?:string; category?:AssetCategory; kind:"role"|"scene"|"prompt"|"template"};
 export function templateMentions(templates:{id:string|number;name:string;content:string}[]):PromptMention[] {
   return templates.map(template=>({id:`template-${template.id}`,name:`template.${template.name}`,description:`模板 · ${template.name}`,content:template.content,kind:"template"}));
 }
@@ -31,11 +31,12 @@ export function promptMentions(roles:Asset[], data?:Snapshot):PromptMention[] {
   }
   for(const episode of data?.episodes || []) {
     const title=data!.episodes.filter(e=>e.title===episode.title).length>1 ? `${episode.title}#${episode.id}` : episode.title;
-    [...episode.scenes].sort((a,b)=>a.sort_order-b.sort_order || a.id-b.id).forEach((scene,index)=>{
+    [...episode.clips].sort((a,b)=>a.sort_order-b.sort_order || a.id-b.id).forEach((scene,index)=>{
       for(const [suffix,key,label] of [["first","first","首帧"],["last","last","尾帧"],["ref","reference","参考图"]] as const) {
         const media=scene[`${key}_media`] || data!.media.find(m=>m.id===scene[`${key}_media_id`])
           || (key==="reference" ? data!.media.find(m=>m.id===scene.generation_options?.reference_media_ids?.[0]) : undefined);
-        result.push({id:`scene-${scene.id}-${key}`,name:`${title}.scene${String(index+1).padStart(3,"0")}.${suffix}`,description:`${episode.title} / ${scene.title} / ${label}`,kind:"scene",media:media?.kind==="image"?media:undefined});
+        const number = String(index+1).padStart(3,"0");
+        result.push({id:`clip-${scene.id}-${key}`,name:`${title}.clip${number}.${suffix}`,aliases:[`${title}.scene${number}.${suffix}`],description:`${episode.title} / ${scene.title} / ${label}`,kind:"scene",media:media?.kind==="image"?media:undefined});
       }
     });
   }
@@ -47,8 +48,8 @@ export function promptMentions(roles:Asset[], data?:Snapshot):PromptMention[] {
   const seen=new Set<string>();
   return result.filter(item=>{if(seen.has(item.name))return false;seen.add(item.name);return true;});
 }
-export function mentionPattern(items:{name:string}[]) {
-  const names=[...new Set(items.map(item=>item.name).filter(Boolean))].sort((a,b)=>b.length-a.length).map(name=>name.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"));
+export function mentionPattern(items:{name:string; aliases?:string[]}[]) {
+  const names=[...new Set(items.flatMap(item=>[item.name,...(item.aliases || [])]).filter(Boolean))].sort((a,b)=>b.length-a.length).map(name=>name.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"));
   // A dot followed by a name continues a qualified mention, not a role boundary.
   return names.length ? new RegExp(`@(${names.join("|")})(?=$|[\\s，。！？、；：,!?;:()（）]|\\.(?=$|[\\s，。！？、；：,!?;:()（）]))`,"g") : null;
 }
@@ -60,5 +61,6 @@ export function syncMentionReferences(existing:number[], previousAutomatic:numbe
 export function findMentions(value:string,items:PromptMention[]) {
   const pattern=mentionPattern(items);
   const names=new Set(pattern?Array.from(value.matchAll(pattern),match=>match[1]):[]);
-  return items.filter(item=>names.has(item.name));
+  return items.filter(item=>names.has(item.name) || item.aliases?.some(name=>names.has(name)));
 }
+export const namedMention = (items: PromptMention[], name: string) => items.find(item=>item.name===name || item.aliases?.includes(name));

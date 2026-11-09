@@ -11,8 +11,8 @@ const fs=require('node:fs');
    const project={id:'qa',name:'小王子',path:'/fixture',updated_at:'刚刚'};
    const media=Array.from({length:55},(_,i)=>({id:i+1,name:`素材-${String(i+1).padStart(2,'0')}.png`,path:'/spielberg-logo-s.png',kind:'image',created_at:'1789990000',deleted_at:null,usage_count:i===54?2:0}));
    const role={id:1,name:'小王子',description:'旅行者',design_media_id:55,images:[media[54]]};
-   const scene={id:1,title:'沙漠相遇',description:'飞行员与小王子',sort_order:0,first_media_id:55,last_media_id:null,reference_media_id:null,first_media:media[54],videos:[]};
-   const data={project,assets:[role],media,episodes:[{id:1,title:'第一集',description:'',scenes:[scene]}],prompts:[],settings:{},revisions:{media:0,assets:0,episodes:0,settings:0,prompts:0,jobs:0}};
+   const scene={id:1,scene_id:1,title:'沙漠相遇',description:'飞行员与小王子',sort_order:0,first_media_id:55,last_media_id:null,reference_media_id:null,first_media:media[54],videos:[]};
+   const data={project,assets:[role],media,episodes:[{id:1,title:'第一集',description:'',clips:[scene],scenes:[{id:scene.id,title:scene.title,generation_mode:'clips',clips:[scene],reference_media_ids:[],reference_audio_media_ids:[]}],playback_units:[]}],prompts:[],settings:{},revisions:{media:0,assets:0,episodes:0,settings:0,prompts:0,jobs:0}};
    window.__calls=[];window.__fail=false;window.__hidden=false;
    Object.defineProperty(document,'visibilityState',{get:()=>window.__hidden?'hidden':'visible'});
    const changed=()=>{data.revisions.media++;};
@@ -32,7 +32,7 @@ const fs=require('node:fs');
      const filtered=media.filter(m=>(payload.usage==='trash'?!!m.deleted_at:!m.deleted_at)&&(payload.usage!=='used'||m.usage_count>0)&&(payload.usage!=='unused'||m.usage_count===0)&&(payload.kind==='all'||m.kind===payload.kind)&&m.name.toLowerCase().includes(payload.query.toLowerCase())).sort((a,b)=>b.id-a.id);
      return {items:structuredClone(filtered.slice((payload.page-1)*payload.limit,payload.page*payload.limit)),total:filtered.length};
     }
-    if(path==='/media/usage')return {items:payload.id===55?[{kind:'asset',target_id:1,title:'小王子',purpose:'角色主图'},{kind:'scene',target_id:1,title:'沙漠相遇',episode_id:1,episode_title:'第一集',purpose:'场景首帧'}]:[]};
+    if(path==='/media/usage')return {items:payload.id===55?[{kind:'asset',target_id:1,title:'小王子',purpose:'角色主图'},{kind:'clip',target_id:1,title:'沙漠相遇',episode_id:1,episode_title:'第一集',purpose:'片段首帧'}]:[]};
     const m=media.find(item=>item.id===payload?.id);
     if(path==='/media/delete'){m.deleted_at='1';changed();}
     if(path==='/media/restore'){m.deleted_at=null;changed();}
@@ -56,7 +56,7 @@ const fs=require('node:fs');
   const drawer=page.locator('.arco-drawer:visible');await drawer.getByText('第一集 / 沙漠相遇',{exact:true}).waitFor();
   await drawer.getByRole('button',{name:'前往角色'}).click();await page.locator('.arco-drawer:visible').getByRole('button',{name:'保存资产'}).waitFor();
   await page.locator('.arco-drawer-close-icon').click();await nav();
-  await page.getByText('使用中 · 2 处用途',{exact:true}).click();await page.getByRole('button',{name:'前往场景'}).click();await page.locator('.scene-form-card').waitFor();
+  await page.getByText('使用中 · 2 处用途',{exact:true}).click();await page.getByRole('button',{name:'前往片段'}).click();await page.locator('.scene-form-card').waitFor();
   assert.equal(await page.locator('.scene-form-card input').inputValue(),'沙漠相遇');
   await nav();await select('使用状态','未使用');
   const more=(name)=>page.getByRole('button',{name:`更多操作 ${name}`,exact:true}).click();

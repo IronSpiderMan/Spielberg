@@ -1,6 +1,8 @@
 import copy
+import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -83,3 +85,53 @@ def test_plan_cannot_omit_or_repeat_script_dialogue():
     omitted['source_line_ids'] = [1]
     with pytest.raises(ValueError, match='剧本行有遗漏'):
         h3.validate_plan({'scenes': [omitted]}, lines, {1}, [])
+
+
+@pytest.mark.parametrize('one_take', [False, True])
+def test_existing_h3_proof_is_reused_and_storyboard_uses_clip_ids(tmp_path, monkeypatch, one_take):
+    script = '甲：先停一下。'
+    source_hash = h3.digest(script)
+    prompt, fixture_spec = fixture()
+    plan_spec = {'scene_id': 19, 'title': '书房', 'duration': 15, 'source_line_ids': [1],
+                 'reference_media_ids': [1, 2], 'shots': [
+                     {'duration': shot['duration'], 'description': '镜头说明'} for shot in fixture_spec['shots']]}
+    proof_spec = {**plan_spec, 'source_lines': h3.source_lines(script, ['甲']),
+                  'previous_scene_end': None, 'next_scene_start': None}
+    plan = {'version': h3.VERSION, 'source_sha256': source_hash, 'scenes': [plan_spec]}
+    plan_path = tmp_path / 'episode-04-h3-plan.json'
+    plan_path.write_text(json.dumps(plan))
+    proof_path = tmp_path / 'prompts' / 'scene-0019.json'
+    proof_path.parent.mkdir()
+    proof_path.write_text(json.dumps({'version': h3.VERSION, 'source_sha256': source_hash, 'scene_id': 19,
+        'image_ids': [1, 2], 'spec': proof_spec, 'spec_sha256': h3.digest(json.dumps(proof_spec, ensure_ascii=False, sort_keys=True)),
+        'prompt': prompt, 'semantic_audit': {'ok': True}}))
+
+    def rows(sql, _params=()):
+        if 'FROM screenplays' in sql:
+            return [{'content': script}]
+        if 'JOIN scenes' in sql:
+            return [{'id': 19}] if one_take else []
+        if 'FROM clip_options' in sql:
+            return []
+        if 'FROM clips' in sql:
+            return [{'id': 19}]
+        if 'FROM assets' in sql:
+            return [{'name': '甲', 'description': '', 'design_media_id': 1},
+                    {'name': '书房', 'description': '', 'design_media_id': 2}]
+        pytest.fail(f'Unexpected SQL: {sql}')
+
+    def save(path, data):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data))
+
+    requests = []
+    api = SimpleNamespace(OUT=tmp_path, BACKEND='https://example.invalid', PID='project', rows=rows, save=save,
+                          request=lambda url, payload, method: requests.append((url, payload, method)))
+    monkeypatch.setattr(h3, 'text_action', lambda *args, **kwargs: pytest.fail('Requested model for an existing proof'))
+    assert h3.prepare_episode(api, {'id': 4, 'title': '书房', 'sort_order': 10}) == ([] if one_take else [{'id': 19}])
+    assert json.loads(plan_path.read_text()) == plan
+    assert len(requests) == (1 if one_take else 2)
+    if not one_take:
+        assert requests[0][0].endswith('/clips/19') and requests[0][1]['prompt'] == prompt
+    storyboard = requests[-1][1]['storyboard']
+    assert storyboard['clips'][0]['clip_id'] == 19 and 'scene_id' not in storyboard['clips'][0]

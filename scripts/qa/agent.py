@@ -304,8 +304,15 @@ class Model(BaseHTTPRequestHandler):
             # Tool results are JSON objects, not sliced JSON text.
             if "data" in episode:
                 episode = episode["data"]
-            calls = [call("app_request", {"resource": "scenes", "method": "POST", "episode_id": episode["id"], "data": {"title": "车站", "description": "雨夜走进车站"}}, "scene"),
+            calls = [call("app_request", {"resource": "scenes", "method": "POST", "episode_id": episode["id"], "data": {"title": "车站", "shared_prompt": "冷色站台，雨声连续", "generation_mode": "one_take", "generation_options": {"video_mode": "t2v"}}}, "scene"),
                 call("app_request", {"resource": "screenplays", "method": "POST", "episode_id": episode["id"], "data": {"title": "Agent 剧本", "content": "# 雨夜\n\n主角走进车站。"}}, "script")]
+        elif len(tools) == 4 and "CREATE" in prompt:
+            scene = json.loads(tools[2]["content"])
+            calls = [call("app_request", {"resource": "clips", "method": "PATCH", "id": scene["clips"][0]["id"], "data": {"description": "主角走进车站。", "generation_options": {"duration": 4}}}, "first-clip"),
+                call("app_request", {"resource": "clips", "method": "POST", "episode_id": scene["episode_id"], "data": {"scene_id": scene["id"], "title": "停步", "description": "镜头跟随主角停在站台边。", "generation_options": {"duration": 5}}}, "second-clip")]
+        elif len(tools) == 6 and "CREATE" in prompt:
+            scene = json.loads(tools[2]["content"])
+            calls = [call("app_action", {"operation": "generations/scene-preview", "data": {"scene_id": scene["id"]}}, "one-take-preview")]
         elif not tools and "PLAN_PENDING" not in prompt:
             calls = [call("get_project", {}, "overview")]
         reply = {"role": "assistant", "content": None, "tool_calls": calls} if calls else {"role": "assistant", "content": "已完成操作。"}
@@ -377,16 +384,22 @@ def main():
                     "base_url": f"http://127.0.0.1:{model.server_port}/v1", "api_key": SECRET,
                     "default_model_id": "qa-model", "models": [{"id": "qa-model", "profile": "deepseek-chat"}]
                 }]
-            }}})
+            }, "video": {"base_url": "http://127.0.0.1:9", "model": "standard"}}})
             created = agent("create", title="实际创建内容")
             running = agent("run", session_id=created["id"], message="CREATE", web_enabled=True)
             assert running["status"] == "running"
             finished = wait(created)
             assert finished["status"] == "completed", finished
-            assert len([m for m in finished["messages"] if m["role"] == "tool"]) == 4
+            tools = [m for m in finished["messages"] if m["role"] == "tool"]
+            assert len(tools) == 7 and all(tool["status"] == "completed" for tool in tools), tools
+            preview = json.loads(tools[-1]["content"])
+            assert preview["duration"] == 9 and len(preview["beats"]) == 2, preview
+            assert "冷色站台，雨声连续" in preview["prompt"], preview
             assert len(api(f"/projects/{pid}/screenplays", method="GET")) == 1
             assert len(api(f"/projects/{pid}/assets", method="GET")) == 1
-            assert len(api(f"/projects/{pid}/episodes", method="GET")[0]["scenes"]) == 1
+            episode = api(f"/projects/{pid}/episodes", method="GET")[0]
+            assert len(episode["scenes"]) == 1 and len(episode["clips"]) == 2, episode
+            assert [unit["kind"] for unit in episode["playback_units"]] == ["scene"], episode
             # All question types, exact-action approval, rejection, duplicate/stale answers,
             # scope isolation, cancellation, page reload, and restart interruption.
             def waiting_for_input(session):

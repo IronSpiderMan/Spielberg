@@ -8,7 +8,7 @@ import "./scene-video-picker.css";
 
 const PAGE_SIZE = 12;
 
-export function SceneVideoPicker({ projectId, sceneTitle, primaryId, linkedIds, busy, onClose, onConfirm, onImported }: {
+export function ClipVideoPicker({ projectId, sceneTitle, primaryId, linkedIds, busy, onClose, onConfirm, onImported }: {
   projectId: string;
   sceneTitle: string;
   primaryId: number | null;
@@ -81,7 +81,7 @@ export function SceneVideoPicker({ projectId, sceneTitle, primaryId, linkedIds, 
     } catch (reason) { setSubmitError(`上传失败：${reason instanceof Error ? reason.message : String(reason)}`); }
     finally { importing.current = false; setUploading(false); }
   };
-  return <Modal visible title={<span className="scene-video-picker-title"><Film size={19} />选择场景视频</span>}
+  return <Modal visible title={<span className="scene-video-picker-title"><Film size={19} />选择片段视频</span>}
     className="scene-video-picker" style={{ width: 1040 }}
     onCancel={onClose} closable={!locked} maskClosable={false} escToExit={!locked} unmountOnExit
     footer={<div className="scene-video-picker-footer">
@@ -93,7 +93,7 @@ export function SceneVideoPicker({ projectId, sceneTitle, primaryId, linkedIds, 
           {selected?.id === primaryId ? "已是主视频" : "使用并设为主视频"}
         </Button></div>
     </div>}>
-    <p className="scene-video-picker-intro">为「{sceneTitle}」选择已有成片，用于场景预览和剧集合并。</p>
+    <p className="scene-video-picker-intro">为「{sceneTitle}」选择已有成片，用于片段预览和剧集合并。</p>
     <div className="scene-video-picker-layout">
       <section className="scene-video-picker-browser" aria-label="视频素材列表">
         <div className="scene-video-picker-toolbar">
@@ -112,12 +112,12 @@ export function SceneVideoPicker({ projectId, sceneTitle, primaryId, linkedIds, 
                   <div className="scene-video-picker-thumbnail"><AssetThumbnail media={media} projectId={projectId} />
                     <span className="scene-video-picker-check" aria-hidden="true">{selected?.id === media.id && <Check size={13} />}</span>
                     {media.id === primaryId ? <Tag className="scene-video-picker-badge" size="small" color="green">当前主视频</Tag>
-                      : linkedIds.includes(media.id) && <Tag className="scene-video-picker-badge" size="small">已在此场景</Tag>}
+                      : linkedIds.includes(media.id) && <Tag className="scene-video-picker-badge" size="small">已在此片段</Tag>}
                   </div>
                   <strong title={media.name}>{media.name}</strong><span className="scene-video-picker-card-meta">视频 · #{media.id}</span>
                 </button>)}
               </div> : <div className="scene-video-picker-state"><Empty description={filter.query.trim() ? "没有找到匹配的视频" : "项目中还没有视频素材"} />
-                <p>{filter.query.trim() ? "试试其他关键词，或清除搜索查看全部视频。" : "上传已有成片，或返回场景生成新视频。"}</p>
+                <p>{filter.query.trim() ? "试试其他关键词，或清除搜索查看全部视频。" : "上传已有成片，或返回片段生成新视频。"}</p>
                 {filter.query.trim() ? <Button disabled={locked} onClick={() => setFilter({ query: "", page: 1 })}>清除搜索</Button> : <Button icon={<Upload size={15} />} onClick={() => void upload()} loading={uploading} disabled={busy}>上传视频</Button>}
               </div>}
         </div>
@@ -130,7 +130,7 @@ export function SceneVideoPicker({ projectId, sceneTitle, primaryId, linkedIds, 
         <div className="scene-video-picker-detail-heading"><b>视频预览</b>{selected && <Tag size="small">已选择 1 个</Tag>}</div>
         {selected ? <SelectedVideo key={`${projectId}:${selected.id}`} media={selected} projectId={projectId} />
           : <div className="scene-video-picker-preview-empty"><Film size={36} strokeWidth={1.2} /><b>先看，再使用</b><p>选择左侧视频，在这里查看画面与时长。</p></div>}
-        <div className="scene-video-picker-notice"><CheckCircle2 size={16} /><p>确认后立即保存为场景主视频。原主视频会保留在候选版本中。</p></div>
+        <div className="scene-video-picker-notice"><CheckCircle2 size={16} /><p>确认后立即保存为片段主视频。原主视频会保留在候选版本中。</p></div>
         {submitError && <div className="scene-video-picker-submit-error" role="alert">{submitError}</div>}
       </aside>
     </div>

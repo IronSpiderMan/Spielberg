@@ -21,7 +21,7 @@ const path = require('node:path');
         {id: 'long', title: '世界观与人物关系'.repeat(14), content: '# 长名称测试'},
       ]};
       const image = {id: 1, name: '角色参考图.png', kind: 'image', path: '/spielberg-logo-s.png', created_at: '1', usage_count: 0};
-      const data = {project, assets: [{id: 1, name: '林舟', description: '雨夜里的主角', enabled: true, category: 'person', design_media_id: 1, images: [image], audios: []}], episodes: [{id: 1, title: '第一集 · 雨夜重逢', description: '', scenes: []}], prompts: [], media: [image], settings: {}};
+      const data = {project, assets: [{id: 1, name: '林舟', description: '雨夜里的主角', enabled: true, category: 'person', design_media_id: 1, images: [image], audios: []}], episodes: [{id: 1, title: '第一集 · 雨夜重逢', description: '', scenes: [], clips: [], playback_units: []}], prompts: [], media: [image], settings: {}};
       window.__qaCalls = [];
       window.__qaData = data;
       window.__qaHoldDelete = false;

@@ -192,26 +192,28 @@ def validate_prompt(prompt, spec, image_ids):
             'picture_count': len(image_ids), 'validated_at': time.time()}
 
 
-def require_compiled(api, scene, image_ids):
-    path = api.OUT / 'prompts' / f'scene-{scene["id"]:04}.json'
+def require_compiled(api, clip, image_ids):
+    path = api.OUT / 'prompts' / f'scene-{clip["id"]:04}.json'
     if not path.exists():
-        raise ValueError('场景尚未按原剧本编译为H3 Prompt，禁止直接提交旧描述')
+        raise ValueError('片段尚未按原剧本编译为H3 Prompt，禁止直接提交旧描述')
     proof = json.loads(path.read_text())
-    if proof.get('version') != VERSION or proof['prompt'] != scene['prompt'] or proof['image_ids'] != image_ids:
+    if proof.get('version') != VERSION or proof['prompt'] != clip['prompt'] or proof['image_ids'] != image_ids:
         raise ValueError('Prompt或参考素材已变化，必须重新编译与校验')
     if proof.get('semantic_audit', {}).get('ok') is not True:
         raise ValueError('Prompt尚未通过剧本连续性审读，禁止提交')
-    scripts = api.rows("SELECT content FROM screenplays WHERE episode_id=? AND format='markdown'", (scene['episode_id'],))
+    scripts = api.rows("SELECT content FROM screenplays WHERE episode_id=? AND format='markdown'", (clip['episode_id'],))
     if not scripts or digest(scripts[0]['content']) != proof['source_sha256']:
         raise ValueError('原剧本已变化，必须重新编译Prompt，禁止提交过期版本')
-    validate_prompt(scene['prompt'], proof['spec'], image_ids)
+    validate_prompt(clip['prompt'], proof['spec'], image_ids)
 
 
 def prepare_episode(api, episode):
     eid = episode['id']
     script = api.rows("SELECT content FROM screenplays WHERE episode_id=? AND format='markdown'", (eid,))[0]['content']
     source_hash = digest(script)
-    existing = api.rows('SELECT * FROM scenes WHERE episode_id=? ORDER BY sort_order,id', (eid,))
+    existing = api.rows('SELECT * FROM clips WHERE episode_id=? ORDER BY sort_order,id', (eid,))
+    one_take_members = {row['id'] for row in api.rows(
+        "SELECT c.id FROM clips c JOIN scenes s ON s.id=c.scene_id WHERE c.episode_id=? AND s.generation_mode='one_take'", (eid,))}
     roles = api.rows('SELECT name,description,design_media_id FROM assets ORDER BY id')
     lines = source_lines(script, [r['name'] for r in roles])
     college = episode['sort_order'] >= 10
@@ -232,7 +234,7 @@ def prepare_episode(api, episode):
     backup = api.OUT / 'backups' / f'episode-{eid:02}.json'
     if not backup.exists():
         api.save(backup, {'episode': episode, 'screenplay': script, 'scenes': existing,
-                         'options': api.rows('SELECT scene_id,value FROM scene_options WHERE scene_id IN (SELECT id FROM scenes WHERE episode_id=?)', (eid,))})
+                         'options': api.rows('SELECT clip_id AS scene_id,value FROM clip_options WHERE clip_id IN (SELECT id FROM clips WHERE episode_id=?)', (eid,))})
     planfile = api.OUT / f'episode-{eid:02}-h3-plan.json'
     if planfile.exists():
         plan = json.loads(planfile.read_text())
@@ -240,10 +242,10 @@ def prepare_episode(api, episode):
             raise ValueError('剧本已变化，需重新生成当前集分镜计划')
     else:
         slots = []
-        for scene in existing:
-            options = api.rows('SELECT value FROM scene_options WHERE scene_id=?', (scene['id'],))
+        for clip in existing:
+            options = api.rows('SELECT value FROM clip_options WHERE clip_id=?', (clip['id'],))
             options = json.loads(options[0]['value']) if options else {}
-            slots.append({'id': scene['id'], 'title': scene['title'], 'duration': options.get('duration', 15),
+            slots.append({'id': clip['id'], 'title': clip['title'], 'duration': options.get('duration', 15),
                           'previous_image_ids': options.get('reference_media_ids', [])})
         instruction = '''只依据输入的逐行原剧本重新做分镜，绝不依据旧视频描述或添加台词/内心旁白。完整覆盖所有原剧本行，所有dialogue原台词各分配到一个且仅一个场景；同一句不得拆段、不得复制到多个场景。source_line_ids用于追溯，动作行可跨段重复。每段4至15秒，已有scene_slots时必须保持场景ID、顺序、数量、标题与时长，按标题匹配其原剧本动作。每场景1至3个有明确切镜理由的镜头，shots.duration总和等于duration，不能堆积超过15秒可演出的动作对白。参考图仅可选择resources真实ID，最多9张；必须用当前正式定妆，环境图只约束环境布局，不强制照搬人物姿态或第一帧。不得添加配乐、字幕、科幻光效、旁白或剧情。完整中文剧本优先于旧场景标题；第1场只有手在鼠标上、猛醒及打量房间，不能加入“我不是还在”等剧本未写的台词。返回JSON：{"scenes":[{"scene_id":已有ID或null,"title":"标题","duration":15,"source_line_ids":[原文行号],"reference_media_ids":[ID],"shots":[{"duration":6,"description":"清晰可见动作与状态","camera":"景别与运镜","sound":"环境和物理声音，不填改写台词"}]}]}。不要省略任何原剧本对白，不用旧Prompt做改写。'''
         feedback = ''
@@ -265,11 +267,13 @@ def prepare_episode(api, episode):
     validate_plan(plan, lines, valid_refs, [])
     for index, spec in enumerate(plan['scenes']):
         if not spec.get('scene_id'):
-            created = api.request(f'{api.BACKEND}/api/v1/projects/{api.PID}/episodes/{eid}/scenes',
+            created = api.request(f'{api.BACKEND}/api/v1/projects/{api.PID}/episodes/{eid}/clips',
                                   {'title': spec['title'], 'description': '', 'prompt': ''})['data']
             spec['scene_id'] = created['id']
             api.save(planfile, plan)
         sid = spec['scene_id']
+        if sid in one_take_members:
+            continue
         spec['source_lines'] = [by_id[i] for i in spec['source_line_ids']]
         spec['previous_scene_end'] = plan['scenes'][index - 1]['shots'][-1] if index else None
         spec['next_scene_start'] = plan['scenes'][index + 1]['shots'][0] if index + 1 < len(plan['scenes']) else None
@@ -351,11 +355,16 @@ def prepare_episode(api, episode):
         options = {'video_mode': 'i2v', 'duration': spec['duration'], 'aspect_ratio': '16:9',
                    'size': '1344x768', 'resolution': '768p', 'reference_media_ids': ids,
                    'prompt_format': VERSION}
-        api.request(f'{api.BACKEND}/api/v1/projects/{api.PID}/scenes/{sid}',
+        api.request(f'{api.BACKEND}/api/v1/projects/{api.PID}/clips/{sid}',
                     {'prompt': prompt, 'reference_media_id': ids[0], 'generation_options': options}, method='PATCH')
+    # Keep the persisted H3 plan/proof keys and hashes so resumed runs reuse them.
+    # The project's storyboard uses the current API contract.
+    storyboard_clips = [{**{key: value for key, value in spec.items() if key != 'scene_id'},
+                         'clip_id': spec['scene_id']} for spec in plan['scenes']]
     api.request(f'{api.BACKEND}/api/v1/projects/{api.PID}/episodes/{eid}',
-                {'storyboard': {'aspect_ratio': '16:9', 'scenes': plan['scenes'],
+                {'storyboard': {'aspect_ratio': '16:9', 'clips': storyboard_clips,
                                 'duration': sum(s['duration'] for s in plan['scenes'])}}, method='PATCH')
     api.save(api.OUT / f'episode-{eid:02}-prompts-ready.json', {'version': VERSION,
              'source_sha256': source_hash, 'scenes': len(plan['scenes']), 'validated_at': time.time()})
-    return api.rows('SELECT * FROM scenes WHERE episode_id=? ORDER BY sort_order,id', (eid,))
+    return [clip for clip in api.rows('SELECT * FROM clips WHERE episode_id=? ORDER BY sort_order,id', (eid,))
+            if clip['id'] not in one_take_members]

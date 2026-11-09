@@ -1,5 +1,5 @@
 import {Asset, Snapshot} from "./core";
-import {mentionPattern, promptMentions, resolvePromptReferences} from "./prompt-mentions";
+import {mentionPattern, namedMention, promptMentions, resolvePromptReferences} from "./prompt-mentions";
 import type {SavedPrompt} from "./prompt-mentions";
 export function resolvePrompt(prompt: string, roles: Asset[], prompts: SavedPrompt[] = []) {
   prompt = resolvePromptReferences(prompt, prompts);
@@ -11,7 +11,7 @@ export function resolvePrompt(prompt: string, roles: Asset[], prompts: SavedProm
 export function resolveReferencePrompt(prompt: string, data: Snapshot, imageIds?: number[]) {
   const items = promptMentions(data.assets, data), pattern = mentionPattern(items);
   return pattern ? prompt.replace(pattern, (_, name: string) => {
-    const item = items.find(item => item.name === name)!;
+    const item = namedMention(items, name)!;
     const index = item.media && imageIds ? imageIds.indexOf(item.media.id) : -1;
     if (index >= 0) return `${name}（${item.description}，来自 [Image ${index + 1}]）`;
     return item.kind === "role" ? `${name}（${item.description}）` : `参考图片（${item.description}）`;
@@ -22,7 +22,7 @@ export function resolveH3Prompt(prompt: string, data: Snapshot, imageIds: number
   prompt = resolvePromptReferences(prompt, data.prompts);
   const items = promptMentions(data.assets, data), pattern = mentionPattern(items);
   return pattern ? prompt.replace(pattern, (_, name: string) => {
-    const item = items.find(item => item.name === name)!;
+    const item = namedMention(items, name)!;
     const picture = item.media ? imageIds.indexOf(item.media.id) : -1;
     return `${name} (${item.description}${picture >= 0 ? `; from <Picture ${picture + 1}>` : ""})`;
   }) : prompt;

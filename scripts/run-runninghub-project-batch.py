@@ -128,6 +128,8 @@ def start_backend():
         save(OUT / 'backend-service.json', {'pid': child.pid})
     for _ in range(60):
         if health(BACKEND):
+            # Open through the current API before reading the migrated tables directly.
+            request(f'{BACKEND}/api/v1/projects/{PID}/clips')
             break
         time.sleep(1)
     else:
@@ -138,44 +140,39 @@ def prepare_episode(episode):
     return h3_workflow.prepare_episode(SimpleNamespace(**globals()), episode)
 
 
-def existing_job(marker, scene_id=None, episode_id=None):
+def existing_job(marker, clip_id=None, episode_id=None):
     jobs = rows('SELECT * FROM background_jobs WHERE CAST(created_at AS INTEGER)>=? ORDER BY id DESC',
                 (int(marker['started_at']),))
     for job in jobs:
         body = json.loads(job.get('request_json') or '{}')
-        if ((scene_id is not None and body.get('scene_id') == scene_id and job['operation'] == '/generations/video')
+        if ((clip_id is not None and body.get('clip_id', body.get('scene_id')) == clip_id and job['operation'] == '/generations/video')
                 or (episode_id is not None and body.get('episode_id') == episode_id and job['operation'] == '/episodes/merge')):
             return job
     return None
 
 
-def tracked_action(markerfile, name, payload, scene_id=None, episode_id=None):
+def tracked_action(markerfile, name, payload, clip_id=None, episode_id=None):
     if markerfile.exists():
         marker = json.loads(markerfile.read_text())
         if marker.get('status') == 'completed':
             return marker['result']
-        job = existing_job(marker, scene_id, episode_id)
+        job = existing_job(marker, clip_id, episode_id)
         if job is None:
             raise RuntimeError(f'{markerfile.name} 提交结果不确定，必须先核对历史，禁止重复提交。')
         while job['status'] == 'running':
             time.sleep(15)
-            job = existing_job(marker, scene_id, episode_id)
+            job = existing_job(marker, clip_id, episode_id)
         if (job['status'] == 'failed' and job.get('resume_json') and
                 str(job.get('error', '')).startswith(('查询生成进度失败', '下载生成视频失败'))):
-            resume = json.loads(job['resume_json'])
-            # An accepted upstream ID permits resuming GET polling/downloads;
-            # _resume bypasses POST submission in the Spielberg backend.
-            remote = request(resume['url'].split('/v1/generations/')[0] +
-                             '/v1/generations/' + resume['generation_id'], timeout=60)
-            if remote.get('status') in ('queued', 'running', 'completed'):
-                result = action(name, {**resume['payload'], '_resume': resume}, timeout=None)
-                save(markerfile, {**marker, 'status': 'completed', 'result': result, 'completed_at': time.time()})
-                return result
-        if job['status'] != 'completed':
+            # Submission is already recorded. Only the backend can resume from its stored upstream ID.
+            result = action('tasks/resume-video', {'job_id': job['id']}, timeout=None)
+        elif job['status'] != 'completed':
             raise RuntimeError(f'任务#{job["id"]} {job["status"]}: {job.get("error")}')
-        result = json.loads(job['result_json'])
+        else:
+            result = json.loads(job['result_json'])
     else:
-        marker = {'status': 'submitting', 'started_at': time.time(), 'scene_id': scene_id, 'episode_id': episode_id}
+        # Preserve the marker contract for runs already in progress.
+        marker = {'status': 'submitting', 'started_at': time.time(), 'scene_id': clip_id, 'episode_id': episode_id}
         save(markerfile, marker)
         # The backend durably stores the upstream task ID and imports/attaches the
         # downloaded result. A lost caller connection must not trigger a retry.
@@ -184,49 +181,52 @@ def tracked_action(markerfile, name, payload, scene_id=None, episode_id=None):
     return result
 
 
-def generate_scene(scene):
-    sid = scene['id']
-    marker = OUT / 'jobs' / f'scene-{sid:04}.json'
-    options = rows('SELECT value FROM scene_options WHERE scene_id=?', (sid,))
+def generate_clip(clip):
+    clip_id = clip['id']
+    marker = OUT / 'jobs' / f'scene-{clip_id:04}.json'
+    options = rows('SELECT value FROM clip_options WHERE clip_id=?', (clip_id,))
     options = json.loads(options[0]['value']) if options else {}
     mode = options.get('video_mode', 'i2v')
-    refs = options.get('reference_media_ids') or ([scene['reference_media_id']] if scene.get('reference_media_id') else [])
+    refs = options.get('reference_media_ids') or ([clip['reference_media_id']] if clip.get('reference_media_id') else [])
     videos = options.get('reference_video_media_ids', [])
     audios = options.get('reference_audio_media_ids', [])
-    h3_workflow.require_compiled(SimpleNamespace(**globals()), scene, refs)
-    prompt = scene['prompt']
+    h3_workflow.require_compiled(SimpleNamespace(**globals()), clip, refs)
+    prompt = clip['prompt']
     if mode in ('i2v', 'ref2v'):
         if not refs and not videos and not audios:
-            raise RuntimeError(f'场景 {sid} 没有参考素材。')
+            raise RuntimeError(f'片段 {clip_id} 没有参考素材。')
         payload = {'video_mode': 'i2v', 'operation': 'ref2v', 'image_media_ids': refs,
                    'reference_video_media_ids': videos, 'reference_audio_media_ids': audios}
     elif mode == 'fl2v':
-        payload = {'video_mode': 'fl2v', 'operation': 'fl2v', 'first_media_id': scene['first_media_id'],
-                   'last_media_id': scene['last_media_id']}
+        payload = {'video_mode': 'fl2v', 'operation': 'fl2v', 'first_media_id': clip['first_media_id'],
+                   'last_media_id': clip['last_media_id']}
     else:
         payload = {'operation': 't2v'}
     options.update(aspect_ratio='16:9', size='1344x768', resolution='768p')
-    request(f'{BACKEND}/api/v1/projects/{PID}/scenes/{sid}', {'generation_options': options}, method='PATCH')
-    payload.update(scene_id=sid, prompt=prompt, duration=options.get('duration', 15),
+    request(f'{BACKEND}/api/v1/projects/{PID}/clips/{clip_id}', {'generation_options': options}, method='PATCH')
+    payload.update(clip_id=clip_id, prompt=prompt, duration=options.get('duration', 15),
                    aspect_ratio='16:9', size='1344x768', resolution='768p')
-    log(f'生成场景 {sid}: {scene["title"]}')
-    result = tracked_action(marker, 'generations/video', payload, scene_id=sid)
-    action('scenes/select-video', {'scene_id': sid, 'media_id': result['id']})
+    log(f'生成片段 {clip_id}: {clip["title"]}')
+    result = tracked_action(marker, 'generations/video', payload, clip_id=clip_id)
+    action('clips/select-video', {'clip_id': clip_id, 'media_id': result['id']})
     return result
 
 
 def check():
     episodes = rows('SELECT id,title,sort_order FROM episodes ORDER BY sort_order,id')
-    scenes = rows('SELECT id,episode_id FROM scenes')
+    # --check stays read-only, including when a legacy project has not yet been opened.
+    clip_table = 'clips' if rows("SELECT name FROM sqlite_master WHERE type='table' AND name='clips'") else 'scenes'
+    clips = rows(f'SELECT id,episode_id FROM {clip_table}')
     scripts = rows("SELECT episode_id FROM screenplays WHERE format='markdown' AND trim(content)!=''")
-    covered = {s['episode_id'] for s in scenes} | {s['episode_id'] for s in scripts}
+    clip_episodes = {clip['episode_id'] for clip in clips}
+    covered = clip_episodes | {script['episode_id'] for script in scripts}
     missing = [e['title'] for e in episodes if e['id'] not in covered]
     if missing:
-        raise RuntimeError(f'剧集缺少场景和剧本：{missing}')
+        raise RuntimeError(f'剧集缺少片段和剧本：{missing}')
     if PROVIDER == 'runninghub' and not (ROOT / '.runninghub/session.json').exists():
         raise RuntimeError('缺少 RunningHub 登录态。')
-    print(json.dumps({'project_id': PID, 'episodes': len(episodes), 'existing_scenes': len(scenes),
-                      'episodes_requiring_scene_planning': sum(not any(s['episode_id'] == e['id'] for s in scenes) for e in episodes),
+    print(json.dumps({'project_id': PID, 'episodes': len(episodes), 'existing_clips': len(clips),
+                      'episodes_requiring_clip_planning': sum(e['id'] not in clip_episodes for e in episodes),
                       'start_at': START.isoformat(), 'aspect_ratio': '16:9', 'resolution': '768p'}, ensure_ascii=False))
     return episodes
 
@@ -267,15 +267,20 @@ def main():
             start_services()
         for episode in episodes:
             log(episode['title'])
+            if not args.prepare_only:
+                unready = rows("SELECT title FROM scenes WHERE episode_id=? AND generation_mode='one_take' AND video_media_id IS NULL",
+                               (episode['id'],))
+                if unready:
+                    raise RuntimeError('请先为一镜到底场景选择视频：' + '、'.join(scene['title'] for scene in unready))
             save(OUT / 'status.json', {'status': 'compiling_prompts', 'episode': episode['title'], 'updated_at': time.time()})
-            scenes = prepare_episode(episode)
+            clips = prepare_episode(episode)
             if args.prepare_only:
                 continue
-            for scene in scenes:
+            for clip in clips:
                 save(OUT / 'status.json', {'status': 'running', 'provider': PROVIDER,
-                    'episode': episode['title'], 'scene_id': scene['id'], 'scene': scene['title'],
+                    'episode': episode['title'], 'scene_id': clip['id'], 'scene': clip['title'],
                     'total_episodes': len(episodes), 'updated_at': time.time()})
-                generate_scene(scene)
+                generate_clip(clip)
             merged = tracked_action(OUT / f'episode-{episode["id"]:02}-merged.json', 'episodes/merge',
                                     {'episode_id': episode['id'], 'width': 1344, 'height': 768}, episode_id=episode['id'])
             save(OUT / 'status.json', {'status': 'running', 'last_completed_episode': episode['title'],

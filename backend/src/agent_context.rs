@@ -111,7 +111,7 @@ fn shrink_json(value: &Value, depth: usize) -> Value {
 
 fn identity_fields(value: &Value, nested: bool) -> Value {
     let mut fields = serde_json::Map::new();
-    for key in ["id", "name", "title", "status", "error", "task_id", "episode_id", "scene_id"] {
+    for key in ["id", "name", "title", "status", "error", "task_id", "episode_id", "scene_id", "clip_id"] {
         if let Some(value) = value.get(key) {
             let mut item = if value.is_number() || value.is_boolean() || value.is_null() { value.clone() }
                 else { json!(excerpt(value.as_str().unwrap_or("[对象内容略]"),128)) };
@@ -262,7 +262,7 @@ fn is_write(message: &Value) -> bool {
             !operation.is_empty() && !operation.ends_with("/read") && !operation.ends_with("/list")
                 && !matches!(operation,"editor/probe" | "tasks" | "canvas/load" | "scripts/load"
                     | "storage/scan" | "settings/read" | "media/usage" | "editor/projects"
-                    | "project/config/read" | "project/timelines/read" | "project/document/read" | "storyboard/validate")
+                    | "project/config/read" | "project/timelines/read" | "project/document/read" | "storyboard/validate" | "generations/clip-preview" | "generations/scene-preview")
         },
         _ => false,
     }
@@ -353,7 +353,7 @@ fn limited_payload(raw: &str, bytes: usize) -> String {
         if let Some(text) = original[key].as_str() { identities[key] = json!(excerpt(text,128)); }
     }
     let mut value = json!({"_context_compacted":true});
-    for key in ["id", "task_id", "status", "error", "resource", "method", "operation", "data", "name", "title", "episode_id", "scene_id"] {
+    for key in ["id", "task_id", "status", "error", "resource", "method", "operation", "data", "name", "title", "episode_id", "scene_id", "clip_id"] {
         if let Some(identity) = identities.get(key) {
             let mut candidate = value.clone();
             candidate[key] = identity.clone();
@@ -582,11 +582,11 @@ mod tests {
             "arguments":{"resource":"assets","method":"POST","data":{"name":"唯一已创建角色"}},
             "content":"{\"id\":987654321,\"name\":\"唯一已创建角色\"}"});
         let reads = ["editor/probe","tasks","canvas/load","scripts/load","storage/scan","settings/read",
-            "media/usage","editor/projects","project/config/read","project/timelines/read","project/document/read","storyboard/validate"];
+            "media/usage","editor/projects","project/config/read","project/timelines/read","project/document/read","storyboard/validate","generations/clip-preview","generations/scene-preview"];
         for operation in reads {
             assert!(!is_write(&json!({"tool_name":"app_action","arguments":{"operation":operation}})));
         }
-        for operation in ["project/config/update","project/document/save","canvas/save","editor/export","generations/image"] {
+        for operation in ["project/config/update","project/document/save","canvas/save","editor/export","generations/image","generations/scene-video"] {
             assert!(is_write(&json!({"tool_name":"app_action","arguments":{"operation":operation}})));
         }
         for status in ["completed","failed"] {

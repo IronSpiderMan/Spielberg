@@ -25,10 +25,10 @@ const fixtureImage = '<svg xmlns="http://www.w3.org/2000/svg" width="1200" heigh
       localStorage.setItem('spielberg-theme', 'dark');
       const project = { id: 'qa-annotation', name: '参考图标注测试', path: '/fixture', updated_at: '刚刚' };
       const media = { id: 101, name: '角色参考.png', path: '/annotation-fixture.svg', kind: 'image', created_at: '2026-11-06' };
-      const scene = { id: 1, title: '标注场景', sort_order: 0, description: '隔离标注测试', prompt: '', videos: [],
+      const scene = { id: 1, scene_id: 1, title: '标注场景', sort_order: 0, description: '隔离标注测试', prompt: '', videos: [],
         first_media_id: null, last_media_id: null, reference_media_id: null,
         generation_options: { video_mode: 'i2v', reference_media_ids: [101] } };
-      const data = { project, media: [media], assets: [], episodes: [{ id: 1, title: '测试剧集', description: '', scenes: [scene] }], prompts: [], settings: {} };
+      const data = { project, media: [media], assets: [], episodes: [{ id: 1, title: '测试剧集', description: '', clips: [scene], scenes: [{id:scene.id,title:scene.title,generation_mode:'clips',clips:[scene],reference_media_ids:[],reference_audio_media_ids:[]}], playback_units: [] }], prompts: [], settings: {} };
       window.__qaData = data;
       window.__qaUploads = [];
       window.__qaFailUpload = false;
@@ -56,7 +56,7 @@ const fixtureImage = '<svg xmlns="http://www.w3.org/2000/svg" width="1200" heigh
         if (url.pathname.endsWith('/tasks')) return reply({ items: [], has_more: false });
         if (url.pathname.endsWith('/screenplays')) return reply([]);
         if (url.pathname.endsWith('/scripts/load')) return reply(null);
-        if (url.pathname.endsWith('/scenes/1')) Object.assign(scene, payload);
+        if (url.pathname.endsWith('/clips/1')) Object.assign(scene, payload);
         if (url.pathname.endsWith('/media')) return reply({ items: data.media, total: data.media.length });
         return reply({ ok: true });
       };
@@ -66,7 +66,8 @@ const fixtureImage = '<svg xmlns="http://www.w3.org/2000/svg" width="1200" heigh
     await page.getByRole('menuitem', { name: '剧集', exact: true }).click();
     await page.locator('.episode-card').getByRole('button', { name: '编辑', exact: true }).click();
     await page.getByRole('tab', { name: '场景', exact: true }).click();
-    await page.getByRole('button', { name: '编辑场景：标注场景', exact: true }).click();
+    await page.getByRole('button', { name: '查看场景「标注场景」', exact: true }).click();
+    await page.getByRole('button', { name: '编辑片段：标注场景', exact: true }).click();
     await page.getByRole('button', { name: '标注参考图 角色参考.png', exact: true }).click();
     const modal = page.locator('.reference-annotation-modal');
     const canvas = modal.locator('canvas');

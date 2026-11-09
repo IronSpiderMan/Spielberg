@@ -43,10 +43,10 @@ const INDEPENDENT_CHANNEL = "__agent_independent__";
 const statusText: Record<string, string> = { idle: "准备就绪", running: "执行中", completed: "本轮结束", limited: "已暂停，可继续", failed: "执行失败", cancelled: "已停止" };
 const toolText: Record<string, string> = { request_user_input: "请求用户决定", update_plan: "更新任务计划", get_project: "读取项目", search_conversation: "检索对话记录", list_skills: "查找技能", read_skill: "读取技能", app_describe: "查看操作说明", app_request: "操作项目数据", app_action: "执行创作操作", web_search: "联网搜索", fetch_webpage: "读取网页" };
 const toolTargetText: Record<string, string> = {
-  assets: "资产库", media: "素材库", episodes: "剧集", scenes: "场景", prompts: "提示词", screenplays: "剧本",
+  assets: "资产库", media: "素材库", episodes: "剧集", scenes: "场景", clips: "片段", prompts: "提示词", screenplays: "剧本",
   "assets/media/add": "关联资产图片", "assets/media/delete": "解除资产图片关联",
   "assets/audio/save": "保存资产音频引用", "assets/audio/delete": "解除资产音频关联",
-  "generations/image": "生成图片", "generations/video": "生成视频", "generations/tts": "合成配音", "generations/asr": "识别语音",
+  "generations/image": "生成图片", "generations/video": "生成视频", "generations/scene-video": "生成一镜到底", "generations/clip-preview": "预览片段生成", "generations/scene-preview": "预览场景生成", "generations/tts": "合成配音", "generations/asr": "识别语音",
 };
 function toolTarget(args: unknown): string {
   if (!args || typeof args !== "object") return "";
@@ -383,7 +383,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
             <div className="agent-starters-heading">也可以从这里开始</div>
             <div className="agent-starters">{[
               ["整理项目", "梳理进度，找到下一步", "查看当前项目，整理剧本、资产、剧集和场景的制作进度，并提出下一步建议。"],
-              ["开始一个故事", "让一个灵感，长成剧本", "写一个雨夜车站重逢的短片剧本，创建主要资产，并建立第一集和三个场景。"],
+              ["开始一个故事", "让一个灵感，长成剧本", "写一个雨夜车站重逢的短片剧本，创建主要资产，并建立第一集和三个场景，按动作划分片段。"],
               ["搜索创作参考", "发现镜头、光影与灵感", "联网搜索电影雨夜车站场景的灯光和镜头参考，注明来源，并把可用的创作提示词保存到 Prompt 库。"],
             ].map(([label, description, text]) => <button key={label} onClick={() => { updateDraft(text); composer.current?.focus(); }}><span className="agent-starter-icon">{label === "搜索创作参考" ? <Search size={17} /> : label === "整理项目" ? <Folder size={17} /> : <PencilLine size={17} />}</span><span className="agent-starter-copy"><strong>{label}</strong><small>{description}</small></span><ArrowUpRight className="agent-starter-arrow" size={15} /></button>)}</div>
           </>}

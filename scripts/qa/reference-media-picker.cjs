@@ -32,10 +32,10 @@ const fs = require('node:fs');
           { ...media[0], name: '不应作为音频显示的图片' },
         ]),
       ];
-      const scene = { id: 1, title: '混合来源参考', description: '保留场景描述', prompt: '人物轻声说话，镜头缓慢推进', sort_order: 0,
+      const scene = { id: 1, scene_id: 1, title: '混合来源参考', description: '保留片段描述', prompt: '人物轻声说话，镜头缓慢推进', sort_order: 0,
         first_media_id: null, last_media_id: null, reference_media_id: null, videos: [],
         generation_options: { video_mode: 'i2v', reference_media_ids: [101], duration: 5, aspect_ratio: '16:9' } };
-      const data = { project, media, assets, episodes: [{ id: 1, title: '测试剧集', description: '', scenes: [scene] }], prompts: [],
+      const data = { project, media, assets, episodes: [{ id: 1, title: '测试剧集', description: '', clips: [scene], scenes: [{id:scene.id,title:scene.title,generation_mode:'clips',clips:[scene],reference_media_ids:[],reference_audio_media_ids:[]}], playback_units: [] }], prompts: [],
         settings: { ref2v: { url: 'https://example.invalid', api_key: '' } } };
       window.__qaData = data;
       window.__qaGenerations = [];
@@ -47,7 +47,7 @@ const fs = require('node:fs');
         if (args.path === '/screenplays') return [];
         if (args.path === '/scripts/load') return null;
         if (args.path === '/media/thumbnail') return { path: '/spielberg-logo-s.png' };
-        if (args.path === '/scenes/update') Object.assign(scene, args.payload);
+        if (args.path === '/clips/update') Object.assign(scene, args.payload);
         if (args.path === '/generations/video') {
           window.__qaGenerations.push(args.payload);
           return { id: 201, kind: 'video', name: '隔离生成结果.mp4', path: '/fixture/result', created_at: '2026-11-06' };
@@ -59,11 +59,18 @@ const fs = require('node:fs');
     await page.goto(process.env.QA_URL || 'http://127.0.0.1:1420');
     await page.getByRole('menuitem', { name: '剧集', exact: true }).click();
     const edit = async () => {
-      if (!await page.getByRole('button', { name: '编辑场景：混合来源参考', exact: true }).isVisible()) {
-        await page.locator('.episode-card').getByRole('button', { name: '编辑', exact: true }).click();
+      const editClip = page.getByRole('button', { name: '编辑片段：混合来源参考', exact: true });
+      const sceneCard = page.getByRole('button', { name: '查看场景「混合来源参考」', exact: true });
+      const editEpisode = page.locator('.episode-card').getByRole('button', { name: '编辑', exact: true });
+      await editClip.or(sceneCard).or(editEpisode).first().waitFor();
+      if (await editEpisode.isVisible()) {
+        await editEpisode.click();
         await page.getByRole('tab', { name: '场景', exact: true }).click();
+        await sceneCard.click();
+      } else if (await sceneCard.isVisible()) {
+        await sceneCard.click();
       }
-      await page.getByRole('button', { name: '编辑场景：混合来源参考', exact: true }).click();
+      await editClip.click();
     };
     await edit();
     const editor = page.locator('.scene-editor-page');
@@ -141,10 +148,10 @@ const fs = require('node:fs');
     await finish(dialog);
     await page.setViewportSize({ width: 1440, height: 1100 });
 
-    await editor.getByRole('button', { name: '保存场景', exact: true }).click();
+    await editor.getByRole('button', { name: '保存片段', exact: true }).click();
     await editor.waitFor({ state: 'hidden' });
-    const saved = await page.evaluate(() => window.__qaData.episodes[0].scenes[0]);
-    assert.equal(saved.description, '保留场景描述');
+    const saved = await page.evaluate(() => window.__qaData.episodes[0].clips[0]);
+    assert.equal(saved.description, '保留片段描述');
     assert.deepEqual(saved.generation_options.reference_video_media_ids, [103]);
     assert.deepEqual(saved.generation_options.reference_audio_media_ids, [105, 106, 109]);
     await edit();

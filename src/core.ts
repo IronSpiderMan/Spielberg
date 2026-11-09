@@ -35,6 +35,11 @@ export type GenerationOptions = {
   reference_media_ids?: number[];
   reference_video_media_ids?: number[];
   reference_audio_media_ids?: number[];
+  exclude_shared_reference_media_ids?: number[];
+  exclude_shared_reference_audio_media_ids?: number[];
+  inherit_shared_prompt?: boolean;
+  first_media_id?: number | null;
+  last_media_id?: number | null;
 };
 export const defaultOptions: GenerationOptions = {
   custom: false,
@@ -49,7 +54,8 @@ export { GENERATION_SIZES, defaultGenerationSize, normalizeGenerationSize } from
 export function sceneVideoPrompt(scene: {prompt?: string; description: string}): string {
   return scene.prompt?.trim() ? scene.prompt : scene.description;
 }
-export type Scene = {
+export type Clip = {
+  scene_id: number;
   creation_mode?: "default" | "canvas";
   prompt?: string;
   script?: Record<FrameKey, string> & { references?: string[] };
@@ -68,12 +74,42 @@ export type Scene = {
   reference_media?: Media;
   video_media?: Media;
 };
+export type PlaybackUnit = Pick<Clip, "id" | "scene_id" | "title" | "video_media_id" | "video_media" | "videos"> & { kind: "scene" | "clip" };
+export type Scene = {
+  id: number;
+  episode_id: number;
+  title: string;
+  description: string;
+  sort_order: number;
+  shared_prompt: string;
+  reference_media_ids: number[];
+  reference_audio_media_ids: number[];
+  generation_mode: "clips" | "one_take";
+  generation_options: Partial<GenerationOptions>;
+  clips: Clip[];
+  videos?: Media[];
+  video_media_id?: number | null;
+  video_media?: Media;
+};
+export type GenerationPreview = {
+  prompt: string;
+  duration: number;
+  image_media_ids?: number[];
+  reference_audio_media_ids?: number[];
+  reference_video_media_ids?: number[];
+  first_media_id?: number | null;
+  last_media_id?: number | null;
+  beats?: { clip_id: number; title: string; start: number; end: number }[];
+  warnings?: string[];
+};
 export type Episode = {
   storyboard?: import("./StoryboardEditor").Storyboard;
   id: number;
   title: string;
   description: string;
+  clips: Clip[];
   scenes: Scene[];
+  playback_units: PlaybackUnit[];
   cover_media?: Media;
 };
 export type ProjectDocument = { id: string; title: string; content: string };

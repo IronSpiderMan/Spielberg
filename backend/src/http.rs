@@ -157,7 +157,7 @@ async fn save_listener(State(state): State<Shared>, Extension(listener): Extensi
 fn query_value(q:&HashMap<String,String>)->Value{
     let mut result=json!({});
     for (key,value) in q {
-        result[key]=if ["id","episode_id","asset_id","limit","page","before","through"].contains(&key.as_str()) {
+        result[key]=if ["id","episode_id","scene_id","asset_id","limit","page","before","through"].contains(&key.as_str()) {
             value.parse::<i64>().map(Value::from).unwrap_or_else(|_|json!(value))
         } else if key=="enabled" {
             value.parse::<bool>().map(Value::from).unwrap_or_else(|_|json!(value))
