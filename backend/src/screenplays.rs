@@ -84,13 +84,16 @@ pub(crate) fn validate_content(format: &str, content: &str) -> Result<(), String
     if format == "markdown" { return Ok(()); }
     if format != "csv" { return Err("剧本格式必须为 markdown 或 csv".into()); }
     let rows = parse_csv(content)?;
+    let legacy = rows[0].len() == 5;
     let mut seen = std::collections::HashSet::new();
     for (index, r) in rows.iter().enumerate().skip(1) {
-        if r.len() != 5 { return Err(format!("第 {} 行必须有 5 列（画面可留空）", index+1)); }
         if r[0].trim().is_empty() || !seen.insert(r[0].trim()) { return Err(format!("第 {} 行编号为空或重复", index+1)); }
         if !["大远景","远景","全景","中景","近景","特写","大特写"].contains(&r[1].as_str()) { return Err(format!("第 {} 行景别无效", index+1)); }
         if !["固定","推近","拉远","横摇","俯仰","平移","跟随","升高","降低","环绕","手持","变焦"].contains(&r[2].as_str()) { return Err(format!("第 {} 行运镜无效", index+1)); }
-        if r[4].trim().is_empty() { return Err(format!("第 {} 行描述不能为空", index+1)); }
+        if !legacy && !r[3].is_empty() && !r[3].parse::<u8>().is_ok_and(|seconds| (1..=30).contains(&seconds) && seconds.to_string() == r[3]) {
+            return Err(format!("第 {} 行时长必须为 1–30 秒的整数", index+1));
+        }
+        if r.last().unwrap().trim().is_empty() { return Err(format!("第 {} 行描述不能为空", index+1)); }
     }
     Ok(())
 }
@@ -122,21 +125,35 @@ fn parse_csv(content: &str) -> Result<Vec<Vec<String>>, String> {
     }
     if quoted { return Err("CSV 存在未闭合的引号".into()); }
     if !cell.is_empty() || !row.is_empty() || closed { row.push(cell); rows.push(row); }
-    if !rows.first().is_some_and(|r| r.len() == 5 && r.iter().map(String::as_str).eq(["编号","景别","运镜","画面","描述"])) {
-        return Err("CSV 表头必须为：编号,景别,运镜,画面,描述".into());
+    if !rows.first().is_some_and(|r| r.iter().map(String::as_str).eq(["编号","景别","运镜","画面","描述"]) ||
+        r.iter().map(String::as_str).eq(["编号","景别","运镜","时长","素材","描述"])) {
+        return Err("CSV 表头必须为：编号,景别,运镜,时长,素材,描述".into());
     }
-    if rows.iter().any(|row|row.len()!=5) { return Err("CSV 必须有 5 列".into()); }
+    let columns = rows[0].len();
+    for (index, row) in rows.iter().enumerate().skip(1) {
+        if row.len() != columns { return Err(format!("第 {} 行必须有 {} 列", index+1, columns)); }
+    }
     Ok(rows)
 }
 
-pub(crate) fn rewrite_pictures(c: &Connection, paths: &std::collections::HashMap<String,String>) -> Result<(), String> {
+pub(crate) fn rewrite_media_paths(c: &Connection, paths: &std::collections::HashMap<String,String>) -> Result<(), String> {
     let mut q = c.prepare("SELECT id,content FROM screenplays WHERE format='csv'").map_err(|e|e.to_string())?;
     let scripts = q.query_map([], |r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
     for (id,content) in scripts {
         let mut rows = parse_csv(&content)?;
+        let legacy = rows[0].len() == 5;
         let mut changed = false;
         for row in rows.iter_mut().skip(1) {
-            if let Some(path) = paths.get(&row[3]) { row[3] = path.clone(); changed = true; }
+            if legacy {
+                if let Some(path) = paths.get(&row[3]) { row[3] = path.clone(); changed = true; }
+            } else {
+                let mut rewritten = false;
+                let references = row[4].split('\n').map(|reference| {
+                    if let Some(path) = paths.get(reference.trim_end_matches('\r')) { rewritten = true; path.as_str() }
+                    else { reference }
+                }).collect::<Vec<_>>().join("\n");
+                if rewritten { row[4] = references; changed = true; }
+            }
         }
         if changed {
             let content = rows.iter().map(|row| row.iter().map(|cell| {
@@ -246,6 +263,28 @@ mod tests {
             assert!(validate_content("csv", content).is_err());
         }
         assert!(validate_content("other", "").is_err());
+    }
+
+    #[test]
+    fn csv_accepts_manual_duration_bounds_and_multiple_media_references() {
+        let header = "编号,景别,运镜,时长,素材,描述";
+        for duration in ["", "1", "30"] {
+            assert!(validate_content("csv", &format!("{header}\r\n1,中景,固定,{duration},\"@主角.造型#12\n@素材库.站台#15\",00:00—00:15 正文")).is_ok());
+        }
+        for duration in ["0", "31", "2.5", "+2", " 3", "03"] {
+            assert!(validate_content("csv", &format!("{header}\n1,中景,固定,{duration},,正文")).unwrap_err().contains("1–30"));
+        }
+    }
+
+    #[test]
+    fn rewrites_legacy_paths_alongside_stable_references_in_current_csv() {
+        let c = Connection::open_in_memory().unwrap();
+        migrate(&c).unwrap();
+        c.execute("INSERT INTO episodes(id,title,sort_order,created_at) VALUES(1,'第一集',0,'1')", []).unwrap();
+        let content = "编号,景别,运镜,时长,素材,描述\r\n1,中景,固定,7,\"@主角.造型#12\n/old/frame.png\",\"正文,不改\"";
+        c.execute("INSERT INTO screenplays(episode_id,title,content,format,created_at,updated_at) VALUES(1,'分镜',?,'csv','1','1')", [content]).unwrap();
+        rewrite_media_paths(&c, &std::collections::HashMap::from([("/old/frame.png".into(), "/new/frame.png".into())])).unwrap();
+        assert_eq!(list(&c).unwrap()[0]["content"], content.replace("/old/", "/new/"));
     }
 
     #[test]

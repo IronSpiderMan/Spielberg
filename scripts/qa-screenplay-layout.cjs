@@ -51,11 +51,13 @@ const assert = require('node:assert/strict');
   await openScripts();
   // A long storyboard must scroll inside the document, never the desktop page.
   await page.setViewportSize({width:1600,height:1000});
-  const longCsv='编号,景别,运镜,画面,描述\n'+Array.from({length:72},(_,i)=>`${i+1},中景,固定,,第 ${i+1} 个镜头：少年查看日志，然后打开终端。`).join('\n');
+  const longCsv='编号,景别,运镜,画面,描述\n'+Array.from({length:72},(_,i)=>`${(i+1)*10},中景,固定,,00:00—00:15 第 ${i+1} 个镜头：少年查看日志，然后打开终端。`).join('\n');
   const response=await fetch(url+'/api/v1/projects/'+project.id+'/episodes/'+episode.id+'/screenplays',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:'72 镜分镜',format:'csv',content:longCsv})});
   assert.equal(response.status,201);
   await page.reload();lastFormat='csv';await openScripts();
   await page.getByLabel('镜头 72 描述',{exact:true}).waitFor();
+  assert.equal(await page.getByLabel('镜头 1 时长',{exact:true}).inputValue(),'','Old timestamps do not set the duration');
+  assert.deepEqual(await page.locator('.shot-number').allTextContents(),Array.from({length:72},(_,i)=>String(i+1)));
   for (const viewport of [{width:1600,height:1000},{width:1280,height:720},{width:1024,height:768}]) {
    await page.setViewportSize(viewport);
    await page.waitForTimeout(150);

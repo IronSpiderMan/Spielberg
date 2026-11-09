@@ -49,7 +49,7 @@ fn rewrite(value:&mut Value, paths:&HashMap<String,String>, strip_secrets:bool) 
     }
 }
 fn rewrite_database(c:&Connection,paths:&HashMap<String,String>,strip_secrets:bool)->Result<(),String> {
-    screenplays::rewrite_pictures(c,paths)?;
+    screenplays::rewrite_media_paths(c,paths)?;
     for (old,new) in paths { c.execute("UPDATE media SET path=? WHERE path=?",params![new,old]).map_err(|e|e.to_string())?; }
     for (table,key,columns) in [
         ("settings","key",vec!["value"]),("clip_scripts","clip_id",vec!["value"]),
