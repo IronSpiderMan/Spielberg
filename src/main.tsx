@@ -82,6 +82,7 @@ const SceneEditor=lazy(()=>import("./workspace").then(m=>({default:m.SceneEditor
 const Roles=lazy(()=>import("./workspace").then(m=>({default:m.Roles})));
 const Prompts=lazy(()=>import("./workspace").then(m=>({default:m.Prompts})));
 const SettingsPage=lazy(()=>import("./SettingsPage"));
+const ListenerSettings=lazy(()=>import("./ListenerSettings"));
 
 const workspacePages = [
   { id: "agent", label: "Agent 助手", icon: Bot },
@@ -146,6 +147,7 @@ function App() {
   const contentRef = useRef<HTMLDivElement>(null);
   useEffect(() => { contentRef.current?.scrollTo({top: 0}); }, [page, sceneEditing, active?.id]);
   const [creating, setCreating] = useState(false);
+  const [listenerSettingsOpen, setListenerSettingsOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(true);
   const [creatingProject, setCreatingProject] = useState(false);
@@ -282,7 +284,11 @@ function App() {
   if (!data)
     return (
       <>
-        <Welcome onCreate={() => setCreating(true)} onOpen={openProject} onRestored={openRestored} />
+        <Welcome onCreate={() => setCreating(true)} onOpen={openProject} onRestored={openRestored} onSettings={() => setListenerSettingsOpen(true)} />
+        <Modal title="端口设置" visible={listenerSettingsOpen} footer={null} maskClosable={false}
+          className="studio-settings-page" onCancel={() => leaveEditor(() => setListenerSettingsOpen(false))}>
+          {listenerSettingsOpen && <Suspense fallback={<Spin />}><ListenerSettings onDirtyChange={registerDirty} /></Suspense>}
+        </Modal>
         {agentFloat.visible && <AgentFloatButton appearance={agentFloat} project={null} reload={refresh} onOpenSession={() => {}} />}
         <Modal
           title="创建项目"
@@ -559,10 +565,12 @@ function Welcome({
   onCreate,
   onOpen,
   onRestored,
+  onSettings,
 }: {
   onCreate: () => void;
   onOpen: () => void;
   onRestored:(id:string)=>Promise<void>;
+  onSettings: () => void;
 }) {
   return (
     <div className="welcome">
@@ -583,6 +591,7 @@ function Welcome({
             打开已有项目
           </Button>
           <Suspense fallback={null}><ProjectTools onRestored={onRestored}/></Suspense>
+          <Button size="large" icon={<Settings size={18} />} onClick={onSettings}>端口设置</Button>
         </div>
         <div className="welcome-features">
           <div><FileText size={20}/><b>故事与分镜</b><span>从一个想法，到完整镜头脚本</span></div>

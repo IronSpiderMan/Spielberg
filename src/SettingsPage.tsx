@@ -1,12 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button, Form, Input, InputNumber, Message, Slider, Space, Switch } from "@arco-design/web-react";
-import { AlertCircle, Check, FolderOpen, Image, LoaderCircle, MessageSquare, Mic, Save, Sparkles, Square, Video, Volume2 } from "lucide-react";
+import { AlertCircle, Check, FolderOpen, Image, LoaderCircle, MessageSquare, Mic, Network, Save, Sparkles, Square, Video, Volume2 } from "lucide-react";
 import { type ModelSettings, type Snapshot, post } from "./core";
 import { useEditGuard } from "./edit-guard";
 import { generationChoice, type GenerationKind } from "./generation-channels";
 import { GenerationChannelsSettings } from "./GenerationChannelsSettings";
 import { GenerationSelector } from "./components/generation/GenerationSelector";
 import { SkillsSettings } from "./SkillsSettings";
+import ListenerSettings from "./ListenerSettings";
 import { open } from "./platform";
 import { isLocalDesktop } from "./transport";
 import { agentFloatColors, useAgentFloatSpeechPreferences, type AgentFloatPreferences } from "./agent-float-preferences";
@@ -22,6 +23,7 @@ const categories = [
   { id: "skills", label: "Skills 技能", icon: Sparkles },
   { id: "agent-float", label: "Agent 悬浮按钮", icon: Sparkles },
   { id: "storage", label: "项目存储", icon: FolderOpen },
+  { id: "listener", label: "端口设置", icon: Network },
 ] as const;
 type Category = typeof categories[number]["id"];
 const serviceKinds: GenerationKind[] = ["llm", "image", "video", "tts", "asr"];
@@ -36,6 +38,8 @@ export default function SettingsPage({ data, reload, agentFloat, onAgentFloatCha
   const agentScrollRef = useRef<HTMLDivElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
   const [skillsVisited, setSkillsVisited] = useState(false);
+  const [listenerVisited, setListenerVisited] = useState(false);
+  const [listenerDirty, setListenerDirty] = useState(false);
   const [settings, setSettings] = useState<ModelSettings>({ ...data.settings });
   const [agentSpeech, setAgentSpeech] = useAgentFloatSpeechPreferences(data.project.id);
   const asrChoice = generationChoice(data.settings, "asr", agentSpeech.asr, "asr");
@@ -53,7 +57,7 @@ export default function SettingsPage({ data, reload, agentFloat, onAgentFloatCha
   const [savingDirectory, setSavingDirectory] = useState(false);
   const directoryUnavailable = loadingDirectory || savingDirectory || savedDirectory === null;
   const directoryDirty = savedDirectory !== null && projectsDirectory !== savedDirectory;
-  useEditGuard(dirty || directoryDirty || saving || savingDirectory);
+  useEditGuard(dirty || directoryDirty || listenerDirty || saving || savingDirectory);
 
   const loadDirectory = async () => {
     setLoadingDirectory(true);
@@ -128,6 +132,7 @@ export default function SettingsPage({ data, reload, agentFloat, onAgentFloatCha
     if (next === "agent-float" && category !== "agent-float") setAgentSection("speech");
     setCategory(next);
     if (next === "skills") setSkillsVisited(true);
+    if (next === "listener") setListenerVisited(true);
   };
   const changed = (kind: GenerationKind) => dirty && JSON.stringify(settings[kind]) !== JSON.stringify(data.settings[kind]);
 
@@ -143,7 +148,7 @@ export default function SettingsPage({ data, reload, agentFloat, onAgentFloatCha
     <div ref={tabsRef} className="settings-category-tabs" role="tablist" aria-label="设置分类">
       {categories.map(({ id, label, icon: Icon }, index) => {
         const service = serviceKinds.includes(id as GenerationKind);
-        const pending = service ? changed(id as GenerationKind) : id === "storage" && directoryDirty;
+        const pending = service ? changed(id as GenerationKind) : (id === "storage" && directoryDirty) || (id === "listener" && listenerDirty);
         return <button key={id} id={`settings-tab-${id}`} type="button" role="tab" aria-selected={category === id} aria-controls={`settings-panel-${id}`} tabIndex={0} onClick={() => selectCategory(id)} ><Icon size={16} /><span>{label}</span>{pending && <i className="settings-pending-dot" aria-label="有未保存修改" />}</button>;
       })}
     </div>
@@ -151,6 +156,9 @@ export default function SettingsPage({ data, reload, agentFloat, onAgentFloatCha
       <GenerationChannelsSettings kind={kind} settings={settings} disabled={saving} onChange={next => { setSettings(next); setDirty(true); }} />
     </div>)}
     <div id="settings-panel-skills" role="tabpanel" aria-labelledby="settings-tab-skills" className="studio-settings-panel settings-shared-panel" hidden={category !== "skills"}>{skillsVisited && <SkillsSettings />}</div>
+    <div id="settings-panel-listener" role="tabpanel" aria-labelledby="settings-tab-listener" className="studio-settings-panel settings-shared-panel" hidden={category !== "listener"}>
+      {listenerVisited && <ListenerSettings onDirtyChange={setListenerDirty} />}
+    </div>
     <div id="settings-panel-agent-float" role="tabpanel" aria-labelledby="settings-tab-agent-float" className="studio-settings-panel settings-agent-panel" hidden={category !== "agent-float"}>
       <div className="settings-agent-navigation">
         <div className="settings-agent-subtabs" role="tablist" aria-label="浮标设置分组" onKeyDown={event => {

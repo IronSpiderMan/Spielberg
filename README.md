@@ -9,13 +9,13 @@ React 前端 + 独立 Rust/Axum 后端 + Tauri 桌面壳。浏览器和桌面端
 ```bash
 npm install
 
-# 同时启动独立后端（8080）和 Vite 前端（1420）
+# 同时启动独立后端和 Vite 前端（1420）
 npm run dev
 
-# Tauri 桌面开发：启动 Vite，桌面壳自动启动 127.0.0.1:8080 后端
+# Tauri 桌面开发：启动 Vite，桌面壳自动启动后端
 npm run desktop:dev
 
-# 构建前端并运行后端；直接打开 http://127.0.0.1:8080
+# 构建前端并运行后端；默认访问 http://127.0.0.1:8080
 npm run server
 
 # 构建含前端页面的独立后端程序
@@ -37,7 +37,9 @@ Windows 构建需要 Node.js、Rust MSVC 工具链及 Visual Studio C++ Build To
 
 服务器只需运行一个 `spielberg-backend` 进程，它同时提供 `/api/v1` 接口、素材和前端页面。页面在构建时嵌入后端程序，无需额外启动 Vite、Node.js 或附带 `dist/`。构建产物为 `backend/target/release/spielberg-backend`（Windows 加 `.exe`）。服务器端不依赖 Tauri、GTK 或 WebKit；`npm run server:build:linux-arm64` 可使用 Podman/Docker 构建 Linux ARM64 程序。
 
-桌面壳复用同一个后端库，绑定固定地址 `0.0.0.0:8080`，允许局域网设备连接；桌面界面本身仍通过 `127.0.0.1:8080` 调用 API。生产桌面端加载相同的前端构建，使用固定 Tauri 页面源保留主题等浏览器设置；开发时页面由 Vite 提供，API 地址由壳注入。窗口退出时本地服务随应用停止。后端没有用户认证，监听 `0.0.0.0` 会向本机网络开放 API 和素材，请只在可信网络中运行。
+在「设置 → 端口设置」中可修改后端监听主机和端口，欢迎页也有入口。配置保存在数据目录的 `app-settings.json` 中，适用于所有项目。保存后重启桌面应用或独立后端，浏览器直接访问后端时需使用新地址。默认桌面端监听 `0.0.0.0:8080`，独立后端监听 `127.0.0.1:8080`。后端没有用户认证，监听 `0.0.0.0` 会向本机网络开放 API 和素材，请只在可信网络中运行。
+
+桌面壳复用同一个后端库，并将实际 API 地址注入前端。生产桌面端使用固定 Tauri 页面源保留主题等浏览器设置，开发时页面由 Vite 提供。窗口退出时本地服务随应用停止。
 
 ### GitHub Actions 构建安装包
 
@@ -67,12 +69,13 @@ VITE_API_BASE_URL=https://api.example.com npm run build
 
 | 设置 | 含义 |
 |---|---|
-| `SPIELBERG_BIND` | 后端监听地址，默认 `127.0.0.1:8080`；局域网部署可设置 `0.0.0.0:8080` |
+| `SPIELBERG_BIND` | 覆盖已保存的监听地址，设置此变量时界面中的端口设置为只读 |
 | `SPIELBERG_DATA_DIR` | 数据目录；服务器默认系统本地数据目录下的 `Spielberg`，桌面默认原 Tauri 应用数据目录 |
 | `SPIELBERG_ALLOWED_ORIGINS` | 允许的跨域前端来源，逗号分隔；默认允许本地 Vite 的 1420 端口和 Tauri 页面源 |
 | `VITE_API_BASE_URL` | 独立前端的后端源地址；同源托管和本地代理无需设置 |
+| `SPIELBERG_DEV_PROXY_TARGET` | 单独运行 Vite 时可指定代理目标；`npm run dev` 会自动跟随后端实际地址 |
 
-后端设置通过进程环境变量传入；Vite 设置可写入 `.env.local`，示例见 `.env.example`。数据目录应放在持久化磁盘上。项目路径和旧数据库迁移逻辑继续保留；服务未提供多用户鉴权，局域网部署应使用可信网络，需要对外开放时在反向代理处提供认证和 HTTPS。
+后端环境变量由启动进程传入。Vite 设置可写入 `.env.local`，示例见 `.env.example`。数据目录应放在持久化磁盘上。项目路径和旧数据库迁移逻辑继续保留；服务未提供多用户鉴权，局域网部署应使用可信网络，需要对外开放时在反向代理处提供认证和 HTTPS。
 
 ### 全局语音 Agent
 

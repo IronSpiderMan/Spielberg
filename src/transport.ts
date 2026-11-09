@@ -1,7 +1,7 @@
 declare global { interface Window { __SPIELBERG_API_URL__?: string } }
 const configured = (import.meta as ImportMeta & { env?: { VITE_API_BASE_URL?: string } }).env?.VITE_API_BASE_URL;
 export const API_BASE_URL = (window.__SPIELBERG_API_URL__ || configured || "").replace(/\/$/, "");
-export const isLocalDesktop = "__TAURI_INTERNALS__" in window && (!API_BASE_URL || ["localhost", "127.0.0.1", "[::1]"].includes(new URL(API_BASE_URL, location.origin).hostname));
+export const isLocalDesktop = "__TAURI_INTERNALS__" in window && (!!window.__SPIELBERG_API_URL__ || !API_BASE_URL || ["localhost", "127.0.0.1", "[::1]"].includes(new URL(API_BASE_URL, location.origin).hostname));
 export function backendUrl(path: string) { return `${API_BASE_URL}${path}`; }
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   let response: Response;

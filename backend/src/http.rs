@@ -1,8 +1,8 @@
 use super::*;
 use crate::rest::{ApiError, ApiResult};
-use axum::{body::{Body, to_bytes}, extract::{Query, State}, http::{Request, StatusCode, header}, response::{IntoResponse, Response}, routing::{any, get}, Json, Router};
+use axum::{body::{Body, to_bytes}, extract::{Query, State}, http::{Request, StatusCode, header}, response::{IntoResponse, Response}, routing::{any, get}, Extension, Json, Router};
 use http_body_util::BodyExt;
-use std::{collections::HashMap, future::IntoFuture, net::TcpListener, sync::Arc};
+use std::{collections::HashMap, future::IntoFuture, net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener}, sync::Arc};
 use tokio::io::AsyncWriteExt;
 use tower_http::{cors::CorsLayer, services::ServeFile};
 
@@ -46,11 +46,41 @@ mod data_dir_tests {
 /// Dropping it stops accepting requests and shuts down its runtime.
 pub struct Backend {
     pub url: String,
+    address: SocketAddr,
     shutdown: Option<tokio::sync::oneshot::Sender<()>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 impl Backend {
+    pub fn start_configured(root: PathBuf, default_host: IpAddr) -> Result<Self, Box<dyn std::error::Error>> {
+        match std::env::var("SPIELBERG_BIND") {
+            Ok(bind) => Self::start(root, &bind),
+            Err(std::env::VarError::NotPresent) => {
+                let address = app_settings::configured_listener(&root).map_err(std::io::Error::other)?
+                    .unwrap_or_else(|| SocketAddr::new(default_host, 8080));
+                Self::start_with_bind(root, &address.to_string(), false)
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
     pub fn start(root: PathBuf, bind: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::start_with_bind(root, bind, true)
+    }
+
+    pub fn client_url(&self) -> String {
+        let ip = match self.address.ip() {
+            IpAddr::V4(ip) if ip.is_unspecified() => Ipv4Addr::LOCALHOST.into(),
+            IpAddr::V6(ip) if ip.is_unspecified() => Ipv6Addr::LOCALHOST.into(),
+            _ => return self.url.clone(),
+        };
+        format!("http://{}", SocketAddr::new(ip, self.address.port()))
+    }
+
+    fn start_with_bind(root: PathBuf, bind: &str, overridden: bool) -> Result<Self, Box<dyn std::error::Error>> {
+        let listener = TcpListener::bind(bind)
+            .map_err(|error| std::io::Error::new(error.kind(), format!("无法监听 {bind}：{error}")))?;
+        listener.set_nonblocking(true)?;
+        let address = listener.local_addr()?;
         storage::initialize_root(&root)?;
         let state=Arc::new(AppState{root,guard:Arc::new(Mutex::new(()))});
         for p in registry(&state).map_err(std::io::Error::other)? {
@@ -60,9 +90,8 @@ impl Backend {
                 Err(error)=>eprintln!("跳过当前不可用的项目 {pid}：{error}"),
             }
         }
-        let listener=TcpListener::bind(bind)?;listener.set_nonblocking(true)?;
-        let url=format!("http://{}",listener.local_addr()?);
-        let router=router(state);
+        let url=format!("http://{address}");
+        let router=router(state, app_settings::ListenerSettings { active: address, overridden });
         let runtime=tokio::runtime::Runtime::new()?;
         let (tx,rx)=tokio::sync::oneshot::channel();
         let thread=std::thread::spawn(move||{
@@ -75,15 +104,14 @@ impl Backend {
             });
             runtime.shutdown_timeout(std::time::Duration::from_secs(3));
         });
-        Ok(Self{url,shutdown:Some(tx),thread:Some(thread)})
+        Ok(Self{url,address,shutdown:Some(tx),thread:Some(thread)})
     }
 }
 impl Drop for Backend {
     fn drop(&mut self){if let Some(tx)=self.shutdown.take(){let _=tx.send(());}if let Some(thread)=self.thread.take(){let _=thread.join();}}
 }
 pub fn run(){
-    let bind=std::env::var("SPIELBERG_BIND").unwrap_or_else(|_|"127.0.0.1:8080".into());
-    let backend=Backend::start(default_data_dir(),&bind).expect("启动后端失败");
+    let backend=Backend::start_configured(default_data_dir(), Ipv4Addr::LOCALHOST.into()).expect("启动后端失败");
     println!("Spielberg listening at {}",backend.url);
     let runtime=tokio::runtime::Runtime::new().expect("创建信号运行时失败");
     runtime.block_on(async {let _=tokio::signal::ctrl_c().await;});
@@ -100,9 +128,10 @@ async fn origin_guard(request:Request<Body>,next:axum::middleware::Next)->Respon
     }
     next.run(request).await
 }
-fn router(state:Shared)->Router{
+fn router(state:Shared, listener:app_settings::ListenerSettings)->Router{
     Router::new()
         .route("/api/v1/health",get(||async{Json(json!({"data":{"status":"ok","api_version":1}}))}))
+        .route("/api/v1/app/listener", get(load_listener).put(save_listener).layer(Extension(listener)))
         .route("/api/v1/{*path}",any(endpoint))
         .route("/media",get(media_file))
         .fallback(static_file)
@@ -114,6 +143,17 @@ fn router(state:Shared)->Router{
             .expose_headers([header::CONTENT_DISPOSITION,header::CONTENT_RANGE]))
 }
 fn success(value:Value,status:StatusCode)->Response{(status,Json(json!({"data":value}))).into_response()}
+async fn load_listener(State(state): State<Shared>, Extension(listener): Extension<app_settings::ListenerSettings>) -> ApiResult<Response> {
+    let result = blocking(move || Ok(listener.load(&state.root)?)).await?;
+    Ok(success(result, StatusCode::OK))
+}
+async fn save_listener(State(state): State<Shared>, Extension(listener): Extension<app_settings::ListenerSettings>, Json(value): Json<Value>) -> ApiResult<Response> {
+    let result = blocking(move || {
+        let _lock = state.guard.lock().map_err(|_| "数据锁不可用".to_string())?;
+        listener.save(&state.root, &value)
+    }).await?;
+    Ok(success(result, StatusCode::OK))
+}
 fn query_value(q:&HashMap<String,String>)->Value{
     let mut result=json!({});
     for (key,value) in q {

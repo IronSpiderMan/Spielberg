@@ -13,8 +13,8 @@ pub fn run() {
         ])
         .setup(|app| {
             let root=spielberg_backend::default_data_dir();
-            let backend=spielberg_backend::Backend::start(root,"0.0.0.0:8080")?;
-            let api_url="http://127.0.0.1:8080";
+            let backend=spielberg_backend::Backend::start_configured(root, std::net::Ipv4Addr::UNSPECIFIED.into())?;
+            let api_url=backend.client_url();
             let bootstrap=format!("window.__SPIELBERG_API_URL__={};",serde_json::to_string(&api_url)?);
             app.manage(backend);
             tauri::WebviewWindowBuilder::new(app,"main",tauri::WebviewUrl::App("index.html".into()))
