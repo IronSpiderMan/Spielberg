@@ -43,11 +43,14 @@ export function GenerationPreviewPanel({ preview, media }: { preview: Generation
   </div>;
 }
 
-export function SceneSettings({ data, episode, scene, clipIds, reload, close, onSaved, onStatus, renderClips }: {
+export type SceneInsertion = { anchor_scene_id: number; position: "before" | "after" };
+
+export function SceneSettings({ data, episode, scene, clipIds, insertion, reload, close, onSaved, onStatus, renderClips }: {
   data: Snapshot;
   episode: Episode;
   scene?: Scene;
   clipIds?: number[];
+  insertion?: SceneInsertion;
   reload: () => void;
   close?: () => void;
   onStatus?: (dirty: boolean, busy: boolean) => void;
@@ -105,7 +108,7 @@ export function SceneSettings({ data, episode, scene, clipIds, reload, close, on
     const values = { project_id, title: title.trim(), description, shared_prompt: prompt, reference_media_ids: imageIds, reference_audio_media_ids: audioIds, generation_mode: mode,
       generation_options: mode === "one_take" ? { ...options, audio: choice?.capabilities.audio ? options.audio : undefined } : options };
     const result = scene ? await post<Scene>("/scenes/update", { ...values, id: scene.id })
-      : await post<Scene>("/scenes", { ...values, episode_id: episode.id, clip_ids: clipIds });
+      : await post<Scene>("/scenes", { ...values, episode_id: episode.id, clip_ids: clipIds, ...insertion });
     setSavedSignature(signature);
     return result;
   };
@@ -277,7 +280,10 @@ export function SceneSettings({ data, episode, scene, clipIds, reload, close, on
       {renderClips(afterSave, locked)}
     </div>
   </section>;
-  return <Modal visible title={clipIds?.length ? "将所选片段归为场景" : "新建场景"} className="scene-settings-modal"
+  const creationTitle = insertion
+    ? (insertion.position === "before" ? "在前方插入场景" : "在后方插入场景")
+    : clipIds?.length ? "将所选片段归为场景" : "新建场景";
+  return <Modal visible title={creationTitle} className="scene-settings-modal"
     style={{ width: 760, maxWidth: "calc(100vw - 32px)" }} onCancel={closeSettings} closable={!locked} maskClosable={false} escToExit={!locked}
     footer={<Space><Button disabled={locked} onClick={closeSettings}>关闭</Button>{saveButton}</Space>}>
     {form}

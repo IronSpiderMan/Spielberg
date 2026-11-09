@@ -80,7 +80,7 @@ import { api,normalizeGenerationSize,Episode,FrameKey,GenerationOptions,imageUrl
 import { confirmDiscard,useEditGuard } from "./edit-guard";
 import { resolvePrompt, resolveH3Prompt } from "./resolve-prompt";
 import { type Storyboard } from "./StoryboardEditor";
-import { GenerationPreviewPanel, SceneSettings } from "./SceneSettings";
+import { GenerationPreviewPanel, SceneSettings, type SceneInsertion } from "./SceneSettings";
 import { SceneMergeDialog } from "./SceneMergeDialog";
 import ScreenplayManager, { type ScreenplayEditorHandle } from "./ScreenplayManager";
 import { PromptInput } from "./PromptInput";
@@ -950,7 +950,7 @@ function EpisodeEditor({
     } finally { setInserting(null); }
   };
   const initialFocus = initialSceneId ?? initialFocusedSceneId;
-  const [editingScene, setEditingScene] = useState<"new" | "group">();
+  const [editingScene, setEditingScene] = useState<"new" | "group" | SceneInsertion>();
   const [focusedSceneId, setFocusedSceneId] = useState(initialFocus);
   const [sceneQuery, setSceneQuery] = useState("");
   const [sceneView, setSceneView] = useState<"grid" | "detail">(initialFocus === undefined ? "grid" : "detail");
@@ -1211,6 +1211,8 @@ function EpisodeEditor({
               const selected = selectingScenes && selection.includes(scene.id);
               const picked = selectingClips ? scene.clips.filter(clip => selection.includes(clip.id)).length : 0;
               const cover = sceneThumbnail(scene, data.media);
+              const oneTake = scene.generation_mode === "one_take";
+              const allReady = oneTake ? !!scene.video_media_id : scene.clips.length > 0 && ready === scene.clips.length;
               const card = <>
                 <span className="scene-workspace-card-cover" aria-hidden="true">
                   {cover?.kind === "video" ? <AssetThumbnail media={cover} projectId={project.id}/>
@@ -1223,8 +1225,10 @@ function EpisodeEditor({
                   {scene.description && <span className="scene-workspace-card-description">{scene.description}</span>}
                   <span className="scene-workspace-card-meta">
                     <span>{scene.clips.length} 个片段</span>
-                    <span>{scene.generation_mode === "one_take" ? scene.video_media_id ? "一镜到底已就绪" : "一镜到底"
-                      : `${ready}/${scene.clips.length} 就绪`}</span>
+                    <span className="scene-workspace-card-readiness" data-ready={allReady}
+                      title={allReady ? "全部就绪" : "未完全就绪"}>
+                      {oneTake ? (allReady ? "一镜到底已就绪" : "一镜到底未就绪") : `${ready}/${scene.clips.length} 就绪`}
+                    </span>
                     {picked > 0 && <Tag size="small" color="arcoblue">已选 {picked}</Tag>}
                   </span>
                 </span>
@@ -1238,6 +1242,13 @@ function EpisodeEditor({
                   aria-label={`查看场景「${scene.title}」`} disabled={editorLocked} onClick={() => showScene(scene.id)}>
                   {card}
                 </button>}
+                {!selecting && currentEpisode && <div className="scene-workspace-card-actions">
+                  <EpisodeOrderControls episode={currentEpisode} kind="scene" id={scene.id} project={project} reload={reload}
+                    disabled={editorLocked} actions={[
+                      { key: "before", label: "在前方插入场景", run: () => setEditingScene({ anchor_scene_id: scene.id, position: "before" }) },
+                      { key: "after", label: "在后方插入场景", run: () => setEditingScene({ anchor_scene_id: scene.id, position: "after" }) },
+                    ]} />
+                </div>}
               </li>;
             })}
           </ol> : <Empty description={sceneOrder.length ? "没有匹配的场景或片段" : "本集暂无场景，点击「新建场景」开始创作"}/>}
@@ -1247,7 +1258,8 @@ function EpisodeEditor({
           onStatus={onSceneStatus} renderClips={renderSceneClips} />)}
       </div>
       {currentEpisode && editingScene && <SceneSettings
-        key={editingScene} data={data} episode={currentEpisode} reload={reload}
+        key={typeof editingScene === "object" ? "insert" : editingScene} data={data} episode={currentEpisode} reload={reload}
+        insertion={typeof editingScene === "object" ? editingScene : undefined}
         clipIds={editingScene === "group" ? selectedIndexes.map(index => currentEpisode.clips[index].id) : undefined}
         close={() => setEditingScene(undefined)} onSaved={scene => {
           resetSelection();

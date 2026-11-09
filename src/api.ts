@@ -65,7 +65,8 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     if (["scenes", "clips", "screenplays"].includes(resource) && !operation && method === "POST") {
       const { episode_id, ...values } = fields(resource, data);
       if (!episode_id) throw new Error("创建场景、片段或剧本需要 episode_id");
-      const placement = resource === "clips" ? { anchor_clip_id: data.anchor_clip_id, position: data.position } : {};
+      const placement = resource === "scenes" ? { anchor_scene_id: data.anchor_scene_id, position: data.position }
+        : resource === "clips" ? { anchor_clip_id: data.anchor_clip_id, position: data.position } : {};
       return jsonRequest<T>(`${projectPath(data.project_id, `episodes/${encodeURIComponent(episode_id)}/${resource}`)}`, "POST", { ...values, ...placement });
     }
     const root = resource === "projects" ? "/api/v1/projects" : projectPath(data.project_id, resource);

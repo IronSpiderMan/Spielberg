@@ -201,7 +201,7 @@ fn regroup(c: &Connection, ep: i64, scene: i64, selected: &[i64]) -> Result<(),S
     clean_empty(c,ep)
 }
 
-pub(super) fn fields(c: &Connection, value: &Value) -> Result<(),String> {
+fn fields(c: &Connection, value: &Value, create: bool) -> Result<(),String> {
     for (key, item) in value.as_object().ok_or("JSON 必须是对象")? {
         match key.as_str() {
             "project_id" | "id" => {}
@@ -220,6 +220,8 @@ pub(super) fn fields(c: &Connection, value: &Value) -> Result<(),String> {
             "reference_media_ids" => check_media(c,item,"image",key)?,
             "reference_audio_media_ids" => check_media(c,item,"audio",key)?,
             "clip_ids" => { ids(item,key)?; }
+            "anchor_scene_id" if create && item.as_i64().is_some_and(|id| id>0) => {}
+            "position" if create && matches!(item.as_str(),Some("before"|"after")) => {}
             _ => return Err(format!("场景字段无效：{key}")),
         }
     }
@@ -247,9 +249,23 @@ pub(super) fn create(s: &AppState, v: &Value) -> Result<Value,String> {
     let pid = project_id(v)?;
     let mut c = db(s,&pid)?;
     let tx = c.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e| e.to_string())?;
-    fields(&tx,v)?;
+    fields(&tx,v,true)?;
     let ep = intv(v,"episode_id")?;
     let title = strv(v,"title")?;
+    let placement = match (v["anchor_scene_id"].as_i64(), v["position"].as_str()) {
+        (None, None) => None,
+        (Some(anchor), Some(position)) => {
+            if v.get("clip_ids").is_some() { return Err("插入场景时不能指定已有片段".into()); }
+            let order = clip_order(&tx,ep)?;
+            let index = if position == "before" {
+                order.iter().position(|(_,scene)| *scene == anchor)
+            } else {
+                order.iter().rposition(|(_,scene)| *scene == anchor).map(|index| index + 1)
+            }.ok_or("目标场景不存在于当前剧集")?;
+            Some((index, order.into_iter().map(|(clip,_)| clip).collect::<Vec<_>>()))
+        }
+        _ => return Err("插入场景需要同时指定目标场景和插入位置".into()),
+    };
     let id = insert_parent(&tx,ep,title.trim())?;
     save_fields(&tx,id,v)?;
     if let Some(selected) = v.get("clip_ids") {
@@ -259,6 +275,10 @@ pub(super) fn create(s: &AppState, v: &Value) -> Result<Value,String> {
         tx.execute("INSERT INTO clips(id,episode_id,scene_id,title,sort_order,created_at)
             VALUES(?,?,?,'片段 1',(SELECT COALESCE(MAX(sort_order),-1)+1 FROM clips WHERE episode_id=?),?)",
             params![clip,ep,id,ep,now()]).map_err(|e| e.to_string())?;
+        if let Some((index, mut order)) = placement {
+            order.insert(index, clip);
+            set_clip_order(&tx,ep,&order)?;
+        }
     }
     tx.commit().map_err(|e| e.to_string())?;
     touch(s,&pid);
@@ -269,7 +289,7 @@ pub(super) fn update(s: &AppState, v: &Value) -> Result<Value,String> {
     let pid = project_id(v)?;
     let mut c = db(s,&pid)?;
     let tx = c.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e| e.to_string())?;
-    fields(&tx,v)?;
+    fields(&tx,v,false)?;
     let id = intv(v,"id")?;
     let ep = episode_id(&tx,id)?;
     if v.get("episode_id").is_some_and(|value| value.as_i64()!=Some(ep)) { return Err("场景不能跨剧集移动".into()); }

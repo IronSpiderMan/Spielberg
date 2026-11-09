@@ -129,6 +129,24 @@ def main():
             api("POST", "/actions/scenes/reorder", {"project_id": pid, "episode_id": episode["id"],
                 "scene_ids": [parent["id"], scene["scene_id"]]})
             assert [unit["kind"] for unit in api("GET", episode_path)["playback_units"]] == ["scene", "clip"]
+            scene_collection = episode_path + "/scenes"
+            before = api("POST", scene_collection, {
+                "title": "前插场景", "anchor_scene_id": parent["id"], "position": "before"
+            }, 201)
+            after = api("POST", scene_collection, {
+                "title": "后插场景", "anchor_scene_id": parent["id"], "position": "after"
+            }, 201)
+            api("POST", scene_collection, {"title": "缺少位置", "anchor_scene_id": parent["id"]}, 400)
+            api("POST", scene_collection, {
+                "title": "无效目标", "anchor_scene_id": 999999, "position": "after"
+            }, 404)
+            ordered = api("GET", episode_path)
+            assert [item["id"] for item in ordered["scenes"]] == [before["id"], parent["id"], after["id"], scene["scene_id"]]
+            assert [clip["id"] for clip in ordered["clips"]] == [
+                before["clips"][0]["id"], second["id"], third["id"], after["clips"][0]["id"], scene["id"]
+            ]
+            for inserted in (before, after):
+                api("DELETE", scope + f'/scenes/{inserted["id"]}')
             split = api("POST", "/actions/scenes/ungroup", {"project_id": pid, "scene_id": parent["id"]})
             assert len(split["scene_ids"]) == 2
             assert api("GET", scope + f'/scenes/{split["scene_ids"][0]}')["shared_prompt"] == "暖色顶光"

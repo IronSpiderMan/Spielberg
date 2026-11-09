@@ -33,7 +33,7 @@
 
 ### 场景与片段
 
-场景是剧集下的叙事单元，拥有有序的 `clips`。场景保存共享 `shared_prompt`、参考图片 `reference_media_ids`、参考音频 `reference_audio_media_ids`、`generation_mode`（`clips` 或 `one_take`）与生成参数。新建场景省略 `clip_ids` 时会创建一个初始片段。创建或更新时可用 `clip_ids` 指定本集连续的片段，数组必须和剧集顺序一致。被移出目标场景的片段成为独立的单片段场景，被移空的场景会删除。如果调整后其他场景的成员不再连续，整个操作回滚。
+场景是剧集下的叙事单元，拥有有序的 `clips`。场景保存共享 `shared_prompt`、参考图片 `reference_media_ids`、参考音频 `reference_audio_media_ids`、`generation_mode`（`clips` 或 `one_take`）与生成参数。新建场景省略 `clip_ids` 时会创建一个初始片段，可同时传入本集的 `anchor_scene_id` 和 `position`（`before` 或 `after`），将新场景插在目标场景前方或后方。创建或更新时可用 `clip_ids` 指定本集连续的片段，数组必须和剧集顺序一致。被移出目标场景的片段成为独立的单片段场景，被移空的场景会删除。如果调整后其他场景的成员不再连续，整个操作回滚。
 
 片段保存局部动作、对白、运镜、参考素材及视频版本。片段返回 `episode_id`、`scene_id`、引用图片、`videos`、`script` 和 `generation_options`。POST 片段省略 `scene_id` 时创建独立的单片段场景；指定 `anchor_clip_id` 和 `position: "before"` 或 `"after"` 可在同集锚点旁插入。GET 片段集合可按 `episode_id` 或 `scene_id` 筛选。删除场景会删除其成员片段，媒体文件留在素材库。`scenes/ungroup` 将多片段场景拆成各自独立的单片段场景，并将共享 Prompt 与参考素材复制到各新场景。
 
