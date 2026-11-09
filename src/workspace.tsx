@@ -53,7 +53,6 @@ GitBranch,
 GitMerge,
 Maximize2,
 Minimize2,
-MoreHorizontal,
 Search,
 ChevronDown,
 ChevronRight,
@@ -81,6 +80,7 @@ import { confirmDiscard,useEditGuard } from "./edit-guard";
 import { resolvePrompt, resolveH3Prompt } from "./resolve-prompt";
 import { type Storyboard } from "./StoryboardEditor";
 import { GenerationPreviewPanel, SceneSettings, type SceneInsertion } from "./SceneSettings";
+import { ClipCreationDialog, ClipEditorOrderActions, EpisodeOrderControls, placementActions } from "./components/EpisodeOrderControls";
 import { SceneMergeDialog } from "./SceneMergeDialog";
 import ScreenplayManager, { type ScreenplayEditorHandle } from "./ScreenplayManager";
 import { PromptInput } from "./PromptInput";
@@ -755,76 +755,6 @@ export function Episodes({
     </section>
   );
 }
-const reorderingEpisodes = new Set<string>();
-type EpisodeItemAction = { key: string; label: string; danger?: boolean; run: () => void };
-
-function EpisodeOrderControls({episode, id, kind, project, reload, actions, disabled = false}: {
-  episode: Episode; id: number; kind: "scene" | "clip"; project: Project; reload: () => void;
-  actions?: EpisodeItemAction[]; disabled?: boolean;
-}) {
-  const [busy, setBusy] = useState(false);
-  const items = kind === "scene" ? episode.scenes : episode.scenes.find(scene => scene.clips.some(clip => clip.id === id))?.clips || [];
-  const index = items.findIndex(item => item.id === id);
-  const last = items.length - 1;
-  const label = kind === "scene" ? "场景" : "片段";
-  const move = async (target: number, toEndpoint = false) => {
-    const key = `${project.id}/${episode.id}`;
-    if (reorderingEpisodes.has(key) || disabled || index < 0 || target === index || target < 0 || target > last) return;
-    const ids = items.map(item => item.id);
-    if (toEndpoint) ids.splice(target, 0, ids.splice(index, 1)[0]);
-    else [ids[index], ids[target]] = [ids[target], ids[index]];
-    const moving = new Set(ids);
-    let next = 0;
-    const orderedIds = kind === "scene" ? ids : episode.clips.map(clip => moving.has(clip.id) ? ids[next++] : clip.id);
-    reorderingEpisodes.add(key);
-    setBusy(true);
-    try {
-      await post(kind === "scene" ? "/scenes/reorder" : "/clips/reorder", {
-        project_id: project.id, episode_id: episode.id, [kind === "scene" ? "scene_ids" : "clip_ids"]: orderedIds,
-      });
-      await reload();
-    } catch (error) {Message.error(String(error));}
-    finally {reorderingEpisodes.delete(key); setBusy(false);}
-  };
-  if (index < 0) return null;
-  if (actions) {
-    const orderActions = [
-      { key: "move-up", label: `上移${label}`, target: index - 1 },
-      { key: "move-down", label: `下移${label}`, target: index + 1 },
-      { key: "move-start", label: `将${label}移到最前方`, target: 0, endpoint: true },
-      { key: "move-end", label: `将${label}移到最后方`, target: last, endpoint: true },
-    ];
-    const menuAction = (key: string) => {
-      const ordering = orderActions.find(item => item.key === key);
-      if (!ordering) {
-        actions.find(item => item.key === key)?.run();
-      } else if (ordering.endpoint) {
-        confirmAction({title: ordering.label, content: `调整「${items[index].title}」在剧集中的顺序？`,
-          okText: "确认移动", onOk: () => move(ordering.target, true)});
-      } else {
-        void move(ordering.target);
-      }
-    };
-    return <Dropdown trigger="click" position="br" disabled={disabled || busy} droplist={
-      <Menu onClickMenuItem={menuAction}>
-        {last > 0 && <Menu.ItemGroup title="顺序">
-          {orderActions.map(item => <Menu.Item key={item.key}
-            disabled={item.target < 0 || item.target > last || item.target === index}>{item.label}</Menu.Item>)}
-        </Menu.ItemGroup>}
-        {actions.map(item => <Menu.Item key={item.key} className={item.danger ? "scene-workspace-danger-item" : undefined}>{item.label}</Menu.Item>)}
-      </Menu>
-    }>
-      <Button size="mini" aria-label={`更多${label}操作：${items[index].title}`} title={`更多${label}操作`}
-        icon={<MoreHorizontal size={18}/>} loading={busy} disabled={disabled}/>
-    </Dropdown>;
-  }
-  if (last < 1) return null;
-  return <Space size={4}>
-    <Button size="mini" aria-label={`上移${label}`} title={`上移${label}`} disabled={disabled || busy || index === 0} icon={<ArrowUp size={14}/>} onClick={() => move(index - 1)}/>
-    <Button size="mini" aria-label={`下移${label}`} title={`下移${label}`} disabled={disabled || busy || index === last} icon={<ArrowDown size={14}/>} onClick={() => move(index + 1)}/>
-  </Space>;
-}
-
 function EpisodeEditor({
   data,
   episode,
@@ -910,7 +840,6 @@ function EpisodeEditor({
     if (dirty) confirmDiscard(() => editClip(scene));
     else editClip(scene);
   };
-  const [inserting, setInserting] = useState<number | null>(null);
   const [copyingClip, setCopyingClip] = useState<number | null>(null);
   const copyClip = async (scene: Clip, position: "before" | "after") => {
     setCopyingClip(scene.id);
@@ -921,36 +850,22 @@ function EpisodeEditor({
     } catch (e) { Message.error(String(e)); }
     finally { setCopyingClip(null); }
   };
-  const [clipCreation,setClipCreation]=useState<{episodeId:number; sceneId:number; anchorClipId?:number; position?:"before"|"after"}|null>(null);
-  const beginClipCreation = (sceneId: number, anchorClipId?: number, position?: "before"|"after") => {
-    if (!episode) return;
-    setClipCreation({episodeId: episode.id, sceneId, anchorClipId, position});
-    setCreationMode("default");
-    setNewClipTitle(`片段 ${(currentEpisode?.scenes.find(scene => scene.id === sceneId)?.clips.length || 0) + 1}`);
-  };
-  const [creationMode,setCreationMode]=useState<"default"|"canvas">("default");
-  const [newClipTitle,setNewClipTitle]=useState("");
-  const makeClip = async () => {
-    if (!clipCreation) return;
-    const id = clipCreation.episodeId;
-    setInserting(id);
-    try {
-    const x = await post<Clip>("/clips", {
-      project_id: data.project.id,
-      episode_id: id,
-      scene_id: clipCreation.sceneId,
-      title: newClipTitle.trim() || "未命名片段",
-      creation_mode: creationMode,
-      ...(clipCreation.anchorClipId !== undefined ? {anchor_clip_id: clipCreation.anchorClipId, position: clipCreation.position} : {}),
-      description: "",
-    });
-    await reload();
-    setClipCreation(null);
-    editClip(x, true);
-    } finally { setInserting(null); }
-  };
+  const [clipCreation, setClipCreation] = useState<{sceneId: number; anchorClipId?: number; position?: "before" | "after"}>();
+  const beginClipCreation = (sceneId: number, anchorClipId?: number, position?: "before" | "after") =>
+    setClipCreation({sceneId, anchorClipId, position});
   const initialFocus = initialSceneId ?? initialFocusedSceneId;
   const [editingScene, setEditingScene] = useState<"new" | "group" | SceneInsertion>();
+  const [copyingScene, setCopyingScene] = useState(false);
+  const sceneActions = (sceneId: number, afterSave: (action: () => void) => void = action => action()) =>
+    placementActions("场景", position => afterSave(() => setEditingScene({ anchor_scene_id: sceneId, position })),
+      position => afterSave(() => {
+        setCopyingScene(true);
+        void post("/scenes/duplicate", {project_id: project.id, id: sceneId, position})
+          .then(async () => { await reload(); Message.success("场景已复制"); })
+          .catch(error => Message.error(String(error)))
+          .finally(() => setCopyingScene(false));
+      }));
+
   const [focusedSceneId, setFocusedSceneId] = useState(initialFocus);
   const [sceneQuery, setSceneQuery] = useState("");
   const [sceneView, setSceneView] = useState<"grid" | "detail">(initialFocus === undefined ? "grid" : "detail");
@@ -1076,10 +991,11 @@ function EpisodeEditor({
           {!selecting && <Space wrap size={6}>
             {sceneVideos(focusedScene).length > 0 && <Button size="small" disabled={locked}
               aria-label="预览场景视频" icon={<Play size={14}/>} onClick={() => openPreview("scene", focusedScene)}>预览</Button>}
-            <Button size="small" type="primary" disabled={locked || inserting !== null} icon={<Plus size={14}/>}
+            <Button size="small" type="primary" disabled={locked || !!clipCreation} icon={<Plus size={14}/>}
               onClick={() => afterSave(() => beginClipCreation(focusedScene.id))}>添加片段</Button>
             <EpisodeOrderControls episode={currentEpisode} id={focusedScene.id} kind="scene" project={project} reload={reload}
-              disabled={locked || copyingClip !== null || inserting !== null} actions={[
+              disabled={locked || copyingScene || copyingClip !== null || !!clipCreation} actions={[
+                ...sceneActions(focusedScene.id, afterSave),
                 ...(focusedScene.clips.length > 1 ? [{
                   key: "ungroup", label: "拆分场景", run: () => confirmAction({title: "拆分这个场景？",
                     content: "每个片段将成为独立场景并沿用共享设定。原场景及一镜到底视频的关联将移除。",
@@ -1121,11 +1037,10 @@ function EpisodeEditor({
             </div>
             {!selecting && <div className="episode-scene-item-actions">
               <EpisodeOrderControls episode={currentEpisode} kind="clip" id={clip.id} project={project} reload={reload}
-                disabled={locked || copyingClip !== null || inserting !== null} actions={[
-                  { key: "before", label: "在前方新建", run: () => afterSave(() => beginClipCreation(clip.scene_id, clip.id, "before")) },
-                  { key: "after", label: "在后方新建", run: () => afterSave(() => beginClipCreation(clip.scene_id, clip.id, "after")) },
-                  { key: "copy-before", label: "复制到前方", run: () => void copyClip(clip, "before") },
-                  { key: "copy-after", label: "复制到后方", run: () => void copyClip(clip, "after") },
+                disabled={locked || copyingClip !== null || !!clipCreation} actions={[
+                  ...placementActions("片段",
+                    position => afterSave(() => beginClipCreation(clip.scene_id, clip.id, position)),
+                    position => afterSave(() => void copyClip(clip, position))),
                   { key: "delete", label: "删除片段", danger: true, run: () => confirmAction({intent: "danger",
                     title: "删除这个片段？",
                     content: `将删除「${clip.title}」及其片段设置。${focusedScene.clips.length === 1 ? "该片段是本场景的唯一成员，场景也会删除。" : ""}`,
@@ -1187,16 +1102,16 @@ function EpisodeEditor({
               </Button>
             </> : !showingDetail && <>
               {!!currentEpisode && currentEpisode.clips.length > 1 && <Dropdown trigger="click" position="br"
-                disabled={editorLocked || inserting !== null || copyingClip !== null}
+                disabled={editorLocked || !!clipCreation || copyingClip !== null}
                 droplist={<Menu onClickMenuItem={key => beginSelection(key === "scenes" ? "scenes" : "clips")}>
                   <Menu.Item key="scenes" disabled={sceneOrder.length < 2}>合并场景</Menu.Item>
                   <Menu.Item key="clips">选择片段分组</Menu.Item>
                 </Menu>}>
-                <Button icon={<GitMerge size={15}/>} disabled={editorLocked || inserting !== null || copyingClip !== null}>
+                <Button icon={<GitMerge size={15}/>} disabled={editorLocked || !!clipCreation || copyingClip !== null}>
                   批量操作 <ChevronDown size={14}/>
                 </Button>
               </Dropdown>}
-              <Button type="primary" icon={<Plus size={16}/>} disabled={editorLocked || inserting !== null}
+              <Button type="primary" icon={<Plus size={16}/>} disabled={editorLocked || !!clipCreation}
                 onClick={() => setEditingScene("new")}>新建场景</Button>
             </>}
           </div>
@@ -1244,10 +1159,7 @@ function EpisodeEditor({
                 </button>}
                 {!selecting && currentEpisode && <div className="scene-workspace-card-actions">
                   <EpisodeOrderControls episode={currentEpisode} kind="scene" id={scene.id} project={project} reload={reload}
-                    disabled={editorLocked} actions={[
-                      { key: "before", label: "在前方插入场景", run: () => setEditingScene({ anchor_scene_id: scene.id, position: "before" }) },
-                      { key: "after", label: "在后方插入场景", run: () => setEditingScene({ anchor_scene_id: scene.id, position: "after" }) },
-                    ]} />
+                    disabled={editorLocked || copyingScene} actions={sceneActions(scene.id)} />
                 </div>}
               </li>;
             })}
@@ -1269,13 +1181,8 @@ function EpisodeEditor({
       {currentEpisode && mergeOpen && canCombine && <SceneMergeDialog projectId={project.id} episodeId={currentEpisode.id}
         scenes={mergeScenes}
         close={() => setMergeOpen(false)} onMerged={onScenesMerged} />}
-      <Modal title="新建片段" okText="创建片段" visible={clipCreation!==null} confirmLoading={inserting!==null} onCancel={()=>{if(inserting===null)setClipCreation(null);}} onOk={()=>makeClip().catch(e=>{Message.error(String(e));throw e;})}>
-        <Form layout="vertical"><Form.Item label="片段名称"><Input aria-label="新片段名称" value={newClipTitle} onChange={setNewClipTitle}/></Form.Item>
-        <Form.Item label="创建方式"><div className="scene-creation-options">
-          <button type="button" className={creationMode==="default"?"selected":""} aria-pressed={creationMode==="default"} onClick={()=>setCreationMode("default")}><b>默认方式</b><span>使用片段表单设置画面、描述和生成参数</span></button>
-          <button type="button" className={creationMode==="canvas"?"selected":""} aria-pressed={creationMode==="canvas"} onClick={()=>setCreationMode("canvas")}><b>画布方式</b><span>在画布中连接图片、音频与视频节点创作</span></button>
-        </div></Form.Item></Form>
-      </Modal>
+      {clipCreation && currentEpisode && <ClipCreationDialog projectId={project.id} episode={currentEpisode} {...clipCreation}
+        reload={reload} onClose={() => setClipCreation(undefined)} onCreated={clip => editClip(clip, true)} />}
       <VideoPreviewModal
         media={previewSource ? previewVideo || null : null}
         playbackKey={previewTarget ? `${previewTarget.kind}-${previewTarget.id}` : undefined}
@@ -1482,6 +1389,7 @@ export function ClipEditor({
   onGenerateFrame,
   generatedFrame,
   onGeneratedApplied,
+  onClipCreated,
 }: {
   scene: Clip;
   isNew: boolean;
@@ -1491,6 +1399,7 @@ export function ClipEditor({
   onGenerateFrame?: (key: FrameKey) => void;
   generatedFrame?: { key: FrameKey; media: Media } | null;
   onGeneratedApplied?: () => void;
+  onClipCreated: (clip: Clip) => void;
 }) {
   const [title, setTitle] = useState(scene.title || "");
   const [description, setDescription] = useState(scene.description || "");
@@ -1517,7 +1426,8 @@ export function ClipEditor({
     });
   };
   const effectivePrompt = prompt.trim() ? prompt : description;
-  const parentScene = data.episodes.flatMap(episode => episode.scenes).find(item => item.id === scene.scene_id);
+  const episode = data.episodes.find(item => item.scenes.some(parent => parent.id === scene.scene_id));
+  const parentScene = episode?.scenes.find(item => item.id === scene.scene_id);
   const { uploading:pastingImages, inProgress:pasteInProgress, uploadImages } = useImageUpload({projectId:data.project.id,reload,refreshError:"图片已上传，但刷新素材失败"});
   const [uploadingMediaReferences, setUploadingMediaReferences] = useState(false);
   const [uploadingImageReferences, setUploadingImageReferences] = useState(false);
@@ -1835,6 +1745,11 @@ export function ClipEditor({
     catch(e) { Message.error(String(e)); }
     finally { setSavingClip(false); }
   };
+  const afterClipSave = (action: () => void) => {
+    if (!dirty) { action(); return; }
+    setSavingClip(true);
+    void persist().then(action).catch(error => Message.error(String(error))).finally(() => setSavingClip(false));
+  };
   const optimizationMenu = <Dropdown trigger={["hover","click"]} position="br" popupVisible={optimizationMenuOpen && !optimizationDisabled} onVisibleChange={setOptimizationMenuOpen} disabled={optimizationDisabled} droplist={<Menu onClickMenuItem={key=>{setOptimizationMenuOpen(false); if(key==="minimax-h3"||key==="wan3.0") void optimizeVideoPrompt(key);}}>
     <Menu.Item key="minimax-h3">优化成 minimax-h3 形式</Menu.Item>
     <Menu.Item key="wan3.0">优化成 wan3.0 形式</Menu.Item>
@@ -1862,8 +1777,11 @@ export function ClipEditor({
             ← 返回
           </Button>
         </div>
-        <Space>
+        <Space wrap>
           <span className="subtle" role="status">{dirty ? (autoSaveStatus.includes("失败") ? autoSaveStatus : "待自动保存…") : autoSaveStatus}</span>
+          {episode && <ClipEditorOrderActions episode={episode} clip={scene} project={data.project} reload={reload}
+            disabled={savingClip || optimizingPrompt || videoGenerating || persistedVideoGenerating || imageGenerating || pastingImages || uploadingReferences}
+            afterSave={afterClipSave} onCreated={onClipCreated} />}
           <Button className="scene-writing-toggle" icon={writing ? <Minimize2 size={15}/> : <Maximize2 size={15}/>} aria-pressed={writing} onClick={() => changeWriting(!writing)}>
             {writing ? "退出对照" : "对照写作"}
           </Button>

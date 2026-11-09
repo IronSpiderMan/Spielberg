@@ -147,6 +147,20 @@ def main():
             ]
             for inserted in (before, after):
                 api("DELETE", scope + f'/scenes/{inserted["id"]}')
+            duplicates = [api("POST", "/actions/scenes/duplicate", {
+                "project_id": pid, "id": parent["id"], "position": position
+            }) for position in ("before", "after")]
+            assert [item["id"] for item in api("GET", episode_path)["scenes"]] == [
+                duplicates[0]["id"], parent["id"], duplicates[1]["id"], scene["scene_id"]
+            ]
+            for duplicate in duplicates:
+                assert duplicate["title"] == parent["title"] + "（副本）"
+                assert duplicate["shared_prompt"] == parent["shared_prompt"]
+                assert duplicate["generation_mode"] == "one_take"
+                assert duplicate["reference_media_ids"] == [mid]
+                assert [clip["title"] for clip in duplicate["clips"]] == [second["title"], third["title"]]
+                assert {clip["id"] for clip in duplicate["clips"]}.isdisjoint([second["id"], third["id"]])
+                api("DELETE", scope + f'/scenes/{duplicate["id"]}')
             split = api("POST", "/actions/scenes/ungroup", {"project_id": pid, "scene_id": parent["id"]})
             assert len(split["scene_ids"]) == 2
             assert api("GET", scope + f'/scenes/{split["scene_ids"][0]}')["shared_prompt"] == "暖色顶光"

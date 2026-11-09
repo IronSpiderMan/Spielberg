@@ -1,3 +1,4 @@
+import { ClipEditorOrderActions } from "./components/EpisodeOrderControls";
 import { GenerationSelector } from "./components/generation/GenerationSelector";
 import { ImageModelFields, VideoModelFields } from "./components/generation/ModelGenerationFields";
 import { generationChoice, modelImageSize, modelRatio, selectionPayload, validateGeneration } from "./generation-channels";
@@ -34,8 +35,8 @@ const mediaKind = (kind: Kind): kind is MediaKind => ["image", "video", "audio"]
 const uid = () => crypto.randomUUID();
 const clamp = (n: number) => Math.max(.2, Math.min(2, n));
 const WIDTH = 300;
-export default function InfiniteCanvas({ data, scene, reload, onClose }: {
-  data: Snapshot; scene: Clip; reload: () => Promise<void>; onClose: () => void;
+export default function InfiniteCanvas({ data, scene, reload, onClose, onClipCreated }: {
+  data: Snapshot; scene: Clip; reload: () => Promise<void>; onClose: () => void; onClipCreated: (clip: Clip) => void;
 }) {
   const [draft, setDraft] = useState<Draft>(empty), [saved, setSaved] = useState("");
   const [title, setTitle] = useState(scene.title), [savedTitle, setSavedTitle] = useState(scene.title);
@@ -56,6 +57,7 @@ export default function InfiniteCanvas({ data, scene, reload, onClose }: {
   const drag = useRef<{ pointer: number; x: number; y: number; before: Draft; node?: string }>();
   const dirty = !!saved && (JSON.stringify(draft) !== saved || title !== savedTitle);
   useEditGuard(dirty || !!busyNode);
+  const episode = data.episodes.find(item => item.scenes.some(parent => parent.id === scene.scene_id));
   const payload = { project_id: data.project.id, clip_id: scene.id };
   const load = async () => {
     setLoading(true); setError("");
@@ -85,7 +87,7 @@ export default function InfiniteCanvas({ data, scene, reload, onClose }: {
   const patch = (id: string, changes: Partial<Node>) => commit({ ...current.current, nodes: current.current.nodes.map(n => n.id === id ? { ...n, ...changes } : n) });
   const undo = () => { const prev = past[past.length - 1]; if (!prev) return; setFuture(f => [current.current, ...f]); setPast(p => p.slice(0, -1)); setDraft(prev); setSelected(""); setLinkFrom(""); setLinkTo(""); setLinkPoint(null); };
   const redo = () => { const next = future[0]; if (!next) return; setPast(p => [...p, current.current]); setFuture(f => f.slice(1)); setDraft(next); setSelected(""); setLinkFrom(""); setLinkTo(""); setLinkPoint(null); };
-  const save = async () => {
+  const save = async (afterSave?: () => void) => {
     if (saving || loading || error || drag.current || busy.current) return;
     if (!title.trim()) return void Message.warning("请填写片段名称");
     const value = current.current; setSaving(true);
@@ -94,6 +96,7 @@ export default function InfiniteCanvas({ data, scene, reload, onClose }: {
       setRevision(b.revision); setSaved(JSON.stringify(value));
       if (title !== savedTitle) { await post("/clips/update", { project_id: data.project.id, id: scene.id, title: title.trim() }); setTitle(title.trim()); setSavedTitle(title.trim()); await reload(); }
       Message.success("画布片段已保存");
+      afterSave?.();
     } catch (e) { Message.error(String(e)); } finally { setSaving(false); }
   };
   const zoomAt = (zoom: number, x: number, y: number) => {
@@ -223,7 +226,11 @@ export default function InfiniteCanvas({ data, scene, reload, onClose }: {
   };
   const exportDraft = () => { const url = URL.createObjectURL(new Blob([JSON.stringify({ ...payload, ...draft }, null, 2)], { type: "application/json" })); const a = document.createElement("a"); a.href = url; a.download = `spielberg-clip-${scene.id}-canvas.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); };
   return <section className="infinite-canvas">
-    <header className="ic-heading"><div><Button type="text" title="返回片段列表" aria-label="返回片段列表" icon={<ArrowLeft size={15} />} disabled={!!busyNode} onClick={onClose}>返回片段列表</Button><h1>画布片段</h1><Input aria-label="画布片段名称" value={title} onChange={setTitle} disabled={!!busyNode} /><p>右键添加节点 · 图片 / 音频 / 视频 → 视频</p></div><div className="ic-actions"><span className={`ic-save-state${dirty ? " is-dirty" : ""}`} role="status">{dirty ? "未保存" : saved ? "已保存" : ""}</span><Button onClick={exportDraft} disabled={loading || !!error} title="导出草稿" aria-label="导出草稿" icon={<Download size={16} />}>导出草稿</Button><Button disabled={!!busyNode} title="重新加载画布" aria-label="重新加载画布" icon={<RotateCcw size={15} />} onClick={() => dirty ? confirmDiscard(() => void load()) : void load()}>重新加载</Button><Button type="primary" loading={saving} disabled={loading || !!error || !dirty || !!busyNode} onClick={() => void save()} icon={<Save size={16} />}>保存画布</Button></div></header>
+    <header className="ic-heading"><div><Button type="text" title="返回片段列表" aria-label="返回片段列表" icon={<ArrowLeft size={15} />} disabled={!!busyNode} onClick={onClose}>返回片段列表</Button><h1>画布片段</h1><Input aria-label="画布片段名称" value={title} onChange={setTitle} disabled={!!busyNode} /><p>右键添加节点 · 图片 / 音频 / 视频 → 视频</p></div><div className="ic-actions">
+      {episode && <ClipEditorOrderActions episode={episode} clip={scene} project={data.project} reload={reload}
+        disabled={loading || saving || !!error || !!busyNode}
+        afterSave={action => { if (dirty) void save(action); else action(); }} onCreated={onClipCreated} />}
+      <span className={`ic-save-state${dirty ? " is-dirty" : ""}`} role="status">{dirty ? "未保存" : saved ? "已保存" : ""}</span><Button onClick={exportDraft} disabled={loading || !!error} title="导出草稿" aria-label="导出草稿" icon={<Download size={16} />}>导出草稿</Button><Button disabled={!!busyNode} title="重新加载画布" aria-label="重新加载画布" icon={<RotateCcw size={15} />} onClick={() => dirty ? confirmDiscard(() => void load()) : void load()}>重新加载</Button><Button type="primary" loading={saving} disabled={loading || !!error || !dirty || !!busyNode} onClick={() => void save()} icon={<Save size={16} />}>保存画布</Button></div></header>
     {loading ? <p role="status">正在加载画布…</p> : error ? <p role="alert">{error}</p> : <>
     <div className="ic-toolbar"><div className="ic-tool-group" role="group" aria-label="添加节点"><Button icon={<Plus size={16} />} disabled={!!busyNode} onClick={() => { const el = stage.current; if (!el) return; const v = draft.viewport; setMenu({ x: 20, y: Math.max(80, el.clientHeight - (el.clientWidth <= 700 ? 310 : 270)), worldX: (el.clientWidth / 2 - v.x) / v.zoom, worldY: (el.clientHeight / 2 - v.y) / v.zoom }); }}>添加节点</Button></div><div className="ic-tool-group" role="group" aria-label="编辑历史"><Button title="撤销" aria-label="撤销画布操作" disabled={!past.length || !!busyNode} onClick={undo} icon={<Undo2 size={16} />} /><Button title="重做" aria-label="重做画布操作" disabled={!future.length || !!busyNode} onClick={redo} icon={<Redo2 size={16} />} /></div><div className="ic-tool-group" role="group" aria-label="移除节点"><Button status="danger" disabled={!selected || !!busyNode} onClick={remove} icon={<Trash2 size={16} />}>移除选中</Button></div><span>{draft.nodes.length} 个节点 · {draft.edges.length} 条连线</span><small>拖动标题移动 · 空白处平移 · Ctrl / ⌘ + 滚轮缩放</small></div>
     <div className="ic-workspace"><div ref={stage} className="ic-stage" tabIndex={0} aria-label="创作画布" style={{ backgroundSize: `${24 * draft.viewport.zoom}px ${24 * draft.viewport.zoom}px`, backgroundPosition: `${draft.viewport.x}px ${draft.viewport.y}px` }} onContextMenu={e => {

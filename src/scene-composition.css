@@ -48,11 +48,24 @@
   list-style: none;
 }
 .scene-workspace-grid:empty { display: none; }
-.scene-workspace-card { position: relative; min-width: 0; }
+.scene-workspace-card { display: flex; flex-direction: column; min-width: 0; }
+.scene-workspace-card:has(> .scene-workspace-card-actions) {
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-panel);
+  background: var(--ui-surface);
+}
+.scene-workspace-card:has(> .scene-workspace-card-actions) > .scene-workspace-card-link {
+  flex: 1;
+  height: auto;
+  border: 0;
+  border-radius: var(--ui-radius-panel) var(--ui-radius-panel) 0 0;
+}
+.scene-workspace-card:has(> .scene-workspace-card-actions):has(> .scene-workspace-card-link:hover) {
+  border-color: var(--ui-primary);
+}
 .scene-workspace-card-actions {
-  position: absolute;
-  top: 8px;
-  right: 8px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--ui-border);
 }
 .scene-workspace-card-link {
   position: relative;
@@ -276,10 +289,6 @@
   border-radius: 9px;
   background: var(--ui-surface);
 }
-.episode-scene-item:has(> .episode-scene-item-actions) {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-}
 .episode-scene-item:has(.episode-scene-card-body:enabled:hover),
 .episode-scene-item:has(.episode-clip-selection input:checked) { border-color: var(--ui-primary); }
 .episode-scene-item:has(.episode-clip-selection input:checked) .episode-clip-selection { background: var(--ui-accent-soft); }
@@ -353,8 +362,8 @@
   white-space: nowrap;
 }
 .episode-scene-item-actions {
-  align-self: start;
-  padding: 8px 8px 0 0;
+  padding: 6px 8px;
+  border-top: 1px solid var(--ui-border);
 }
 @media (max-width: 760px) {
   .episode-scene-browser { flex: none; gap: 10px; overflow: visible; }

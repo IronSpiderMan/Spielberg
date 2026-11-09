@@ -134,6 +134,7 @@ curl 'http://127.0.0.1:8080/api/v1/projects/PID/media/1/content?download=1' -o p
 | `storyboard/plan`, `storyboard/validate` | `project_id, clip`，校验时还需 `plan` |
 | `clips/reorder` | `project_id, episode_id, clip_ids`，提交完整片段顺序且各场景保持连续 |
 | `clips/duplicate` | `project_id, id, position?` |
+| `scenes/duplicate` | `project_id, id, position`（`before` 或 `after`）。复制场景设定和片段创作内容 |
 | `clips/select-video`, `clips/delete-video` | `project_id, clip_id, media_id` |
 | `scenes/reorder` | `project_id, episode_id, scene_ids`，提交完整场景顺序，成员随场景移动 |
 | `scenes/merge` | `project_id, episode_id, scene_ids, target_scene_id?, title?`，返回合并后的场景 |

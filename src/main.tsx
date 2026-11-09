@@ -413,7 +413,7 @@ function App() {
         >
           <Suspense fallback={<PageLoading/>}>
           {sceneEditing ? (
-            sceneEditing.scene.creation_mode === "canvas" ? <InfiniteCanvas key={`${data.project.id}:${sceneEditing.scene.id}`} data={data} scene={data.episodes.flatMap(e=>e.clips).find(s=>s.id===sceneEditing.scene.id)||sceneEditing.scene} reload={refresh} onClose={()=>leaveEditor(()=>setClipEditing(null))} /> : <>
+            sceneEditing.scene.creation_mode === "canvas" ? <InfiniteCanvas key={`${data.project.id}:${sceneEditing.scene.id}`} data={data} scene={data.episodes.flatMap(e=>e.clips).find(s=>s.id===sceneEditing.scene.id)||sceneEditing.scene} reload={refresh} onClose={()=>leaveEditor(()=>setClipEditing(null))} onClipCreated={scene => setClipEditing({scene, isNew: true})} /> : <>
             <div className="scene-editor-host" hidden={!!sceneImageFlow}>
             <ClipEditor
               key={`${data.project.id}:${sceneEditing.scene.id}`}
@@ -421,6 +421,7 @@ function App() {
               isNew={sceneEditing.isNew}
               data={data}
               onClose={() => setClipEditing(null)}
+              onClipCreated={scene => setClipEditing({scene, isNew: true})}
               reload={refresh}
               onGenerateFrame={key => { if (key === "reference") return; setClipImageFlow({ key }); setStudioTab("images"); }}
               generatedFrame={sceneImageFlow?.media ? { key: sceneImageFlow.key, media: sceneImageFlow.media } : null}

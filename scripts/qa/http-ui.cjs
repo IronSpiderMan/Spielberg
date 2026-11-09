@@ -172,12 +172,19 @@ const assert = require('node:assert/strict');
   await search.clear();
   await openScene('走廊');
   await group('走廊').getByRole('button',{name:'编辑片段：片段 1',exact:true}).click();
+  const clipActions=page.locator('.scene-editor-page .episode-order-controls');
+  await clipActions.getByRole('button',{name:'上移片段',exact:true}).waitFor();
+  assert(await clipActions.getByRole('button',{name:'将片段移到最后方',exact:true}).isDisabled());
+  await clipActions.getByRole('button',{name:'更多片段操作：片段 1',exact:true}).click();
+  for (const label of ['在前方插入片段','在后方插入片段','复制到前方','复制到后方']) {
+    await page.getByRole('menuitem',{name:label,exact:true}).waitFor();
+  }
+  await page.keyboard.press('Escape');
   await page.getByRole('button',{name:'保存片段',exact:true}).click();
   await group('走廊').getByRole('heading',{name:'走廊',exact:true}).waitFor();
   await grid.waitFor({state:'hidden'});
 
-  await group('走廊').getByRole('button',{name:'更多场景操作：走廊',exact:true}).click();
-  await page.getByRole('menuitem',{name:'上移场景',exact:true}).click();
+  await group('走廊').getByRole('button',{name:'上移场景',exact:true}).click();
   await backToGrid();
   await page.waitForFunction(()=>document.querySelector('.scene-workspace-grid .scene-workspace-card-title')?.textContent==='走廊');
   await openScene('走廊');

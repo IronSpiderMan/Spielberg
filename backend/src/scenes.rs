@@ -245,6 +245,15 @@ fn save_fields(c: &Connection, scene: i64, v: &Value) -> Result<(),String> {
     Ok(())
 }
 
+fn insertion_index(order: &[(i64,i64)], anchor: i64, position: &str) -> Result<usize,String> {
+    let index = match position {
+        "before" => order.iter().position(|(_,scene)| *scene == anchor),
+        "after" => order.iter().rposition(|(_,scene)| *scene == anchor).map(|index| index + 1),
+        _ => return Err("插入位置无效".into()),
+    };
+    index.ok_or_else(|| "目标场景不存在于当前剧集".into())
+}
+
 pub(super) fn create(s: &AppState, v: &Value) -> Result<Value,String> {
     let pid = project_id(v)?;
     let mut c = db(s,&pid)?;
@@ -257,11 +266,7 @@ pub(super) fn create(s: &AppState, v: &Value) -> Result<Value,String> {
         (Some(anchor), Some(position)) => {
             if v.get("clip_ids").is_some() { return Err("插入场景时不能指定已有片段".into()); }
             let order = clip_order(&tx,ep)?;
-            let index = if position == "before" {
-                order.iter().position(|(_,scene)| *scene == anchor)
-            } else {
-                order.iter().rposition(|(_,scene)| *scene == anchor).map(|index| index + 1)
-            }.ok_or("目标场景不存在于当前剧集")?;
+            let index = insertion_index(&order,anchor,position)?;
             Some((index, order.into_iter().map(|(clip,_)| clip).collect::<Vec<_>>()))
         }
         _ => return Err("插入场景需要同时指定目标场景和插入位置".into()),
@@ -283,6 +288,31 @@ pub(super) fn create(s: &AppState, v: &Value) -> Result<Value,String> {
     tx.commit().map_err(|e| e.to_string())?;
     touch(s,&pid);
     rest::get_scene(&c,id)
+}
+
+pub(super) fn duplicate(s: &AppState, v: &Value) -> Result<Value,String> {
+    let pid = project_id(v)?;
+    let mut c = db(s,&pid)?;
+    let tx = c.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e| e.to_string())?;
+    let source = intv(v,"id")?;
+    let ep = episode_id(&tx,source)?;
+    let order = clip_order(&tx,ep)?;
+    let index = insertion_index(&order,source,&strv(v,"position")?)?;
+    tx.execute("INSERT INTO scenes(episode_id,title,description,shared_prompt,reference_media_ids,reference_audio_media_ids,generation_mode,generation_options,created_at)
+        SELECT episode_id,title || '（副本）',description,shared_prompt,reference_media_ids,reference_audio_media_ids,generation_mode,generation_options,?
+        FROM scenes WHERE id=?",params![now(),source]).map_err(|e| e.to_string())?;
+    let id = tx.last_insert_rowid();
+    let mut copies = Vec::new();
+    for (clip, _) in order.iter().filter(|(_,scene)| *scene == source) {
+        copies.push(copy_clip_content(&tx,*clip,id,order.len()+copies.len(),"")?);
+    }
+    let mut clips = order.into_iter().map(|(clip,_)| clip).collect::<Vec<_>>();
+    clips.splice(index..index,copies);
+    set_clip_order(&tx,ep,&clips)?;
+    let result = rest::get_scene(&tx,id)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    touch(s,&pid);
+    Ok(result)
 }
 
 pub(super) fn update(s: &AppState, v: &Value) -> Result<Value,String> {
