@@ -856,15 +856,24 @@ function EpisodeEditor({
   const initialFocus = initialSceneId ?? initialFocusedSceneId;
   const [editingScene, setEditingScene] = useState<"new" | "group" | SceneInsertion>();
   const [copyingScene, setCopyingScene] = useState(false);
-  const sceneActions = (sceneId: number, afterSave: (action: () => void) => void = action => action()) =>
-    placementActions("场景", position => afterSave(() => setEditingScene({ anchor_scene_id: sceneId, position })),
-      position => afterSave(() => {
+  const sceneActions = (scene: Scene) => [
+    ...placementActions("场景", position => setEditingScene({ anchor_scene_id: scene.id, position }),
+      position => {
         setCopyingScene(true);
-        void post("/scenes/duplicate", {project_id: project.id, id: sceneId, position})
+        void post("/scenes/duplicate", {project_id: project.id, id: scene.id, position})
           .then(async () => { await reload(); Message.success("场景已复制"); })
           .catch(error => Message.error(String(error)))
           .finally(() => setCopyingScene(false));
-      }));
+      }),
+    ...(scene.clips.length > 1 ? [{
+      key: "ungroup", label: "拆分场景", run: () => confirmAction({title: "拆分这个场景？",
+        content: "每个片段将成为独立场景并沿用共享设定。原场景及一镜到底视频的关联将移除。",
+        okText: "拆分场景", onOk: () => updateGroup("ungroup", scene.id)}),
+    }] : []),
+    { key: "delete", label: "删除场景", danger: true, run: () => confirmAction({intent: "danger",
+      title: "删除这个场景？", content: `将删除「${scene.title}」及其中 ${scene.clips.length} 个片段。`,
+      okText: "删除场景", onOk: () => updateGroup("delete", scene.id)}) },
+  ];
 
   const [focusedSceneId, setFocusedSceneId] = useState(initialFocus);
   const [sceneQuery, setSceneQuery] = useState("");
@@ -993,18 +1002,6 @@ function EpisodeEditor({
               aria-label="预览场景视频" icon={<Play size={14}/>} onClick={() => openPreview("scene", focusedScene)}>预览</Button>}
             <Button size="small" type="primary" disabled={locked || !!clipCreation} icon={<Plus size={14}/>}
               onClick={() => afterSave(() => beginClipCreation(focusedScene.id))}>添加片段</Button>
-            <EpisodeOrderControls episode={currentEpisode} id={focusedScene.id} kind="scene" project={project} reload={reload}
-              disabled={locked || copyingScene || copyingClip !== null || !!clipCreation} actions={[
-                ...sceneActions(focusedScene.id, afterSave),
-                ...(focusedScene.clips.length > 1 ? [{
-                  key: "ungroup", label: "拆分场景", run: () => confirmAction({title: "拆分这个场景？",
-                    content: "每个片段将成为独立场景并沿用共享设定。原场景及一镜到底视频的关联将移除。",
-                    okText: "拆分场景", onOk: () => updateGroup("ungroup", focusedScene.id)}),
-                }] : []),
-                { key: "delete", label: "删除场景", danger: true, run: () => confirmAction({intent: "danger",
-                  title: "删除这个场景？", content: `将删除「${focusedScene.title}」及其中 ${focusedScene.clips.length} 个片段。`,
-                  okText: "删除场景", onOk: () => updateGroup("delete", focusedScene.id)}) },
-              ]} />
           </Space>}
         </div>
         <div className="episode-scene-grid">{focusedScene.clips.map((clip, index) => {
@@ -1159,7 +1156,7 @@ function EpisodeEditor({
                 </button>}
                 {!selecting && currentEpisode && <div className="scene-workspace-card-actions">
                   <EpisodeOrderControls episode={currentEpisode} kind="scene" id={scene.id} project={project} reload={reload}
-                    disabled={editorLocked || copyingScene} actions={sceneActions(scene.id)} />
+                    disabled={editorLocked || copyingScene} actions={sceneActions(scene)} />
                 </div>}
               </li>;
             })}
