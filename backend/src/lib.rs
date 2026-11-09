@@ -1149,3 +1149,6 @@ mod creative_asset_categories_tests {
   assert_eq!(catalog::revisions(&c).unwrap()["assets"],4);
  }
 }
+
+#[cfg(test)]
+mod h3_models_tests;

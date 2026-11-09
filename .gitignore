@@ -61,6 +61,7 @@ npm-debug.log*
 !/scripts/qa/reveal-file.cjs
 !/scripts/qa/qianwen-video.cjs
 !/scripts/qa/generation-channels.cjs
+!/scripts/qa/h3-video-models.cjs
 !/scripts/qa/settings-layout.cjs
 !/scripts/qa/ui-details.cjs
 !/scripts/qa/studio-media-interactions.cjs

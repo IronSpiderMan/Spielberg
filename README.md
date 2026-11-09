@@ -122,6 +122,8 @@ TTS 请求格式见 [OpenAI Speech API](https://developers.openai.com/api/refere
 
 千问 Token Plan 使用[个人版 API Keys 页面](https://platform.qianwenai.com/home/api-keys?target=individual)创建的 `sk-sp-` 专属 Key。默认地址为 `https://token-plan.maas.qianwenaiapi.com`，也可粘贴控制台 `/compatible-mode/v1` 地址；必须使用配套 Key 和地址。参考图通过 Base64 data URL 提交，SVG 会转换为 PNG，无需公开本地素材或调用独立上传接口。Wan 3.0 参考视频支持 MP4/MOV（单段不超过 100 MB）、音频支持 MP3/WAV（单段不超过 15 MB），视频和音频各自总时长不超过 15 秒，输入视频与输出视频总时长不超过 30 秒；时长、帧率和尺寸由远程服务进一步校验。
 
+RunningHub / ComfyUI 视频渠道新增 `standard`（标准 20 步）、`turbo8`（Turbo 8 步）、`pika`（Pika 4 步）三个预设，均启用「接口接收 model 参数」，发送对应的 `model`，不额外覆盖服务端步数。新建视频渠道已包含这些预设；已有渠道在「设置 → 视频生成 → 添加模型 → 预设模型」中添加并保存，即可在视频工作台、场景、批量生成和画布中选择。连接 4090 原生服务时，渠道地址可填写 `http://100.114.83.111:8001`。文生视频、首尾帧及全能参考共用所选模型，后台任务恢复时保留原选择。Pika 使用服务端配置的 4 步 LoRA。
+
 RunningHub 类固定模型服务不接收 `model` 字段时保持「接口接收 model 参数」关闭；不同模型使用不同服务时，在模型下填写独立服务地址。支持按 `model` 分发的兼容服务可开启该开关。视频提交、轮询、下载入库自动完成；后台任务保存实际渠道、模型和远程任务编号，重启后恢复查询，避免重复提交。
 
 接口依据[千问多模态接入文档](https://platform.qianwenai.com/docs/token-plan/best-practices/multimodal-generation)、[图片生成文档](https://platform.qianwenai.com/docs/developer-guides/image-generation/text-to-image)和[Wan 3.0 文档](https://platform.qianwenai.com/docs/api-reference/video-generation/wan30-video/create-task)实现。
