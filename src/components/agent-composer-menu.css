@@ -1,0 +1,21 @@
+.agent-composer-menu {
+  width: min(390px, calc(100vw - 24px));
+  padding: 6px;
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  box-shadow: var(--ui-shadow-soft);
+  font-size: 13px;
+}
+.agent-composer-menu-heading { display: flex; align-items: center; gap: 6px; padding: 6px 8px 8px; font-weight: 600; }
+.agent-composer-menu-heading svg { color: var(--ui-primary); }
+.agent-composer-menu-heading small { margin-left: auto; font-weight: 400; }
+.agent-composer-menu small, .agent-composer-menu p, .agent-composer-menu code { color: var(--ui-muted); font-size: 11px; }
+.agent-composer-menu p { margin: 0; padding: 8px; }
+.agent-composer-options { max-height: min(240px, 40dvh); overflow: auto; overscroll-behavior: contain; }
+.agent-composer-options button { display: grid; gap: 3px; width: 100%; padding: 7px 8px; border: 0; border-radius: 7px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.agent-composer-options button[aria-selected="true"] { background: var(--ui-accent-soft); }
+.agent-composer-options button:hover { background: var(--ui-subtle); }
+.agent-composer-options button > span { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; overflow-wrap: anywhere; }
+.agent-composer-options button > small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

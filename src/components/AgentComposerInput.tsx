@@ -1,40 +1,56 @@
 import { Trigger } from "@arco-design/web-react";
-import { Sparkles } from "lucide-react";
+import { AtSign, Sparkles } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { RefObject, TextareaHTMLAttributes } from "react";
 import { listSkills, skillName, type Skill } from "../skills-catalog";
-import "./agent-skill-menu.css";
+import type { AgentMention, AgentReference } from "../agent-mentions";
+import "./agent-composer-menu.css";
 
 type Props = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange" | "onKeyDown"> & {
   inputRef: RefObject<HTMLTextAreaElement>;
   value: string;
-  onChange: (value: string) => void;
+  onChange: (value: string, mention?: AgentReference) => void;
   onSend: () => void;
+  mentions?: AgentMention[];
 };
 
 function insertionPoint(input: HTMLTextAreaElement) {
   return input.selectionStart === input.selectionEnd ? input.selectionStart : null;
 }
 
-export function AgentComposerInput({ inputRef, value, onChange, onSend, ...props }: Props) {
+export function AgentComposerInput({ inputRef, value, onChange, onSend, mentions, ...props }: Props) {
   const [caret, setCaret] = useState<number | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [active, setActive] = useState(0);
+  const [composing, setComposing] = useState(false);
   const [catalog, setCatalog] = useState<Skill[] | "error" | null>(null);
   const nextCaret = useRef<number | null>(null);
   const listId = useId();
 
-  const command = caret !== null && !/\S/.test(value.charAt(caret))
-    ? value.slice(0, caret).match(/(?:^|\n)[ \t]*\/([\p{L}\p{N}-]*)$/u)
-    : null;
-  const visible = !!command && !dismissed && !props.disabled && !props.readOnly;
-  const query = command?.[1].toLowerCase() || "";
-  const options = Array.isArray(catalog) ? catalog.filter(skill =>
-    `${skillName(skill)} ${skill.name} ${skill.id}`.toLowerCase().includes(query)) : [];
+  const before = caret === null ? "" : value.slice(0, caret);
+  const after = caret === null ? "" : value.charAt(caret);
+  const command = !/\S/.test(after) ? before.match(/(?:^|\n)[ \t]*\/([\p{L}\p{N}-]*)$/u) : null;
+  const reference = mentions && !/\s$/.test(before) && (!after || /[\s，。！？、；：,!?;:()（）]/.test(after))
+    ? before.match(/(?:^|[^a-z0-9_@])@([^@\n，。！？、；：,!?;]*)$/i) : null;
+  const match = command || reference;
+  const query = match?.[1].toLowerCase() || "";
+  const menuReady = !dismissed && !composing && !props.disabled && !props.readOnly;
+  const showSkills = menuReady && !!command;
+  const matchedMentions = menuReady && reference && mentions ? mentions.filter(item => item.name.toLowerCase().includes(query)) : [];
+  const exact = matchedMentions.find(item => item.name.toLowerCase() === query);
+  const showReferences = menuReady && !!reference && (!query || matchedMentions.length > 0);
+  const visible = showSkills || showReferences;
+  const options = showReferences
+    ? (exact ? [exact, ...matchedMentions.filter(item => item !== exact)] : matchedMentions).slice(0, 80).map(mention => ({
+      id: mention.name, title: `@${mention.name}`, description: mention.description, token: `@${mention.name}`, mention,
+    }))
+    : Array.isArray(catalog) ? catalog.filter(skill => `${skillName(skill)} ${skill.name} ${skill.id}`.toLowerCase().includes(query)).map(skill => ({
+      id: skill.id, title: skillName(skill), description: skill.description, token: `$${skill.id}`, code: `/${skill.id}`, mention: undefined,
+    })) : [];
   const selected = Math.min(active, options.length - 1);
 
   useEffect(() => {
-    if (!visible) return;
+    if (!showSkills) return;
     let disposed = false;
     setCatalog(null);
     void listSkills().then(({ items }) => {
@@ -43,7 +59,7 @@ export function AgentComposerInput({ inputRef, value, onChange, onSend, ...props
       if (!disposed) setCatalog("error");
     });
     return () => { disposed = true; };
-  }, [visible]);
+  }, [showSkills]);
 
   useLayoutEffect(() => {
     if (nextCaret.current === null) return;
@@ -51,33 +67,36 @@ export function AgentComposerInput({ inputRef, value, onChange, onSend, ...props
     nextCaret.current = null;
   }, [inputRef, value]);
 
-  const choose = (skill: Skill) => {
-    if (!command || caret === null) return;
-    const start = caret - command[1].length - 1;
-    const token = `$${skill.id}`;
+  const choose = ({ token, mention }: typeof options[number]) => {
+    if (!match || caret === null) return;
+    const start = caret - match[1].length - 1;
     const separator = value.charAt(caret) === " " ? "" : " ";
     const next = value.slice(0, start) + token + separator + value.slice(caret);
     if (props.maxLength !== undefined && next.length > props.maxLength) return;
     nextCaret.current = start + token.length + 1;
     setCaret(nextCaret.current);
     setDismissed(true);
-    onChange(next);
+    if (mention) {
+      const { description, ...reference } = mention;
+      onChange(next, reference);
+    } else onChange(next);
   };
 
   return <Trigger trigger={[]} position="tl" popupVisible={visible} updateOnScroll duration={0}
     popupAlign={{ top: 8 }} popupStyle={{ zIndex: 1000 }} onVisibleChange={open => { if (!open) setDismissed(true); }}
-    popup={() => <div className="agent-skill-menu" onPointerDown={event => event.stopPropagation()}>
-      <div className="agent-skill-menu-heading"><Sparkles size={14} aria-hidden="true" />技能 <small>↑↓ 选择 · Enter 插入 · Esc 关闭</small></div>
-      <div className="agent-skill-options" id={listId} role="listbox" aria-label="已启用的技能" aria-busy={catalog === null}>
-        {options.map((skill, index) => <button type="button" role="option" tabIndex={-1}
-          key={skill.id} id={`${listId}-${index}`} aria-selected={index === selected}
-          onMouseDown={event => event.preventDefault()} onClick={() => choose(skill)}
+    popup={() => <div className="agent-composer-menu" onPointerDown={event => event.stopPropagation()}>
+      <div className="agent-composer-menu-heading">{showReferences ? <><AtSign size={14} aria-hidden="true" />项目引用</> : <><Sparkles size={14} aria-hidden="true" />技能</>} <small>↑↓ 选择 · Enter 插入 · Esc 关闭</small></div>
+      <div className="agent-composer-options" id={listId} role="listbox" aria-label={showReferences ? "项目引用" : "已启用的技能"} aria-busy={showSkills && catalog === null}>
+        {options.map((option, index) => <button type="button" role="option" tabIndex={-1}
+          key={option.id} id={`${listId}-${index}`} aria-selected={index === selected}
+          onMouseDown={event => event.preventDefault()} onClick={() => choose(option)}
           ref={node => { if (index === selected) node?.scrollIntoView({ block: "nearest" }); }}>
-          <span><strong>{skillName(skill)}</strong><code>/{skill.id}</code></span>
-          {skill.description && <small>{skill.description}</small>}
+          <span><strong>{option.title}</strong>{"code" in option && <code>{option.code}</code>}</span>
+          {option.description && <small>{option.description}</small>}
         </button>)}
       </div>
-      {!options.length && <p role="status">{catalog === null ? "正在读取技能…" : catalog === "error" ? "技能列表读取失败，请重新打开菜单。" : catalog.length ? "没有匹配的技能" : "请先在「设置 → Skills 技能」中启用技能。"}</p>}
+      {showReferences && (matchedMentions.length > 80 || !options.length) && <p role="status">{options.length ? "继续输入名称或点号路径以缩小范围。" : "当前项目还没有可引用的对象。"}</p>}
+      {showSkills && !options.length && <p role="status">{catalog === null ? "正在读取技能…" : catalog === "error" ? "技能列表读取失败，请重新打开菜单。" : catalog.length ? "没有匹配的技能" : "请先在「设置 → Skills 技能」中启用技能。"}</p>}
     </div>}>
     <textarea {...props} ref={inputRef} value={value} aria-autocomplete="list"
       aria-controls={visible ? listId : undefined}
@@ -85,6 +104,8 @@ export function AgentComposerInput({ inputRef, value, onChange, onSend, ...props
       onFocus={event => { setCaret(insertionPoint(event.currentTarget)); setDismissed(false); }}
       onBlur={() => setCaret(null)}
       onSelect={event => setCaret(insertionPoint(event.currentTarget))}
+      onCompositionStart={() => setComposing(true)}
+      onCompositionEnd={event => { setComposing(false); setCaret(insertionPoint(event.currentTarget)); }}
       onChange={event => {
         setCaret(insertionPoint(event.currentTarget));
         setDismissed(false);

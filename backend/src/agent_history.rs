@@ -21,6 +21,9 @@ fn message_text(message: &Value) -> String {
             text.push_str(&format!("\n{key}: {value}"));
         }
     }
+    if let Some(references) = message["references"].as_array().filter(|items| !items.is_empty()) {
+        text.push_str(&format!("\n项目引用: {}", json!(references)));
+    }
     if let Some(calls) = message["tool_calls"].as_array() {
         let original: Vec<_> = calls.iter().filter(|call| call["function"]["name"] != "search_conversation").collect();
         if !original.is_empty() { text.push_str(&format!("\ntool_calls: {}", json!(original))); }

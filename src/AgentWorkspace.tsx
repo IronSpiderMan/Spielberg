@@ -18,10 +18,13 @@ import { GenerationSelector } from "./components/generation/GenerationSelector";
 import { channelsFor, selectionPayload, useGenerationSelection } from "./generation-channels";
 import { AgentUserInput, type UserInputRequest, type UserInputAnswers } from "./components/AgentUserInput";
 import { AgentComposerInput } from "./components/AgentComposerInput";
+import { agentMentions, referencedIn, type AgentReference } from "./agent-mentions";
 
 
 type AgentMessage = { role: "user" | "assistant" | "tool"; content: string; images?: string[]; image_media_ids?: number[]; tool_name?: string; tool_call_id?: string; arguments?: unknown; status?: string; tool_calls?: unknown[] };
 type MessageEntry = { message: AgentMessage; index: number; tools: AgentMessage[] };
+type Draft = { text: string; references: AgentReference[] };
+const emptyDraft: Draft = { text: "", references: [] };
 // Empty assistant tool-call envelopes do not break a visible run of operations.
 function messageEntries(messages: AgentMessage[]): MessageEntry[] {
   const entries: MessageEntry[] = [];
@@ -84,7 +87,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   const [loadFailed, setLoadFailed] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [error, setError] = useState("");
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [imageDrafts, setImageDrafts] = useState<Record<string, { url: string; mediaId: number }[]>>({});
   const [readingImages, setReadingImages] = useState(false);
   const [sending, setSending] = useState(false);
@@ -118,7 +121,8 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   const history = useRef<HTMLElement>(null);
   const historyTrigger = useRef<HTMLButtonElement>(null);
   const draftKey = selected?.id || "new";
-  const draft = drafts[draftKey] || "";
+  const { text: draft, references } = drafts[draftKey] || emptyDraft;
+  const mentions = useMemo(() => agentMentions(data.assets, data.episodes, references), [data.assets, data.episodes, references]);
   const images = imageDrafts[draftKey] || [];
   const pasting = useRef(false);
   const pasteImages = async (files: File[]) => {
@@ -144,7 +148,11 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   const execution = selected?.execution;
   const configured = !!modelSelection.choice;
   const anyRunning = sessions.some(hasActiveRun);
-  const updateDraft = (text: string) => setDrafts(items => ({ ...items, [draftKey]: text }));
+  const updateDraft = (text: string, mention?: AgentReference) => setDrafts(items => {
+    const previous = (items[draftKey] || emptyDraft).references;
+    const selected = mention ? [...previous.filter(item => item.name !== mention.name), mention] : previous;
+    return { ...items, [draftKey]: { text, references: referencedIn(text, selected) } };
+  });
   const call = useCallback(<T,>(action: string, payload: object = {}) => post<T>(`/agent/${action}`, { project_id: pid, ...payload }), [pid]);
   const accept = useCallback((session: Session) => {
     if (!mounted.current) return;
@@ -251,7 +259,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
         // A retry must use this session instead of creating another empty one.
         if (mounted.current) {
           const id = created.id;
-          setDrafts(items => ({ ...items, [id]: items[sourceKey] || "", [sourceKey]: "" }));
+          setDrafts(items => ({ ...items, [id]: items[sourceKey] || emptyDraft, [sourceKey]: emptyDraft }));
           setImageDrafts(items => ({ ...items, [id]: items[sourceKey] || [], [sourceKey]: [] }));
           if (version === selectionVersion.current) accept(created);
           else setSessions(items => updateSession(items, created));
@@ -260,10 +268,10 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
       }
       const key = session.id;
       const model = modelSelection.choice?.channel.id === INDEPENDENT_CHANNEL ? {} : selectionPayload(modelSelection.choice);
-      const result = await call<Session>("run", { session_id: session.id, message: text, images: images.map(image => image.url), image_media_ids: images.map(image => image.mediaId), web_enabled: online, ...model });
+      const result = await call<Session>("run", { session_id: session.id, message: text, ...(references.length ? { references } : {}), images: images.map(image => image.url), image_media_ids: images.map(image => image.mediaId), web_enabled: online, ...model });
       if (!mounted.current) return;
       setImageDrafts(items => ({ ...items, [key]: [] }));
-      setDrafts(items => ({ ...items, [key]: items[key] === text || items[key]?.trim() === text ? "" : items[key] }));
+      setDrafts(items => ({ ...items, [key]: items[key]?.text.trim() === text ? emptyDraft : items[key] }));
       if (version === selectionVersion.current) { followBottom.current = true; accept(result); }
       else setSessions(items => updateSession(items, result));
     } catch (e) { if (mounted.current && version === selectionVersion.current) setError(String(e)); }
@@ -371,7 +379,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
         <div className="agent-composer-wrap">
           <div className="agent-composer">
             {!!images.length && <div className="agent-image-previews">{images.map((image, i) => <div key={i}><img src={image.url} alt={`待发送图片 ${i + 1}（已加入素材）`} /><button type="button" aria-label={`移除图片 ${i + 1}`} disabled={sending} onClick={() => setImageDrafts(items => ({ ...items, [draftKey]: images.filter((_, index) => index !== i) }))}><X size={14} /></button></div>)}</div>}
-            <AgentComposerInput key={draftKey} inputRef={composer} data-testid="agent-composer" aria-label="向 Agent 发送消息" value={draft} maxLength={16000} disabled={loading || sending || creating} placeholder="写下一个灵感，或输入 / 选择技能…" onPaste={event => { if (readingImages) return; const files = Array.from(event.clipboardData.items).filter(item => item.type.startsWith("image/")).map(item => item.getAsFile()).filter((file): file is File => !!file); if (files.length) { event.preventDefault(); void pasteImages(files); } }} onChange={updateDraft} onSend={() => void send()} />
+            <AgentComposerInput key={draftKey} inputRef={composer} data-testid="agent-composer" aria-label="向 Agent 发送消息" value={draft} mentions={mentions} maxLength={16000} disabled={loading || sending || creating} placeholder="输入 @ 引用项目内容，或 / 选择技能…" onPaste={event => { if (readingImages) return; const files = Array.from(event.clipboardData.items).filter(item => item.type.startsWith("image/")).map(item => item.getAsFile()).filter((file): file is File => !!file); if (files.length) { event.preventDefault(); void pasteImages(files); } }} onChange={updateDraft} onSend={() => void send()} />
             <div className="agent-composer-actions"><label className={`agent-web-toggle${online ? " is-online" : ""}`}><Globe size={14} /><span>联网搜索</span><Switch size="small" checked={online} onChange={setOnline} disabled={running || sending} aria-label="联网搜索" /></label><GenerationSelector compact settings={modelSettings} kind="llm" operation="chat" value={modelSelection.value} onChange={modelSelection.setValue} disabled={loading || loadFailed || running || sending || creating || saving} />{running ? <Button data-testid="agent-stop" aria-label={cancelling ? "正在停止" : "停止执行"} status="danger" icon={<Square size={14} />} loading={stopping || cancelling} disabled={cancelling} onClick={() => void stop()}>{cancelling ? "正在停止" : "停止"}</Button> : <Button type="primary" data-testid="agent-send" aria-label="发送消息" icon={<ArrowUp size={19} />} loading={sending} disabled={(!draft.trim() && !images.length) || readingImages || loading || loadFailed || creating} onClick={() => void send()} />}</div>
           </div>
           {empty && <>

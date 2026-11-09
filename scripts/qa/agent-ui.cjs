@@ -15,6 +15,7 @@ const deferred = () => { let resolve; const promise=new Promise(done=>{resolve=d
  let speechAudio;
  const speechRequests=[];
  const modelSelections=[];
+ let mentionPrompt;
  const streamGates=new Map();
  const model = http.createServer(async (req,res) => {
   const chunks=[];for await(const chunk of req) chunks.push(chunk);
@@ -42,6 +43,9 @@ const deferred = () => { let resolve; const promise=new Promise(done=>{resolve=d
    message={role:'assistant',content:'本轮执行已暂停，已完成的操作已保留。'};
   } else if(prompt.includes('导航后台执行测试')) {
    message={role:'assistant',content:'导航后的后台执行已完成。'};
+  } else if(prompt.includes('核对项目引用')) {
+   mentionPrompt=prompt;
+   message={role:'assistant',content:'项目引用已收到。'};
   } else if(prompt.includes('渠道切换测试')) {
    modelSelections.push({url:req.url,model:body.model,authorization:req.headers.authorization});
    message={role:'assistant',content:`渠道切换测试完成：${body.model}`};
@@ -528,8 +532,57 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
   }
   assert.equal(navigationResult.status,'completed','Navigating away prevented the submitted instruction from completing');
   assert(navigationResult.messages.some(message=>message.content==='导航后的后台执行已完成。'));
+
+  const scope=`/projects/${project.id}`;
+  const picture=await api('/actions/media/create-svg',{project_id:project.id,name:'雨衣设定',svg:'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="red"/></svg>'});
+  const asset=await api(scope+'/assets',{name:'引用人物',design_media_id:picture.id});
+  await api(scope+'/assets',{name:'引用停用人物',enabled:false});
+  const episode=await api(scope+'/episodes',{title:'引用剧集'});
+  const scene=await api(`${scope}/episodes/${episode.id}/scenes`,{title:'车站 内景'});
+  const clip=await api(`${scope}/episodes/${episode.id}/clips`,{scene_id:scene.id,title:'进站'});
+  const otherClip=await api(`${scope}/episodes/${episode.id}/clips`,{scene_id:scene.id,title:'进站'});
+  await page.reload();
+  await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
+  await page.getByTestId('agent-session-'+navigationSession.id).click();
+  const composer=page.getByTestId('agent-composer');
+  const references=page.getByRole('listbox',{name:'项目引用'});
+  const chooseReference=async(query,name,keyboard=false)=>{
+   await page.keyboard.insertText(`@${query}`);
+   const option=references.getByRole('option').filter({has:page.getByText(`@${name}`,{exact:true})});
+   await option.waitFor();
+   if(keyboard) await composer.press('Enter'); else await option.click();
+   await references.waitFor({state:'hidden'});
+   assert((await composer.inputValue()).endsWith(`@${name} `));
+  };
+  await composer.fill('核对项目引用 mail@example.com ');
+  assert.equal(await references.isVisible(),false);
+  await composer.press('@');
+  await references.getByRole('option').first().waitFor();
+  assert.equal(await references.getByText('@引用停用人物',{exact:true}).count(),0);
+  await composer.press('Escape');
+  await composer.press('Backspace');
+  await chooseReference('引用人物','引用人物',true);
+  await chooseReference('引用人物.雨衣','引用人物.雨衣设定');
+  await chooseReference('引用剧集','引用剧集',true);
+  await chooseReference('引用剧集.车站 内','引用剧集.车站 内景');
+  const clipName=`引用剧集.车站 内景.进站#clips-${otherClip.id}`;
+  await chooseReference('引用剧集.车站 内景.进站',clipName);
+  await composer.fill((await composer.inputValue()).replace('@引用剧集 ',''));
+  assert.notEqual(clip.id,otherClip.id);
+  const expected=[{resource:'assets',id:asset.id,name:'引用人物'},{resource:'media',id:picture.id,asset_id:asset.id,name:'引用人物.雨衣设定'},
+   {resource:'scenes',id:scene.id,episode_id:episode.id,name:'引用剧集.车站 内景'},
+   {resource:'clips',id:otherClip.id,episode_id:episode.id,scene_id:scene.id,name:clipName}];
+  await chooseReference('引用剧集','引用剧集',true);
+  expected.push({resource:'episodes',id:episode.id,name:'引用剧集'});
+  await page.getByTestId('agent-send').click();
+  await page.getByText('项目引用已收到。',{exact:true}).waitFor();
+  const mentionSession=await api('/actions/agent/session',{project_id:project.id,session_id:navigationSession.id});
+  const stored=mentionSession.messages.find(message=>message.content.startsWith('核对项目引用'));
+  assert.deepEqual(stored.references,expected);
+  assert(mentionPrompt.startsWith(stored.content));
+  assert.deepEqual(JSON.parse(mentionPrompt.split('\n').at(-1)),expected);
   assert.deepEqual(failures,[]);
-  console.log('PASS: Agent streaming and interrupted replies; first-run retry without duplicate sessions; navigation during initial send; load recovery and draft retention; cancellation during selection, draining and final tool results; channel/model routing; generation previews; TTS; SVG; session order, plans and desktop/mobile/dark themes');
+  console.log('PASS: Agent streaming and interrupted replies; first-run retry without duplicate sessions; navigation during initial send; load recovery and draft retention; cancellation during selection, draining and final tool results; channel/model routing; generation previews; TTS; SVG; project mentions; session order, plans and desktop/mobile/dark themes');
   console.log('Screenshots: '+screenshots);
  } catch(error) {
   if(page && !page.isClosed()) {

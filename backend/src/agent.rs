@@ -14,6 +14,8 @@ mod execution;
 mod resource_names;
 #[path = "agent_user_input.rs"]
 mod user_input;
+#[path = "agent_references.rs"]
+mod references;
 
 const MAX_MESSAGES: usize = 512;
 const MAX_CONTEXT: usize = 160_000;
@@ -123,8 +125,8 @@ pub(super) fn command(s:&AppState,path:&str,v:&Value)->Result<Value,String>{
   "/agent/session"=>read_session(&c,&strv(v,"session_id")?),
   "/agent/delete"=>{let id=strv(v,"session_id")?;read_session(&c,&id)?;if runs().lock().map_err(|_|"Agent 运行锁不可用")?.contains_key(&run_key(s,&pid,&id)){return Err("Agent 仍在执行或停止中，请稍后删除会话".into())}c.execute("DELETE FROM agent_sessions WHERE id=?",[id]).map_err(|e|e.to_string())?;Ok(json!({"ok":true}))},
   "/agent/cancel"=>{let id=strv(v,"session_id")?;let mut session=read_session(&c,&id)?;if let Some(flag)=runs().lock().map_err(|_|"Agent 运行锁不可用")?.get(&run_key(s,&pid,&id)){flag.store(true,Ordering::SeqCst);}if session["status"]=="running"{session["status"]=json!("cancelled");session["execution"]["phase"]=json!("cancelled");session["error"]=json!("执行已取消，已完成的操作已保留。");close_pending(&mut session,"用户已取消执行");save_session(&c,&mut session)?;}Ok(session)},
-  "/agent/run"=>{let id=strv(v,"session_id")?;let message=strv(v,"message")?;let images=input_images(v)?;let image_media_ids=input_image_media_ids(&c,v,images.len())?;if message.trim().is_empty()&&images.is_empty(){return Err("请输入消息或粘贴图片".into())}if message.chars().count()>16_000{return Err("消息过长，请限制在 16000 字以内".into())}let mut session=read_session(&c,&id)?;if session["messages"].as_array().unwrap().len()>MAX_MESSAGES-100||session["messages"].to_string().len()+images.iter().map(String::len).sum::<usize>()+message.len()>MAX_SESSION-100_000{return Err("此会话记录已达上限，请创建新对话".into())}let cfg=config_with_selection(&c,v)?;endpoint(&cfg)?;let mut secrets=Vec::new();collect_secrets(&setting(&c,"models")?,&mut secrets);collect_secrets(&cfg,&mut secrets);let key=run_key(s,&pid,&id);let flag=Arc::new(AtomicBool::new(false));{let mut all=runs().lock().map_err(|_|"Agent 运行锁不可用")?;if all.contains_key(&key){return Err("此 Agent 会话仍在执行或停止中".into())}if all.len()>=8{return Err("Agent 并发会话已达上限，请稍后重试".into())}all.insert(key.clone(),flag.clone());}
-   if session["title"]=="新对话"{session["title"]=json!(clipped(if message.trim().is_empty(){"图片创作"}else{message.trim()},40));}session["status"]=json!("running");session["error"]=Value::Null;execution::start(&mut session,tool_step_limit(&cfg));session["messages"].as_array_mut().unwrap().push(json!({"role":"user","content":message.trim(),"images":images,"image_media_ids":image_media_ids,"created_at":now()}));if let Err(e)=save_session(&c,&mut session){runs().lock().unwrap().remove(&key);return Err(e)}session["context"]=conversation_context::metadata(&session);let state=s.clone();let pid=pid.clone();let saved=session.clone();let web=v["web_enabled"].as_bool().unwrap_or(false);
+  "/agent/run"=>{let id=strv(v,"session_id")?;let message=strv(v,"message")?;let images=input_images(v)?;let image_media_ids=input_image_media_ids(&c,v,images.len())?;if message.trim().is_empty()&&images.is_empty(){return Err("请输入消息或粘贴图片".into())}if message.chars().count()>16_000{return Err("消息过长，请限制在 16000 字以内".into())}let references=references::validate(&c,v,&message)?;let mut session=read_session(&c,&id)?;if session["messages"].as_array().unwrap().len()>MAX_MESSAGES-100||session["messages"].to_string().len()+images.iter().map(String::len).sum::<usize>()+message.len()+json!(references).to_string().len()>MAX_SESSION-100_000{return Err("此会话记录已达上限，请创建新对话".into())}let cfg=config_with_selection(&c,v)?;endpoint(&cfg)?;let mut secrets=Vec::new();collect_secrets(&setting(&c,"models")?,&mut secrets);collect_secrets(&cfg,&mut secrets);let key=run_key(s,&pid,&id);let flag=Arc::new(AtomicBool::new(false));{let mut all=runs().lock().map_err(|_|"Agent 运行锁不可用")?;if all.contains_key(&key){return Err("此 Agent 会话仍在执行或停止中".into())}if all.len()>=8{return Err("Agent 并发会话已达上限，请稍后重试".into())}all.insert(key.clone(),flag.clone());}
+   if session["title"]=="新对话"{session["title"]=json!(clipped(if message.trim().is_empty(){"图片创作"}else{message.trim()},40));}session["status"]=json!("running");session["error"]=Value::Null;execution::start(&mut session,tool_step_limit(&cfg));let mut user_message=json!({"role":"user","content":message.trim(),"images":images,"image_media_ids":image_media_ids,"created_at":now()});if !references.is_empty(){user_message["references"]=json!(references);}session["messages"].as_array_mut().unwrap().push(user_message);if let Err(e)=save_session(&c,&mut session){runs().lock().unwrap().remove(&key);return Err(e)}session["context"]=conversation_context::metadata(&session);let state=s.clone();let pid=pid.clone();let saved=session.clone();let web=v["web_enabled"].as_bool().unwrap_or(false);
    if std::thread::Builder::new().name("spielberg-agent".into()).spawn(move||{let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||run_loop(&state,&pid,saved.clone(),&cfg,web,&flag,&secrets)));let error=match result{Ok(Ok(()))=>None,Ok(Err(e))=>Some(e),Err(_)=>Some("Agent 执行意外中断，请重试。已完成的操作已保留。".into())};finish(&state,&pid,&saved["id"].as_str().unwrap_or(""),&flag,error.as_deref(),&secrets);if let Ok(mut all)=runs().lock(){all.remove(&key);}}).is_err(){runs().lock().unwrap().remove(&run_key(s,&project_id(v)?,&id));session["status"]=json!("failed");session["error"]=json!("无法启动 Agent 后台任务");save_session(&c,&mut session)?;return Err("无法启动 Agent 后台任务".into())}Ok(session)
   },_=>Err("未知 Agent 操作".into())
  };
@@ -536,6 +538,33 @@ mod tests{
   let text=wire[1]["content"][0]["text"].as_str().unwrap();
   assert!(text.contains(&format!("image_media_ids=[{id}]")));assert!(text.contains("operation=i2i"));assert!(text.contains("当前项目素材库"));
   assert_eq!(wire[1]["content"][1]["image_url"]["url"],session["messages"][0]["images"][0]);
+ }
+ #[test]
+ fn project_references_validate_associations_and_survive_image_context_and_history(){
+  let f=Fixture::new();let c=db(&f.state,&f.pid).unwrap();
+  c.execute_batch("INSERT INTO assets(id,name,created_at,enabled) VALUES(1,'角色','now',1),(2,'停用','now',0);
+    INSERT INTO media(id,name,path,kind,created_at) VALUES(11,'台词','ref.wav','audio','now'),(12,'未关联','other.wav','audio','now');
+    INSERT INTO role_audio(role_id,media_id,name) VALUES(1,11,'台词');
+    INSERT INTO episodes(id,title,sort_order,created_at) VALUES(21,'第一集',0,'now'),(22,'第二集',1,'now');
+    INSERT INTO scenes(id,episode_id,title,created_at) VALUES(31,21,'车站','now'),(32,22,'路口','now');
+    INSERT INTO clips(id,episode_id,scene_id,title,sort_order,created_at) VALUES(41,21,31,'进站',0,'now');").unwrap();
+  let text="查看 @角色.台词 和 @第一集.车站.进站";
+  let inputs=json!({"references":[
+   {"name":"角色.台词","resource":"media","id":11,"asset_id":1,"unexpected":"ignored"},
+   {"name":"第一集.车站.进站","resource":"clips","id":41,"scene_id":31,"episode_id":21}
+  ]});
+  let checked=references::validate(&c,&inputs,text).unwrap();
+  assert_eq!(checked.len(),2);assert!(checked[0].get("unexpected").is_none());
+  for (index,field,value) in [(0,"id",12),(0,"asset_id",2),(1,"scene_id",32),(1,"episode_id",22)] {
+   let mut invalid=inputs.clone();invalid["references"][index][field]=json!(value);
+   assert!(references::validate(&c,&invalid,text).is_err());
+  }
+  assert!(references::validate(&c,&inputs,"不引用项目对象").is_err());
+  let session=json!({"messages":[{"role":"user","content":text,"references":checked,"images":["data:image/png;base64,aGVsbG8="]}]});
+  let wire=context(&session,"system");
+  assert!(wire[1]["content"][0]["text"].as_str().unwrap().ends_with(&session["messages"][0]["references"].to_string()));
+  let history=conversation_history::search(&session,&json!({"message_index":1})).unwrap();
+  assert!(history["items"][0]["content"].as_str().unwrap().contains("\"scene_id\":31"));
  }
  struct Fixture{state:AppState,pid:String}
  impl Fixture{
