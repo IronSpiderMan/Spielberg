@@ -403,3 +403,39 @@
 }
 .scene-merge-list li > div > span:first-child { min-width: 0; overflow-wrap: anywhere; }
 .scene-merge-list .arco-tag { flex-shrink: 0; }
+
+.scene-settings-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  min-width: 0;
+}
+.scene-settings-page-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.scene-settings-page-heading h2 { margin: 0; font-size: 18px; }
+.scene-settings-page .scene-workspace-detail { scrollbar-gutter: stable; }
+.scene-settings-page .scene-one-take { margin-top: 20px; }
+.scene-settings-page .scene-multi-reference, .scene-settings-modal .scene-multi-reference { margin-top: 0; }
+.scene-settings-page .reference-media-picker, .scene-settings-modal .reference-media-picker { margin-bottom: 10px; }
+@media (max-width: 760px) {
+  .scene-settings-page { flex: none; }
+  .scene-settings-page .scene-editor-content { grid-template-columns: minmax(0, 1fr); }
+  .scene-settings-page .scene-composer { overflow: visible; }
+}
+.clip-generation-inheritance { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 12px; }
+@media (min-width: 761px) {
+  .scene-settings-page .scene-editor-content {
+    flex: 1 1 auto;
+    height: 0;
+    grid-template-columns: minmax(0, 1.7fr) minmax(220px, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .scene-settings-page .scene-composer { overflow-y: auto; }
+}

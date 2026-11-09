@@ -11,7 +11,7 @@ export function ImageModelFields({choice,ratio,size,onChange,disabled,operation=
 }
 
 export function VideoModelFields({choice,mode,duration,onDuration,ratio,size,onSize,resolution,onResolution,audio,onAudio,disabled}: {
-  choice?:GenerationChoice;mode:string;duration:number;onDuration:(v:number)=>void;ratio:string;size?:string;onSize:(v:{ratio:string;size:string})=>void;
+  choice?:GenerationChoice;mode?:string;duration:number;onDuration:(v:number)=>void;ratio:string;size?:string;onSize:(v:{ratio:string;size:string})=>void;
   resolution?:string;onResolution:(v:string)=>void;audio?:boolean;onAudio?:(v:boolean)=>void;disabled?:boolean;
 }) {
   const cap=choice?.capabilities, byResolution=cap?.size_mode==="resolution", actualRatio=modelRatio(choice,ratio);

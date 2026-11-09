@@ -2,7 +2,7 @@ import { ReferenceAnnotationModal } from "./components/ReferenceAnnotationModal"
 import { ConfirmPopover, confirmAction } from "./components/ConfirmAction";
 import { GenerationSelector } from "./components/generation/GenerationSelector";
 import { ImageModelFields, VideoModelFields } from "./components/generation/ModelGenerationFields";
-import { channelsFor, generationChoice, modelImageSize, modelRatio, selectionPayload, useGenerationSelection, validateGeneration } from "./generation-channels";
+import { channelsFor, generationChoice, modelImageSize, modelRatio, selectionPayload, useGenerationSelection, validateGeneration, type GenerationSelection } from "./generation-channels";
 import { RoleAudioReferences } from "./components/RoleAudioReferences";
 import { RevealFileButton } from "./components/RevealFileButton";
 import AssetRelationships from "./AssetRelationships";
@@ -10,9 +10,11 @@ import AssetThumbnail from "./AssetThumbnail";
 import { ASSET_CATEGORIES, assetCategoryLabel, supportsAudioReferences, type AssetCategory } from "./asset-categories";
 import { PreviewVideo, VideoPreviewModal } from "./components/VideoPreviewModal";
 import { sceneVideoPrompt } from "./core";
+import { ClipFramePicker } from "./components/ClipFramePicker";
+import { ClipReferenceImagePicker } from "./components/generation/ClipReferenceImagePicker";
 import { ReferenceMediaPicker } from "./components/generation/ReferenceMediaPicker";
 import { buildVideoRequest } from "./generation-request";
-import { sceneGenerationOptions } from "./scene-generation";
+import { clipDefaultFields, sceneGenerationOptions, sceneVideos, sharedClipReferences } from "./scene-generation";
 import { RoleImagePicker } from "./components/RoleImagePicker";
 import { ImagePreviewModal, PreviewImage } from "./components/ImagePreviewModal";
 import { usePromptOptimization } from "./hooks/usePromptOptimization";
@@ -49,7 +51,6 @@ ArrowLeft,
 ArrowUp,
 GitBranch,
 GitMerge,
-GripVertical,
 Maximize2,
 Minimize2,
 MoreHorizontal,
@@ -75,7 +76,7 @@ ZoomIn
 } from "lucide-react";
 
 
-import { api,defaultOptions,normalizeGenerationSize,Episode,FrameKey,GenerationOptions,imageUrl,Media,ModelSettings,post,Project,Asset,Clip,Scene,PlaybackUnit,GenerationPreview,Snapshot } from "./core";
+import { api,normalizeGenerationSize,Episode,FrameKey,GenerationOptions,imageUrl,Media,ModelSettings,post,Project,Asset,Clip,Scene,PlaybackUnit,GenerationPreview,Snapshot } from "./core";
 import { confirmDiscard,useEditGuard } from "./edit-guard";
 import { resolvePrompt, resolveH3Prompt } from "./resolve-prompt";
 import { type Storyboard } from "./StoryboardEditor";
@@ -91,21 +92,31 @@ import "./prompts.css";
 const SequencePreview=lazy(()=>import("./creation").then(m=>({default:m.SequencePreview})));
 const ImageStudio=lazy(()=>import("./creation").then(m=>({default:m.ImageStudio})));
 
-function videoRequest(scene: Clip, settings: ModelSettings) {
+function videoRequest(scene: Clip, settings: ModelSettings, parent?: Scene) {
   if(scene.creation_mode === "canvas") throw new Error(`${scene.title}：请进入画布，使用视频节点生成；已有片段视频可直接合并`);
-  const options = sceneGenerationOptions(scene);
+  const options = sceneGenerationOptions(scene, parent);
   const mode = options.video_mode;
   const choice=generationChoice(settings,"video",options,mode === "i2v"?"ref2v":mode);
   const request=buildVideoRequest({mode,prompt:sceneVideoPrompt(scene),label:scene.title,clipId:scene.id,
     duration:options.duration,ratio:modelRatio(choice,options.aspect_ratio),size:options.size,firstId:scene.first_media_id,lastId:scene.last_media_id,
     referenceIds:options.reference_media_ids??(scene.reference_media_id?[scene.reference_media_id]:[]),
     referenceVideoIds:options.reference_video_media_ids,referenceAudioIds:options.reference_audio_media_ids});
-  validateGeneration(choice,mode==="i2v"?"ref2v":mode,{images:request.image_media_ids.length,videos:mode==="i2v"?options.reference_video_media_ids?.length:0,audios:mode==="i2v"?options.reference_audio_media_ids?.length:0,last:!!request.last_media_id,duration:options.duration});
-  return {...request,...selectionPayload(choice),
-    inherit_shared_prompt:options.inherit_shared_prompt,exclude_shared_reference_media_ids:options.exclude_shared_reference_media_ids,exclude_shared_reference_audio_media_ids:options.exclude_shared_reference_audio_media_ids,...(choice?.capabilities.size_mode==="resolution"?{resolution:options.resolution || "720P"}:{}),...(choice?.capabilities.audio?{audio:options.audio ?? true}:{})};
+  const shared = sharedClipReferences(parent, options);
+  validateGeneration(choice, mode === "i2v" ? "ref2v" : mode, {
+    images: mode === "i2v" ? new Set([...request.image_media_ids, ...shared.images]).size : 0,
+    videos: mode === "i2v" ? new Set([...(options.reference_video_media_ids || []), ...shared.videos]).size : 0,
+    audios: mode === "i2v" ? new Set([...(options.reference_audio_media_ids || []), ...shared.audios]).size : 0,
+    last: !!request.last_media_id,
+    duration: options.duration,
+  });
+  return { ...request, ...selectionPayload(choice),
+    inherit_shared_prompt: options.inherit_shared_prompt,
+    exclude_shared_reference_media_ids: options.exclude_shared_reference_media_ids,
+    exclude_shared_reference_video_media_ids: options.exclude_shared_reference_video_media_ids,
+    exclude_shared_reference_audio_media_ids: options.exclude_shared_reference_audio_media_ids,
+    ...(choice?.capabilities.size_mode === "resolution" ? { resolution: options.resolution || choice.channel.resolution || "720P" } : {}),
+    ...(choice?.capabilities.audio ? { audio: options.audio ?? true } : {}) };
 }
-const sceneVideos = (scene: Pick<Clip, "videos" | "video_media">) =>
-  scene.videos || (scene.video_media ? [scene.video_media] : []);
 const selectPlaybackVideo = (projectId: string, unit: PlaybackUnit, mediaId: number) => post(
   unit.kind === "scene" ? "/scenes/select-video" : "/clips/select-video",
   { project_id: projectId, [unit.kind === "scene" ? "scene_id" : "clip_id"]: unit.id, media_id: mediaId },
@@ -553,7 +564,7 @@ export function Episodes({
         if (unit.kind === "scene") return { path: "/generations/scene-video", request: { scene_id: unit.id }, title: unit.title };
         const clip = currentBatch.clips.find(item => item.id === unit.id);
         if (!clip) throw new Error(`找不到片段 ${unit.title}`);
-        return { path: "/generations/video", request: videoRequest(clip, data.settings), title: unit.title };
+        return { path: "/generations/video", request: videoRequest(clip, data.settings, currentBatch.scenes.find(scene => scene.id === clip.scene_id)), title: unit.title };
       });
     } catch (e) {
       Message.error(String(e));
@@ -813,40 +824,6 @@ function EpisodeOrderControls({episode, id, kind, project, reload, actions, disa
     <Button size="mini" aria-label={`下移${label}`} title={`下移${label}`} disabled={disabled || busy || index === last} icon={<ArrowDown size={14}/>} onClick={() => move(index + 1)}/>
   </Space>;
 }
-function ClipFramePicker({data, reload, onSelect, disabled}: {data: Snapshot; reload: () => void; onSelect: (media: Media) => void; disabled?: boolean}) {
-  const [visible, setVisible] = useState(false);
-  const [clipId, setClipId] = useState<number>();
-  const [videoId, setVideoId] = useState<number>();
-  const [frame, setFrame] = useState("first");
-  const [busy, setBusy] = useState(false);
-  const clips = data.episodes.flatMap(ep => ep.clips.filter(scene => sceneVideos(scene).length).map(scene => ({scene, label: `${ep.title} · ${scene.title}`})));
-  const scene = clips.find(item => item.scene.id === clipId)?.scene;
-  const videos = scene ? sceneVideos(scene) : [];
-  const video = videos.find(item => item.id === videoId);
-  const select = async () => {
-    if (!scene || !video || busy) return;
-    setBusy(true);
-    try {
-      const media = await post<Media>("/media/video-frame", {project_id: data.project.id, clip_id: scene.id, media_id: video.id, frame});
-      await reload();
-      onSelect(media);
-      setVisible(false);
-    } catch (error) {Message.error(String(error));}
-    finally {setBusy(false);}
-  };
-  return <>
-    <Button disabled={disabled} icon={<Film size={15}/>} onClick={() => {setClipId(undefined); setVideoId(undefined); setFrame("first"); setVisible(true);}}>从片段选择</Button>
-    <Modal title="从片段视频选择图片" visible={visible} onCancel={() => !busy && setVisible(false)} maskClosable={!busy} closable={!busy} confirmLoading={busy} okButtonProps={{disabled: !video}} cancelButtonProps={{disabled: busy}} onOk={select} okText="使用此帧" unmountOnExit>
-      {!clips.length ? <Empty description="暂无片段视频，请先生成视频"/> : <Form layout="vertical">
-        <Form.Item label="片段"><Select placeholder="选择剧集中的片段" value={clipId} disabled={busy} onChange={id => {setClipId(id); setVideoId(undefined);}} showSearch>{clips.map(item => <Select.Option key={item.scene.id} value={item.scene.id}>{item.label}</Select.Option>)}</Select></Form.Item>
-        <Form.Item label="视频版本"><Select placeholder="选择视频版本" value={videoId} disabled={busy || !scene} onChange={setVideoId}>{videos.map((item, i) => <Select.Option key={item.id} value={item.id}>版本 {i + 1} · {item.name}</Select.Option>)}</Select></Form.Item>
-        <Form.Item label="选择画面"><Select value={frame} disabled={busy} onChange={setFrame}><Select.Option value="first">首帧</Select.Option><Select.Option value="last">尾帧</Select.Option></Select></Form.Item>
-        {video && <video key={video.id} className="frame-picker-video" src={imageUrl(video)} controls preload="metadata"/>}
-        <p className="subtle">确认后提取视频的实际首帧或尾帧，并保存为项目图片。</p>
-      </Form>}
-    </Modal>
-  </>;
-}
 
 function EpisodeEditor({
   data,
@@ -895,17 +872,20 @@ function EpisodeEditor({
     setDescription(episode?.description || "");
   }, [episode, initialView]);
   const [saving, setSaving] = useState(false);
+  const [sceneDraft, setSceneDraft] = useState({ dirty: false, busy: false });
+  const onSceneStatus = useCallback((dirty: boolean, busy: boolean) =>
+    setSceneDraft(current => current.dirty === dirty && current.busy === busy ? current : { dirty, busy }), []);
   const dirty = JSON.stringify(board || null) !== JSON.stringify(baseline?.storyboard || null) || title !== (baseline?.title || "") || description !== (baseline?.description || "") || cover?.id !== baseline?.cover_media?.id || scriptStatus.dirty;
-  useEditGuard(dirty || saving || generatingBoard || scriptStatus.busy);
+  useEditGuard(dirty || saving || generatingBoard || scriptStatus.busy || sceneDraft.dirty || sceneDraft.busy);
   useEffect(() => {
-    if (!dirty && !saving && !generatingBoard && !scriptStatus.busy) return;
+    if (!dirty && !saving && !generatingBoard && !scriptStatus.busy && !sceneDraft.dirty && !sceneDraft.busy) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty, saving, generatingBoard, scriptStatus.busy]);
+  }, [dirty, saving, generatingBoard, scriptStatus.busy, sceneDraft]);
   const close = () => {
-    if (saving || generatingBoard || scriptStatus.busy) return;
-    if (dirty) confirmDiscard(onClose);
+    if (saving || generatingBoard || scriptStatus.busy || sceneDraft.busy) return;
+    if (dirty || sceneDraft.dirty) confirmDiscard(onClose);
     else onClose();
   };
   const save = async () => {
@@ -924,7 +904,7 @@ function EpisodeEditor({
   };
 
   const currentEpisode = data.episodes.find(ep => ep.id === episode?.id);
-  const editorLocked = saving || generatingBoard || scriptStatus.busy;
+  const editorLocked = saving || generatingBoard || scriptStatus.busy || sceneDraft.busy;
   const openClip = (scene: Clip) => {
     if (editorLocked) return;
     if (dirty) confirmDiscard(() => editClip(scene));
@@ -970,7 +950,7 @@ function EpisodeEditor({
     } finally { setInserting(null); }
   };
   const initialFocus = initialSceneId ?? initialFocusedSceneId;
-  const [editingScene, setEditingScene] = useState<number | "new" | "group" | undefined>(initialSceneId);
+  const [editingScene, setEditingScene] = useState<"new" | "group">();
   const [focusedSceneId, setFocusedSceneId] = useState(initialFocus);
   const [sceneQuery, setSceneQuery] = useState("");
   const [sceneView, setSceneView] = useState<"grid" | "detail">(initialFocus === undefined ? "grid" : "detail");
@@ -989,7 +969,7 @@ function EpisodeEditor({
     setMergeOpen(false);
   };
   useEffect(() => {
-    setEditingScene(initialSceneId);
+    setEditingScene(undefined);
     setFocusedSceneId(initialFocus);
     setSceneView(initialFocus === undefined ? "grid" : "detail");
     setSceneQuery("");
@@ -1019,7 +999,6 @@ function EpisodeEditor({
     setFocusedSceneId(id);
     setSceneView("detail");
     requestAnimationFrame(() => {
-      sceneDetailRef.current?.scrollIntoView({block: "start"});
       sceneTitleRef.current?.focus({preventScroll: true});
     });
   };
@@ -1073,7 +1052,97 @@ function EpisodeEditor({
     setPreviewTarget({ kind, id: source.id });
     setPreviewVideoId(source.video_media_id || videos[0].id);
   };
-  const activeScene = typeof editingScene === "number" ? currentEpisode?.scenes.find(scene => scene.id === editingScene) : undefined;
+  const renderSceneClips = (afterSave: (action: () => void) => void = action => action(), busy = false) => {
+    if (!currentEpisode || !focusedRow || !focusedScene) return null;
+    const locked = editorLocked || busy;
+    return <aside className="scene-workspace-detail" ref={sceneDetailRef} aria-label="场景片段列表">
+      <section className="episode-scene-group" key={focusedScene.id}>
+        <div className="episode-scene-group-heading">
+          <div className="episode-scene-group-summary">
+            <div className="episode-scene-group-title">
+              <span className="episode-scene-index" aria-hidden="true">{String(focusedRow.index + 1).padStart(2, "0")}</span>
+              <h3 tabIndex={-1} ref={sceneTitleRef}>{focusedScene.title}</h3>
+            </div>
+            <div className="episode-scene-group-meta">
+              <span>{focusedScene.clips.length} 个片段</span>
+              <Tag size="small" color={focusedScene.generation_mode === "one_take" ? "arcoblue" : "gray"}>
+                {focusedScene.generation_mode === "one_take" ? "一镜到底" : "逐片段生成"}
+              </Tag>
+              {focusedScene.generation_mode === "one_take"
+                ? <span>{focusedScene.video_media_id ? "主视频已选" : focusedScene.videos?.length ? "待选主视频" : "待生成视频"}</span>
+                : <span>{focusedRow.ready}/{focusedScene.clips.length} 视频就绪</span>}
+            </div>
+          </div>
+          {!selecting && <Space wrap size={6}>
+            {sceneVideos(focusedScene).length > 0 && <Button size="small" disabled={locked}
+              aria-label="预览场景视频" icon={<Play size={14}/>} onClick={() => openPreview("scene", focusedScene)}>预览</Button>}
+            <Button size="small" type="primary" disabled={locked || inserting !== null} icon={<Plus size={14}/>}
+              onClick={() => afterSave(() => beginClipCreation(focusedScene.id))}>添加片段</Button>
+            <EpisodeOrderControls episode={currentEpisode} id={focusedScene.id} kind="scene" project={project} reload={reload}
+              disabled={locked || copyingClip !== null || inserting !== null} actions={[
+                ...(focusedScene.clips.length > 1 ? [{
+                  key: "ungroup", label: "拆分场景", run: () => confirmAction({title: "拆分这个场景？",
+                    content: "每个片段将成为独立场景并沿用共享设定。原场景及一镜到底视频的关联将移除。",
+                    okText: "拆分场景", onOk: () => updateGroup("ungroup", focusedScene.id)}),
+                }] : []),
+                { key: "delete", label: "删除场景", danger: true, run: () => confirmAction({intent: "danger",
+                  title: "删除这个场景？", content: `将删除「${focusedScene.title}」及其中 ${focusedScene.clips.length} 个片段。`,
+                  okText: "删除场景", onOk: () => updateGroup("delete", focusedScene.id)}) },
+              ]} />
+          </Space>}
+        </div>
+        <div className="episode-scene-grid">{focusedScene.clips.map((clip, index) => {
+          const duration = clip.generation_options?.duration ?? focusedScene.generation_options?.duration;
+          return <div key={clip.id} className="episode-scene-item">
+            {selectingClips && <div className="episode-clip-selection">
+              <Checkbox checked={selection.includes(clip.id)} disabled={locked}
+                onChange={checked => toggleSelection(clip.id, checked)}>选择「{clip.title}」</Checkbox>
+            </div>}
+            <div className="episode-scene-card">
+              <ClipThumb scene={clip} media={data.media}
+                onPreview={!locked && !selecting && sceneVideos(clip).length ? () => openPreview("clip", clip) : undefined}/>
+              <button type="button" className="episode-scene-card-body" disabled={locked || selecting}
+                aria-label={`编辑片段：${clip.title}`} onClick={() => afterSave(() => openClip(clip))}>
+                <div className="episode-scene-card-title">
+                  <span className="episode-clip-index" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+                  <b title={clip.title}>{clip.title}</b>
+                </div>
+                <p>{clip.description || "尚未填写片段描述"}</p>
+                <div className="episode-scene-card-footer">
+                  <Space size={6} wrap>
+                    <Tag size="small" color={clip.video_media_id ? "green" : "gray"}>{clip.video_media_id ? "视频已就绪" :
+                      (clip.first_media_id || clip.last_media_id || clip.reference_media_id || clip.generation_options?.reference_media_ids?.length) ? "已设画面" : "待制作"}</Tag>
+                    {clip.creation_mode === "canvas" && <Tag size="small">画布</Tag>}
+                    {duration !== undefined && duration > 0 && <span className="episode-clip-duration">{duration} 秒</span>}
+                  </Space>
+                  {!selecting && <span className="episode-scene-edit-link">编辑片段 <ChevronRight size={14}/></span>}
+                </div>
+              </button>
+            </div>
+            {!selecting && <div className="episode-scene-item-actions">
+              <EpisodeOrderControls episode={currentEpisode} kind="clip" id={clip.id} project={project} reload={reload}
+                disabled={locked || copyingClip !== null || inserting !== null} actions={[
+                  { key: "before", label: "在前方新建", run: () => afterSave(() => beginClipCreation(clip.scene_id, clip.id, "before")) },
+                  { key: "after", label: "在后方新建", run: () => afterSave(() => beginClipCreation(clip.scene_id, clip.id, "after")) },
+                  { key: "copy-before", label: "复制到前方", run: () => void copyClip(clip, "before") },
+                  { key: "copy-after", label: "复制到后方", run: () => void copyClip(clip, "after") },
+                  { key: "delete", label: "删除片段", danger: true, run: () => confirmAction({intent: "danger",
+                    title: "删除这个片段？",
+                    content: `将删除「${clip.title}」及其片段设置。${focusedScene.clips.length === 1 ? "该片段是本场景的唯一成员，场景也会删除。" : ""}`,
+                    okText: "删除片段", onOk: async () => {
+                      const removesScene = focusedScene.clips.length === 1;
+                      await post("/clips/delete", { project_id: project.id, id: clip.id });
+                      await reload();
+                      if (removesScene) showSceneList(nextSceneId(clip.scene_id));
+                      Message.success("片段已删除");
+                    }}) },
+                ]} />
+            </div>}
+          </div>;
+        })}</div>
+      </section>
+    </aside>;
+  };
   if (!episode) return null;
   return (
     <section className="episode-editor-page">
@@ -1095,7 +1164,10 @@ function EpisodeEditor({
       <div className="episode-scene-browser" hidden={view !== "scenes"}>
         <div className="scene-workspace-toolbar">
           {showingDetail && <Button type="text" className="scene-workspace-back" icon={<ArrowLeft size={16}/>}
-            onClick={() => showSceneList(focusedSceneId)}>返回场景列表</Button>}
+            disabled={editorLocked} onClick={() => {
+              const back = () => showSceneList(focusedSceneId);
+              if (sceneDraft.dirty) confirmDiscard(back); else back();
+            }}>返回场景列表</Button>}
           {(!showingDetail || selectingClips) && <div className="scene-workspace-toolbar-title">
             <h2>{selectingScenes ? "合并场景" : selectingClips ? "片段分组" : "场景"}</h2>
             <p className="subtle" aria-live="polite">
@@ -1170,107 +1242,17 @@ function EpisodeEditor({
             })}
           </ol> : <Empty description={sceneOrder.length ? "没有匹配的场景或片段" : "本集暂无场景，点击「新建场景」开始创作"}/>}
         </>}
-        {showingDetail && currentEpisode && focusedRow && focusedScene && (
-          <section className="scene-workspace-detail" ref={sceneDetailRef} aria-label="当前场景">
-            <section className="episode-scene-group" key={focusedScene.id}>
-              <div className="episode-scene-group-heading">
-                <div className="episode-scene-group-summary">
-                  <div className="episode-scene-group-title">
-                    <span className="episode-scene-index" aria-hidden="true">{String(focusedRow.index + 1).padStart(2, "0")}</span>
-                    <h3 tabIndex={-1} ref={sceneTitleRef}>{focusedScene.title}</h3>
-                  </div>
-                  <div className="episode-scene-group-meta">
-                    <span>{focusedScene.clips.length} 个片段</span>
-                    <Tag size="small" color={focusedScene.generation_mode === "one_take" ? "arcoblue" : "gray"}>
-                      {focusedScene.generation_mode === "one_take" ? "一镜到底" : "逐片段生成"}
-                    </Tag>
-                    {focusedScene.generation_mode === "one_take"
-                      ? <span>{focusedScene.video_media_id ? "主视频已选" : focusedScene.videos?.length ? "待选主视频" : "待生成视频"}</span>
-                      : <span>{focusedRow.ready}/{focusedScene.clips.length} 视频就绪</span>}
-                  </div>
-                </div>
-                {!selecting && <Space wrap size={6}>
-                  {sceneVideos(focusedScene).length > 0 && <Button size="small" disabled={editorLocked}
-                    aria-label="预览场景视频" icon={<Play size={14}/>} onClick={() => openPreview("scene", focusedScene)}>预览</Button>}
-                  <Button size="small" disabled={editorLocked} icon={<SlidersHorizontal size={14}/>}
-                    onClick={() => setEditingScene(focusedScene.id)}>场景设定</Button>
-                  <Button size="small" type="primary" disabled={editorLocked || inserting !== null} icon={<Plus size={14}/>}
-                    onClick={() => beginClipCreation(focusedScene.id)}>添加片段</Button>
-                  <EpisodeOrderControls episode={currentEpisode} id={focusedScene.id} kind="scene" project={project} reload={reload}
-                    disabled={editorLocked || copyingClip !== null || inserting !== null} actions={[
-                      ...(focusedScene.clips.length > 1 ? [{
-                        key: "ungroup", label: "拆分场景", run: () => confirmAction({title: "拆分这个场景？",
-                          content: "每个片段将成为独立场景并沿用共享设定。原场景及一镜到底视频的关联将移除。",
-                          okText: "拆分场景", onOk: () => updateGroup("ungroup", focusedScene.id)}),
-                      }] : []),
-                      { key: "delete", label: "删除场景", danger: true, run: () => confirmAction({intent: "danger",
-                        title: "删除这个场景？", content: `将删除「${focusedScene.title}」及其中 ${focusedScene.clips.length} 个片段。`,
-                        okText: "删除场景", onOk: () => updateGroup("delete", focusedScene.id)}) },
-                    ]} />
-                </Space>}
-              </div>
-              {focusedScene.description && <p className="episode-scene-group-description">{focusedScene.description}</p>}
-              <div className="episode-scene-grid">{focusedScene.clips.map((clip, index) => (
-                <div key={clip.id} className="episode-scene-item">
-                  {selectingClips && <div className="episode-clip-selection">
-                    <Checkbox checked={selection.includes(clip.id)} disabled={editorLocked}
-                      onChange={checked => toggleSelection(clip.id, checked)}>选择「{clip.title}」</Checkbox>
-                  </div>}
-                  <div className="episode-scene-card">
-                    <ClipThumb scene={clip} media={data.media}
-                      onPreview={!editorLocked && !selecting && sceneVideos(clip).length ? () => openPreview("clip", clip) : undefined}/>
-                    <button type="button" className="episode-scene-card-body" disabled={editorLocked || selecting}
-                      aria-label={`编辑片段：${clip.title}`} onClick={() => openClip(clip)}>
-                      <div className="episode-scene-card-title">
-                        <span className="episode-clip-index" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
-                        <b title={clip.title}>{clip.title}</b>
-                      </div>
-                      <p>{clip.description || "尚未填写片段描述"}</p>
-                      <div className="episode-scene-card-footer">
-                        <Space size={6} wrap>
-                          <Tag size="small" color={clip.video_media_id ? "green" : "gray"}>{clip.video_media_id ? "视频已就绪" :
-                            (clip.first_media_id || clip.last_media_id || clip.reference_media_id || clip.generation_options?.reference_media_ids?.length) ? "已设画面" : "待制作"}</Tag>
-                          {clip.creation_mode === "canvas" && <Tag size="small">画布</Tag>}
-                          {(clip.generation_options?.duration ?? 0) > 0 && <span className="episode-clip-duration">{clip.generation_options?.duration} 秒</span>}
-                        </Space>
-                        {!selecting && <span className="episode-scene-edit-link">编辑片段 <ChevronRight size={14}/></span>}
-                      </div>
-                    </button>
-                  </div>
-                  {!selecting && <div className="episode-scene-item-actions">
-                    <EpisodeOrderControls episode={currentEpisode} kind="clip" id={clip.id} project={project} reload={reload}
-                      disabled={editorLocked || copyingClip !== null || inserting !== null} actions={[
-                        { key: "before", label: "在前方新建", run: () => beginClipCreation(clip.scene_id, clip.id, "before") },
-                        { key: "after", label: "在后方新建", run: () => beginClipCreation(clip.scene_id, clip.id, "after") },
-                        { key: "copy-before", label: "复制到前方", run: () => void copyClip(clip, "before") },
-                        { key: "copy-after", label: "复制到后方", run: () => void copyClip(clip, "after") },
-                        { key: "delete", label: "删除片段", danger: true, run: () => confirmAction({intent: "danger",
-                          title: "删除这个片段？",
-                          content: `将删除「${clip.title}」及其片段设置。${focusedScene.clips.length === 1 ? "该片段是本场景的唯一成员，场景也会删除。" : ""}`,
-                          okText: "删除片段", onOk: async () => {
-                            const removesScene = focusedScene.clips.length === 1;
-                            await post("/clips/delete", { project_id: project.id, id: clip.id });
-                            await reload();
-                            if (removesScene) showSceneList(nextSceneId(clip.scene_id));
-                            Message.success("片段已删除");
-                          }}) },
-                      ]} />
-                  </div>}
-                </div>
-              ))}</div>
-            </section>
-          </section>
-        )}
+        {showingDetail && currentEpisode && focusedScene && (selecting ? renderSceneClips() : <SceneSettings
+          key={focusedScene.id} data={data} episode={currentEpisode} scene={focusedScene} reload={reload}
+          onStatus={onSceneStatus} renderClips={renderSceneClips} />)}
       </div>
-      {currentEpisode && (editingScene === "new" || editingScene === "group" || activeScene) && <SceneSettings
-        key={editingScene} data={data} episode={currentEpisode} scene={activeScene} reload={reload}
+      {currentEpisode && editingScene && <SceneSettings
+        key={editingScene} data={data} episode={currentEpisode} reload={reload}
         clipIds={editingScene === "group" ? selectedIndexes.map(index => currentEpisode.clips[index].id) : undefined}
         close={() => setEditingScene(undefined)} onSaved={scene => {
           resetSelection();
-          if (editingScene === "new" || editingScene === "group") {
-            setSceneQuery("");
-            showSceneList(scene.id);
-          } else revealScene(scene.id);
+          setSceneQuery("");
+          showSceneList(scene.id);
         }} />}
       {currentEpisode && mergeOpen && canCombine && <SceneMergeDialog projectId={project.id} episodeId={currentEpisode.id}
         scenes={mergeScenes}
@@ -1330,7 +1312,7 @@ function EpisodeEditor({
         <p className="subtle">调整后立即保存，并同步到工作台</p>
         <fieldset disabled={saving} className="episode-editor-fields">
           {currentEpisode?.clips.map((scene, index) => {
-            const options = sceneGenerationOptions(scene);
+            const options = sceneGenerationOptions(scene, currentEpisode.scenes.find(parent => parent.id === scene.scene_id));
             const mode = options.video_mode;
             const images = mode === "i2v"
               ? [...new Set(options?.reference_media_ids ?? (scene.reference_media_id ? [scene.reference_media_id] : []))].map((id, i) => ({
@@ -1525,26 +1507,42 @@ export function ClipEditor({
   const effectivePrompt = prompt.trim() ? prompt : description;
   const parentScene = data.episodes.flatMap(episode => episode.scenes).find(item => item.id === scene.scene_id);
   const { uploading:pastingImages, inProgress:pasteInProgress, uploadImages } = useImageUpload({projectId:data.project.id,reload,refreshError:"图片已上传，但刷新素材失败"});
-  const [uploadingReferences, setUploadingReferences] = useState(false);
+  const [uploadingMediaReferences, setUploadingMediaReferences] = useState(false);
+  const [uploadingImageReferences, setUploadingImageReferences] = useState(false);
+  const uploadingReferences = uploadingMediaReferences || uploadingImageReferences;
   const [pastedMedia, setPastedMedia] = useState<Media[]>([]);
-  const draggedReference = useRef<number | null>(null);
-  const [referenceDropTarget, setReferenceDropTarget] = useState<number | null>(null);
   const [frames, setFrames] = useState<Record<FrameKey, number | null>>({
     first: scene.first_media_id || null,
     last: scene.last_media_id || null,
     reference: scene.reference_media_id || null,
   });
-  const [options, setOptions] = useState<GenerationOptions>(
-    () => sceneGenerationOptions(scene),
-  );
-  const referenceImages = (options.reference_media_ids || []).flatMap(id => {
-    const media = data.media.find(item => item.id === id) || pastedMedia.find(item => item.id === id);
-    return media ? [media] : [];
+  const [localOptions, setOptions] = useState<Partial<GenerationOptions>>(() => ({
+    ...scene.generation_options,
+    ...(scene.generation_options?.video_mode === "ref2v" ? { video_mode: "i2v" as const } : {}),
+    reference_media_ids: scene.generation_options?.reference_media_ids ?? (scene.reference_media_id ? [scene.reference_media_id] : undefined),
+  }));
+  const options = sceneGenerationOptions({ ...scene, first_media_id: frames.first, generation_options: localOptions }, parentScene);
+  const ratio = options.aspect_ratio;
+  const hasSceneDefaults = clipDefaultFields.some(key => parentScene?.generation_options?.[key] !== undefined);
+  const hasLocalDefaults = clipDefaultFields.some(key => localOptions[key] !== undefined);
+  const resetDefaults = () => setOptions(current => {
+    const next = { ...current };
+    for (const key of clipDefaultFields) delete next[key];
+    return next;
   });
-  const [ratio, setRatio] = useState(
-    scene.generation_options?.aspect_ratio || defaultOptions.aspect_ratio,
-  );
-  const videoChoice=generationChoice(data.settings,"video",options,options.video_mode==="i2v"?"ref2v":options.video_mode || "fl2v");
+  const operation = options.video_mode === "i2v" ? "ref2v" : options.video_mode;
+  const videoChoice = generationChoice(data.settings, "video", options, operation);
+  const selectVideoModel = (selection: GenerationSelection) => {
+    const capabilities = generationChoice(data.settings, "video", selection)?.capabilities;
+    const next = capabilities?.modes.includes(operation) ? operation : capabilities?.modes[0];
+    setOptions(current => ({
+      ...current,
+      ...selection,
+      ...(next && next !== operation ? { video_mode: next === "ref2v" ? "i2v" : next as GenerationOptions["video_mode"] } : {}),
+      resolution: undefined,
+      audio: capabilities?.audio ? current.audio : undefined,
+    }));
+  };
   const generationRatio = modelRatio(videoChoice, ratio);
   const generationRatioLabel = videoChoice?.capabilities.size_mode === "resolution" && options.video_mode === "fl2v"
     ? "跟随首帧" : generationRatio === "adaptive" ? "自适应" : generationRatio;
@@ -1575,12 +1573,12 @@ export function ClipEditor({
       }));
     }
   }, [mentionedReferenceIds, options.video_mode, pastingImages]);
-  const signature = JSON.stringify({title, description, prompt, frames, options, ratio});
+  const signature = JSON.stringify({title, description, prompt, frames, localOptions});
   const [savedSignature, setSavedSignature] = useState(signature);
   const dirty = signature !== savedSignature;
   useEditGuard(dirty);
   const closeEditor = () => {
-    if (pasteInProgress.current) return;
+    if (pasteInProgress.current || uploadingImageReferences) return;
     if (optimizingPrompt) return;
     if (!dirty) { onClose(); return; }
     void save();
@@ -1592,10 +1590,6 @@ export function ClipEditor({
   const { optimizing:optimizingPrompt, optimize:optimizePrompt } = usePromptOptimization();
   const [persistedVideoGenerating, setPersistedVideoGenerating] = useState(false);
   const [videoAssetPickerOpen, setVideoAssetPickerOpen] = useState(false);
-  const [multiReferencePickerOpen, setMultiReferencePickerOpen] = useState(false);
-  const [referenceRolePickerOpen, setReferenceRolePickerOpen] = useState(false);
-  const [referenceSourcesOpen, setReferenceSourcesOpen] = useState(false);
-  const [referencePreview, setReferencePreview] = useState<Media | null>(null);
   const [annotationSource, setAnnotationSource] = useState<Media | null>(null);
   const [attachingVideo, setAttachingVideo] = useState(false);
   const hadPersistedVideoJob = useRef(false);
@@ -1627,8 +1621,9 @@ export function ClipEditor({
     data.episodes.flatMap((ep) => ep.clips).find((s) => s.id === scene.id) ||
     scene;
   const sharedImages = (parentScene?.reference_media_ids || []).map(id => ({ value: id, label: data.media.find(media => media.id === id)?.name || `图片 #${id}` }));
+  const sharedVideo = (parentScene?.generation_options?.reference_video_media_ids || []).map(id => ({ value: id, label: data.media.find(media => media.id === id)?.name || `视频 #${id}` }));
   const sharedAudio = (parentScene?.reference_audio_media_ids || []).map(id => ({ value: id, label: data.media.find(media => media.id === id)?.name || `音频 #${id}` }));
-  const canSubmitClip = !!effectivePrompt.trim() || (options.inherit_shared_prompt !== false && !!parentScene?.shared_prompt.trim());
+  const canSubmitClip = !!effectivePrompt.trim() || (options.inherit_shared_prompt !== false && !!(parentScene?.shared_prompt?.trim() || parentScene?.description?.trim()));
   const [imageTarget, setImageTarget] = useState<FrameKey | null>(null);
   const [imagePrompt, setImagePrompt] = useState("");
   const [imageMode, setImageMode] = useState<"t2i" | "i2i">("t2i");
@@ -1638,7 +1633,7 @@ export function ClipEditor({
   const choose = (key: FrameKey, id: number | null) =>
     setFrames((current) => ({ ...current, [key]: id }));
   const pasteReferenceImages = async (files: File[]) => {
-    if (pasteInProgress.current || savingClip || videoGenerating || persistedVideoGenerating) return;
+    if (pasteInProgress.current || uploadingImageReferences || savingClip || videoGenerating || persistedVideoGenerating) return;
     const remaining = Math.max(0, 9 - (options.reference_media_ids || []).length);
     if (!remaining) { Message.warning("最多添加 9 张参考图，请先移除部分图片"); return; }
     const supported = supportedPastedImages(files);
@@ -1660,14 +1655,6 @@ export function ClipEditor({
       source_path: source,
     });
     choose(key, media.id);
-    await reload();
-  };
-  const addReferenceImages = async () => {
-    const selected = await open({ multiple: true, filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp", "gif", "svg"] }] });
-    if (!selected) return;
-    const paths = typeof selected === "string" ? [selected] : selected;
-    const imported = await Promise.all(paths.slice(0, Math.max(0, 9 - (options.reference_media_ids || []).length)).map(source => post<Media>("/media/import", { project_id: data.project.id, source_path: source })));
-    setOptions(o => ({ ...o, reference_media_ids: [...new Set([...(o.reference_media_ids || []), ...imported.map(m => m.id)])].slice(0, 9) }));
     await reload();
   };
   const toggleRef = (media: Media) =>
@@ -1747,7 +1734,7 @@ export function ClipEditor({
     first_media_id: frames.first,
     last_media_id: frames.last,
     reference_media_id: frames.reference,
-    generation_options: { ...options, aspect_ratio: ratio },
+    generation_options: localOptions,
   });
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const [autoSaveStatus, setAutoSaveStatus] = useState("");
@@ -1778,7 +1765,7 @@ export function ClipEditor({
   const previewGeneration = async () => {
     setPreviewingGeneration(true);
     try {
-      const request = videoRequest(draft(), data.settings);
+      const request = videoRequest(draft(), data.settings, parentScene);
       setGenerationPreview(await post<GenerationPreview>("/generations/clip-preview", { project_id: data.project.id, ...request }));
     } catch (error) { Message.error(String(error)); }
     finally { setPreviewingGeneration(false); }
@@ -1786,7 +1773,7 @@ export function ClipEditor({
   const generateVideo = async () => {
     if (pasteInProgress.current || uploadingReferences || optimizingPrompt || savingClip || videoGenerating || persistedVideoGenerating) return;
     try {
-      const request = videoRequest(draft(), data.settings);
+      const request = videoRequest(draft(), data.settings, parentScene);
       setVideoGenerating(true);
       await persist();
       await post<Media>("/generations/video", {
@@ -1851,7 +1838,6 @@ export function ClipEditor({
     }} onKeyDown={event => {
       if (event.key === "Escape" && !event.defaultPrevented && !event.nativeEvent.isComposing && event.keyCode !== 229 && event.currentTarget.contains(event.target as Node)) {
         if (optimizationMenuOpen) { event.preventDefault(); setOptimizationMenuOpen(false); return; }
-        if (referenceSourcesOpen) { event.preventDefault(); setReferenceSourcesOpen(false); return; }
         if ((event.target as HTMLElement).closest(".scene-visuals")) return;
         if (!writing) return;
         event.preventDefault();
@@ -1860,7 +1846,7 @@ export function ClipEditor({
     }}>
       <div className="scene-editor-heading">
         <div className="scene-editor-heading-title">
-          <Button type="text" disabled={pastingImages} onClick={closeEditor}>
+          <Button type="text" disabled={pastingImages || uploadingImageReferences} onClick={closeEditor}>
             ← 返回
           </Button>
         </div>
@@ -1918,11 +1904,18 @@ export function ClipEditor({
             </span>
           </button>}
           <Form id={generationSettingsId} layout="vertical" className="scene-generation-settings" hidden={writing && !writingSettingsOpen}>
-            <GenerationSelector settings={data.settings} kind="video" value={options} disabled={videoGenerating||persistedVideoGenerating} onChange={value=>setOptions(o=>{const choice=generationChoice(data.settings,"video",value);const mode=o.video_mode==="i2v"?"ref2v":o.video_mode || "fl2v";const nextMode=choice?.capabilities.modes.includes(mode)?mode:choice?.capabilities.modes[0] || "fl2v";return {...o,...value,video_mode:nextMode==="ref2v"?"i2v":nextMode as "t2v"|"fl2v",duration:5};})}/>
-            <VideoModelFields disabled={videoGenerating||persistedVideoGenerating} choice={videoChoice} mode={options.video_mode || "fl2v"} duration={options.duration} onDuration={duration=>setOptions(o=>({...o,duration}))} ratio={ratio} size={options.size} onSize={value=>{setRatio(value.ratio);setOptions(o=>({...o,aspect_ratio:value.ratio,size:value.size}));}} resolution={options.resolution} onResolution={resolution=>setOptions(o=>({...o,resolution}))} audio={options.audio} onAudio={audio=>setOptions(o=>({...o,audio}))}/>
+            <GenerationSelector settings={data.settings} kind="video" value={options} disabled={videoGenerating || persistedVideoGenerating}
+              onChange={selectVideoModel}/>
+            <VideoModelFields disabled={videoGenerating||persistedVideoGenerating} choice={videoChoice} mode={options.video_mode || "fl2v"} duration={options.duration} onDuration={duration=>setOptions(o=>({...o,duration}))} ratio={ratio} size={options.size} onSize={value=>setOptions(o=>({...o,aspect_ratio:value.ratio,size:value.size}))} resolution={options.resolution} onResolution={resolution=>setOptions(o=>({...o,resolution}))} audio={options.audio} onAudio={audio=>setOptions(o=>({...o,audio}))}/>
           </Form>
+          {hasSceneDefaults && (!writing || writingSettingsOpen) && <div className="clip-generation-inheritance">
+            <span className="helper">{hasLocalDefaults ? "片段参数优先，其余沿用场景默认值。" : "当前沿用场景默认参数。"}</span>
+            {hasLocalDefaults && <Button size="mini" type="text" disabled={videoGenerating || persistedVideoGenerating || savingClip}
+              onClick={resetDefaults}>恢复场景默认参数</Button>}
+          </div>}
           </div>
-          <Tabs className="scene-material-tabs" activeTab={options.video_mode} onChange={key => { if (pasteInProgress.current) return; setOptions(o => ({...o, video_mode: key as "t2v" | "fl2v" | "i2v", model:undefined})); setReferenceSourcesOpen(false); }}>
+          <Tabs className="scene-material-tabs" activeTab={options.video_mode} onChange={key => { if (pasteInProgress.current || uploadingImageReferences) return; setOptions(o => ({ ...o, video_mode: key as "t2v" | "fl2v" | "i2v",
+            ...(o.channel_id || o.model ? { model: undefined } : {}) })); }}>
           <Tabs.TabPane key="t2v" title="文生视频"><p className="helper">使用视频 Prompt 生成，不传入首尾帧或参考素材。</p></Tabs.TabPane>
           <Tabs.TabPane key="fl2v" title={videoChoice?.capabilities.last_frame?"首尾帧":"首帧"}>
           <div className="scene-image-grid">
@@ -1950,59 +1943,38 @@ export function ClipEditor({
           </div>
           </Tabs.TabPane>
           <Tabs.TabPane key="i2v" title="全能参考">
-          <section className="scene-multi-reference" aria-label="参考图片">
-            <div className="scene-reference-heading">
-              <div className="scene-reference-title"><ImagePlus size={15}/><h2>参考图片</h2><span>{(options.reference_media_ids || []).length} / 9</span></div>
-              <Dropdown trigger="click" popupVisible={referenceSourcesOpen} onVisibleChange={setReferenceSourcesOpen} unmountOnExit={false}
-                droplist={<div className="scene-source-menu" onClick={() => setReferenceSourcesOpen(false)}>
-                  <Button type="text" icon={<ImagePlus size={15}/>} onClick={() => setMultiReferencePickerOpen(true)}>从素材库选择</Button>
-                  <Button type="text" icon={<Users size={15}/>} onClick={() => setReferenceRolePickerOpen(true)}>从资产中选择</Button>
-                  <ClipFramePicker data={data} reload={reload} onSelect={media => setOptions(o => ({...o, reference_media_ids: [...new Set([...(o.reference_media_ids || []), media.id])].slice(0, 9)}))}/>
-                  <Button type="text" icon={<Upload size={15}/>} onClick={() => void addReferenceImages().catch(e => Message.error(String(e)))}>上传图片</Button>
-                </div>}>
-                <Button size="mini" disabled={pastingImages} aria-label="添加参考图" icon={<Plus size={13}/>}>添加<ChevronDown size={12}/></Button>
-              </Dropdown>
-            </div>
-              {(options.reference_media_ids || []).length > 0 ? <div className="scene-reference-grid" data-count={(options.reference_media_ids || []).length}>
-                {(options.reference_media_ids || []).map((id,index) => { const media=data.media.find(m=>m.id===id) || pastedMedia.find(m=>m.id===id); return media ? <figure className={`scene-reference-thumb${referenceDropTarget===id?' drop-target':''}`} key={id} data-reference-id={id}>
-                  <button type="button" className="scene-reference-preview" onClick={() => setReferencePreview(media)} aria-label={`预览参考图 ${media.name}`}><img src={imageUrl(media)} alt={media.name} draggable={false}/></button>
-                  <span className="scene-reference-index" aria-label={`参考图 ${index+1}`}>{writing ? `图 ${index+1}` : index+1}</span>
-                  <button type="button" className="scene-reference-remove" onClick={() => setOptions(o=>({...o,reference_media_ids:(o.reference_media_ids||[]).filter(x=>x!==id)}))} aria-label={`移除参考图 ${media.name}`} title="移除">×</button>
-                  <figcaption title={`拖动调整顺序：${media.name}`}
-                    onPointerDown={event=>{if(event.button!==0)return;event.preventDefault();draggedReference.current=id;event.currentTarget.setPointerCapture(event.pointerId);}}
-                    onPointerMove={event=>{if(draggedReference.current===null)return;const target=document.elementFromPoint(event.clientX,event.clientY)?.closest<HTMLElement>('[data-reference-id]');const targetId=target?Number(target.dataset.referenceId):null;setReferenceDropTarget(targetId===id?null:targetId);}}
-                    onPointerUp={event=>{const source=draggedReference.current;const target=document.elementFromPoint(event.clientX,event.clientY)?.closest<HTMLElement>('[data-reference-id]');const targetId=target?Number(target.dataset.referenceId):null;draggedReference.current=null;setReferenceDropTarget(null);if(source===null||targetId===null||source===targetId)return;setOptions(o=>{const ids=[...(o.reference_media_ids||[])];const from=ids.indexOf(source),to=ids.indexOf(targetId);if(from<0||to<0)return o;ids.splice(from,1);ids.splice(to,0,source);return {...o,reference_media_ids:ids};});}}
-                    onPointerCancel={()=>{draggedReference.current=null;setReferenceDropTarget(null);}}
-                    onLostPointerCapture={()=>{draggedReference.current=null;setReferenceDropTarget(null);}}
-                  ><GripVertical size={12} aria-hidden="true"/><span className="scene-reference-name">{media.name}</span><button type="button" className="scene-reference-annotate" disabled={pastingImages || savingClip || videoGenerating || persistedVideoGenerating} onPointerDown={event=>event.stopPropagation()} onClick={() => setAnnotationSource(media)} aria-label={`标注参考图 ${media.name}`} title="标注图片"><Pencil size={13}/></button></figcaption>
-                </figure> : null; })}
-              </div> : <button type="button" className="scene-reference-empty" disabled={pastingImages} onClick={() => setMultiReferencePickerOpen(true)}>
-                <ImagePlus size={22}/><span>添加参考图片<small>从素材库、资产或片段选择，也可上传、粘贴图片</small></span>
-              </button>}
-            {!!options.reference_media_ids?.length && <p className="scene-reference-hint">拖动名称调整顺序 · 点击图片预览 · 支持粘贴图片</p>}
-          </section>
+          <ClipReferenceImagePicker data={data} value={options.reference_media_ids || []} extraMedia={pastedMedia}
+            maxImages={9} writing={writing} supportsPaste reload={reload} onAnnotate={setAnnotationSource}
+            disabled={pastingImages || savingClip || videoGenerating || persistedVideoGenerating || uploadingMediaReferences}
+            onUploading={setUploadingImageReferences}
+            onChange={update => setOptions(current => ({ ...current, reference_media_ids: update(current.reference_media_ids || []) }))} />
           {(!videoChoice || !!videoChoice.capabilities.max_videos || !!options.reference_video_media_ids?.length || !!options.reference_audio_media_ids?.length)&&<ReferenceMediaPicker projectId={data.project.id} media={data.media} assets={data.assets} videoIds={options.reference_video_media_ids} audioIds={options.reference_audio_media_ids}
-            reload={reload} disabled={savingClip || videoGenerating || persistedVideoGenerating || pastingImages} onUploading={setUploadingReferences}
+            reload={reload} disabled={savingClip || videoGenerating || persistedVideoGenerating || pastingImages || uploadingImageReferences} onUploading={setUploadingMediaReferences}
             onChange={(kind, ids) => setOptions(current => ({...current, [kind === "video" ? "reference_video_media_ids" : "reference_audio_media_ids"]: ids}))} />}
           </Tabs.TabPane>
           </Tabs>
           </div>
-          {parentScene && (!!parentScene.shared_prompt || !!sharedImages.length || !!sharedAudio.length) && <details className="clip-inheritance">
+          {parentScene && (!!parentScene.shared_prompt || !!parentScene.description || !!sharedImages.length || !!sharedVideo.length || !!sharedAudio.length) && <details className="clip-inheritance">
             <summary>继承场景设定 · {parentScene.title}</summary>
-            {parentScene.shared_prompt && <>
+            {(parentScene.shared_prompt || parentScene.description) && <>
               <Checkbox checked={options.inherit_shared_prompt !== false} disabled={videoGenerating || persistedVideoGenerating}
-                onChange={inherit_shared_prompt => setOptions(previous => ({ ...previous, inherit_shared_prompt }))}>继承共享 Prompt</Checkbox>
-              <p className="helper">{parentScene.shared_prompt}</p>
+                onChange={inherit_shared_prompt => setOptions(previous => ({ ...previous, inherit_shared_prompt }))}>继承场景描述和共享 Prompt</Checkbox>
+              {parentScene.description && <p className="helper">{parentScene.description}</p>}
+              {parentScene.shared_prompt && <p className="helper">{parentScene.shared_prompt}</p>}
             </>}
             {!!sharedImages.length && <Select aria-label="排除场景共享参考图" placeholder="排除场景共享参考图"
               mode="multiple" options={sharedImages} value={options.exclude_shared_reference_media_ids || []}
               disabled={videoGenerating || persistedVideoGenerating}
               onChange={exclude_shared_reference_media_ids => setOptions(previous => ({ ...previous, exclude_shared_reference_media_ids }))}/>}
+            {!!sharedVideo.length && <Select aria-label="排除场景共享参考视频" placeholder="排除场景共享参考视频"
+              mode="multiple" options={sharedVideo} value={options.exclude_shared_reference_video_media_ids || []}
+              disabled={videoGenerating || persistedVideoGenerating}
+              onChange={exclude_shared_reference_video_media_ids => setOptions(previous => ({ ...previous, exclude_shared_reference_video_media_ids }))}/>}
             {!!sharedAudio.length && <Select aria-label="排除场景共享参考音频" placeholder="排除场景共享参考音频"
               mode="multiple" options={sharedAudio} value={options.exclude_shared_reference_audio_media_ids || []}
               disabled={videoGenerating || persistedVideoGenerating}
               onChange={exclude_shared_reference_audio_media_ids => setOptions(previous => ({ ...previous, exclude_shared_reference_audio_media_ids }))}/>}
-            {(sharedImages.length > 0 || sharedAudio.length > 0) && <p className="helper">参考素材模式可继承 {sharedImages.length} 张参考图、{sharedAudio.length} 段参考音频。</p>}
+            {(sharedImages.length > 0 || sharedVideo.length > 0 || sharedAudio.length > 0) && <p className="helper">全能参考模式可继承 {sharedImages.length} 张参考图、{sharedVideo.length} 个参考视频、{sharedAudio.length} 段参考音频。</p>}
           </details>}
           {writing && <div className="scene-writing-context">
             <div className="scene-writing-summary"><span>{writingField === "prompt" ? prompt.length : description.length} 字</span><span>素材可独立滚动 · 点击图片放大查看</span></div>
@@ -2059,29 +2031,6 @@ export function ClipEditor({
               )}
             </aside>
       </div>
-      <AssetImagePicker
-        visible={multiReferencePickerOpen}
-        label="多张参考图"
-        value={null}
-        data={data}
-        multiple
-        selectedIds={options.reference_media_ids || []}
-        onSelect={() => {}}
-        onToggle={id => setOptions(o => {
-          const ids = o.reference_media_ids || [];
-          if (ids.includes(id)) return { ...o, reference_media_ids: ids.filter(x => x !== id) };
-          if (ids.length >= 9) { Message.warning("最多选择 9 张参考图"); return o; }
-          return { ...o, reference_media_ids: [...ids, id] };
-        })}
-        onClose={() => setMultiReferencePickerOpen(false)}
-      />
-      <RoleImagePicker title="从资产中选择参考图" visible={referenceRolePickerOpen} roles={data.assets} multiple showPrimary={false}
-        selectedIds={options.reference_media_ids||[]} onClose={()=>setReferenceRolePickerOpen(false)} onSelect={media=>setOptions(o=>{
-          const ids=o.reference_media_ids||[];
-          if(ids.includes(media.id))return {...o,reference_media_ids:ids.filter(id=>id!==media.id)};
-          if(ids.length>=9){Message.warning("最多选择 9 张参考图");return o;}
-          return {...o,reference_media_ids:[...ids,media.id]};
-        })} />
       {annotationSource && <ReferenceAnnotationModal key={annotationSource.id} media={annotationSource}
         onClose={() => setAnnotationSource(null)} onApply={async file => {
           const count = await uploadImages([file], { onUploaded: media => {
@@ -2094,7 +2043,6 @@ export function ClipEditor({
           if (count) Message.success("标注图已用作参考图，保存片段后生效");
           return count > 0;
         }} />}
-      <ImagePreviewModal media={referencePreview} images={referenceImages} onMediaChange={setReferencePreview} title="参考图预览" onClose={()=>setReferencePreview(null)} />
       {generationPreview && <Modal visible title="片段生成输入" style={{ width: 760, maxWidth: "calc(100vw - 32px)" }}
         footer={null} onCancel={() => setGenerationPreview(undefined)}>
         <GenerationPreviewPanel preview={generationPreview} media={data.media} />
@@ -2181,7 +2129,7 @@ export function ClipEditor({
               placeholder="描述主体、构图、光线、色彩与画风…"
             />
           </Form.Item>
-          <ImageModelFields disabled={imageGenerating} choice={imageGeneration.choice} operation={imageMode} ratio={ratio} size={options.size} onChange={value=>{setRatio(value.ratio);setOptions(o=>({...o,aspect_ratio:value.ratio,size:value.size}));}}/>
+          <ImageModelFields disabled={imageGenerating} choice={imageGeneration.choice} operation={imageMode} ratio={ratio} size={options.size} onChange={value=>setOptions(o=>({...o,aspect_ratio:value.ratio,size:value.size}))}/>
 
         </Form>
       </Modal>

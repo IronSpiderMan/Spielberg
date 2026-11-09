@@ -296,8 +296,10 @@ pub(super) fn delete(s: &AppState, v: &Value) -> Result<Value,String> {
 
 fn split_clip(c: &Connection, clip: i64) -> Result<i64,String> {
     // A detached clip can still be regenerated with the original creative context.
-    c.execute("INSERT INTO scenes(episode_id,title,description,shared_prompt,reference_media_ids,reference_audio_media_ids,created_at)
-        SELECT s.episode_id,c.title,s.description,s.shared_prompt,s.reference_media_ids,s.reference_audio_media_ids,?
+    c.execute("INSERT INTO scenes(episode_id,title,description,shared_prompt,reference_media_ids,reference_audio_media_ids,generation_options,created_at)
+        SELECT s.episode_id,c.title,s.description,s.shared_prompt,s.reference_media_ids,s.reference_audio_media_ids,
+               CASE WHEN s.generation_mode='one_take' THEN json_remove(s.generation_options,'$.video_mode','$.first_media_id','$.last_media_id')
+                    ELSE s.generation_options END,?
         FROM scenes s JOIN clips c ON c.scene_id=s.id WHERE c.id=?",params![now(),clip]).map_err(|e| e.to_string())?;
     let scene = c.last_insert_rowid();
     c.execute("UPDATE clips SET scene_id=? WHERE id=?", params![scene,clip]).map_err(|e| e.to_string())?;

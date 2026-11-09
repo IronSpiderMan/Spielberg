@@ -37,6 +37,7 @@ export type GenerationOptions = {
   reference_audio_media_ids?: number[];
   exclude_shared_reference_media_ids?: number[];
   exclude_shared_reference_audio_media_ids?: number[];
+  exclude_shared_reference_video_media_ids?: number[];
   inherit_shared_prompt?: boolean;
   first_media_id?: number | null;
   last_media_id?: number | null;
@@ -59,7 +60,7 @@ export type Clip = {
   creation_mode?: "default" | "canvas";
   prompt?: string;
   script?: Record<FrameKey, string> & { references?: string[] };
-  generation_options?: GenerationOptions;
+  generation_options?: Partial<GenerationOptions>;
   videos?: Media[];
   id: number;
   title: string;
@@ -93,6 +94,10 @@ export type Scene = {
 };
 export type GenerationPreview = {
   prompt: string;
+  channel_id?: string;
+  model?: string;
+  aspect_ratio?: string;
+  resolution?: string;
   duration: number;
   image_media_ids?: number[];
   reference_audio_media_ids?: number[];

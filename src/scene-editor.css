@@ -9,23 +9,23 @@
 .scene-editor-heading-title { display: flex; align-items: center; gap: 18px; }
 .scene-editor-page .scene-editor-heading h1 { margin: 0; font-size: 22px; }
 .scene-editor-page .scene-editor-heading .arco-btn-text { padding: 0; color: var(--ui-muted); }
-.scene-editor-page .scene-editor-content { display: grid; flex: 1 1 auto; height: 0; min-height: 0; grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr); grid-template-rows: minmax(0, 1fr); gap: 24px; align-items: stretch; }
+:is(.scene-editor-page, .scene-settings-page) .scene-editor-content { display: grid; flex: 1 1 auto; height: 0; min-height: 0; grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr); grid-template-rows: minmax(0, 1fr); gap: 24px; align-items: stretch; }
 .scene-composer { min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 24px; background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: 12px; }
-.scene-editor-page .scene-form-card { padding: 0; margin: 0; border: 0; background: transparent; }
-.scene-editor-page .scene-form-card .arco-form { display: block; }
-.scene-editor-page .scene-form-card .arco-form-item { margin-bottom: 20px; }
-.scene-editor-page .arco-form-item-label { padding-bottom: 8px; }
-.scene-editor-page .scene-form-card .arco-form-item-label > label { display: block; width: 100%; font-weight: 500; color: var(--ui-text); }
+:is(.scene-editor-page, .scene-settings-page) .scene-form-card { padding: 0; margin: 0; border: 0; background: transparent; }
+:is(.scene-editor-page, .scene-settings-page) .scene-form-card .arco-form { display: block; }
+:is(.scene-editor-page, .scene-settings-page) .scene-form-card .arco-form-item { margin-bottom: 20px; }
+:is(.scene-editor-page, .scene-settings-page) .arco-form-item-label { padding-bottom: 8px; }
+:is(.scene-editor-page, .scene-settings-page) .scene-form-card .arco-form-item-label > label { display: block; width: 100%; font-weight: 500; color: var(--ui-text); }
 .scene-editor-page .scene-description-label { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; min-height: 24px; }
 .scene-description-heading { display: flex; align-items: baseline; gap: 4px 12px; min-width: 0; flex-wrap: wrap; }
 .scene-description-heading > span:first-child { flex-shrink: 0; }
 .scene-description-hint { color: var(--ui-muted); font-size: 11px; font-weight: 400; line-height: 1.6; }
 .scene-editor-page .scene-description-label .arco-btn { flex-shrink: 0; color: var(--ui-muted); padding: 0 2px; }
-.scene-editor-page .scene-form-card textarea { max-height: 240px; overflow-y: auto !important; background: var(--ui-surface); line-height: 1.7; padding: 10px 12px; }
+:is(.scene-editor-page, .scene-settings-page) .scene-form-card textarea { max-height: 240px; overflow-y: auto !important; background: var(--ui-surface); line-height: 1.7; padding: 10px 12px; }
 .scene-editor-page .scene-prompt-field textarea { min-height: clamp(200px, 28vh, 300px); max-height: min(560px, 65vh); }
-.scene-editor-page .scene-form-card .prompt-editor textarea { background: transparent; line-height: 1.8; color: transparent !important; -webkit-text-fill-color: transparent !important; }
-.scene-editor-page .scene-form-card .prompt-backdrop { color: var(--ui-text); }
-.scene-editor-page .scene-form-card .arco-textarea-wrapper { max-height: 120px; overflow-y: auto; border-color: var(--ui-border); }
+:is(.scene-editor-page, .scene-settings-page) .scene-form-card .prompt-editor textarea { background: transparent; line-height: 1.8; color: transparent !important; -webkit-text-fill-color: transparent !important; }
+:is(.scene-editor-page, .scene-settings-page) .scene-form-card .prompt-backdrop { color: var(--ui-text); }
+:is(.scene-editor-page, .scene-settings-page) .scene-form-card .arco-textarea-wrapper { max-height: 120px; overflow-y: auto; border-color: var(--ui-border); }
 .scene-visuals { margin-top: 16px; }
 .scene-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
 .scene-editor-page .scene-section-heading h2 { margin: 0; font-size: 13px; font-weight: 600; }
@@ -54,7 +54,7 @@
 .scene-reference-heading, .scene-reference-title { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .scene-reference-heading { justify-content: space-between; margin-bottom: 10px; }
 .scene-reference-title > svg { flex-shrink: 0; color: var(--ui-muted); }
-.scene-editor-page .scene-reference-title h2 { margin: 0; font-size: 12px; font-weight: 600; color: var(--ui-secondary-text); }
+:is(.scene-editor-page, .scene-settings-page) .scene-reference-title h2 { margin: 0; font-size: 12px; font-weight: 600; color: var(--ui-secondary-text); }
 .scene-reference-title > span { font-size: 11px; color: var(--ui-muted); white-space: nowrap; }
 .scene-reference-heading > .arco-btn { flex-shrink: 0; }
 .scene-reference-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 120px), 1fr)); gap: 10px; width: 100%; }
@@ -77,20 +77,20 @@
 .scene-reference-hint { margin: 10px 0 0; color: var(--ui-muted); font-size: 11px; line-height: 1.7; }
 .scene-reference-empty:focus-visible, .scene-reference-preview:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: -2px; }
 .scene-reference-annotate:focus-visible, .scene-reference-remove:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: 1px; }
-.scene-editor-page .scene-generation-settings { display: flex; flex-flow: row wrap; align-items: flex-start; gap: 12px 20px; margin-bottom: 16px; }
-.scene-editor-page .scene-generation-settings > .generation-channel-fields { flex: 1 1 220px; width: auto; min-width: 0; }
-.scene-editor-page .scene-generation-settings .arco-form-item { min-width: 0; margin-bottom: 0; }
-.scene-editor-page .scene-generation-settings > .video-model-fields { flex: 0 1 auto; max-width: 100%; flex-wrap: wrap; gap: 12px 20px; }
-.scene-editor-page .scene-generation-settings .generation-parameters-field { flex: 0 1 auto; width: auto; max-width: 100%; }
-.scene-editor-page .scene-generation-settings .generation-picker-trigger { min-height: 64px; }
-.scene-editor-page .scene-generation-settings .generation-parameters-trigger {
+:is(.scene-editor-page, .scene-settings-page, .scene-settings-modal) .scene-generation-settings { display: flex; flex-flow: row wrap; align-items: flex-start; gap: 12px 20px; margin-bottom: 16px; }
+:is(.scene-editor-page, .scene-settings-page, .scene-settings-modal) .scene-generation-settings > .generation-channel-fields { flex: 1 1 220px; width: auto; min-width: 0; }
+:is(.scene-editor-page, .scene-settings-page, .scene-settings-modal) .scene-generation-settings .arco-form-item { min-width: 0; margin-bottom: 0; }
+:is(.scene-editor-page, .scene-settings-page, .scene-settings-modal) .scene-generation-settings > .video-model-fields { flex: 0 1 auto; max-width: 100%; flex-wrap: wrap; gap: 12px 20px; }
+:is(.scene-editor-page, .scene-settings-page, .scene-settings-modal) .scene-generation-settings .generation-parameters-field { flex: 0 1 auto; width: auto; max-width: 100%; }
+:is(.scene-editor-page, .scene-settings-page, .scene-settings-modal) .scene-generation-settings .generation-picker-trigger { min-height: 64px; }
+:is(.scene-editor-page, .scene-settings-page, .scene-settings-modal) .scene-generation-settings .generation-parameters-trigger {
   padding: 8px 12px;
   font-size: 13px;
   font-weight: 500;
 }
-.scene-editor-page .scene-generation-settings .generation-parameters-trigger > svg:first-child { padding: 0; background: transparent; }
-.scene-editor-page .scene-generation-settings .generation-parameters-trigger:disabled { color: var(--color-text-1); }
-.scene-editor-page .scene-generation-settings .video-audio-field .arco-form-item-control-children { min-height: 64px; }
+:is(.scene-editor-page, .scene-settings-page, .scene-settings-modal) .scene-generation-settings .generation-parameters-trigger > svg:first-child { padding: 0; background: transparent; }
+:is(.scene-editor-page, .scene-settings-page, .scene-settings-modal) .scene-generation-settings .generation-parameters-trigger:disabled { color: var(--color-text-1); }
+:is(.scene-editor-page, .scene-settings-page, .scene-settings-modal) .scene-generation-settings .video-audio-field .arco-form-item-control-children { min-height: 64px; }
 .scene-editor-page .scene-video-action { display: flex; flex-direction: row; justify-content: space-between; align-items: center; margin-top: 12px; }
 .scene-editor-page .scene-video-action > .arco-btn { width: auto; min-width: 150px; height: 38px; }
 .scene-editor-page .scene-results { display: flex; flex-direction: column; gap: 16px; padding: 0 6px 0 0; min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
@@ -107,7 +107,7 @@
   .scene-editor-host { flex: 0 0 auto; }
   .app .content:has(.scene-editor-page):not(.scene-image-workbench-content) { overflow-x: hidden; overflow-y: auto; }
   .scene-editor-host > .scene-editor-page { flex: 0 0 auto; height: auto; min-height: 100%; }
-  .scene-editor-page .scene-editor-content { flex: 0 0 auto; height: auto; grid-template-rows: auto; }
+  :is(.scene-editor-page, .scene-settings-page) .scene-editor-content { flex: 0 0 auto; height: auto; grid-template-rows: auto; }
   .scene-editor-page .scene-composer { min-height: 0; overflow: visible; }
   .scene-editor-page .scene-results { min-height: 0; overflow: visible; padding-right: 0; }
   .scene-editor-page .scene-video-action { flex-wrap: wrap; gap: 10px; }
@@ -129,7 +129,7 @@
   .scene-editor-page .scene-video-action > .arco-btn { width: 100%; }
 }
 @container (max-width: 900px) {
-  .scene-editor-page .scene-editor-content { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  :is(.scene-editor-page, .scene-settings-page) .scene-editor-content { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .scene-editor-page .scene-results { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .scene-editor-page .scene-results > h2, .scene-results-empty { grid-column: 1 / -1; }
   .scene-results-empty { min-height: 180px; }

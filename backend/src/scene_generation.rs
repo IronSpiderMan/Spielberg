@@ -174,7 +174,9 @@ fn clipped_shared_refs(shared: &References, options: &Value) -> Result<Reference
     let mut refs = shared.clone();
     let excluded_images = reference_media_ids(options, "exclude_shared_reference_media_ids")?;
     let excluded_audios = reference_media_ids(options, "exclude_shared_reference_audio_media_ids")?;
+    let excluded_videos = reference_media_ids(options, "exclude_shared_reference_video_media_ids")?;
     refs.images.retain(|id| !excluded_images.contains(id));
+    refs.videos.retain(|id| !excluded_videos.contains(id));
     refs.audios.retain(|id| !excluded_audios.contains(id));
     Ok(refs)
 }
@@ -349,6 +351,48 @@ fn copy_options(to: &mut Value, from: &Value) {
     }
 }
 
+fn apply_clip_defaults(request: &mut Value, stored: &Value, scene: &Value, use_stored: bool) {
+    let local = if use_stored { stored } else { &Value::Null };
+    // A model belongs to its selected channel. Resolve the pair together.
+    let selection = ["channel_id", "model"];
+    let has_selection = |options: &Value| {
+        selection.iter().any(|key| {
+            let value = &options[*key];
+            !value.is_null() && value.as_str() != Some("")
+        })
+    };
+    let explicit = has_selection(request);
+    let from_scene = !explicit && !has_selection(local);
+    if !explicit {
+        let source = if from_scene { scene } else { local };
+        for key in selection {
+            if !source[key].is_null() {
+                request[key] = source[key].clone();
+            }
+        }
+    }
+    for key in ["aspect_ratio", "size", "duration", "resolution", "audio"] {
+        if request.get(key).is_some() {
+            continue;
+        }
+        // Explicit media requests already have their own model options.
+        // Duration has always fallen back to the clip's saved value.
+        let local_value = if key == "duration" { &stored[key] } else { &local[key] };
+        let model_specific = matches!(key, "resolution" | "audio");
+        let same_ratio = request["aspect_ratio"].is_null()
+            || scene["aspect_ratio"].is_null()
+            || request["aspect_ratio"] == scene["aspect_ratio"];
+        if !local_value.is_null() {
+            request[key] = local_value.clone();
+        } else if !scene[key].is_null()
+            && (!model_specific || from_scene)
+            && (key != "size" || same_ratio)
+        {
+            request[key] = scene[key].clone();
+        }
+    }
+}
+
 pub(super) fn prepare_clip(
     s: &AppState,
     c: &Connection,
@@ -364,6 +408,7 @@ pub(super) fn prepare_clip(
         "inherit_shared_prompt",
         "exclude_shared_reference_media_ids",
         "exclude_shared_reference_audio_media_ids",
+        "exclude_shared_reference_video_media_ids",
     ] {
         if let Some(value) = v.get(key) {
             effective_options[key] = value.clone();
@@ -389,6 +434,7 @@ pub(super) fn prepare_clip(
     };
     let first = opti(if saved_inputs { &clip } else { v }, "first_media_id");
     let last = opti(if saved_inputs { &clip } else { v }, "last_media_id");
+    let defaults = &scene["generation_options"];
     let explicit = if saved_inputs {
         options["video_mode"].as_str()
     } else {
@@ -403,11 +449,9 @@ pub(super) fn prepare_clip(
         return Err("只有首尾帧模式可以指定首帧或尾帧".into());
     }
     let mut request = v.clone();
-    if saved_inputs {
-        copy_options(&mut request, options);
-    }
+    apply_clip_defaults(&mut request, options, defaults, saved_inputs);
     if request.get("duration").is_none() {
-        request["duration"] = options.get("duration").cloned().unwrap_or(json!(5));
+        request["duration"] = json!(5);
     }
     request["operation"] = json!(mode);
     request["video_mode"] = json!(mode);
@@ -451,7 +495,14 @@ pub(super) fn prepare_clip(
     let shared_prompt = if effective_options["inherit_shared_prompt"] == false {
         String::new()
     } else {
-        remap_references(trim_field(&scene, "shared_prompt"), &shared, &effective)?
+        let description = trim_field(&scene, "description");
+        let prompt = trim_field(&scene, "shared_prompt");
+        let context = [description, prompt]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n");
+        remap_references(&context, &shared, &effective)?
     };
     let prompt = merge_clip_prompt(&shared_prompt, &local);
     request["prompt"] = json!(mentions(s, c, pid, &prompt, &effective.images)?);
@@ -599,6 +650,7 @@ pub(super) fn prepare_scene(
     for (clip, local_refs) in clips.iter().zip(sources.iter()) {
         let duration = clip["generation_options"]
             .get("duration")
+            .or_else(|| options.get("duration"))
             .map(Value::as_f64)
             .unwrap_or(Some(5.0))
             .filter(|time| time.is_finite() && *time > 0.0)
@@ -703,7 +755,11 @@ pub(super) fn clip_preview(s: &AppState, v: &Value) -> Result<Value, String> {
     let pid = project_id(v)?;
     let c = db(s, &pid)?;
     let mut request = prepare_clip(s, &c, &pid, v)?;
-    validate_video_request(&c, &request)?;
+    let (_, config) = validate_video_request(&c, &request)?;
+    if let Some(channel) = config.get("_channel_id") {
+        request["channel_id"] = channel.clone();
+        request["model"] = config["model"].clone();
+    }
     request.as_object_mut().unwrap().remove("_clip_inputs");
     Ok(request)
 }
@@ -868,6 +924,45 @@ mod tests {
         assert_eq!(excluded["image_media_ids"], json!([local]));
         assert_eq!(excluded["reference_audio_media_ids"], json!([]));
         assert!(!excluded["prompt"].as_str().unwrap().contains("房间参照"));
+    }
+
+    #[test]
+    fn clip_defaults_remain_live_and_local_overrides_win() {
+        let fixture = Fixture::new();
+        fixture.config("http://127.0.0.1:9");
+        let c = db(&fixture.state, &fixture.pid).unwrap();
+        let shared = fixture.media(&c, "shared.mp4", "video");
+        let local = fixture.media(&c, "local.mp4", "video");
+        let scene = scenes::create(&fixture.state, &json!({"project_id":fixture.pid,"episode_id":fixture.episode,
+            "title":"审讯","description":"地下室","shared_prompt":"冷绿顶灯",
+            "generation_options":{"channel_id":"fixture","model":"wan3.0-video","duration":8,"video_mode":"t2v",
+                "aspect_ratio":"9:16","resolution":"720P","audio":false,"reference_video_media_ids":[shared]}})).unwrap();
+        let scene_id = intv(&scene, "id").unwrap();
+        let inherited = intv(&scene["clips"][0], "id").unwrap();
+        let inherited_request = json!({"project_id":fixture.pid,"clip_id":inherited});
+        let plan = clip_preview(&fixture.state, &inherited_request).unwrap();
+        assert_eq!(plan["channel_id"], "fixture");
+        assert_eq!(plan["model"], "wan3.0-video");
+        assert_eq!(plan["operation"], "ref2v");
+        assert_eq!(plan["duration"], 8);
+        assert_eq!(plan["aspect_ratio"], "9:16");
+        assert_eq!(plan["audio"], false);
+        assert_eq!(plan["reference_video_media_ids"], json!([shared]));
+
+        let custom = fixture.clip(scene_id, "问话", "警官打开笔记本", json!({
+            "duration":6,"aspect_ratio":"16:9","audio":true,"reference_video_media_ids":[local],
+            "exclude_shared_reference_video_media_ids":[shared]
+        }));
+        let local_plan = clip_preview(&fixture.state, &json!({"project_id":fixture.pid,"clip_id":custom})).unwrap();
+        assert_eq!(local_plan["duration"], 6);
+        assert_eq!(local_plan["aspect_ratio"], "16:9");
+        assert_eq!(local_plan["audio"], true);
+        assert_eq!(local_plan["reference_video_media_ids"], json!([local]));
+        assert_eq!(local_plan["prompt"], "地下室\n冷绿顶灯\n\n警官打开笔记本");
+
+        c.execute("UPDATE scenes SET generation_options=json_set(generation_options,'$.duration',10) WHERE id=?", [scene_id]).unwrap();
+        assert_eq!(clip_preview(&fixture.state, &inherited_request).unwrap()["duration"], 10);
+        assert_eq!(clip_preview(&fixture.state, &json!({"project_id":fixture.pid,"clip_id":custom})).unwrap()["duration"], 6);
     }
 
     #[test]

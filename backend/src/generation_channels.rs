@@ -120,7 +120,15 @@ pub(super) fn resolve(settings: &Value, v: &Value, kind: &str, operation: &str) 
     let requested_model = v["model"].as_str().filter(|s|!s.is_empty());
     let mode=if kind=="video" && operation=="i2v"{"fl2v"}else{operation};
     let supports = |m: &&Value| profile(m["profile"].as_str().unwrap_or("")).is_ok_and(|p|p["modes"].as_array().is_some_and(|xs|xs.contains(&json!(mode))));
-    let model = if let Some(id)=requested_model {models.iter().find(|m|m["id"]==id)} else {
+    let model = if let Some(id) = requested_model {
+        models.iter().find(|m| m["id"] == id).or_else(|| {
+            if kind != "video" || !id.starts_with("happyhorse-") { return None; }
+            models.iter().filter(supports).find(|model| {
+                model["id"].as_str().and_then(|id| id.rsplit_once('-'))
+                    .is_some_and(|(family, variant)| family == id && matches!(variant, "t2v" | "i2v" | "r2v"))
+            })
+        })
+    } else {
         models.iter().filter(supports).find(|m|channel["default_model_id"]==m["id"]).or_else(||models.iter().find(supports))
     }.ok_or("所选模型不在渠道中，或渠道没有支持当前生成方式的模型")?;
     let mut config=channel.clone();config["model"]=model["id"].clone();config["_model_profile"]=model["profile"].clone();config["_channel_id"]=channel["id"].clone();
@@ -280,6 +288,7 @@ mod tests {
         assert_eq!(config["base_url"],"http://refs:8190/v1/generations/i2v");assert_eq!(config["api_key"],"fixture-refs");
         let token=json!({"video":{"provider":"qianwen-token-plan","model":"happyhorse-1.1-t2v","api_key":"sk-sp-fixture"}});
         assert_eq!(resolve(&token,&json!({}),"video","fl2v").unwrap()["model"],"happyhorse-1.1-i2v");
+        assert_eq!(resolve(&token,&json!({"model":"happyhorse-1.1"}),"video","fl2v").unwrap()["model"],"happyhorse-1.1-i2v");
     }
 
     #[test]

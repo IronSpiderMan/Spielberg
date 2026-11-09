@@ -22,7 +22,7 @@ export function DurationSlider({value,onChange,min=3,max=15,smart,disabled}: Dur
       <input type="range" aria-label="视频时长滑块" min={min} max={max} step={1} value={numeric} disabled={disabled || value===-1} onChange={event=>onChange(Number(event.target.value))}/>
       {value===-1 ? <output>智能</output> : <label><input key={value} type="number" aria-label="视频时长" min={min} max={max} step={1} defaultValue={value} disabled={disabled} onBlur={event=>{
         const parsed=Number(event.target.value);const next=event.target.value && Number.isFinite(parsed) ? Math.min(max,Math.max(min,Math.round(parsed))) : numeric;
-        event.target.value=String(next);onChange(next);
+        event.target.value=String(next);if(next!==value)onChange(next);
       }} onKeyDown={event=>{if(event.key==="Enter"){event.preventDefault();event.currentTarget.blur();}}}/><span>秒</span></label>}
     </div>
     <div className="generation-duration-bounds"><span>{min} 秒</span><span>{max} 秒</span></div>

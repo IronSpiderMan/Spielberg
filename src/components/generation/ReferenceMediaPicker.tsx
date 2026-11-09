@@ -13,7 +13,7 @@ type ReferenceSource = "library" | "assets";
 const referenceLabel = (kind: ReferenceKind) => kind === "video" ? "视频" : "音频";
 const MAX_REFERENCES = 3;
 
-export function ReferenceMediaPicker({ projectId, media, assets = [], videoIds = [], audioIds = [], onChange, reload, disabled, onUploading }: {
+export function ReferenceMediaPicker({ projectId, media, assets = [], videoIds = [], audioIds = [], onChange, reload, disabled, onUploading, shared = false }: {
   projectId: string;
   media: Media[];
   assets?: Asset[];
@@ -22,6 +22,7 @@ export function ReferenceMediaPicker({ projectId, media, assets = [], videoIds =
   onChange: (kind: ReferenceKind, ids: number[]) => void;
   reload: () => void | Promise<void>;
   disabled?: boolean;
+  shared?: boolean;
   onUploading?: (busy: boolean) => void;
 }) {
   const [uploaded, setUploaded] = useState<Media[]>([]);
@@ -32,6 +33,8 @@ export function ReferenceMediaPicker({ projectId, media, assets = [], videoIds =
   const [preview, setPreview] = useState<Media | null>(null);
   const inProgress = useRef(false);
   const inputs = useRef<Partial<Record<ReferenceKind, HTMLInputElement | null>>>({});
+  const limit = shared ? Infinity : MAX_REFERENCES;
+  const countLabel = (count: number) => shared ? count : `${count} / ${limit}`;
   const locked = disabled || !!uploading;
   const library = [...media, ...uploaded.filter(item => !media.some(m => m.id === item.id))];
   const audioAssets = assets.filter(asset => supportsAudioReferences(asset.category));
@@ -47,13 +50,13 @@ export function ReferenceMediaPicker({ projectId, media, assets = [], videoIds =
     if (locked) return;
     const ids = idsFor(kind);
     if (ids.includes(id)) onChange(kind, ids.filter(value => value !== id));
-    else if (ids.length < MAX_REFERENCES) onChange(kind, [...ids, id]);
+    else if (ids.length < limit) onChange(kind, [...ids, id]);
     else Message.warning(`最多选择 ${MAX_REFERENCES} 个参考${referenceLabel(kind)}`);
   };
   const upload = async (kind: ReferenceKind, files: File[]) => {
     if (disabled || inProgress.current || !files.length) return;
     const ids = [...idsFor(kind)];
-    if (ids.length + files.length > MAX_REFERENCES) return void Message.warning(`最多选择 ${MAX_REFERENCES} 个参考${referenceLabel(kind)}`);
+    if (ids.length + files.length > limit) return void Message.warning(`最多选择 ${MAX_REFERENCES} 个参考${referenceLabel(kind)}`);
     inProgress.current = true; setUploading(kind); onUploading?.(true);
     try {
       for (const file of files) {
@@ -83,7 +86,7 @@ export function ReferenceMediaPicker({ projectId, media, assets = [], videoIds =
       </div>
       <Button size="small" type={selected ? "primary" : "secondary"} icon={selected ? <Check size={14} /> : <Plus size={14} />}
         aria-label={`${selected ? "取消选择" : "选择"}参考${referenceLabel(picker.kind)} ${name}`} aria-pressed={selected}
-        disabled={locked || (!selected && idsFor(picker.kind).length >= MAX_REFERENCES)} onClick={() => toggle(picker.kind, item.id)}>{selected ? "已选择" : "选择"}</Button>
+        disabled={locked || (!selected && idsFor(picker.kind).length >= limit)} onClick={() => toggle(picker.kind, item.id)}>{selected ? "已选择" : "选择"}</Button>
     </article>;
   };
   const search = query.trim().toLocaleLowerCase();
@@ -94,15 +97,15 @@ export function ReferenceMediaPicker({ projectId, media, assets = [], videoIds =
   return <div className="reference-media-picker">
     <div className="reference-media-panels">
       {(["video", "audio"] as const).map(kind => {
-        const label = referenceLabel(kind), ids = idsFor(kind), Icon = kind === "video" ? Film : Music2;
-        return <section key={kind} className="reference-media-panel" aria-label={`参考${label}`}>
+        const label = referenceLabel(kind), title = `${shared ? "共享" : ""}参考${label}`, ids = idsFor(kind), Icon = kind === "video" ? Film : Music2;
+        return <section key={kind} className="reference-media-panel" aria-label={title}>
           <div className="reference-media-heading">
-            <div className="reference-media-title"><Icon size={15} /><h3>参考{label}</h3><span className="reference-media-count">{ids.length} / {MAX_REFERENCES}</span></div>
+            <div className="reference-media-title"><Icon size={15} /><h3>{title}</h3><span className="reference-media-count">{countLabel(ids.length)}</span></div>
             <Dropdown trigger="click" popupVisible={sourceMenu === kind && !locked} onVisibleChange={visible => setSourceMenu(visible ? kind : null)}
               droplist={<div className="reference-media-source-menu" onClick={() => setSourceMenu(null)}>
                 <Button type="text" icon={<FolderOpen size={15} />} onClick={() => openPicker(kind, "library")}>从素材库选择</Button>
                 {kind === "audio" && <Button type="text" icon={<Users size={15} />} onClick={() => openPicker(kind, "assets")}>从资产库选择</Button>}
-                <Button type="text" disabled={ids.length >= MAX_REFERENCES} icon={<Upload size={15} />} onClick={() => inputs.current[kind]?.click()}>上传参考{label}</Button>
+                <Button type="text" disabled={ids.length >= limit} icon={<Upload size={15} />} onClick={() => inputs.current[kind]?.click()}>上传参考{label}</Button>
               </div>}>
               <Button size="mini" disabled={locked} loading={uploading === kind} aria-label={`添加参考${label}`} icon={<Plus size={13} />}>添加<ChevronDown size={12} /></Button>
             </Dropdown>
@@ -123,9 +126,9 @@ export function ReferenceMediaPicker({ projectId, media, assets = [], videoIds =
         </section>;
       })}
     </div>
-    <p className="reference-media-note">图片、视频、音频至少选择一种；视频、音频均为可选参考。</p>
+    {!shared && <p className="reference-media-note">图片、视频、音频至少选择一种；视频、音频均为可选参考。</p>}
     {picker && <Modal className="reference-media-modal" title={`选择参考${referenceLabel(picker.kind)}`} visible style={{ width: 640, maxWidth: "calc(100vw - 32px)" }} onCancel={() => setPicker(null)} unmountOnExit
-      footer={<div className="reference-media-footer"><span role="status">已选择 {idsFor(picker.kind).length} / {MAX_REFERENCES} 个参考{referenceLabel(picker.kind)}</span><Button type="primary" onClick={() => setPicker(null)}>完成选择</Button></div>}>
+      footer={<div className="reference-media-footer"><span role="status">已选择 {countLabel(idsFor(picker.kind).length)} 个参考{referenceLabel(picker.kind)}</span><Button type="primary" onClick={() => setPicker(null)}>完成选择</Button></div>}>
       {picker.kind === "audio" && <Tabs activeTab={picker.source} onChange={source => { setPicker({ ...picker, source: source as ReferenceSource }); setQuery(""); }}>
         <Tabs.TabPane key="library" title="素材库" /><Tabs.TabPane key="assets" title="资产库" />
       </Tabs>}
