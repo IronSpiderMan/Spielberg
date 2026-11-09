@@ -15,6 +15,7 @@ import { generationChoice, selectionPayload } from "../generation-channels";
 import { AgentLivingOrb } from "./AgentLivingOrb";
 import "./agent-float.css";
 import { AgentUserInput, type UserInputRequest, type UserInputAnswers } from "./AgentUserInput";
+import { AgentComposerInput } from "./AgentComposerInput";
 
 type Position = { x: number; y: number };
 type Session = {
@@ -467,10 +468,7 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings, a
       <label className="agent-float-speech-provider"><Mic size={13} aria-hidden="true" /><span>语音识别</span><select aria-label="语音识别方式" value={speechProvider} disabled={listening} onChange={e => setSpeechPreferences({ ...speechPreferences, asr: { ...speechPreferences.asr, provider: e.target.value as "system" | "cloud" } })}><option value="system">系统自带</option><option value="cloud">{asrChoice ? `${asrChoice.channel.name} · ${asrChoice.model.name || asrChoice.model.id}` : "项目 ASR 渠道"}</option></select></label>
       <div className="agent-float-narration" data-state={narration.state}><Volume2 size={13} aria-hidden="true" /><span role="status">{speaking ? narration.state === "loading" ? "正在合成朗读…" : "正在朗读回复" : speechPreferences.tts.provider === "system" ? "系统朗读" : ttsChoice ? `${ttsChoice.channel.name} · ${ttsChoice.model.name || ttsChoice.model.id}` : "尚未选择 TTS 模型"}</span>{speaking ? <button type="button" className="agent-float-icon" aria-label="停止朗读" title="停止朗读" onClick={narration.stop}><Square size={12} /></button> : <label><input type="checkbox" aria-label="自动朗读回复" checked={speechPreferences.autoRead} onChange={e => setSpeechPreferences({ ...speechPreferences, autoRead: e.target.checked })} />自动朗读</label>}</div>
       <form onSubmit={event => { event.preventDefault(); if (!listening) void send(draft); }}>
-        <textarea ref={input} data-testid="agent-float-input" value={draft} onChange={event => setDraft(event.target.value)} readOnly={listening} disabled={!pid || locked} rows={2} maxLength={MAX_DRAFT} aria-label="Agent 指令" placeholder={listening ? "正在聆听…" : "告诉我，你想做什么…"} onKeyDown={event => {
-          if (event.defaultPrevented || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
-          if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); if (!listening) void send(draft); }
-        }} />
+        <AgentComposerInput inputRef={input} data-testid="agent-float-input" value={draft} onChange={setDraft} onSend={() => { if (!listening) void send(draft); }} readOnly={listening} disabled={!pid || locked} rows={2} maxLength={MAX_DRAFT} aria-label="Agent 指令" placeholder={listening ? "正在聆听…" : "告诉我你想做什么，或输入 / 选择技能…"} />
         <div className="agent-float-composer-actions"><span>{listening ? appearance.speechAutoSend ? "说完自动发送 · 最长 60 秒" : "说完先校对，再发送" : "Enter 发送 · Shift+Enter 换行"}</span><div>
           {listening ? <button type="button" className="agent-float-icon" aria-label="取消听写，改用文字" title="取消听写，恢复原稿" onClick={() => { cancelSpeech(); input.current?.focus(); }}><Keyboard size={17} /></button> : <button type="button" className="agent-float-icon" aria-label="开始语音输入" title="开始语音输入" disabled={!pid || locked} onClick={() => void startListening()}><Mic size={17} /></button>}
           {running ? <button type="button" data-testid="agent-float-stop" className="agent-float-submit" aria-label="停止 Agent 执行" disabled={cancelling} onClick={() => void stopAgent()}><Square size={14} /></button> : listening ? <button type="button" className="agent-float-submit" aria-label={finishLabel} disabled={speechState !== "listening"} onClick={finishListening}><Check size={18} /></button> : <button type="submit" data-testid="agent-float-send" className="agent-float-submit" aria-label="执行指令" disabled={!pid || !draft.trim() || locked}>{sending ? <LoaderCircle size={18} className="agent-float-spinner" /> : <ArrowUp size={18} />}</button>}

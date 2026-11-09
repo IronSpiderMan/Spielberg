@@ -207,8 +207,66 @@ const { chromium } = require(playwrightPath);
     await folderRow.waitFor({ state: 'hidden' });
     assert.equal((await list()).length, defaultCount + 1);
     assert.equal((await list()).find(item => item.id === builtin.id).enabled, true);
+
+    await page.getByRole('menuitem', { name: 'Agent 助手', exact: true }).click();
+    const composer = page.getByTestId('agent-composer');
+    const menu = page.getByRole('listbox', { name: '已启用的技能' });
+    const storyboard = menu.getByRole('option', { name: /短剧分镜与关键帧/ });
+    const singleOption = menu.getByRole('option', { name: /qa-single-skill/ });
+    await until(() => composer.isEnabled(), value => value, 'Agent composer ready');
+    await composer.press('/');
+    assert.equal(await composer.inputValue(), '/');
+    await storyboard.waitFor();
+    await singleOption.waitFor();
+    await composer.press('ArrowDown');
+    const selected = menu.locator('[aria-selected="true"]');
+    const selectedId = (await selected.locator('code').innerText()).slice(1);
+    await composer.press('Enter');
+    await menu.waitFor({ state: 'hidden' });
+    assert.equal(await composer.inputValue(), `$${selectedId} `);
+
+    await composer.fill('制作笔记\n/短剧 给第一集做分镜');
+    await composer.evaluate(element => {
+      const caret = element.value.indexOf(' 给') - 1;
+      element.setSelectionRange(caret, caret);
+    });
+    await composer.press('ArrowRight');
+    await storyboard.waitFor();
+    assert.equal(await menu.getByRole('option').count(), 1);
+    await storyboard.click();
+    assert.equal(await composer.inputValue(), `制作笔记\n$${builtin.id} 给第一集做分镜`);
+    assert.equal(await composer.evaluate(element => element.selectionStart), `制作笔记\n$${builtin.id} `.length);
+
+    await composer.fill('/');
+    await storyboard.waitFor();
+    await composer.press('Escape');
+    await menu.waitFor({ state: 'hidden' });
+    assert.equal(await composer.inputValue(), '/');
+    await api('/actions/skills/toggle', { id: installedSingle.id, enabled: false });
+    await composer.fill('https://example.com/path');
+    assert.equal(await menu.isVisible(), false);
+    await composer.fill('/');
+    await storyboard.waitFor();
+    assert.equal(await singleOption.count(), 0);
+    await composer.press('Escape');
+
+    await page.setViewportSize({ width: 390, height: 740 });
+    await page.getByTestId('agent-float-button').click();
+    const floating = page.getByTestId('agent-float-input');
+    await until(() => floating.isEnabled(), value => value, 'floating composer ready');
+    await floating.press('/');
+    await storyboard.waitFor();
+    const bounds = await storyboard.boundingBox();
+    assert(bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 391 && bounds.y + bounds.height <= 741);
+    await storyboard.click();
+    assert.equal(await floating.inputValue(), `$${builtin.id} `);
+    await floating.fill('/');
+    await storyboard.waitFor();
+    await floating.press('Escape');
+    await menu.waitFor({ state: 'hidden' });
+    assert(await floating.isVisible(), 'Escape should close the skill menu before the floating assistant');
     assert.deepEqual(failures, []);
-    console.log('PASS: built-in storyboard default/name/detail/action boundaries/toggle persistence; custom Skills install/reinstall, preserve ID/preferences, search, detail, uninstall, failure/recovery, desktop/mobile/dark layouts');
+    console.log('PASS: skill settings, install and lifecycle, plus Agent slash menus, keyboard selection, filtering, draft preservation and mobile floating assistant');
   } finally {
     if (browser) await browser.close();
     server.kill('SIGTERM');

@@ -1,0 +1,21 @@
+.agent-skill-menu {
+  width: min(390px, calc(100vw - 24px));
+  padding: 6px;
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  box-shadow: var(--ui-shadow-soft);
+  font-size: 13px;
+}
+.agent-skill-menu-heading { display: flex; align-items: center; gap: 6px; padding: 6px 8px 8px; font-weight: 600; }
+.agent-skill-menu-heading svg { color: var(--ui-primary); }
+.agent-skill-menu-heading small { margin-left: auto; font-weight: 400; }
+.agent-skill-menu small, .agent-skill-menu p, .agent-skill-menu code { color: var(--ui-muted); font-size: 11px; }
+.agent-skill-menu p { margin: 0; padding: 8px; }
+.agent-skill-options { max-height: min(240px, 40dvh); overflow: auto; overscroll-behavior: contain; }
+.agent-skill-options button { display: grid; gap: 3px; width: 100%; padding: 7px 8px; border: 0; border-radius: 7px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.agent-skill-options button[aria-selected="true"] { background: var(--ui-accent-soft); }
+.agent-skill-options button:hover { background: var(--ui-subtle); }
+.agent-skill-options button > span { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; overflow-wrap: anywhere; }
+.agent-skill-options button > small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

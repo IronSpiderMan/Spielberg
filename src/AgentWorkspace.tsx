@@ -17,6 +17,7 @@ import { AGENT_SESSION_CHANGED, notifyAgentSessionChanged, type AgentSessionChan
 import { GenerationSelector } from "./components/generation/GenerationSelector";
 import { channelsFor, selectionPayload, useGenerationSelection } from "./generation-channels";
 import { AgentUserInput, type UserInputRequest, type UserInputAnswers } from "./components/AgentUserInput";
+import { AgentComposerInput } from "./components/AgentComposerInput";
 
 
 type AgentMessage = { role: "user" | "assistant" | "tool"; content: string; images?: string[]; image_media_ids?: number[]; tool_name?: string; tool_call_id?: string; arguments?: unknown; status?: string; tool_calls?: unknown[] };
@@ -370,13 +371,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
         <div className="agent-composer-wrap">
           <div className="agent-composer">
             {!!images.length && <div className="agent-image-previews">{images.map((image, i) => <div key={i}><img src={image.url} alt={`待发送图片 ${i + 1}（已加入素材）`} /><button type="button" aria-label={`移除图片 ${i + 1}`} disabled={sending} onClick={() => setImageDrafts(items => ({ ...items, [draftKey]: images.filter((_, index) => index !== i) }))}><X size={14} /></button></div>)}</div>}
-            <textarea ref={composer}  data-testid="agent-composer" aria-label="向 Agent 发送消息"  value={draft} maxLength={16000} disabled={loading || sending || creating} placeholder="写下一个灵感，或粘贴图片告诉我你想完成什么…" onPaste={event => { if (readingImages) return; const files = Array.from(event.clipboardData.items).filter(item => item.type.startsWith("image/")).map(item => item.getAsFile()).filter((file): file is File => !!file); if (files.length) { event.preventDefault(); void pasteImages(files); } }} onChange={event => updateDraft(event.target.value)} onKeyDown={event => {
-              if (event.defaultPrevented || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                void send();
-              }
-            }} />
+            <AgentComposerInput key={draftKey} inputRef={composer} data-testid="agent-composer" aria-label="向 Agent 发送消息" value={draft} maxLength={16000} disabled={loading || sending || creating} placeholder="写下一个灵感，或输入 / 选择技能…" onPaste={event => { if (readingImages) return; const files = Array.from(event.clipboardData.items).filter(item => item.type.startsWith("image/")).map(item => item.getAsFile()).filter((file): file is File => !!file); if (files.length) { event.preventDefault(); void pasteImages(files); } }} onChange={updateDraft} onSend={() => void send()} />
             <div className="agent-composer-actions"><label className={`agent-web-toggle${online ? " is-online" : ""}`}><Globe size={14} /><span>联网搜索</span><Switch size="small" checked={online} onChange={setOnline} disabled={running || sending} aria-label="联网搜索" /></label><GenerationSelector compact settings={modelSettings} kind="llm" operation="chat" value={modelSelection.value} onChange={modelSelection.setValue} disabled={loading || loadFailed || running || sending || creating || saving} />{running ? <Button data-testid="agent-stop" aria-label={cancelling ? "正在停止" : "停止执行"} status="danger" icon={<Square size={14} />} loading={stopping || cancelling} disabled={cancelling} onClick={() => void stop()}>{cancelling ? "正在停止" : "停止"}</Button> : <Button type="primary" data-testid="agent-send" aria-label="发送消息" icon={<ArrowUp size={19} />} loading={sending} disabled={(!draft.trim() && !images.length) || readingImages || loading || loadFailed || creating} onClick={() => void send()} />}</div>
           </div>
           {empty && <>

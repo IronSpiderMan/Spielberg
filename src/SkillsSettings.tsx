@@ -5,20 +5,16 @@ import { Download, FileText, FolderOpen, RefreshCw, Search, Sparkles, Trash2, Up
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { post } from "./core";
+import { listSkills, skillName, type Skill } from "./skills-catalog";
 import { EmptyState } from "./ui";
 import "./skills.css";
 
-type Skill = {
-  id: string; name: string; description: string; enabled: boolean; source: string;
-  installed_at: string; updated_at: string; files_count: number; builtin: boolean;
-};
 type SkillDetail = Skill & { content: string; files: { path: string; size: number }[] };
 type Installing = "github" | "file" | "folder" | null;
 const MAX_FILES = 256;
 const MAX_TOTAL = 10 * 1024 * 1024;
 const MAX_ASSET = 2 * 1024 * 1024;
 const MAX_SKILL = 32 * 1024;
-const skillName = (skill: Skill) => skill.builtin && skill.id === "short-drama-storyboard" ? "短剧分镜与关键帧" : skill.name;
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 const byteSize = (size: number) => size < 1024 ? `${size} B` : size < 1024 * 1024 ? `${(size / 1024).toFixed(1)} KiB` : `${(size / 1024 / 1024).toFixed(1)} MiB`;
 const dateText = (value: string) => {
@@ -63,7 +59,7 @@ export function SkillsSettings() {
     setLoading(true);
     setListError("");
     try {
-      const result = await post<{ items: Skill[]; directory: string }>("/skills/list");
+      const result = await listSkills();
       setItems(result.items); setDirectory(result.directory);
     } catch (error) { setListError(errorText(error)); }
     finally { setLoading(false); }
