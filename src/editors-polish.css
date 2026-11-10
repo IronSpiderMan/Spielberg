@@ -140,9 +140,6 @@
 .pose-modal .pose-viewport { border: 1px solid var(--ui-border); border-radius: 14px; box-sizing: border-box; }
 .pose-modal .pose-layout > div:first-child > .helper { margin: 14px 0; font-size: 11px; line-height: 1.85; }
 .pose-modal .pose-settings { padding: 0 10px 0 0; scrollbar-width: thin; scrollbar-color: var(--ui-border) transparent; }
-.pose-modal .pose-model-preset { gap: 6px; padding: 16px; margin-bottom: 20px; background: var(--ui-bg); border-color: var(--ui-border); border-radius: 10px; }
-.pose-modal .pose-model-preset strong { font-size: 13px; }
-.pose-modal .pose-model-preset span { color: var(--ui-muted); font-size: 11px; line-height: 1.7; }
 .pose-modal .pose-settings label { margin-bottom: 18px; color: var(--ui-secondary-text); font-size: 12px; }
 .pose-modal .pose-settings select { margin-top: 9px; min-height: 36px; padding: 8px 10px; border-radius: 8px; background: var(--ui-surface); border-color: var(--ui-border); color: var(--ui-text); transition: border-color 160ms; }
 .pose-modal .pose-settings select:hover { border-color: var(--ui-muted); }
