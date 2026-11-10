@@ -17,9 +17,8 @@ mod user_input;
 #[path = "agent_references.rs"]
 mod references;
 
-const MAX_MESSAGES: usize = 512;
 const MAX_CONTEXT: usize = 160_000;
-const MAX_SESSION: usize = 16_000_000;
+const MAX_MODEL_BODY: usize = 16_100_000;
 const DEFAULT_TOOL_STEPS: u64 = 16;
 const MAX_TOOL_STEPS: u64 = 128;
 type RunKey = (PathBuf, String, String);
@@ -58,7 +57,7 @@ fn install(c:&Connection)->Result<(),String>{
  let has_execution=c.prepare("PRAGMA table_info(agent_sessions)").map_err(|e|e.to_string())?.query_map([],|row|row.get::<_,String>(1)).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?.iter().any(|name|name=="execution");
  if !has_execution{c.execute_batch("ALTER TABLE agent_sessions ADD COLUMN execution TEXT NOT NULL DEFAULT '{}'").map_err(|e|e.to_string())?;}
  if c.prepare("SELECT resource_names_version FROM agent_sessions LIMIT 0").is_err(){c.execute_batch("ALTER TABLE agent_sessions ADD COLUMN resource_names_version INTEGER NOT NULL DEFAULT 1").map_err(|e|e.to_string())?;}
- Ok(())
+ conversation_history::install(c)
 }
 fn setting(c:&Connection,key:&str)->Result<Value,String>{let raw=c.query_row("SELECT value FROM settings WHERE key=?",[key],|r|r.get::<_,String>(0)).optional().map_err(|e|e.to_string())?;Ok(raw.and_then(|x|serde_json::from_str(&x).ok()).unwrap_or_else(||json!({})))}
 fn config(c:&Connection)->Result<Value,String>{config_with_selection(c,&json!({}))}
@@ -93,18 +92,47 @@ fn save_config(c:&Connection,v:&Value)->Result<Value,String>{
 }
 fn read_session(c:&Connection,id:&str)->Result<Value,String>{
  resource_names::migrate_session(c,id)?;
- let mut session=c.query_row("SELECT id,title,status,messages,error,updated_at,execution FROM agent_sessions WHERE id=?",[id],|r|{let raw:String=r.get(3)?;Ok(json!({"id":r.get::<_,String>(0)?,"title":r.get::<_,String>(1)?,"status":r.get::<_,String>(2)?,"messages":serde_json::from_str::<Value>(&raw).unwrap_or_else(|_|json!([])),"error":r.get::<_,Option<String>>(4)?,"updated_at":r.get::<_,String>(5)?,"execution":serde_json::from_str::<Value>(&r.get::<_,String>(6)?).unwrap_or_else(|_|json!({}))}))}).optional().map_err(|e|e.to_string())?.ok_or("Agent 会话不存在")?;
- session["context"]=conversation_context::metadata(&session);
+ let (mut session,raw)=c.query_row("SELECT id,title,status,messages,error,updated_at,execution FROM agent_sessions WHERE id=?",[id],|r|{
+  let session=json!({"id":r.get::<_,String>(0)?,"title":r.get::<_,String>(1)?,"status":r.get::<_,String>(2)?,
+    "error":r.get::<_,Option<String>>(4)?,"updated_at":r.get::<_,String>(5)?,
+    "execution":serde_json::from_str::<Value>(&r.get::<_,String>(6)?).unwrap_or_else(|_|json!({}))});
+  Ok((session,r.get::<_,String>(3)?))
+ }).optional().map_err(|e|e.to_string())?.ok_or("Agent 会话不存在")?;
+ let mut messages=conversation_history::load_archive(c,id)?;
+ session["_archived_messages"]=json!(messages.len());
+ messages.extend(serde_json::from_str::<Vec<Value>>(&raw).map_err(|_|"Agent 会话消息格式无效")?);
+ session["messages"]=Value::Array(messages);
  Ok(session)
 }
-fn save_session(c:&Connection,session:&mut Value)->Result<(),String>{session["updated_at"]=json!(now());let changed=c.execute("UPDATE agent_sessions SET title=?,status=?,messages=?,error=?,updated_at=?,execution=?,resource_names_version=3 WHERE id=?",params![session["title"].as_str().unwrap_or("新对话"),session["status"].as_str().unwrap_or("failed"),session["messages"].to_string(),session["error"].as_str(),session["updated_at"].as_str(),session["execution"].to_string(),session["id"].as_str()]).map_err(|e|e.to_string())?;if changed==0{return Err("Agent 会话不存在".into())}Ok(())}
+fn archived_messages(session:&Value)->usize{session["_archived_messages"].as_u64().unwrap_or(0) as usize}
+fn save_session(c:&Connection,session:&mut Value)->Result<(),String>{
+ session["updated_at"]=json!(now());
+ let tail=&session["messages"].as_array().unwrap()[archived_messages(session)..];
+ let messages=serde_json::to_string(tail).map_err(|_|"会话消息编码失败")?;
+ let changed=c.execute("UPDATE agent_sessions SET title=?,status=?,messages=?,error=?,updated_at=?,execution=?,resource_names_version=3 WHERE id=?",params![session["title"].as_str().unwrap_or("新对话"),session["status"].as_str().unwrap_or("failed"),messages,session["error"].as_str(),session["updated_at"].as_str(),session["execution"].to_string(),session["id"].as_str()]).map_err(|e|e.to_string())?;
+ if changed==0{return Err("Agent 会话不存在".into())}Ok(())
+}
+fn start_turn(c:&Connection,session:&mut Value,message:Value)->Result<(),String>{
+ let start=archived_messages(session);
+ let end=session["messages"].as_array().unwrap().len();
+ let transaction=c.unchecked_transaction().map_err(|e|e.to_string())?;
+ if start<end{
+  conversation_history::archive_tail(&transaction,session["id"].as_str().unwrap(),start)?;
+  session["_archived_messages"]=json!(end);
+ }
+ session["messages"].as_array_mut().unwrap().push(message);
+ save_session(&transaction,session)?;
+ transaction.commit().map_err(|e|e.to_string())
+}
 fn close_pending(session:&mut Value,reason:&str){
- let messages=session["messages"].as_array_mut().unwrap();let mut missing=Vec::new();
- for message in messages.iter_mut().filter(|m|m["role"]=="assistant"&&m["status"]=="streaming"){
+ let start=archived_messages(session);
+ let messages=session["messages"].as_array_mut().unwrap();
+ let tail=&mut messages[start..];let mut missing=Vec::new();
+ for message in tail.iter_mut().filter(|m|m["role"]=="assistant"&&m["status"]=="streaming"){
   message["status"]=json!("interrupted");
  }
- for (index,m) in messages.iter().enumerate(){if let Some(calls)=m["tool_calls"].as_array(){let following:Vec<_>=messages[index+1..].iter().take_while(|r|r["role"]=="tool").collect();for call in calls{let id=call["id"].as_str().unwrap_or("");if !following.iter().any(|r|r["tool_call_id"]==id){missing.push((id.to_string(),call["function"]["name"].as_str().unwrap_or("").to_string()));}}}}
- for m in messages.iter_mut().filter(|m|m["role"]=="tool"&&matches!(m["status"].as_str(),Some("running"|"waiting_input"))){m["status"]=json!("failed");m["content"]=json!(json!({"error":reason}).to_string());}
+ for (index,m) in tail.iter().enumerate(){if let Some(calls)=m["tool_calls"].as_array(){let following:Vec<_>=tail[index+1..].iter().take_while(|r|r["role"]=="tool").collect();for call in calls{let id=call["id"].as_str().unwrap_or("");if !following.iter().any(|r|r["tool_call_id"]==id){missing.push((id.to_string(),call["function"]["name"].as_str().unwrap_or("").to_string()));}}}}
+ for m in tail.iter_mut().filter(|m|m["role"]=="tool"&&matches!(m["status"].as_str(),Some("running"|"waiting_input"))){m["status"]=json!("failed");m["content"]=json!(json!({"error":reason}).to_string());}
  for(id,name)in missing{messages.push(json!({"role":"tool","content":json!({"error":reason}).to_string(),"tool_call_id":id,"tool_name":name,"status":"failed","created_at":now()}));}
  session["execution"].as_object_mut().map(|execution|{execution.remove("user_input");execution.remove("user_input_response");});
 }
@@ -125,9 +153,9 @@ pub(super) fn command(s:&AppState,path:&str,v:&Value)->Result<Value,String>{
   "/agent/session"=>read_session(&c,&strv(v,"session_id")?),
   "/agent/delete"=>{let id=strv(v,"session_id")?;read_session(&c,&id)?;if runs().lock().map_err(|_|"Agent 运行锁不可用")?.contains_key(&run_key(s,&pid,&id)){return Err("Agent 仍在执行或停止中，请稍后删除会话".into())}c.execute("DELETE FROM agent_sessions WHERE id=?",[id]).map_err(|e|e.to_string())?;Ok(json!({"ok":true}))},
   "/agent/cancel"=>{let id=strv(v,"session_id")?;let mut session=read_session(&c,&id)?;if let Some(flag)=runs().lock().map_err(|_|"Agent 运行锁不可用")?.get(&run_key(s,&pid,&id)){flag.store(true,Ordering::SeqCst);}if session["status"]=="running"{session["status"]=json!("cancelled");session["execution"]["phase"]=json!("cancelled");session["error"]=json!("执行已取消，已完成的操作已保留。");close_pending(&mut session,"用户已取消执行");save_session(&c,&mut session)?;}Ok(session)},
-  "/agent/run"=>{let id=strv(v,"session_id")?;let message=strv(v,"message")?;let images=input_images(v)?;let image_media_ids=input_image_media_ids(&c,v,images.len())?;if message.trim().is_empty()&&images.is_empty(){return Err("请输入消息或粘贴图片".into())}if message.chars().count()>16_000{return Err("消息过长，请限制在 16000 字以内".into())}let references=references::validate(&c,v,&message)?;let mut session=read_session(&c,&id)?;if session["messages"].as_array().unwrap().len()>MAX_MESSAGES-100||session["messages"].to_string().len()+images.iter().map(String::len).sum::<usize>()+message.len()+json!(references).to_string().len()>MAX_SESSION-100_000{return Err("此会话记录已达上限，请创建新对话".into())}let cfg=config_with_selection(&c,v)?;endpoint(&cfg)?;let mut secrets=Vec::new();collect_secrets(&setting(&c,"models")?,&mut secrets);collect_secrets(&cfg,&mut secrets);let key=run_key(s,&pid,&id);let flag=Arc::new(AtomicBool::new(false));{let mut all=runs().lock().map_err(|_|"Agent 运行锁不可用")?;if all.contains_key(&key){return Err("此 Agent 会话仍在执行或停止中".into())}if all.len()>=8{return Err("Agent 并发会话已达上限，请稍后重试".into())}all.insert(key.clone(),flag.clone());}
-   if session["title"]=="新对话"{session["title"]=json!(clipped(if message.trim().is_empty(){"图片创作"}else{message.trim()},40));}session["status"]=json!("running");session["error"]=Value::Null;execution::start(&mut session,tool_step_limit(&cfg));let mut user_message=json!({"role":"user","content":message.trim(),"images":images,"image_media_ids":image_media_ids,"created_at":now()});if !references.is_empty(){user_message["references"]=json!(references);}session["messages"].as_array_mut().unwrap().push(user_message);if let Err(e)=save_session(&c,&mut session){runs().lock().unwrap().remove(&key);return Err(e)}session["context"]=conversation_context::metadata(&session);let state=s.clone();let pid=pid.clone();let saved=session.clone();let web=v["web_enabled"].as_bool().unwrap_or(false);
-   if std::thread::Builder::new().name("spielberg-agent".into()).spawn(move||{let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||run_loop(&state,&pid,saved.clone(),&cfg,web,&flag,&secrets)));let error=match result{Ok(Ok(()))=>None,Ok(Err(e))=>Some(e),Err(_)=>Some("Agent 执行意外中断，请重试。已完成的操作已保留。".into())};finish(&state,&pid,&saved["id"].as_str().unwrap_or(""),&flag,error.as_deref(),&secrets);if let Ok(mut all)=runs().lock(){all.remove(&key);}}).is_err(){runs().lock().unwrap().remove(&run_key(s,&project_id(v)?,&id));session["status"]=json!("failed");session["error"]=json!("无法启动 Agent 后台任务");save_session(&c,&mut session)?;return Err("无法启动 Agent 后台任务".into())}Ok(session)
+  "/agent/run"=>{let id=strv(v,"session_id")?;let message=strv(v,"message")?;let images=input_images(v)?;let image_media_ids=input_image_media_ids(&c,v,images.len())?;if message.trim().is_empty()&&images.is_empty(){return Err("请输入消息或粘贴图片".into())}if message.chars().count()>16_000{return Err("消息过长，请限制在 16000 字以内".into())}let references=references::validate(&c,v,&message)?;let mut session=read_session(&c,&id)?;let cfg=config_with_selection(&c,v)?;endpoint(&cfg)?;let mut secrets=Vec::new();collect_secrets(&setting(&c,"models")?,&mut secrets);collect_secrets(&cfg,&mut secrets);let key=run_key(s,&pid,&id);let flag=Arc::new(AtomicBool::new(false));{let mut all=runs().lock().map_err(|_|"Agent 运行锁不可用")?;if all.contains_key(&key){return Err("此 Agent 会话仍在执行或停止中".into())}if all.len()>=8{return Err("Agent 并发会话已达上限，请稍后重试".into())}all.insert(key.clone(),flag.clone());}
+   if session["title"]=="新对话"{session["title"]=json!(clipped(if message.trim().is_empty(){"图片创作"}else{message.trim()},40));}session["status"]=json!("running");session["error"]=Value::Null;execution::start(&mut session,tool_step_limit(&cfg));let mut user_message=json!({"role":"user","content":message.trim(),"images":images,"image_media_ids":image_media_ids,"created_at":now()});if !references.is_empty(){user_message["references"]=json!(references);}if let Err(e)=start_turn(&c,&mut session,user_message){runs().lock().unwrap().remove(&key);return Err(e)}let state=s.clone();let pid=pid.clone();let saved=session.clone();let saved_id=id.clone();let web=v["web_enabled"].as_bool().unwrap_or(false);
+   if std::thread::Builder::new().name("spielberg-agent".into()).spawn(move||{let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||run_loop(&state,&pid,saved,&cfg,web,&flag,&secrets)));let error=match result{Ok(Ok(()))=>None,Ok(Err(e))=>Some(e),Err(_)=>Some("Agent 执行意外中断，请重试。已完成的操作已保留。".into())};finish(&state,&pid,&saved_id,&flag,error.as_deref(),&secrets);if let Ok(mut all)=runs().lock(){all.remove(&key);}}).is_err(){runs().lock().unwrap().remove(&run_key(s,&project_id(v)?,&id));session["status"]=json!("failed");session["error"]=json!("无法启动 Agent 后台任务");save_session(&c,&mut session)?;return Err("无法启动 Agent 后台任务".into())}Ok(session)
   },_=>Err("未知 Agent 操作".into())
  };
  result.map(|mut value|{
@@ -141,7 +169,12 @@ pub(super) fn command(s:&AppState,path:&str,v:&Value)->Result<Value,String>{
    }
   };
   if let Some(items)=value.get_mut("items").and_then(Value::as_array_mut){for item in items{annotate(item);}}
-  else{annotate(&mut value);}
+  else{
+   if value.as_object_mut().and_then(|object|object.remove("_archived_messages")).is_some(){
+    value["context"]=conversation_context::metadata(&value);
+   }
+   annotate(&mut value);
+  }
   value
  })
 }
@@ -180,7 +213,8 @@ fn progress(s:&AppState,pid:&str,session:&mut Value,cancel:&AtomicBool)->Result<
   // outcome while keeping the cancelled session and all unexecuted calls unchanged.
   if let Some(last)=session["messages"].as_array().and_then(|a|a.last()).filter(|m|m["role"]=="tool"&&m["status"]!="running"){
    let mut current=read_session(&c,session["id"].as_str().unwrap_or(""))?;
-   if let Some(trace)=current["messages"].as_array_mut().unwrap().iter_mut().rev().find(|m|m["role"]=="tool"&&m["tool_call_id"]==last["tool_call_id"]){
+   let start=archived_messages(&current);
+   if let Some(trace)=current["messages"].as_array_mut().unwrap()[start..].iter_mut().rev().find(|m|m["role"]=="tool"&&m["tool_call_id"]==last["tool_call_id"]){
     *trace=last.clone();
     for key in ["tool_calls","usage","plan","explanation"]{if let Some(value)=session["execution"].get(key){current["execution"][key]=value.clone();}}
     current["execution"]["active_tool"]=Value::Null;save_session(&c,&mut current)?;
@@ -188,7 +222,6 @@ fn progress(s:&AppState,pid:&str,session:&mut Value,cancel:&AtomicBool)->Result<
   }
   return Err("执行已取消".into())
  }
- if session["messages"].to_string().len()>MAX_SESSION{return Err("会话记录已达上限，请创建新对话。已完成操作已保留。".into())}
  save_session(&c,session)
 }
 fn finish(s:&AppState,pid:&str,id:&str,cancel:&AtomicBool,error:Option<&str>,secrets:&[String]){
@@ -252,7 +285,6 @@ fn run_loop(s:&AppState,pid:&str,mut session:Value,cfg:&Value,web:bool,cancel:&A
   let available=if finalizing{json!([])}else{tools.clone()};
   let mut streaming_index=None;
   let mut last_snapshot=None::<std::time::Instant>;
-  if session["messages"].as_array().unwrap().len()>=MAX_MESSAGES{return Err("会话记录已达上限，请创建新对话。已完成操作已保留。".into())}
   let response=runtime.block_on(model_transport::completion(&client,&url,cfg,messages,&available,cancel,|event|{
    match event {
     model_transport::Event::Attempt|model_transport::Event::Retrying=>{
@@ -299,8 +331,6 @@ fn run_loop(s:&AppState,pid:&str,mut session:Value,cfg:&Value,web:bool,cancel:&A
    if call["type"]!="function"||!call["function"]["name"].is_string(){return Err("模型返回了不支持的工具调用格式".into())}
    if call.to_string().len()>64_000{return Err("模型工具参数过大，请拆分任务。".into())}
   }
-  if session["messages"].to_string().len()+serde_json::to_string(&calls).map_err(|_|"工具参数编码失败")?.len()>MAX_SESSION-100_000{return Err("会话记录已达上限，请创建新对话。已完成操作已保留。".into())}
-  if session["messages"].as_array().unwrap().len()+calls.len()+2>MAX_MESSAGES{return Err("会话记录已达上限，请创建新对话。已完成操作已保留。".into())}
   let safe_calls=Value::Array(calls.iter().map(|call|{let mut call=call.clone();if let Some(text)=call["function"]["arguments"].as_str(){let safe=serde_json::from_str::<Value>(text).ok().map(|v|safe_value(&v,secrets,0).to_string()).unwrap_or_else(||clipped(&redact(text,secrets),12_000));call["function"]["arguments"]=json!(safe);}call}).collect());
   assistant_message(&mut session,streaming_index,json!({"role":"assistant","content":content,"tool_calls":safe_calls,"status":"completed","created_at":now()}));progress(s,pid,&mut session,cancel)?;
   let mut input_boundary=false;

@@ -1,8 +1,38 @@
-//! Read-only, paginated access to the active conversation's original messages.
-//! The caller supplies the session; model arguments can never select another one.
+//! Durable archive and paginated search of the active conversation's original messages.
+use rusqlite::{params, Connection};
 use serde_json::{json, Value};
 
 const PAGE_BYTES: usize = 24_000;
+
+pub(super) fn install(c: &Connection) -> Result<(), String> {
+    c.execute_batch("CREATE TABLE IF NOT EXISTS agent_history_segments(
+        session_id TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+        start_index INTEGER NOT NULL,
+        messages TEXT NOT NULL,
+        PRIMARY KEY(session_id, start_index)
+    )").map_err(|e| e.to_string())
+}
+
+pub(super) fn load_archive(c: &Connection, id: &str) -> Result<Vec<Value>, String> {
+    let mut statement = c.prepare("SELECT start_index,messages FROM agent_history_segments
+        WHERE session_id=? ORDER BY start_index").map_err(|e| e.to_string())?;
+    let mut rows = statement.query([id]).map_err(|e| e.to_string())?;
+    let mut archive = Vec::new();
+    while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        let start: usize = row.get(0).map_err(|e| e.to_string())?;
+        let raw: String = row.get(1).map_err(|e| e.to_string())?;
+        if start != archive.len() { return Err("Agent 历史记录索引不连续".into()); }
+        let mut messages = serde_json::from_str::<Vec<Value>>(&raw).map_err(|_| "Agent 历史记录格式无效")?;
+        archive.append(&mut messages);
+    }
+    Ok(archive)
+}
+
+pub(super) fn archive_tail(c: &Connection, id: &str, start: usize) -> Result<(), String> {
+    c.execute("INSERT INTO agent_history_segments(session_id,start_index,messages)
+        SELECT id,?,messages FROM agent_sessions WHERE id=?", params![start,id]).map_err(|e| e.to_string())?;
+    Ok(())
+}
 
 fn number(args: &Value, key: &str, default: usize, min: usize, max: usize) -> Result<usize, String> {
     match args.get(key) {

@@ -4,6 +4,7 @@ import base64
 import json
 import os
 from pathlib import Path
+import sqlite3
 import subprocess
 import struct
 import tempfile
@@ -585,6 +586,43 @@ def main():
             history = json.loads(history_trace["content"])
             assert any(item["role"] == "user" and original_brief in item["content"] for item in history["items"]), history
             assert len(history_trace["content"].encode()) < 32_000
+
+            # Resume a legacy session beyond both former storage limits.
+            legacy = agent("create", title="达到旧上限的会话")
+            legacy_messages = [{"role": "user", "content": original_brief}]
+            for index in range(530):
+                legacy_messages.extend([
+                    {"role": "user", "content": f"第 {index} 轮 " + "历史记录" * 2_600},
+                    {"role": "assistant", "content": "已经处理。"},
+                ])
+            legacy_messages.extend([
+                {"role": "user", "content": correction},
+                {"role": "assistant", "content": "已调整外套颜色，下一步核对第二集。"},
+            ])
+            raw = json.dumps(legacy_messages, ensure_ascii=False)
+            assert len(legacy_messages) > 512 and len(raw.encode()) > 16_000_000
+            database = Path(project["path"]) / "spielberg.sqlite"
+            with sqlite3.connect(database) as db:
+                db.execute("UPDATE agent_sessions SET messages=? WHERE id=?", (raw, legacy["id"]))
+            request_start = len(Model.requests)
+            agent("run", session_id=legacy["id"], message="HISTORY_PAGE:1:0")
+            resumed = wait(legacy)
+            assert resumed["status"] == "completed", resumed.get("error")
+            assert resumed["messages"][:len(legacy_messages)] == legacy_messages
+            wire = Model.requests[request_start]["messages"]
+            text = "\n".join(message_text(message) for message in wire)
+            assert original_brief in text and correction in text and "下一步核对第二集" in text
+            assert len(text.encode()) < 200_000
+            assert_tool_protocol(wire)
+            trace = next(message for message in resumed["messages"] if message.get("tool_name") == "search_conversation")
+            item = json.loads(trace["content"])["items"][0]
+            assert item["index"] == 1 and item["content"] == original_brief
+            with sqlite3.connect(database) as db:
+                count, = db.execute("SELECT json_array_length(messages) FROM agent_sessions WHERE id=?", (legacy["id"],)).fetchone()
+                assert count == len(resumed["messages"]) - len(legacy_messages)
+            agent("delete", session_id=legacy["id"])
+            with sqlite3.connect(database) as db:
+                assert db.execute("SELECT COUNT(*) FROM agent_history_segments WHERE session_id=?", (legacy["id"],)).fetchone() == (0,)
 
             # Exact-message pagination can recover text omitted from the compact notes.
             long_index, long_message = next((index, message) for index, message in enumerate(searched["messages"], 1) if message.get("content", "").startswith("MEMORY_TURN:0\n"))

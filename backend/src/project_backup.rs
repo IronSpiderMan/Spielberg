@@ -56,6 +56,7 @@ fn rewrite_database(c:&Connection,paths:&HashMap<String,String>,strip_secrets:bo
         ("clip_options","clip_id",vec!["value"]),("scenes","id",vec!["generation_options"]),("generations","id",vec!["request_json","result_json"]),
         ("background_jobs","id",vec!["request_json","result_json","resume_json"]),
         ("agent_sessions","id",vec!["messages"]),
+        ("agent_history_segments","rowid",vec!["messages"]),
     ] {
         // Agent history is installed lazily; older projects may not have it yet.
         let exists:bool=c.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?)",[table],|r|r.get(0)).map_err(|e|e.to_string())?;
@@ -66,7 +67,7 @@ fn rewrite_database(c:&Connection,paths:&HashMap<String,String>,strip_secrets:bo
             for (id,raw) in rows {
                 if let Ok(mut value)=serde_json::from_str::<Value>(&raw) {
                     rewrite(&mut value,paths,strip_secrets);
-                    if table=="agent_sessions" {
+                    if matches!(table,"agent_sessions" | "agent_history_segments") {
                         if let Some(messages)=value.as_array_mut() {
                             for message in messages {
                                 // Tool results and model arguments are JSON encoded inside
@@ -229,7 +230,8 @@ mod tests {
         c.execute("INSERT INTO settings VALUES('models',?)",[json!({"t2i":{"api_key":"secret-value","url":"http://model.local"}}).to_string()]).unwrap();
         c.execute("INSERT INTO settings VALUES('agent',?)",[json!({"api_key":"agent-secret","search_api_key":"search-secret","search_provider":"brave"}).to_string()]).unwrap();
         c.execute("INSERT INTO background_jobs(operation,status,prompt,created_at,updated_at,result_json) VALUES('image','completed','','1','1',?)",[json!({"id":1,"path":file,"kind":"image"}).to_string()]).unwrap();
-        c.execute_batch("CREATE TABLE agent_sessions(id TEXT PRIMARY KEY,messages TEXT NOT NULL)").unwrap();
+        c.execute_batch("CREATE TABLE agent_sessions(id TEXT PRIMARY KEY,messages TEXT NOT NULL);
+            CREATE TABLE agent_history_segments(session_id TEXT NOT NULL,start_index INTEGER NOT NULL,messages TEXT NOT NULL)").unwrap();
         let result=json!({"media":{"id":1,"path":file,"kind":"image"}}).to_string();
         let messages=json!([
             {"role":"user","content":"保留原始对话文字","images":["data:image/png;base64,aGVsbG8="],"image_media_ids":[1]},
@@ -237,6 +239,7 @@ mod tests {
             {"role":"tool","tool_name":"app_action","arguments":{"operation":"generations/image"},"content":result}
         ]);
         c.execute("INSERT INTO agent_sessions VALUES('history',?)",[messages.to_string()]).unwrap();
+        c.execute("INSERT INTO agent_history_segments VALUES('history',0,?)",[messages.to_string()]).unwrap();
         let shot_csv=format!("编号,景别,运镜,画面,描述\r\n001,中景,固定,{},\"逗号,与\"\"引号\"\"\n换行\"",file.to_string_lossy());
 
         let board=json!({"version":1,"nodes":[{"id":"image","kind":"media","ref_id":1,"x":30,"y":40}],"edges":[],"viewport":{"x":80,"y":80,"zoom":1}});
@@ -260,6 +263,7 @@ mod tests {
         let restored=base.join("restored");assert_eq!(restore(&backup,&restored).unwrap(),"Test");
         let restored_db=Connection::open(restored.join("spielberg.sqlite")).unwrap();
         let history:String=restored_db.query_row("SELECT messages FROM agent_sessions",[],|r|r.get(0)).unwrap();
+        assert_eq!(restored_db.query_row("SELECT messages FROM agent_history_segments",[],|r|r.get::<_,String>(0)).unwrap(),history);
         let history:Value=serde_json::from_str(&history).unwrap();
         assert_eq!(history[0],messages[0]);
         for encoded in [&history[1]["tool_calls"][0]["function"]["arguments"],&history[2]["content"]] {
