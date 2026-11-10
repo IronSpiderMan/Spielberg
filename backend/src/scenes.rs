@@ -319,15 +319,20 @@ pub(super) fn update(s: &AppState, v: &Value) -> Result<Value,String> {
     let pid = project_id(v)?;
     let mut c = db(s,&pid)?;
     let tx = c.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e| e.to_string())?;
-    fields(&tx,v,false)?;
-    let id = intv(v,"id")?;
-    let ep = episode_id(&tx,id)?;
-    if v.get("episode_id").is_some_and(|value| value.as_i64()!=Some(ep)) { return Err("场景不能跨剧集移动".into()); }
-    save_fields(&tx,id,v)?;
-    if let Some(selected) = v.get("clip_ids") { regroup(&tx,ep,id,&ids(selected,"clip_ids")?)?; }
+    let id = update_fields(&tx,v)?;
     tx.commit().map_err(|e| e.to_string())?;
     touch(s,&pid);
     rest::get_scene(&c,id)
+}
+
+pub(super) fn update_fields(c: &Connection, v: &Value) -> Result<i64,String> {
+    fields(c,v,false)?;
+    let id = intv(v,"id")?;
+    let ep = episode_id(c,id)?;
+    if v.get("episode_id").is_some_and(|value| value.as_i64()!=Some(ep)) { return Err("场景不能跨剧集移动".into()); }
+    save_fields(c,id,v)?;
+    if let Some(selected) = v.get("clip_ids") { regroup(c,ep,id,&ids(selected,"clip_ids")?)?; }
+    Ok(id)
 }
 
 fn episode_id(c: &Connection, id: i64) -> Result<i64,String> {

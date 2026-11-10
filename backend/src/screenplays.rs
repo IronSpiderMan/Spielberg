@@ -191,9 +191,7 @@ pub(crate) fn insert(s: &AppState, v: &Value) -> Result<Value, String> {
     Ok(json!({"id":c.last_insert_rowid()}))
 }
 
-pub(crate) fn update(s: &AppState, v: &Value) -> Result<(), String> {
-    let pid = project_id(v)?;
-    let c = db(s, &pid)?;
+pub(crate) fn update(c: &Connection, v: &Value) -> Result<(), String> {
     let id = intv(v,"id")?;
     let current: String = c.query_row("SELECT format FROM screenplays WHERE id=?", [id], |r|r.get(0)).map_err(|e|e.to_string())?;
     let format = v["format"].as_str().unwrap_or(&current);
@@ -201,7 +199,6 @@ pub(crate) fn update(s: &AppState, v: &Value) -> Result<(), String> {
     validate_content(format, &content)?;
     c.execute("UPDATE screenplays SET title=?,content=?,updated_at=?,format=?,episode_id=? WHERE id=?",
         params![strv(v,"title")?.trim(),content,now(),format,intv(v,"episode_id")?,id]).map_err(|e|e.to_string())?;
-    touch(s, &pid);
     Ok(())
 }
 

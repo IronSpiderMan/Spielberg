@@ -209,6 +209,78 @@ fn batch_delete(c: &mut Connection, resource: &str, value: &Value) -> ApiResult<
     Ok(json!({"deleted":true,"ids":ids,"count":ids.len()}))
 }
 
+fn apply_patch(c: &Connection, resource: &str, id: i64, mut value: Value) -> ApiResult<()> {
+    if resource == "asset-relations" {
+        return asset_relations::update(c, id, &value);
+    }
+    value["id"] = json!(id);
+    if resource == "scenes" {
+        scenes::update_fields(c, &value)?;
+        return Ok(());
+    }
+
+    let mut merged = get(c, resource, id)?;
+    validate(c, resource, &value, false)?;
+    if resource == "clips" && ["episode_id", "scene_id"].iter().any(|key|
+        value.get(*key).is_some_and(|v| v != &merged[*key])
+    ) {
+        return Err(bad("片段不能直接更改所属剧集或场景，请在场景中调整成员"));
+    }
+    for (key, item) in value.as_object().unwrap() {
+        merged[key] = item.clone();
+    }
+    match resource {
+        "screenplays" => screenplays::update(c, &merged)?,
+        "assets" => update_role_fields(c, &merged)?,
+        "episodes" => update_episode_fields(c, &merged)?,
+        "clips" => update_clip_fields(c, &merged)?,
+        "prompts" => update_prompt_fields(c, &merged)?,
+        "media" => rename_media(c, &merged)?,
+        _ => return Err(missing()),
+    }
+    Ok(())
+}
+
+fn batch_update(c: &mut Connection, resource: &str, value: &Value) -> ApiResult<Value> {
+    if value.as_object().is_some_and(|fields| fields.keys().any(|key| key != "updates")) {
+        return Err(bad("批量更新请求仅支持 updates 字段"));
+    }
+    let updates = value["updates"].as_array()
+        .filter(|items| (1..=100).contains(&items.len()))
+        .ok_or_else(|| bad("updates 必须包含 1 到 100 条更新"))?;
+    let mut seen = std::collections::HashSet::new();
+    let mut ids = Vec::with_capacity(updates.len());
+    let tx = c.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(sql_error)?;
+    for item in updates {
+        let item = item.as_object().filter(|item| item.len() == 2)
+            .ok_or_else(|| bad("每条更新仅支持 id 和 data"))?;
+        let id = item.get("id").and_then(Value::as_i64).filter(|id| *id > 0)
+            .ok_or_else(|| bad("资源 ID 必须是正整数"))?;
+        if !seen.insert(id) {
+            return Err(bad("资源 ID 不能重复"));
+        }
+        let fields = item.get("data").and_then(Value::as_object).filter(|fields| !fields.is_empty())
+            .ok_or_else(|| bad("每条更新都必须包含非空的 data 对象"))?;
+        if fields.contains_key("id") || fields.contains_key("project_id") {
+            return Err(bad("data 不能指定资源 ID 或项目 ID"));
+        }
+        apply_patch(&tx, resource, id, item["data"].clone())
+            .map_err(|ApiError(status, message)| ApiError(status, format!("资源 {id}：{message}")))?;
+        ids.push(id);
+    }
+    if resource == "scenes" {
+        // Regrouping can remove a scene emptied by a later update in the same batch.
+        for &id in &ids {
+            if rows(&tx, "scenes", Some(id))?.is_empty() {
+                return Err(ApiError(StatusCode::CONFLICT, format!("重新分组会移除待更新的场景 {id}")));
+            }
+        }
+    }
+    tx.commit().map_err(sql_error)?;
+    Ok(json!({"updated":true,"ids":ids,"count":ids.len()}))
+}
+
 // All CRUD operations share the same lock as the existing generation and storage services.
 pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value) -> ApiResult<Value> {
     let parts:Vec<_>=path.trim_matches('/').split('/').collect();
@@ -272,32 +344,32 @@ pub(crate) fn crud(state: &AppState, method: &str, path: &str, mut value: Value)
             touch(state, &pid);
             return Ok(result);
         }
+        if method == "PATCH" && parts.len() == 3 && parts[0] == "projects" && resource != "asset-graph" {
+            let result = batch_update(&mut db(state, &pid)?, resource, &value)?;
+            touch(state, &pid);
+            return Ok(result);
+        }
         value["project_id"]=json!(pid);
-        let c=db(state,&pid)?;
+        let mut c=db(state,&pid)?;
         let id=id.map(|id|id.parse::<i64>().ok().filter(|n|*n>0).ok_or_else(||bad("资源 ID 无效"))).transpose()?;
         if ["asset-relations","asset-graph"].contains(&resource) {
             return asset_relations::handle(state,&c,&pid,method,resource,id,&value);
         }
         let table=table(resource)?;
         if let Some(id)=id {
-            let current=get(&c,resource,id)?;
             value["id"]=json!(id);
             match method {
-                "GET"=>Ok(current),
+                "GET"=>get(&c,resource,id),
                 "PATCH"=>{
-                    if resource=="scenes" { return Ok(scenes::update(state,&value)?); }
-                    validate(&c,resource,&value,false)?;
-                    if resource=="clips" && ["episode_id","scene_id"].iter().any(|key|value.get(*key).is_some_and(|v|v!=&current[*key])) {
-                        return Err(bad("片段不能直接更改所属剧集或场景，请在场景中调整成员"));
-                    }
-                    let mut merged=current;
-                    for (key,item) in value.as_object().unwrap() {merged[key]=item.clone();}
-                    match resource {
-                        "screenplays"=>{screenplays::update(state,&merged)?;},"assets"=>{update_role(state,&merged)?;},"episodes"=>{update_episode(state,&merged)?;},"clips"=>{update_clip(state,&merged)?;},"prompts"=>{update_prompt(state,&merged)?;},"media"=>{manage_media(state,&merged,false)?;},_=>unreachable!(),
-                    }
-                    get(&c,resource,id)
+                    let tx=c.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(sql_error)?;
+                    apply_patch(&tx,resource,id,value)?;
+                    let result=get(&tx,resource,id)?;
+                    tx.commit().map_err(sql_error)?;
+                    if resource!="media" {touch(state,&pid);}
+                    Ok(result)
                 },
                 "DELETE"=>{
+                    get(&c,resource,id)?;
                     if resource=="media" {manage_media(state,&value,true)?;} else {
                         c.execute(&format!("DELETE FROM {table} WHERE id=?"),[id]).map_err(sql_error)?;
                     }
@@ -439,6 +511,23 @@ mod project_config_tests {
             json!({"deleted":true,"ids":ids,"count":2})
         );
         assert_eq!(crud(&state, "GET", &path, json!({})).unwrap(), json!([]));
+        fs::remove_dir_all(state.root).unwrap();
+    }
+
+    #[test]
+    fn batch_update_rolls_back_if_regrouping_removes_a_target_scene() {
+        let (state, _, path) = timeline_fixture();
+        let episode = crud(&state, "POST", &format!("{path}/episodes"), json!({"title":"Episode"})).unwrap();
+        let scenes = format!("{path}/scenes");
+        let create = |title| crud(&state, "POST", &scenes, json!({"title":title,"episode_id":episode["id"]})).unwrap();
+        let first = create("First");
+        let second = create("Second");
+        let error = crud(&state, "PATCH", &scenes, json!({"updates":[
+            {"id":first["id"],"data":{"title":"Changed"}},
+            {"id":second["id"],"data":{"clip_ids":[first["clips"][0]["id"],second["clips"][0]["id"]]}}
+        ]})).unwrap_err();
+        assert_eq!(error.0, StatusCode::CONFLICT);
+        assert_eq!(crud(&state, "GET", &scenes, json!({})).unwrap(), json!([first,second]));
         fs::remove_dir_all(state.root).unwrap();
     }
 

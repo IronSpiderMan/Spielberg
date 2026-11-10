@@ -55,9 +55,13 @@ pub(super) fn definitions() -> Value {
             "media_id":{"type":"integer","minimum":1}
         }), &["media_id"]),
         tool("app_describe", "Get exact resource fields and action payload formats. Call this before unfamiliar operations; operation optionally selects a resource or action.", json!({"operation":{"type":"string"}}), &[]),
-        tool("app_request", "CRUD in the current project. resource=assets means creative assets (资产库), including all six categories; resource=media means media files (素材库); resource=scenes means narrative scenes (场景); resource=clips means production clips (片段). Call app_describe for exact fields/filters. GET reads, POST creates, PATCH changes only supplied fields. Long text can be truncated even when reading one ID; use app_action resource/text/read and follow next_offset until null before replacing existing text. To disable a creative asset PATCH assets.enabled=false; DELETE assets removes its record and associations but retains media files. DELETE media moves an unused media file to recycle bin and rejects referenced files. Use current-project IDs of the correct resource type.", json!({
+        tool("app_request", "CRUD in the current project. resource=assets means creative assets (资产库), including all six categories; resource=media means media files (素材库); resource=scenes means narrative scenes (场景); resource=clips means production clips (片段). Call app_describe for exact fields/filters. GET reads, POST creates, PATCH changes only supplied fields. To update multiple records of the same resource, use PATCH with updates (1–100 unique IDs, each with its own data) and omit top-level id, episode_id and data. The batch rolls back on any error. Long text can be truncated even when reading one ID; use app_action resource/text/read and follow next_offset until null before replacing existing text. To disable a creative asset PATCH assets.enabled=false; DELETE assets removes its record and associations but retains media files. DELETE media moves an unused media file to recycle bin and rejects referenced files. Use current-project IDs of the correct resource type.", json!({
             "resource":{"type":"string","enum":RESOURCES,"description":"assets=创作资产; media=图片/视频/音频素材; scenes=叙事场景; clips=制作片段; other values are project resources."},"method":{"type":"string","enum":["GET","POST","PATCH","DELETE"]},
-            "id":{"type":"integer","minimum":1},"episode_id":{"type":"integer","minimum":1},"data":{"type":"object","description":"Resource fields for POST/PATCH, or GET filters from app_describe. Creative asset category/enabled belong to assets, never media."}
+            "id":{"type":"integer","minimum":1},"episode_id":{"type":"integer","minimum":1},"data":{"type":"object","description":"Resource fields for POST/PATCH, or GET filters from app_describe. Creative asset category/enabled belong to assets, never media."},
+            "updates":{"type":"array","minItems":1,"maxItems":100,"items":{"type":"object","properties":{
+                "id":{"type":"integer","minimum":1},
+                "data":{"type":"object","minProperties":1,"description":"Fields to change on this record, using single-record PATCH rules."}
+            },"required":["id","data"],"additionalProperties":false}}
         }), &["resource","method"]),
         tool("app_action", "Execute a current-project operation; app_describe gives exact fields. assets/media/add, assets/media/rename and assets/media/delete manage named image references for a creative asset; assets/audio/save and assets/audio/delete manage named audio references. asset_id is a creative asset ID; media_id is a media file ID, not interchangeable. Unlinking retains the media file. Generation/export may take several minutes. Permanent media purge requires confirm_permanent_delete=true and explicit user request. Model credentials/settings cannot be changed.", json!({
             "operation":{"type":"string","enum":OPERATIONS},"data":{"type":"object"}
@@ -166,6 +170,13 @@ pub(super) fn execute(state: &AppState, pid: &str, name: &str, args: &Value, web
             if !RESOURCES.contains(&resource){return Err("不支持的资源".into())}
             if !["GET","POST","PATCH","DELETE"].contains(&method){return Err("不支持的操作方法".into())}
             let mut path=format!("projects/{pid}/{resource}");
+            if let Some(updates)=args.get("updates") {
+                if method!="PATCH" || ["id","episode_id","data"].iter().any(|key|args.get(*key).is_some()) {
+                    return Err("updates 仅用于 PATCH，不能与顶层 id、episode_id 或 data 同时使用".into());
+                }
+                // This result contains only the status, count and up to 100 numeric IDs.
+                return rest::crud(state,method,&path,json!({"updates":updates})).map_err(|e|e.1);
+            }
             let mut data=data;
             if let Some(id)=args.get("id") {
                 let id=id.as_i64().filter(|n|*n>0).ok_or("id 必须为正整数")?;
@@ -379,6 +390,7 @@ fn describe(operation:Option<&str>)->Value {
         "assets/audio/delete":{"required":{"asset_id":"creative asset ID","media_id":"audio media ID"},"effect":"Unlinks only this asset's audio reference; retains the audio file and its other uses."},
     });
     let types=json!({
+        "BatchUpdate":{"description":"Use app_request with method=PATCH, resource and updates; omit top-level id, episode_id and data. Updates to the same resource type commit together or all roll back.","updates":[{"id":"unique existing resource ID","data":"nonempty object with fields for this record, as in single-record PATCH"}],"result":{"updated":true,"ids":"updated resource IDs in request order","count":"number of updated records"}},
         "ScriptDraft":{"title":"episode title","clips":[{"clip_id":"optional existing clip ID to keep","description":"clip description","mode":"t2v/fl2v/i2v","first":"first image prompt","last":"last image prompt","references":["reference image description"]}]},
         "CanvasDraft":{"version":1,"nodes":[{"id":"unique string","kind":"note/media/image/audio/video/clip/asset/prompt","x":0,"y":0,"ref_id":"creative asset ID for asset nodes; media file ID for media nodes; clip ID for clip nodes; matching resource ID for other reference nodes","text":"note text","prompt":"optional image/video prompt","duration":"optional video seconds"}],"edges":[{"id":"unique string","from":"source node ID","to":"destination node ID"}],"viewport":{"x":80,"y":80,"zoom":1}},
         "StoryboardClip":{"title":"string","clip_id":"optional existing clip ID","duration":"sum of shot durations, >0 and <=15 seconds","shots":[{"duration":"positive seconds","description":"nonempty description with valid @resource references","camera":"camera direction","sound":"sound/dialogue"}]},

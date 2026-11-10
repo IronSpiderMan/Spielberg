@@ -113,6 +113,16 @@ fn save_graph(c: &Connection, value: &Value) -> ApiResult<Value> {
     read_graph(c)
 }
 
+pub(super) fn update(c: &Connection, id: i64, value: &Value) -> ApiResult<()> {
+    let mut merged=read_relation(c,id)?;
+    fields(value,&["source_asset_id","target_asset_id","label","directed","description"])?;
+    for (key,item) in value.as_object().unwrap() {merged[key]=item.clone();}
+    let (source,target,label,directed,description)=validate_relation(c,&merged)?;
+    c.execute("UPDATE asset_relations SET source_asset_id=?,target_asset_id=?,label=?,directed=?,description=?,updated_at=? WHERE id=?",
+        params![source,target,label,directed,description,now(),id]).map_err(sql_error)?;
+    Ok(())
+}
+
 pub(crate) fn handle(state: &AppState, c: &Connection, pid: &str, method: &str, resource: &str, id: Option<i64>, value: &Value) -> ApiResult<Value> {
     if resource=="asset-graph" {
         if id.is_some() {return Err(missing());}
@@ -123,20 +133,16 @@ pub(crate) fn handle(state: &AppState, c: &Connection, pid: &str, method: &str, 
         };
     }
     if let Some(id)=id {
-        let current=read_relation(c,id)?;
         match method {
-            "GET"=>Ok(current),
+            "GET"=>read_relation(c,id),
             "PATCH"=>{
-                fields(value,&["source_asset_id","target_asset_id","label","directed","description"])?;
-                let mut merged=current;
-                for (key,item) in value.as_object().unwrap() {merged[key]=item.clone();}
-                let (source,target,label,directed,description)=validate_relation(c,&merged)?;
-                c.execute("UPDATE asset_relations SET source_asset_id=?,target_asset_id=?,label=?,directed=?,description=?,updated_at=? WHERE id=?",
-                    params![source,target,label,directed,description,now(),id]).map_err(sql_error)?;
+                update(c,id,value)?;
                 touch(state,pid);read_relation(c,id)
             },
             "DELETE"=>{
-                c.execute("DELETE FROM asset_relations WHERE id=?",[id]).map_err(sql_error)?;
+                if c.execute("DELETE FROM asset_relations WHERE id=?",[id]).map_err(sql_error)?==0 {
+                    return Err(missing());
+                }
                 touch(state,pid);Ok(json!({"deleted":true}))
             },
             _=>Err(ApiError(StatusCode::METHOD_NOT_ALLOWED,"资产关系支持 GET/PATCH/DELETE".into())),

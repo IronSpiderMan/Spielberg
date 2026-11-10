@@ -24,6 +24,14 @@
 - `PATCH {集合}/{id}`：仅更新请求中的字段，返回更新后的资源；可空引用字段传 `null` 清除。
 - `DELETE {集合}/{id}`：删除并返回 `{deleted:true}`。
 
+批量更新使用 `PATCH /api/v1/projects/{pid}/{resource}`，支持
+`assets`、`asset-relations`、`media`、`episodes`、`scenes`、`clips`、`prompts` 和 `screenplays`。
+例如，对资产集合提交 `{"updates":[{"id":1,"data":{"enabled":false}},{"id":2,"data":{"name":"新名称"}}]}`。
+每批接受 1–100 个不重复的正整数 ID。每条记录的 `data` 按单条 PATCH 的规则校验，只修改所提供的字段。
+整个批次按请求顺序在同一事务内执行，任一条失败会回滚整批。
+成功响应为 `{"data":{"updated":true,"ids":[1,2],"count":2}}`。
+Agent 通过 `app_request` 传入 `resource`、`method: "PATCH"` 和 `updates` 使用同一入口。
+
 批量删除使用 `DELETE /api/v1/projects/{pid}/{resource}`，其中 `resource` 为
 `assets`、`asset-relations`、`media`、`episodes`、`scenes`、`clips` 或 `prompts`。
 请求体示例为 `{"ids":[1,2]}`，接受 1–100 个不重复的正整数 ID。成功返回 HTTP 200，

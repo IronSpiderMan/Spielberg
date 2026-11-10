@@ -220,7 +220,16 @@ fn video_frame(s: &AppState, v: &Value) -> Result<Value, String> {
 
 fn project_id(v:&Value)->Result<String,String>{strv(v,"project_id")}
 fn insert_role(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let c=db(s,&pid)?;let name=strv(v,"name")?;let d=v.get("description").and_then(Value::as_str).unwrap_or("");let enabled=v.get("enabled").and_then(Value::as_bool).unwrap_or(true);let category=v.get("category").and_then(Value::as_str).unwrap_or("person");c.execute("INSERT INTO assets(name,description,enabled,category,created_at) VALUES(?,?,?,?,?)",params![name,d,enabled,category,now()]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"id":c.last_insert_rowid(),"name":name,"description":d,"enabled":enabled,"category":category,"design_media_id":null,"images":[],"audios":[]}))}
-fn update_role(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;db(s,&pid)?.execute("UPDATE assets SET name=?,description=?,design_media_id=?,enabled=COALESCE(?,enabled),category=COALESCE(?,category) WHERE id=?",params![strv(v,"name")?,v.get("description").and_then(Value::as_str).unwrap_or(""),opti(v,"design_media_id"),v.get("enabled").and_then(Value::as_bool),v.get("category").and_then(Value::as_str),intv(v,"id")?]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
+fn update_role(s:&AppState,v:&Value)->Result<Value,String>{
+    let pid=project_id(v)?;
+    update_role_fields(&db(s,&pid)?,v)?;
+    touch(s,&pid);
+    Ok(json!({"ok":true}))
+}
+fn update_role_fields(c:&Connection,v:&Value)->Result<(),String>{
+    c.execute("UPDATE assets SET name=?,description=?,design_media_id=?,enabled=COALESCE(?,enabled),category=COALESCE(?,category) WHERE id=?",params![strv(v,"name")?,v.get("description").and_then(Value::as_str).unwrap_or(""),opti(v,"design_media_id"),v.get("enabled").and_then(Value::as_bool),v.get("category").and_then(Value::as_str),intv(v,"id")?]).map_err(|e|e.to_string())?;
+    Ok(())
+}
 fn delete_role(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;db(s,&pid)?.execute("DELETE FROM assets WHERE id=?",[intv(v,"id")?]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
 fn migrate_role_media_names(c: &Connection) -> Result<(), String> {
     c.execute_batch("BEGIN IMMEDIATE").map_err(|e| e.to_string())?;
@@ -339,10 +348,24 @@ fn manage_role_audio(s:&AppState,v:&Value,delete:bool)->Result<Value,String>{
 fn delete_asset_media(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let asset_id=intv(v,"asset_id")?;let media_id=intv(v,"media_id")?;let mut c=db(s,&pid)?;let tx=c.transaction().map_err(|e|e.to_string())?;tx.execute("DELETE FROM asset_media WHERE asset_id=? AND media_id=?",params![asset_id,media_id]).map_err(|e|e.to_string())?;tx.execute("UPDATE assets SET design_media_id=NULL WHERE id=? AND design_media_id=?",params![asset_id,media_id]).map_err(|e|e.to_string())?;tx.commit().map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
 fn insert_episode(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let c=db(s,&pid)?;let n:i64=c.query_row("SELECT COUNT(*) FROM episodes",[],|r|r.get(0)).map_err(|e|e.to_string())?;let title=strv(v,"title")?;let d=v.get("description").and_then(Value::as_str).unwrap_or("");c.execute("INSERT INTO episodes(title,description,sort_order,created_at,storyboard) VALUES(?,?,?,?,?)",params![title,d,n,now(),v.get("storyboard").unwrap_or(&Value::Null).to_string()]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"id":c.last_insert_rowid(),"title":title,"description":d}))}
 fn update_episode(s:&AppState,v:&Value)->Result<Value,String>{
- let pid=project_id(v)?;let mut c=db(s,&pid)?;let tx=c.transaction().map_err(|e|e.to_string())?;
- if tx.execute("UPDATE episodes SET title=?,description=?,cover_media_id=? WHERE id=?",params![strv(v,"title")?,v.get("description").and_then(Value::as_str).unwrap_or(""),opti(v,"cover_media_id"),intv(v,"id")?]).map_err(|e|e.to_string())?!=1{return Err("剧集不存在".into())}
- if let Some(board)=v.get("storyboard"){tx.execute("UPDATE episodes SET storyboard=? WHERE id=?",params![board.to_string(),intv(v,"id")?]).map_err(|e|e.to_string())?;}
- tx.commit().map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
+    let pid=project_id(v)?;
+    let mut c=db(s,&pid)?;
+    let tx=c.transaction().map_err(|e|e.to_string())?;
+    update_episode_fields(&tx,v)?;
+    tx.commit().map_err(|e|e.to_string())?;
+    touch(s,&pid);
+    Ok(json!({"ok":true}))
+}
+fn update_episode_fields(c:&Connection,v:&Value)->Result<(),String>{
+    let id=intv(v,"id")?;
+    if c.execute("UPDATE episodes SET title=?,description=?,cover_media_id=? WHERE id=?",
+        params![strv(v,"title")?,v.get("description").and_then(Value::as_str).unwrap_or(""),opti(v,"cover_media_id"),id])
+        .map_err(|e|e.to_string())?!=1 {return Err("剧集不存在".into())}
+    if let Some(board)=v.get("storyboard") {
+        c.execute("UPDATE episodes SET storyboard=? WHERE id=?",params![board.to_string(),id]).map_err(|e|e.to_string())?;
+    }
+    Ok(())
+}
 
 fn delete_episode(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;db(s,&pid)?.execute("DELETE FROM episodes WHERE id=?",[intv(v,"id")?]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
 fn insert_clip(s:&AppState,v:&Value)->Result<Value,String>{
@@ -412,7 +435,25 @@ fn copy_clip_content(c: &Connection, source: i64, parent: i64, position: usize, 
     c.execute("INSERT INTO clip_canvas_sources SELECT ?,media_id FROM clip_canvas_sources WHERE clip_id=?",params![id,source]).map_err(|e|e.to_string())?;
     Ok(id)
 }
-fn update_clip(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let mut c=db(s,&pid)?;let tx=c.transaction().map_err(|e|e.to_string())?;let id=intv(v,"id")?;if tx.execute("UPDATE clips SET title=?,description=?,prompt=COALESCE(?,prompt),first_media_id=?,last_media_id=?,reference_media_id=? WHERE id=?",params![strv(v,"title")?,strv(v,"description")?,v.get("prompt").and_then(Value::as_str),opti(v,"first_media_id"),opti(v,"last_media_id"),opti(v,"reference_media_id"),id]).map_err(|e|e.to_string())?!=1{return Err("片段不存在".into())}if let Some(options)=v.get("generation_options"){tx.execute("INSERT INTO clip_options VALUES(?,?) ON CONFLICT(clip_id) DO UPDATE SET value=excluded.value",params![id,options.to_string()]).map_err(|e|e.to_string())?;}tx.commit().map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
+fn update_clip(s:&AppState,v:&Value)->Result<Value,String>{
+    let pid=project_id(v)?;
+    let mut c=db(s,&pid)?;
+    let tx=c.transaction().map_err(|e|e.to_string())?;
+    update_clip_fields(&tx,v)?;
+    tx.commit().map_err(|e|e.to_string())?;
+    touch(s,&pid);
+    Ok(json!({"ok":true}))
+}
+fn update_clip_fields(c:&Connection,v:&Value)->Result<(),String>{
+    let id=intv(v,"id")?;
+    if c.execute("UPDATE clips SET title=?,description=?,prompt=COALESCE(?,prompt),first_media_id=?,last_media_id=?,reference_media_id=? WHERE id=?",
+        params![strv(v,"title")?,strv(v,"description")?,v.get("prompt").and_then(Value::as_str),opti(v,"first_media_id"),opti(v,"last_media_id"),opti(v,"reference_media_id"),id])
+        .map_err(|e|e.to_string())?!=1 {return Err("片段不存在".into())}
+    if let Some(options)=v.get("generation_options") {
+        c.execute("INSERT INTO clip_options VALUES(?,?) ON CONFLICT(clip_id) DO UPDATE SET value=excluded.value",params![id,options.to_string()]).map_err(|e|e.to_string())?;
+    }
+    Ok(())
+}
 fn reorder_clips(s:&AppState,v:&Value)->Result<Value,String>{
     let pid=project_id(v)?;
     let mut c=db(s,&pid)?;
@@ -471,7 +512,16 @@ fn merge_episode(s: &AppState, v: &Value) -> Result<Value, String> {
  media(&c, Some(c.last_insert_rowid())).ok_or("合并视频入库失败".into())
 }
 fn insert_prompt(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let c=db(s,&pid)?;let name=strv(v,"name")?;let content=v.get("content").and_then(Value::as_str).unwrap_or("");let cat=v.get("category").and_then(Value::as_str).unwrap_or("通用");let t=now();c.execute("INSERT INTO prompts(name,content,category,created_at,updated_at) VALUES(?,?,?,?,?)",params![name,content,cat,t,t]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"id":c.last_insert_rowid(),"name":name,"content":content,"category":cat}))}
-fn update_prompt(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;db(s,&pid)?.execute("UPDATE prompts SET name=?,content=?,category=?,updated_at=? WHERE id=?",params![strv(v,"name")?,v.get("content").and_then(Value::as_str).unwrap_or(""),v.get("category").and_then(Value::as_str).unwrap_or("通用"),now(),intv(v,"id")?]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
+fn update_prompt(s:&AppState,v:&Value)->Result<Value,String>{
+    let pid=project_id(v)?;
+    update_prompt_fields(&db(s,&pid)?,v)?;
+    touch(s,&pid);
+    Ok(json!({"ok":true}))
+}
+fn update_prompt_fields(c:&Connection,v:&Value)->Result<(),String>{
+    c.execute("UPDATE prompts SET name=?,content=?,category=?,updated_at=? WHERE id=?",params![strv(v,"name")?,v.get("content").and_then(Value::as_str).unwrap_or(""),v.get("category").and_then(Value::as_str).unwrap_or("通用"),now(),intv(v,"id")?]).map_err(|e|e.to_string())?;
+    Ok(())
+}
 fn save_settings(s:&AppState,v:&Value)->Result<Value,String>{generation_channels::validate_settings(v.get("settings").unwrap_or(&json!({})))?;let pid=project_id(v)?;db(s,&pid)?.execute("INSERT INTO settings(key,value) VALUES('models',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[v.get("settings").unwrap_or(&json!({})).to_string()]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
 fn llm_request_error(error:&reqwest::Error,endpoint:&str,context:&str,timeout_secs:Option<u64>)->String{
  let operation=if context=="structured"{"分镜模型请求"}else{"Prompt 优化请求"};
@@ -1039,12 +1089,16 @@ fn publish_script(c:&Connection,draft:&Value)->Result<Value,String>{
  }
  c.execute("INSERT INTO settings(key,value) VALUES('script_publication',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[json!({"draft":draft,"episode_id":eid}).to_string()]).map_err(|e|e.to_string())?;Ok(json!({"episode_id":eid}))
 }
+fn rename_media(c:&Connection,v:&Value)->Result<(),String>{
+    let name=strv(v,"name")?;
+    if name.trim().is_empty(){return Err("名称不能为空".into())}
+    c.execute("UPDATE media SET name=? WHERE id=?",params![name.trim(),intv(v,"id")?]).map_err(|e|e.to_string())?;
+    Ok(())
+}
 fn manage_media(s:&AppState,v:&Value,delete:bool)->Result<Value,String>{
  let mut c=db(s,&project_id(v)?)?;let tx=c.transaction().map_err(|e|e.to_string())?;let id=intv(v,"id")?;
  if media(&tx,Some(id)).is_none(){return Err("素材不存在".into())}
- if delete{
-  catalog::trash(&tx,id)?;
- }else{let name=strv(v,"name")?;if name.trim().is_empty(){return Err("名称不能为空".into())}tx.execute("UPDATE media SET name=? WHERE id=?",params![name.trim(),id]).map_err(|e|e.to_string())?;}
+ if delete{catalog::trash(&tx,id)?;}else{rename_media(&tx,v)?;}
  tx.commit().map_err(|e|e.to_string())?;Ok(json!({"ok":true}))
 }
 fn dispatch(state:&AppState,method:String,path:String,payload:Option<Value>)->Result<Value,String>{let v=payload.unwrap_or(Value::Null);if method=="POST" && ["/canvas/load","/canvas/save"].contains(&path.as_str()){let _lock=state.guard.lock().map_err(|_|"本地数据锁不可用")?;return canvas::command(state,&v,path=="/canvas/save")}if method=="POST" && ["/editor/projects","/editor/save"].contains(&path.as_str()){let _lock=state.guard.lock().map_err(|_|"本地数据锁不可用")?;return editor::projects(state,&v,path=="/editor/save")}if method=="POST" && path=="/media/audio-waveform"{return audio_waveform::get(state,&v)}if method=="POST" && path=="/media/trim-video"{return editor::trim_video(state,&v)}if method=="POST" && ["/media/extract-audio","/media/trim-audio"].contains(&path.as_str()){return editor::process_audio(state,&v,path=="/media/extract-audio")}if method=="POST" && path=="/editor/probe"{return editor::command(state,&v,false)}if method=="POST" && path=="/editor/export"{return editor::command(state,&v,true)}if method=="POST" && path=="/storyboard/validate"{return storyboard::validate(state,&v)}if method=="POST" && path=="/storyboard/generate"{return storyboard::generate(state,&v)}if method=="POST" && path=="/storyboard/plan"{return storyboard::plan(state,&v)}if method=="POST" && path=="/speech/transcribe"{return asr::transcribe(state,&v)}if method=="POST" && path=="/speech/synthesize"{return tts::synthesize(state,&v)}if method=="POST" && path=="/prompts/optimize"{return optimize_prompt(state,&v)}if method=="POST" && ["/generations/image","/generations/video","/generations/scene-video","/generations/tts","/generations/asr","/episodes/merge"].contains(&path.as_str()){return tracked_generation(state,&path,&v)}if method=="POST" && path=="/media/create-svg"{return svg::create(state,&v)}if method=="POST" && path=="/media/thumbnail" {return thumbnails::get(state,&v)}if method=="POST" && path=="/media/video-frame" {return video_frame(state,&v)}if method=="POST" && path=="/tasks/resume-video"{return resume_video_job(state,&v)}if method=="POST" && path=="/generations/clip-preview"{return scene_generation::clip_preview(state,&v)}if method=="POST" && path=="/generations/scene-preview"{return scene_generation::scene_preview(state,&v)}let _lock=state.guard.lock().map_err(|_|"本地数据锁不可用")?;match(method.as_str(),path.as_str()){("POST","/project/changes")=>snapshot_changes(state,&strv(&v,"id")?,&v["revisions"]),

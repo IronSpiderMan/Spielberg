@@ -603,6 +603,36 @@ mod tests{
  }
  impl Drop for Fixture{fn drop(&mut self){if let Ok(mut all)=runs().lock(){let root=self.state.root.canonicalize().unwrap_or_else(|_|self.state.root.clone());all.retain(|key,_|key.0!=root);}let _=fs::remove_dir_all(&self.state.root);}}
  #[test]
+ fn app_request_batch_patch_preserves_omitted_fields_and_rolls_back() {
+  let f = Fixture::new();
+  let request = |args| agent_tools::execute(&f.state, &f.pid, "app_request", &args, false, &json!({}));
+  let create = |name| request(json!({"resource":"assets","method":"POST","data":{"name":name,"description":"保留原文"}})).unwrap();
+  let first = create("主角");
+  let second = create("配角");
+  let get = |id: &Value| request(json!({"resource":"assets","method":"GET","id":id})).unwrap();
+  let patch = |updates| request(json!({"resource":"assets","method":"PATCH","updates":updates}));
+  for invalid in [
+   json!({"id":i64::MAX,"data":{"name":"不存在"}}),
+   json!({"id":second["id"],"data":{"enabled":"false"}}),
+   json!({"id":first["id"],"data":{"name":"重复 ID"}}),
+  ] {
+   let updates = json!([{"id":first["id"],"data":{"enabled":false}}, invalid]);
+   assert!(patch(updates).is_err());
+   assert_eq!(get(&first["id"])["enabled"], true);
+  }
+  let updates = json!([
+   {"id":first["id"],"data":{"enabled":false}},
+   {"id":second["id"],"data":{"name":"新名称"}}
+  ]);
+  assert!(request(json!({"resource":"assets","method":"PATCH","id":first["id"],"updates":updates})).is_err());
+  assert_eq!(patch(updates).unwrap(), json!({"updated":true,"ids":[first["id"],second["id"]],"count":2}));
+  assert_eq!(get(&first["id"])["enabled"], false);
+  let renamed = get(&second["id"]);
+  assert_eq!(renamed["name"], "新名称");
+  assert_eq!(renamed["description"], "保留原文");
+  assert_eq!(renamed["enabled"], true);
+ }
+ #[test]
  fn project_instructions_are_complete_fresh_and_isolated(){
   let f=Fixture::new();let other=Fixture::new();
   assert!(!system_prompt(&f.state,&f.pid,false).unwrap().contains("<project_agents_md>"));
