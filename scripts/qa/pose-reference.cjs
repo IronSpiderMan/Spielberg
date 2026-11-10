@@ -136,6 +136,7 @@ async function dragCanvas(page, point, dx, dy) {
  assert.ok(boxPoint, 'Expected the box to be rendered');
  await page.mouse.click(boxPoint.x, boxPoint.y);
  assert.equal(await shapeList.getByRole('button',{name:'长方体 1'}).getAttribute('aria-pressed'),'true');
+ assert.equal(await canvas.evaluate(el => document.activeElement === el.parentElement), true);
  const xPosition = page.getByRole('slider',{name:'左右位置'});
  const height = page.getByRole('slider',{name:'高度'});
  await canvas.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -219,9 +220,13 @@ async function dragCanvas(page, point, dx, dy) {
  await modelSettings.click();
  await rotate.click();
  assert.equal(await page.getByRole('slider',{name:'人物朝向'}).inputValue(),'30');
- await page.getByRole('button',{name:'删除人物',exact:true}).click();
+ const remove = page.getByRole('button',{name:'删除选中模型',exact:true});
+ const reset = page.getByRole('button',{name:'复位',exact:true});
+ const viewport = page.getByRole('group',{name:'3D 场景画布',exact:true});
+ assert.equal(await remove.count(),1);
+ await remove.click();
  assert.equal(await cast.getByRole('button').count(),1);
- assert.ok(await page.getByRole('button',{name:'删除人物',exact:true}).isDisabled());
+ assert.ok(await remove.isDisabled());
  const box = shapeList.getByRole('button',{name:'长方体 1'});
  await box.click();
  assert.equal(await roll.inputValue(),rotatedRoll);
@@ -242,7 +247,22 @@ async function dragCanvas(page, point, dx, dy) {
  assert.equal(await color.inputValue(),'#6489ab');
  assert.equal(await roughness.inputValue(),'0.65');
  assert.equal(await metalness.inputValue(),'0');
- await page.getByRole('button',{name:'删除体积',exact:true}).click();
+ await size.click();
+ await widthScale.fill('1.2');
+ await appearance.click();
+ await color.fill('#d427b5');
+ await reset.click();
+ assert.equal(await color.inputValue(),'#6489ab');
+ await size.click();
+ assert.equal(await widthScale.inputValue(),'1');
+ await rotate.click();
+ assert.equal(await roll.inputValue(),'0');
+ await move.click();
+ assert.equal(await xPosition.inputValue(),'0');
+ assert.equal(await height.inputValue(),'0.3');
+ await viewport.press('Backspace');
+ assert.equal(await shapeList.getByRole('button').count(),2);
+ await page.keyboard.press('Backspace');
  assert.equal(await shapeList.getByRole('button').count(),2);
  const moreShapes = page.getByRole('button',{name:'更多形状',exact:true});
  for (const name of ['圆锥', '四棱锥', '三棱柱', '胶囊体', '圆环', '薄板']) {
@@ -261,8 +281,35 @@ async function dragCanvas(page, point, dx, dy) {
  const tint = page.getByLabel('木纹色调',{exact:true});
  await tint.fill('#87bcff');
  assert.equal(await tint.inputValue(),'#87bcff');
+ await page.getByRole('button',{name:'坐姿',exact:true}).click();
+ await page.getByRole('group',{name:'编辑关节'}).getByRole('button',{name:'左膝',exact:true}).click();
+ assert.equal(await bend.inputValue(),'90');
+ await reset.click();
+ assert.equal(await bend.inputValue(),'0');
+ await modelSettings.click();
+ assert.equal(await tint.inputValue(),'#ffffff');
+ await size.click();
+ assert.equal(await overall.inputValue(),'1');
+ await move.click();
+ assert.equal(await height.inputValue(),'0');
+ await viewport.press('Delete');
+ assert.equal(await cast.getByRole('button').count(),0);
+ assert.equal(await shapeList.getByRole('button').count(),8);
+ while (await shapeList.getByRole('button').count()) {
+  await shapeList.getByRole('button').first().click();
+  await remove.click();
+ }
+ assert.ok(await remove.isDisabled());
+ assert.ok(await reset.isDisabled());
+ await page.locator('.pose-footer').getByRole('button',{name:'关闭',exact:true}).click();
+ await entry.click();
+ await canvas.waitFor();
+ assert.equal(await cast.getByRole('button').count(),0);
+ assert.equal(await shapeList.count(),0);
+ await page.getByRole('button',{name:'添加人物',exact:true}).click();
+ assert.equal(await cast.getByRole('button').count(),1);
 
  assert.deepEqual(errors,[]);
- console.log('PASS: figures and nine primitive shapes, model dragging, dimensions and materials, draft restoration, PNG export and reference generation');
+ console.log('PASS: figures and nine primitive shapes, model dragging, dimensions and materials, model reset, button and keyboard deletion, empty draft restoration, PNG export and reference generation');
  await browser.close();
 })().catch(e=>{console.error(e);process.exit(1)});

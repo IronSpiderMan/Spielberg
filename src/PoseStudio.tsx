@@ -1,6 +1,6 @@
 import { localId } from "./id";
 import { useEffect, useRef, useState } from 'react';
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { Accessibility, Armchair, Box, Camera, Circle, Cone, Cylinder, Footprints, Layers, Move3D, Palette, PersonStanding, Pill, Plus, Pyramid, RotateCcw, Scaling, ScanLine, Shapes, Torus, Trash2, Triangle } from 'lucide-react';
 import { Button, Dropdown, Menu, Message, Modal } from '@arco-design/web-react';
 import * as THREE from 'three';
@@ -85,8 +85,9 @@ const neutral = ():Record<Joint,Angles> => {
 };
 const person = (n:number):Person => ({id:localId(),name:`人物 ${n}`,x:0,y:0,z:0,turn:0,pose:neutral()});
 export default function PoseStudio({projectId,size,onUse,onClose,initialModels,onModelsChange}:{projectId:string;size:string;initialModels?:PoseModel[];onModelsChange:(models:PoseModel[])=>void;onUse:(m:Media)=>void;onClose:()=>void}) {
-  const [models, setModels] = useState<PoseModel[]>(() => initialModels?.length ? initialModels : [person(1)]);
-  const [selected,setSelected]=useState(''),[joint,setJoint]=useState<Joint>('左肩'),[saving,setSaving]=useState(false),[error,setError]=useState('');
+  const [models, setModels] = useState<PoseModel[]>(() => initialModels ?? [person(1)]);
+  const [selected, setSelected] = useState<string | undefined>(() => (models.find(isPerson) ?? models[0])?.id);
+  const [joint,setJoint]=useState<Joint>('左肩'),[saving,setSaving]=useState(false),[error,setError]=useState('');
   const [panel, setPanel] = useState<'joint' | 'position'>('joint');
   const [modelPanel, setModelPanel] = useState<typeof modelPanels[number]['id']>('translate');
   const transformMode = modelPanel === 'translate' || modelPanel === 'rotate' ? modelPanel : undefined;
@@ -110,14 +111,14 @@ export default function PoseStudio({projectId,size,onUse,onClose,initialModels,o
   const shapeAddDisabled = saving || !!error || primitives.length >= maxPrimitives;
   const counter = useRef(Math.max(1, ...people.map(p => Number(p.name.split(' ')[1]) || 1)));
   const saveLock = useRef(false);
-  const current = models.find(model => model.id === selected) ?? people[0];
-  const currentPerson = isPerson(current) ? current : undefined;
-  const currentPrimitive = isPerson(current) ? undefined : current;
-  const currentColor = current.color ?? (currentPrimitive ? shapes[currentPrimitive.shape].color : defaultFigureColor);
+  const current = models.find(model => model.id === selected);
+  const currentPerson = current && isPerson(current) ? current : undefined;
+  const currentPrimitive = current && !isPerson(current) ? current : undefined;
+  const currentColor = current?.color ?? (currentPrimitive ? shapes[currentPrimitive.shape].color : defaultFigureColor);
   const editJoints = panel === 'joint' && !!currentPerson;
   const dimensions=size.split('x').map(Number),width=dimensions[0]||1152,height=dimensions[1]||640;
   const aspect=width/height;
-  useEffect(() => { markerPerson.current = current.id; }, [current.id]);
+  useEffect(() => { markerPerson.current = selected ?? ''; }, [selected]);
   useEffect(()=>{
     if(!host)return;
     const container=host;let renderer:THREE.WebGLRenderer;
@@ -153,6 +154,7 @@ export default function PoseStudio({projectId,size,onUse,onClose,initialModels,o
     const pointer = new THREE.Vector2();
     let click: { id: number; x: number; y: number } | undefined;
     const startClick = (event: PointerEvent) => {
+      if (event.isPrimary) container.focus({ preventScroll: true });
       click = event.isPrimary && event.button === 0 && !transform.dragging && !saveLock.current
         ? { id: event.pointerId, x: event.clientX, y: event.clientY }
         : undefined;
@@ -282,22 +284,22 @@ export default function PoseStudio({projectId,size,onUse,onClose,initialModels,o
     const rt = runtime.current;
     if (!rt) return;
     if (rt.transform.dragging) rt.transform.pointerUp(null);
-    const object = rt.figures.get(current.id)?.root ?? rt.primitives.get(current.id);
+    const object = selected ? rt.figures.get(selected)?.root ?? rt.primitives.get(selected) : undefined;
     if (editJoints || !object || !transformMode) rt.transform.detach();
     else {
       rt.transform.setMode(transformMode);
       rt.transform.attach(object);
     }
-  }, [current.id, editJoints, transformMode, aspect, host]);
+  }, [selected, editJoints, transformMode, aspect, host]);
   useEffect(() => {
     if (runtime.current) runtime.current.transform.enabled = !saving;
   }, [saving, aspect, host]);
   useEffect(()=>onModelsChange(models),[models,onModelsChange]);
   function patch(change: Partial<PoseTransform & ModelColor>) {
-    setModels(all => all.map(model => model.id === current.id ? { ...model, ...change } : model));
+    setModels(all => all.map(model => model.id === selected ? { ...model, ...change } : model));
   }
   function patchPrimitive(change: Partial<PrimitiveProperties>) {
-    setModels(all => all.map(model => model.id === current.id && !isPerson(model) ? { ...model, ...change } : model));
+    setModels(all => all.map(model => model.id === selected && !isPerson(model) ? { ...model, ...change } : model));
   }
   function updateJoint(id: string, name: Joint, angles: Angles) {
     setModels(all => all.map(model => model.id === id && isPerson(model) ? { ...model, pose: { ...model.pose, [name]: angles } } : model));
@@ -322,7 +324,8 @@ export default function PoseStudio({projectId,size,onUse,onClose,initialModels,o
   function setView([x, y, z]: readonly [number, number, number]) {
     const rt = runtime.current;
     if (!rt) return;
-    rt.controls.target.set(current.x, current.y + (currentPerson ? .97 * (current.size ?? 1) : 0), current.z);
+    if (current) rt.controls.target.set(current.x, current.y + (currentPerson ? .97 * (current.size ?? 1) : 0), current.z);
+    else rt.controls.target.set(0, .97, 0);
     rt.camera.position.set(x, y, z).add(rt.controls.target);
     rt.controls.update();
   }
@@ -346,8 +349,30 @@ export default function PoseStudio({projectId,size,onUse,onClose,initialModels,o
     setPanel('position');
   }
   function removeCurrent() {
+    if (!current || saveLock.current || error || runtime.current?.transform.dragging || drag.current) return;
     setModels(all => all.filter(model => model.id !== current.id));
-    setSelected('');
+    setSelected(undefined);
+    host?.focus({ preventScroll: true });
+  }
+  function handleDeleteKey(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+    if (event.defaultPrevented || event.nativeEvent.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const target = event.target;
+    if (target instanceof HTMLElement && (target.isContentEditable || target.matches('input:not([type="range"]), textarea, select'))) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) removeCurrent();
+  }
+  function resetCurrent() {
+    if (!current) return;
+    const defaults = { x: 0, y: 0, z: 0, turn: 0 };
+    setModels(all => all.map(model => {
+      if (model.id !== current.id) return model;
+      const { id, name } = model;
+      if (isPerson(model)) return { id, name, ...defaults, pose: neutral() };
+      const { shape } = model;
+      return { id, name, shape, ...defaults, y: shapes[shape].height };
+    }));
   }
   function preset(name: typeof presets[number]['name']) {
     if (!currentPerson) return;
@@ -395,7 +420,7 @@ export default function PoseStudio({projectId,size,onUse,onClose,initialModels,o
       <Button type="primary" loading={saving} disabled={!!error || !host} icon={<Camera size={16}/>} onClick={capture}>截图并用作参考图</Button>
     </div>}
   >
-    <div className="pose-layout">
+    <div className="pose-layout" onKeyDown={handleDeleteKey}>
       <section className="pose-workspace" aria-label="姿势画布">
         <div className="pose-preset-bar">
           <strong>动作预设</strong>
@@ -405,7 +430,7 @@ export default function PoseStudio({projectId,size,onUse,onClose,initialModels,o
         </div>
         <div className="pose-stage">
           <div className="pose-frame" style={{ '--pose-aspect': aspect } as CSSProperties}>
-            <div ref={setHost} className="pose-viewport" aria-label="3D 场景画布"/>
+            <div ref={setHost} className="pose-viewport" tabIndex={0} role="group" aria-label="3D 场景画布"/>
             {!error && editJoints && <div className="pose-markers" role="group" aria-label="画布关节">
               {joints.map(name => <button
                 key={name}
@@ -429,38 +454,32 @@ export default function PoseStudio({projectId,size,onUse,onClose,initialModels,o
           <div className="pose-camera" role="group" aria-label="视角">
             {cameraViews.map(({name, offset}) => <Button key={name} size="small" disabled={saving || !!error} onClick={() => setView(offset)}>{name}</Button>)}
           </div>
-          <span className="pose-view-hint">点击模型选中 · 拖动空白处旋转视角 · 右键平移 · 滚轮缩放</span>
+          <span className="pose-view-hint">点击模型选中 · Delete / Backspace 删除 · 拖动空白处旋转视角 · 右键平移 · 滚轮缩放</span>
         </div>
       </section>
       <fieldset className="pose-settings" disabled={saving || !!error} aria-label="场景模型与编辑">
         <section className="pose-cast">
           <div className="pose-section-heading">
             <strong>场景人物 <small>{people.length}/{maxPeople}</small></strong>
-            <div className="pose-cast-actions">
-              <Button size="small" icon={<Plus size={16}/>} title="添加人物" aria-label="添加人物" disabled={people.length >= maxPeople} onClick={addPerson}/>
-              <Button size="small" icon={<Trash2 size={15}/>} title="删除人物" aria-label="删除人物" disabled={!currentPerson || people.length <= 1} onClick={removeCurrent}/>
-            </div>
+            <Button size="small" icon={<Plus size={16}/>} title="添加人物" aria-label="添加人物" disabled={people.length >= maxPeople} onClick={addPerson}/>
           </div>
           <div className="pose-model-list" role="group" aria-label="当前人物">
-            {people.map(p => <button key={p.id} type="button" aria-pressed={p.id === current.id} onClick={() => setSelected(p.id)}>{p.name}</button>)}
+            {people.map(p => <button key={p.id} type="button" aria-pressed={p.id === selected} onClick={() => setSelected(p.id)}>{p.name}</button>)}
           </div>
         </section>
         <section className="pose-cast pose-shapes">
           <div className="pose-section-heading">
             <strong>基础体积 <small>{primitives.length}/{maxPrimitives}</small></strong>
-            <div className="pose-cast-actions">
-              <Dropdown trigger="click" position="br" disabled={shapeAddDisabled} droplist={
-                <Menu onClickMenuItem={key => addPrimitive(key as typeof extraShapes[number])}>
-                  {extraShapes.map(shape => {
-                    const { name, Icon } = shapes[shape];
-                    return <Menu.Item key={shape}><span className="pose-shape-option"><Icon size={15}/>{name}</span></Menu.Item>;
-                  })}
-                </Menu>
-              }>
-                <Button size="small" icon={<Shapes size={14}/>} disabled={shapeAddDisabled} aria-haspopup="menu">更多形状</Button>
-              </Dropdown>
-              <Button size="small" icon={<Trash2 size={15}/>} title="删除体积" aria-label="删除体积" disabled={!!currentPerson} onClick={removeCurrent}/>
-            </div>
+            <Dropdown trigger="click" position="br" disabled={shapeAddDisabled} droplist={
+              <Menu onClickMenuItem={key => addPrimitive(key as typeof extraShapes[number])}>
+                {extraShapes.map(shape => {
+                  const { name, Icon } = shapes[shape];
+                  return <Menu.Item key={shape}><span className="pose-shape-option"><Icon size={15}/>{name}</span></Menu.Item>;
+                })}
+              </Menu>
+            }>
+              <Button size="small" icon={<Shapes size={14}/>} disabled={shapeAddDisabled} aria-haspopup="menu">更多形状</Button>
+            </Dropdown>
           </div>
           <div className="pose-shape-actions" role="group" aria-label="添加基础体积">
             {quickShapes.map(shape => {
@@ -469,9 +488,16 @@ export default function PoseStudio({projectId,size,onUse,onClose,initialModels,o
             })}
           </div>
           {primitives.length > 0 && <div className="pose-model-list" role="group" aria-label="当前体积">
-            {primitives.map(model => <button key={model.id} type="button" aria-pressed={model.id === current.id} onClick={() => { setSelected(model.id); setPanel('position'); }}>{model.name}</button>)}
+            {primitives.map(model => <button key={model.id} type="button" aria-pressed={model.id === selected} onClick={() => { setSelected(model.id); setPanel('position'); }}>{model.name}</button>)}
           </div>}
         </section>
+        <div className="pose-section-heading pose-selection">
+          <strong>{current?.name ?? '未选中模型'}</strong>
+          <div className="pose-model-actions">
+            <Button size="small" icon={<RotateCcw size={14}/>} disabled={!current} title="恢复选中模型的默认状态" onClick={resetCurrent}>复位</Button>
+            <Button size="small" icon={<Trash2 size={15}/>} disabled={!current} aria-label="删除选中模型" aria-keyshortcuts="Delete Backspace" onClick={removeCurrent}>删除</Button>
+          </div>
+        </div>
         {currentPerson && <div className="pose-panel-switch" role="group" aria-label="编辑内容">
           <button type="button" aria-pressed={editJoints} onClick={() => setPanel('joint')}><Accessibility size={15}/>关节</button>
           <button type="button" aria-pressed={!editJoints} onClick={() => setPanel('position')}><Move3D size={15}/>模型设置</button>
@@ -490,8 +516,7 @@ export default function PoseStudio({projectId,size,onUse,onClose,initialModels,o
             angles[i] = value;
             updateJoint(currentPerson.id, joint, angles);
           }, '°'))}
-        </div> : <div className="pose-inspector">
-          <div className="pose-section-heading"><strong>{current.name}</strong></div>
+        </div> : current && <div className="pose-inspector">
           <div className="pose-model-tabs" role="group" aria-label="模型操作">
             {modelPanels.map(({ id, label, Icon }) => <button key={id} type="button" aria-pressed={modelPanel === id} onClick={() => setModelPanel(id)}><Icon size={14}/>{label}</button>)}
           </div>
