@@ -21,7 +21,7 @@ if(path==='/media/list')return {items:data.media.map(m=>({...m,usage_count:0})),
 if(path==='/media/thumbnail')return {path:'/spielberg-logo-s.png'};
 if(path==='/projects')return [project];if(path==='/project')return structuredClone(data);if(path==='/tasks')return {items:[],has_more:false,next_cursor:null};
     if(window.__qaFail)throw Error('测试保存失败');
-    if(path==='/assets/media/add'){image.name=payload.name;if(!role.images.length)role.images.push(image);}
+    if(path==='/assets/media/add'){if(!role.images.length)role.images.push({...image,name:payload.name});}
     if(path==='/assets/update')Object.assign(role,payload);
     if(path==='/clips/update')Object.assign(scene,payload);
     if(path==='/clips/select-video'){scene.video_media_id=payload.media_id;}
@@ -34,7 +34,7 @@ if(path==='/projects')return [project];if(path==='/project')return structuredClo
   const modal=page.locator('.asset-assignment-modal:visible');
   async function select(label,text){await modal.getByLabel(label,{exact:true}).click();await page.locator('.arco-select-option:visible').filter({hasText:text}).click();}
   for(const [usage,field] of [['资产图','role'],['片段首帧','first'],['片段尾帧','last'],['片段参考图','reference'],['片段视频','video']]){
-   await page.locator('.library-card').filter({hasText:field==='video'?'测试视频.mp4':field==='role'?'测试图片.png':'正面'}).getByRole('button',{name:'设置用途'}).click();
+   await page.locator('.library-card').filter({hasText:field==='video'?'测试视频.mp4':'测试图片.png'}).getByRole('button',{name:'设置用途'}).click();
    assert(await modal.getByRole('button',{name:'确定设置'}).isDisabled());
    if(field!=='video')await select('素材用途',usage);
    await select(field==='role'?'选择资产':'选择片段',field==='role'?'测试角色':'测试剧集 / 测试场景 / 测试场景');
@@ -49,7 +49,7 @@ if(path==='/projects')return [project];if(path==='/project')return structuredClo
    }
    await modal.getByRole('button',{name:'确定设置'}).click();await modal.waitFor({state:'hidden'});
    const data=await page.evaluate(()=>window.__qaData);
-   if(field==='role'){assert.equal(data.media[0].name,'正面');assert.equal(data.media[0].path,'/spielberg-logo-s.png');assert.equal(data.assets[0].design_media_id,1);assert.equal(data.assets[0].description,'保留设定');}
+   if(field==='role'){assert.equal(data.media[0].name,'测试图片.png');assert.equal(data.assets[0].images[0].name,'正面');assert.equal(data.media[0].path,'/spielberg-logo-s.png');assert.equal(data.assets[0].design_media_id,1);assert.equal(data.assets[0].description,'保留设定');}
    else{assert.equal(data.episodes[0].clips[0][field+'_media_id'],field==='video'?2:1);assert.equal(data.episodes[0].clips[0].description,'保留描述');}
    if(field==='first'){assert.equal(data.episodes[0].clips[0].last_media_id,8);assert.equal(data.episodes[0].clips[0].reference_media_id,7);}
   }

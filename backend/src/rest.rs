@@ -76,9 +76,7 @@ fn enrich(c: &Connection, resource: &str, mut value: Value) -> ApiResult<Value> 
     if resource=="assets" {
         value["enabled"]=json!(value["enabled"].as_i64().unwrap_or(1)!=0);
         value["audios"]=json!(role_audios(c,id)?);
-        let mut q=c.prepare("SELECT m.id FROM media m WHERE m.deleted_at IS NULL AND (m.id=? OR EXISTS(SELECT 1 FROM role_media r WHERE r.role_id=? AND r.media_id=m.id)) ORDER BY CASE WHEN m.id=? THEN 0 ELSE 1 END,m.id DESC").map_err(sql_error)?;
-        let ids=q.query_map(params![opti(&value,"design_media_id"),id,opti(&value,"design_media_id")],|r|r.get::<_,i64>(0)).map_err(sql_error)?.collect::<Result<Vec<_>,_>>().map_err(sql_error)?;
-        value["images"]=json!(ids.into_iter().filter_map(|id|media(c,Some(id))).collect::<Vec<_>>());
+        value["images"]=json!(asset_images(c,id,opti(&value,"design_media_id"))?);
     } else if resource=="clips" {
         for key in ["first","last","reference","video"] {value[format!("{key}_media")]=json!(media(c,opti(&value,&format!("{key}_media_id"))));}
         value["videos"]=json!(clip_videos(c,id)?);
@@ -370,8 +368,7 @@ pub(crate) fn import_uploaded(state:&AppState,pid:&str,path:&Path,name:&str,role
     if name.trim().is_empty(){return Err(bad("素材名称不能为空"))}
     let c=db(state,pid)?;
     if let Some(role)=role {get(&c,"assets",role)?;}
-    let item=import_media(state,&json!({"project_id":pid,"source_path":path,"asset_id":role}))?;
-    c.execute("UPDATE media SET name=? WHERE id=?",params![name,item["id"].as_i64().unwrap()]).map_err(sql_error)?;
+    let item=import_media_with_name(state,&json!({"project_id":pid,"source_path":path,"asset_id":role}),Some(name))?;
     get(&c,"media",item["id"].as_i64().unwrap())
 }
 
@@ -390,7 +387,7 @@ pub(crate) fn action(state:&AppState,path:&str,value:Value)->ApiResult<Value>{
         }
         return crud(state,"POST",resource,value);
     }
-    const ALLOWED:&[&str]=&["/canvas/load","/canvas/save","/editor/projects","/editor/save","/editor/probe","/editor/export","/app/settings/load","/app/settings/save","/project","/project/changes","/projects/open","/projects/migrate","/projects/backup","/projects/restore","/media/import","/media/export","/media/pose-reference","/media/thumbnail","/media/create-svg","/media/usage","/media/restore","/media/purge","/media/video-frame","/media/trim-video","/media/extract-audio","/media/trim-audio","/media/audio-waveform","/storage/scan","/storage/cleanup","/assets/media/add","/assets/media/delete","/assets/audio/save","/assets/audio/delete","/scripts/load","/scripts/save","/scripts/publish","/tasks","/tasks/resume-video","/generations/image","/generations/video","/generations/clip-preview","/generations/scene-preview","/generations/scene-video","/generations/tts","/generations/asr","/speech/transcribe","/speech/synthesize","/prompts/optimize","/storyboard/generate","/storyboard/plan","/storyboard/validate","/clips/reorder","/clips/duplicate","/clips/select-video","/clips/delete-video","/scenes/reorder","/scenes/duplicate","/scenes/ungroup","/scenes/merge","/scenes/select-video","/scenes/delete-video","/episodes/reorder","/episodes/merge","/settings"];
+    const ALLOWED:&[&str]=&["/canvas/load","/canvas/save","/editor/projects","/editor/save","/editor/probe","/editor/export","/app/settings/load","/app/settings/save","/project","/project/changes","/projects/open","/projects/migrate","/projects/backup","/projects/restore","/media/import","/media/export","/media/pose-reference","/media/thumbnail","/media/create-svg","/media/usage","/media/restore","/media/purge","/media/video-frame","/media/trim-video","/media/extract-audio","/media/trim-audio","/media/audio-waveform","/storage/scan","/storage/cleanup","/assets/media/add","/assets/media/rename","/assets/media/delete","/assets/audio/save","/assets/audio/delete","/scripts/load","/scripts/save","/scripts/publish","/tasks","/tasks/resume-video","/generations/image","/generations/video","/generations/clip-preview","/generations/scene-preview","/generations/scene-video","/generations/tts","/generations/asr","/speech/transcribe","/speech/synthesize","/prompts/optimize","/storyboard/generate","/storyboard/plan","/storyboard/validate","/clips/reorder","/clips/duplicate","/clips/select-video","/clips/delete-video","/scenes/reorder","/scenes/duplicate","/scenes/ungroup","/scenes/merge","/scenes/select-video","/scenes/delete-video","/episodes/reorder","/episodes/merge","/settings"];
     if !ALLOWED.contains(&path){return Err(missing())}
     Ok(dispatch(state,"POST".into(),path.into(),Some(value))?)
 }

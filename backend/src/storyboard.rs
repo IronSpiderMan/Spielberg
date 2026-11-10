@@ -94,7 +94,7 @@ mod role_enablement_tests {
   for name in ["正面.png","主角.png","主角.正面.png"] {
    c.execute("INSERT INTO media(name,path,kind,created_at) VALUES(?,?,'image','0')",params![name,name]).unwrap();
   }
-  link_role_media(&c,role["id"].as_i64().unwrap(),1).unwrap();drop(c);
+  link_asset_media(&c,role["id"].as_i64().unwrap(),1,None).unwrap();drop(c);
   assert!(check("@主角 @主角.正面",&assets(&state,pid).unwrap()).is_ok());
   let path=format!("projects/{pid}/assets/{}",role["id"]);
   rest::crud(&state,"PATCH",&path,json!({"enabled":false})).unwrap();

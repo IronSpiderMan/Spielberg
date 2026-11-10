@@ -24,7 +24,7 @@ const path = require('node:path');
       const audio = {id: 8, name: '魏来音色—平静叙述与低声耳语参考.wav', kind: 'audio', path: '/fixture/voice.wav', created_at: '0'};
       media.push(audio);
       const project = {id: 'qa-asset-editor-layout', name: '素材界面隔离回归', path: '/fixture', updated_at: '刚刚'};
-      const asset = {id: 1, name: '未来', category: 'person', description: ('身份：故事中的高中生。\n外形：校服外套、深色长裤，服装与五官保持一致。\n性格与表演：思考时摩挲笔帽，关键时刻语速变慢。\n').repeat(8), enabled: true, design_media_id: 1, images: media.slice(0, 6), audios: [audio]};
+      const asset = {id: 1, name: '未来', category: 'person', description: ('身份：故事中的高中生。\n外形：校服外套、深色长裤，服装与五官保持一致。\n性格与表演：思考时摩挲笔帽，关键时刻语速变慢。\n').repeat(8), enabled: true, design_media_id: 1, images: media.slice(0, 6).map(m => ({...m})), audios: [audio]};
       const data = {project, assets: [asset], media, episodes: [], prompts: [], settings: {}};
       window.__qaData = data;
       window.__qaCalls = [];
@@ -37,14 +37,15 @@ const path = require('node:path');
         if (path === '/tasks') return {items: [], has_more: false};
         if (path === '/media/list') return {items: data.media.map(m => ({...m, usage_count: 0})), total: data.media.length};
         if (path === '/assets/update') Object.assign(asset, payload);
-        if (path === '/media/rename') {
-          data.media.find(m => m.id === payload.id).name = payload.name;
-          asset.images.filter(m => m.id === payload.id).forEach(m => {m.name = payload.name;});
+        if (path === '/assets/media/rename') {
+          if (payload.asset_id !== asset.id) throw Error('资产不存在');
+          asset.images.find(m => m.id === payload.media_id).name = payload.name;
         }
         if (path === '/assets/media/add') {
           const media = data.media.find(m => m.id === payload.media_id);
-          if (payload.name) media.name = payload.name;
-          if (!asset.images.some(m => m.id === media.id)) asset.images.push(media);
+          const reference = asset.images.find(m => m.id === media.id);
+          if (reference) reference.name = payload.name ?? reference.name;
+          else asset.images.push({...media, name: payload.name ?? media.name});
         }
         if (path === '/assets/media/delete') {
           asset.images = asset.images.filter(m => m.id !== payload.media_id);
@@ -171,6 +172,7 @@ const path = require('node:path');
     await rename.getByRole('button', {name: '保存名称', exact: true}).click();
     await rename.waitFor({state: 'hidden'});
     await editorCard('穿越前—侧面改名参考').waitFor();
+    assert.equal(await page.evaluate(() => window.__qaData.media[2].name), mediaNames[2]);
     await drawer.getByRole('button', {name: `删除 ${mediaNames[5]}`, exact: true}).click();
     await page.locator('.arco-popconfirm:visible').getByRole('button', {name: '移除图片', exact: true}).click();
     await editorCard(mediaNames[5]).waitFor({state: 'hidden'});
@@ -206,6 +208,7 @@ const path = require('node:path');
     await naming.getByRole('button', {name: '确认添加', exact: true}).click();
     await naming.waitFor({state: 'hidden'});
     await editorCard('新的造型参考').waitFor();
+    assert.equal(await page.evaluate(() => window.__qaData.media[6].name), '尚未关联的造型参考.png');
     assert.equal(await drawer.locator('.role-editor-image-card').count(), 6);
     await drawer.getByRole('button', {name: '从素材库选择', exact: true}).click();
     await picker.getByRole('button', {name: `选择素材 ${mediaNames[0]}`, exact: true}).click();

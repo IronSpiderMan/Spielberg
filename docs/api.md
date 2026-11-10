@@ -45,7 +45,7 @@
 
 每个剧集最多一份 Markdown 剧本和一份 CSV 分镜头剧本，重复创建或移动到已有同类型内容的剧集返回 409；请读取已有资源并 PATCH。剧本按剧集归属：`GET/POST /projects/{pid}/episodes/{episode_id}/screenplays` 列出或创建该集剧本，路径指定归属。兼容 `/projects/{pid}/screenplays`，创建时必须提交有效 `episode_id`，GET 可用 `?episode_id=...` 筛选；单个资源的 GET/PATCH/DELETE 使用 `/projects/{pid}/screenplays/{id}`。PATCH 省略字段保持原值，更新 `episode_id` 可移动到当前项目的其他剧集，不能脱离剧集。资源包含 `id,episode_id,title,content,format,created_at,updated_at`。
 
-资产的 `category` 为 `person`（人物）、`location`（地点）、`object`（物品）、`creature`（生物）、`vehicle`（载具）或 `other`（其他），默认 `person`。旧项目自动迁移为人物，PATCH 省略类别时保留原值，其他类别值会被拒绝。资产列表 GET 支持 `category`、`enabled`（true/false）、`query`（名称或描述，不区分大小写）筛选；省略筛选返回所有资产，包括禁用项。资产库使用 `/assets` 接口和 `assets` 数据字段；素材库使用 `/media` 接口和 `media` 数据字段，关联参数统一为 `asset_id` 与 `media_id`。数据库版本 16 将旧 `roles` 表原地更名为 `assets`，保留资产 ID、图片和音频关联及素材路径；`role_media`、`role_audio` 关联表沿用原名称，其外键更新为引用 `assets`。旧 Agent 会话的结构化工具参数会一次性迁移，用户原文不改写。
+资产的 `category` 为 `person`（人物）、`location`（地点）、`object`（物品）、`creature`（生物）、`vehicle`（载具）或 `other`（其他），默认 `person`。旧项目自动迁移为人物，PATCH 省略类别时保留原值，其他类别值会被拒绝。资产列表 GET 支持 `category`、`enabled`（true/false）、`query`（名称或描述，不区分大小写）筛选；省略筛选返回所有资产，包括禁用项。资产库使用 `/assets` 接口和 `assets` 数据字段；素材库使用 `/media` 接口和 `media` 数据字段，关联参数统一为 `asset_id` 与 `media_id`。数据库版本 16 将旧 `roles` 表更名为 `assets`，并更新图片和音频关联的外键。版本 19 将图片关联表 `role_media` 更名为 `asset_media`，外键列 `role_id` 更名为 `asset_id`，并保留已有的关联和图片引用名称。旧 Agent 会话的结构化工具参数会一次性迁移，用户原文不改写。
 
 资产的 `enabled` 为布尔值，默认 `true`（包含旧项目资产）。设为 `false` 后，资产及其命名图片不再支持 `@` 引用；省略该字段的更新保留原状态。资产返回 `enabled` 和 `images`，剧集封面在 `cover_media`。资产、素材、场景和片段 ID 为项目内整数，项目 ID 为 UUID。
 
@@ -124,7 +124,8 @@ curl 'http://127.0.0.1:8080/api/v1/projects/PID/media/1/content?download=1' -o p
 | `media/usage` | `project_id, id` |
 | `media/restore`, `media/purge` | `project_id, id`，恢复/永久清理回收站素材 |
 | `media/video-frame` | `project_id, clip_id, media_id, frame`（first/last） |
-| `assets/media/add`, `assets/media/delete` | `project_id, asset_id, media_id`；新增可传 `name` 重命名图片素材 |
+| `assets/media/add`, `assets/media/delete` | `project_id, asset_id, media_id`。新增时可传 `name` 设置当前资产的图片引用名称。 |
+| `assets/media/rename` | `project_id, asset_id, media_id, name`。修改当前资产的图片引用名称。 |
 | `assets/audio/save` | `project_id, asset_id, media_id, name`；新增或修改该资产的音频参考名，不重命名源素材 |
 | `assets/audio/delete` | `project_id, asset_id, media_id`；仅解除音频关联 |
 | `scripts/load` | `project_id, episode_id?` |

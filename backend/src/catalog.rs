@@ -1,8 +1,13 @@
 use super::*;
 
 pub fn install(c: &Connection) -> Result<(), String> {
-    // Earlier migrations run before roles is renamed; repair installs may run after it.
+    // Earlier migrations run before the asset tables are renamed.
     let asset_table = if c.prepare("SELECT id FROM assets LIMIT 0").is_ok() { "assets" } else { "roles" };
+    let (image_links, asset_key) = if c.prepare("SELECT asset_id FROM asset_media LIMIT 0").is_ok() {
+        ("asset_media", "asset_id")
+    } else {
+        ("role_media", "role_id")
+    };
     let asset_sql = |sql: &str| sql.replace("REFERENCES roles(", &format!("REFERENCES {asset_table}("))
         .replace("FROM roles ", &format!("FROM {asset_table} ")).replace("JOIN roles ", &format!("JOIN {asset_table} "));
     c.execute_batch(&asset_sql("CREATE TABLE IF NOT EXISTS role_audio(role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,name TEXT NOT NULL,PRIMARY KEY(role_id,media_id));")).map_err(|e|e.to_string())?;
@@ -30,7 +35,9 @@ pub fn install(c: &Connection) -> Result<(), String> {
     UNION ALL SELECT DISTINCT CAST(j.value AS INTEGER),'scene',s.id,s.title,e.id,e.title,'场景参考音频' FROM scene_options o JOIN scenes s ON s.id=o.scene_id JOIN episodes e ON e.id=s.episode_id JOIN json_each(CASE WHEN json_valid(o.value) THEN o.value ELSE '{}' END,'$.reference_audio_media_ids') j
     UNION ALL SELECT sv.media_id,'scene',s.id,s.title,e.id,e.title,CASE WHEN s.video_media_id=sv.media_id THEN '当前视频' ELSE '候选视频' END FROM scene_videos sv JOIN scenes s ON s.id=sv.scene_id JOIN episodes e ON e.id=s.episode_id
     UNION ALL SELECT es.media_id,'edit',0,p.name,NULL,NULL,'剪辑素材' FROM edit_sources es JOIN edit_projects p ON p.id=es.edit_id
-    UNION ALL SELECT eo.media_id,'edit',0,p.name,NULL,NULL,'剪辑产出' FROM edit_outputs eo JOIN edit_projects p ON p.id=eo.edit_id");
+    UNION ALL SELECT eo.media_id,'edit',0,p.name,NULL,NULL,'剪辑产出' FROM edit_outputs eo JOIN edit_projects p ON p.id=eo.edit_id")
+        .replace("FROM role_media rm", &format!("FROM {image_links} rm"))
+        .replace("rm.role_id", &format!("rm.{asset_key}"));
     let (clip_table, clip_videos, clip_scripts, clip_options) = if clip_schema {
         view = view.replace("'scene'", "'clip'").replace("场景", "片段").replace("scene_", "clip_").replace("FROM scenes s", "FROM clips s").replace("JOIN scenes s", "JOIN clips s");
         view.push_str("
@@ -47,7 +54,7 @@ pub fn install(c: &Connection) -> Result<(), String> {
     c.execute_batch(&view).map_err(|e|e.to_string())?;
     for (table, sections) in [
         ("media", vec!["media", "roles", "episodes"]), ("roles",vec!["roles"]),
-        ("role_audio",vec!["roles"]), ("role_media",vec!["roles"]), ("episodes",vec!["episodes"]), (clip_table,vec!["episodes"]),
+        ("role_audio",vec!["roles"]), (image_links,vec!["roles"]), ("episodes",vec!["episodes"]), (clip_table,vec!["episodes"]),
         (clip_videos,vec!["episodes"]), (clip_scripts,vec!["episodes"]),
         (clip_options,vec!["episodes"]), ("prompts",vec!["prompts"]),
         ("settings",vec!["settings"]), ("background_jobs",vec!["jobs"]),
@@ -60,7 +67,7 @@ pub fn install(c: &Connection) -> Result<(), String> {
         }
     }
     // Foreign keys also need to reject references to soft-deleted assets.
-    for (table, columns) in [("roles",vec!["design_media_id"]),("role_audio",vec!["media_id"]),("role_media",vec!["media_id"]),("episodes",vec!["cover_media_id"]),(clip_table,vec!["first_media_id","last_media_id","reference_media_id","video_media_id"]),(clip_videos,vec!["media_id"])]
+    for (table, columns) in [("roles",vec!["design_media_id"]),("role_audio",vec!["media_id"]),(image_links,vec!["media_id"]),("episodes",vec!["cover_media_id"]),(clip_table,vec!["first_media_id","last_media_id","reference_media_id","video_media_id"]),(clip_videos,vec!["media_id"])]
         .into_iter().chain(clip_schema.then_some([("scenes",vec!["video_media_id"]),("scene_videos",vec!["media_id"])]).into_iter().flatten()) {
         let sql_table = if table == "roles" { asset_table } else { table };
         for event in ["INSERT","UPDATE"] {
@@ -202,7 +209,6 @@ mod tests {
         let c=Connection::open_in_memory().unwrap();migrate(&c).unwrap();
         c.execute_batch("INSERT INTO media(id,name,path,kind,created_at) VALUES(1,'hero','/hero.png','image','1'),(2,'clip','/clip.mp4','video','1');
         INSERT INTO assets(id,name,design_media_id,created_at) VALUES(1,'Hero',1,'1');
-        INSERT INTO role_media VALUES(1,1);
         INSERT INTO episodes(id,title,sort_order,created_at,cover_media_id) VALUES(1,'Episode',0,'1',1);
         INSERT INTO scenes(id,episode_id,title,created_at) VALUES(1,1,'Scene','1');
         INSERT INTO clips(id,episode_id,scene_id,title,sort_order,created_at,first_media_id,last_media_id,reference_media_id,video_media_id) VALUES(1,1,1,'Clip',0,'1',1,1,1,2);

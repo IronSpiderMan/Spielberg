@@ -19,8 +19,8 @@ const path = require('node:path');
       const project = {id: 'qa', name: '参考资料测试', path: '/fixture', updated_at: '刚刚'};
       const data = JSON.parse(localStorage.getItem('qa-asset-references') || 'null') || {
         project, media: [image, second, audio], assets: [
-          {id: 1, name: '未来家', category: 'location', design_media_id: 1, images: [image, second]},
-          ...['person', 'creature', 'object', 'vehicle', 'other'].map((category, i) => ({id: i + 2, category, name: category, images: [image]})),
+          {id: 1, name: '未来家', category: 'location', design_media_id: 1, images: [{...image}, {...second}]},
+          ...['person', 'creature', 'object', 'vehicle', 'other'].map((category, i) => ({id: i + 2, category, name: category, images: [{...image}]})),
           {id: 7, name: '旧版人物', images: []},
         ].map(asset => ({description: '参考资料', enabled: true, audios: [audio], ...asset})),
         episodes: [], prompts: [], settings: {},
@@ -34,12 +34,10 @@ const path = require('node:path');
         if (path === '/projects') return [project];
         if (path === '/project' || path === '/project/changes') return structuredClone(data);
         if (path === '/tasks') return {items: [], has_more: false};
-        if (path === '/media/rename') {
+        if (path === '/assets/media/rename') {
           if (window.__qaFailRename) throw Error('测试重命名失败');
-          data.media.find(m => m.id === payload.id).name = payload.name;
-          for (const asset of data.assets) {
-            for (const image of asset.images) if (image.id === payload.id) image.name = payload.name;
-          }
+          const asset = data.assets.find(a => a.id === payload.asset_id);
+          asset.images.find(m => m.id === payload.media_id).name = payload.name;
         }
         if (path === '/assets/media/delete') {
           if (window.__qaFailUnlink) throw Error('测试删除失败');
@@ -126,8 +124,8 @@ const path = require('node:path');
       return {description: asset.description, category: asset.category, enabled: asset.enabled, images: asset.images.length, audios: asset.audios.length};
     }), {description: '参考资料', category: 'location', enabled: true, images: 2, audios: 1});
     await gallery.getByRole('button', {name: '重命名 空间全景.png', exact: true}).click();
-    const renameModal = page.locator('.arco-modal:visible').filter({has: page.getByText('重命名素材', {exact: true})});
-    const nameInput = renameModal.getByRole('textbox', {name: '素材名称', exact: true});
+    const renameModal = page.locator('.arco-modal:visible').filter({has: page.getByText('重命名资产图片', {exact: true})});
+    const nameInput = renameModal.getByRole('textbox', {name: '资产图片名称', exact: true});
     assert.equal(await nameInput.inputValue(), '空间全景.png');
     await nameInput.fill('   ');
     assert(await renameModal.getByRole('button', {name: '保存名称', exact: true}).isDisabled());
@@ -148,7 +146,7 @@ const path = require('node:path');
       mediaName: window.__qaData.media[0].name,
       sharedName: window.__qaData.assets[1].images[0].name,
       main: window.__qaData.assets[0].design_media_id,
-    })), {mediaName: '客厅全景.png', sharedName: '客厅全景.png', main: 1});
+    })), {mediaName: '空间全景.png', sharedName: '空间全景.png', main: 1});
     await gallery.getByRole('button', {name: '预览 客厅全景.png', exact: true}).click();
     await page.locator('.image-preview-modal:visible').waitFor();
     await page.keyboard.press('Escape');
@@ -161,7 +159,7 @@ const path = require('node:path');
     await page.setViewportSize({width: 1975, height: 1000});
     await gallery.scrollIntoViewIfNeeded();
     await page.getByText('Error: 测试重命名失败', {exact: true}).waitFor({state: 'hidden'});
-    await page.getByText('素材名称已更新', {exact: true}).waitFor({state: 'hidden'});
+    await page.getByText('资产图片名称已更新', {exact: true}).waitFor({state: 'hidden'});
     await page.screenshot({path: path.join(screenshots, 'references-light.png'), fullPage: true});
     await page.getByRole('button', {name: '切换到暗夜模式', exact: true}).click();
     await page.screenshot({path: path.join(screenshots, 'references-dark.png'), fullPage: true});
@@ -193,7 +191,7 @@ const path = require('node:path');
     await page.getByRole('menuitem', {name: '资产库', exact: true}).click();
     await openDetail('未来家');
     assert.equal(await gallery.locator('figure').count(), 1);
-    assert.equal(await page.evaluate(() => window.__qaData.media[0].name), '客厅全景.png');
+    assert.equal(await page.evaluate(() => window.__qaData.media[0].name), '空间全景.png');
     await gallery.getByRole('button', {name: '设为主图 布局细节.png', exact: true}).click();
     await gallery.locator('.role-detail-main-badge').waitFor();
     assert.equal(await page.evaluate(() => window.__qaData.assets[0].design_media_id), 2);
@@ -202,7 +200,7 @@ const path = require('node:path');
     await page.locator('.role-detail-no-image').waitFor();
     assert.equal(await page.evaluate(() => window.__qaData.media.length), 3);
     assert.deepEqual(errors, []);
-    console.log('PASS: primary-image switching, failure retry, badge/order updates, persistence and setting after deletion; category-specific audio in cards/detail/editor; draft category switching; rename validation, cancellation, retry, shared names and persistence; image preview; unlink retry, main-image clearing, shared media preservation, last-image empty state; single-row actions across six viewport widths; light/dark/mobile layout');
+    console.log('PASS: primary-image switching, failure retry, badge/order updates, persistence and setting after deletion; category-specific audio in cards/detail/editor; draft category switching; rename validation, cancellation, retry, per-asset names and persistence; image preview; unlink retry, main-image clearing, shared media preservation, last-image empty state; single-row actions across six viewport widths; light/dark/mobile layout');
     console.log('Screenshots: ' + screenshots);
   } finally {await browser.close();}
 })().catch(error => {console.error(error); process.exitCode = 1;});

@@ -2089,7 +2089,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
   const [unlinkingImageId, setUnlinkingImageId] = useState<number | null>(null);
   const [settingPrimaryImageId, setSettingPrimaryImageId] = useState<number | null>(null);
   const imageActionBusy = unlinkingImageId !== null || settingPrimaryImageId !== null;
-  const [renamingMedia, setRenamingMedia] = useState<{id:number;name:string} | null>(null);
+  const [renamingMedia, setRenamingMedia] = useState<{assetId:number;id:number;name:string} | null>(null);
   const [renamingMediaBusy, setRenamingMediaBusy] = useState(false);
   const search = query.trim().toLowerCase();
   const visibleRoles = data.assets.filter(role =>
@@ -2130,10 +2130,10 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
     if (!renamingMedia?.name.trim() || renamingMediaBusy) return;
     setRenamingMediaBusy(true);
     try {
-      await post("/media/rename", {project_id: data.project.id, id: renamingMedia.id, name: renamingMedia.name.trim()});
+      await post("/assets/media/rename", {project_id: data.project.id, asset_id: renamingMedia.assetId, media_id: renamingMedia.id, name: renamingMedia.name.trim()});
       await reload();
       setRenamingMedia(null);
-      Message.success("素材名称已更新");
+      Message.success("资产图片名称已更新");
     } catch (e) { Message.error(String(e)); }
     finally { setRenamingMediaBusy(false); }
   };
@@ -2215,7 +2215,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
             <figcaption title={media.name}>{media.name}</figcaption>
             <div className="role-detail-image-actions">
               <RevealFileButton className="role-detail-image-reveal" size="mini" path={media.path} />
-              <Button className="role-detail-image-rename" type="text" size="mini" icon={<Pencil size={13}/>} disabled={imageActionBusy} aria-label={`重命名 ${media.name}`} onClick={() => setRenamingMedia({id:media.id,name:media.name})}>重命名</Button>
+              <Button className="role-detail-image-rename" type="text" size="mini" icon={<Pencil size={13}/>} disabled={imageActionBusy} aria-label={`重命名 ${media.name}`} onClick={() => setRenamingMedia({assetId:detail.id,id:media.id,name:media.name})}>重命名</Button>
               <ConfirmPopover title="移除这张资产图片？" content={media.id === detail.design_media_id ? "将立即解除图片关联并清除该资产的主图设置，素材库中的原文件会保留。" : "将立即解除图片关联，素材库中的原文件会保留。"} okText="移除图片" disabled={imageActionBusy} onOk={() => unlinkImage(detail, media)}>
                 <Button type="text" size="mini" status="danger" icon={<Trash2 size={13}/>} loading={unlinkingImageId === media.id} disabled={imageActionBusy} aria-label={`删除 ${media.name}`}>删除</Button>
               </ConfirmPopover>
@@ -2307,12 +2307,12 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
         <Pagination className="asset-pagination" current={currentAssetPage} pageSize={24} total={visibleRoles.length} onChange={changeAssetPage} showTotal />
       </div>}
       </>}
-      <Modal visible={!!renamingMedia} title="重命名素材" okText="保存名称" confirmLoading={renamingMediaBusy}
+      <Modal visible={!!renamingMedia} title="重命名资产图片" okText="保存名称" confirmLoading={renamingMediaBusy}
         okButtonProps={{disabled:!renamingMedia?.name.trim()}} cancelButtonProps={{disabled:renamingMediaBusy}}
         maskClosable={!renamingMediaBusy} closable={!renamingMediaBusy} escToExit={!renamingMediaBusy}
         unmountOnExit onCancel={() => {if (!renamingMediaBusy) setRenamingMedia(null);}} onOk={renameMedia}>
-        <Form layout="vertical"><Form.Item label="素材名称" required extra="名称会同步到素材库及其他引用此图片的资产。">
-          <Input autoFocus aria-label="素材名称" value={renamingMedia?.name || ""} disabled={renamingMediaBusy}
+        <Form layout="vertical"><Form.Item label="资产图片名称" required extra="此名称用于当前资产的图片参考和 @资产.图片名 引用。">
+          <Input autoFocus aria-label="资产图片名称" value={renamingMedia?.name || ""} disabled={renamingMediaBusy}
             onChange={name => setRenamingMedia(current => current ? {...current,name} : null)} onPressEnter={renameMedia}/>
         </Form.Item></Form>
       </Modal>
@@ -2429,11 +2429,11 @@ function RoleEditor({
     } finally { setRemovingImageId(null); }
   };
   const renameImage = async () => {
-    if (editorBusy) return;
+    if (!role || editorBusy) return;
     if (!renamingImage || !renamingImage.name.trim()) return Message.warning("请输入图片名称");
     setRenamingImageBusy(true);
     try {
-      await post("/media/rename", { project_id:data.project.id, id:renamingImage.id, name:renamingImage.name.trim() });
+      await post("/assets/media/rename", { project_id:data.project.id, asset_id:role.id, media_id:renamingImage.id, name:renamingImage.name.trim() });
       await reload();
       setRenamingImage(null);
       Message.success("资产图片名称已更新，可用 @资产.图片名 引用");

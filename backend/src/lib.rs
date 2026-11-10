@@ -42,12 +42,14 @@ fn registry_path(s:&AppState)->PathBuf{s.root.join("projects.json")}
 fn registry(s:&AppState)->Result<Vec<Value>,String>{let p=registry_path(s);if !p.exists(){return Ok(vec![])}serde_json::from_str(&fs::read_to_string(p).map_err(|e|e.to_string())?).map_err(|e|e.to_string())}
 fn save_registry(s:&AppState,x:&[Value])->Result<(),String>{let temp=s.root.join("projects.json.tmp");fs::write(&temp,serde_json::to_string_pretty(x).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;fs::rename(temp,registry_path(s)).map_err(|e|e.to_string())}
 fn project(s:&AppState,id:&str)->Result<Value,String>{registry(s)?.into_iter().find(|x|x["id"]==id).ok_or("项目不存在".into())}
-fn migrate(c:&Connection)->Result<(),String>{ migrate_to(c,17) }
+fn migrate(c:&Connection)->Result<(),String>{ migrate_to(c,19) }
 fn migrate_to(c:&Connection,target:i64)->Result<(),String>{
  c.execute_batch("PRAGMA foreign_keys=ON;").map_err(|e|e.to_string())?;
  let version:i64=c.query_row("PRAGMA user_version",[],|r|r.get(0)).map_err(|e|e.to_string())?;
  if version>=target{return Ok(())}
- if version==16{return scenes::migrate(c)}
+ if version==18{return migrate_asset_media_table(c)}
+ if version==17{migrate_role_media_names(c)?;return migrate_to(c,target)}
+ if version==16{scenes::migrate(c)?;return migrate_to(c,target)}
  if version==15{
    c.execute_batch("BEGIN IMMEDIATE").map_err(|e|e.to_string())?;
    let result=(||{
@@ -164,7 +166,7 @@ fn snapshot_database(connection:&mut Connection,p:Value,known:&Value)->Result<Va
  }
  if known["media"]!=versions["media"] || known.is_null() { let media_items={let mut q=c.prepare("SELECT id,name,path,kind,created_at FROM media WHERE deleted_at IS NULL ORDER BY id DESC").map_err(|e|e.to_string())?;let rows=q.query_map([],|r|Ok(json!({"id":r.get::<_,i64>(0)?,"name":r.get::<_,String>(1)?,"path":r.get::<_,String>(2)?,"kind":r.get::<_,String>(3)?,"created_at":r.get::<_,String>(4)?}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;rows};
  result["media"]=json!(media_items); }
- if known["assets"]!=versions["assets"] || known.is_null() { let mut roles=Vec::new();let mut qr=c.prepare("SELECT id,name,description,design_media_id,enabled,category FROM assets ORDER BY id DESC").map_err(|e|e.to_string())?;for x in qr.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<i64>>(3)?,r.get::<_,bool>(4)?,r.get::<_,String>(5)?))).map_err(|e|e.to_string())?{let(id,name,description,design,enabled,category)=x.map_err(|e|e.to_string())?;let mut qi=c.prepare("SELECT m.id,m.name,m.path,m.kind,m.created_at FROM media m WHERE m.deleted_at IS NULL AND (m.id=? OR EXISTS(SELECT 1 FROM role_media rm WHERE rm.role_id=? AND rm.media_id=m.id)) ORDER BY CASE WHEN m.id=? THEN 0 ELSE 1 END,m.id DESC").map_err(|e|e.to_string())?;let images=qi.query_map(params![design,id,design],|r|Ok(json!({"id":r.get::<_,i64>(0)?,"name":r.get::<_,String>(1)?,"path":r.get::<_,String>(2)?,"kind":r.get::<_,String>(3)?,"created_at":r.get::<_,String>(4)?}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;roles.push(json!({"id":id,"name":name,"description":description,"enabled":enabled,"category":category,"design_media_id":design,"images":images,"audios":role_audios(&c,id)?}));}
+ if known["assets"]!=versions["assets"] || known.is_null() { let mut roles=Vec::new();let mut qr=c.prepare("SELECT id,name,description,design_media_id,enabled,category FROM assets ORDER BY id DESC").map_err(|e|e.to_string())?;for x in qr.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<i64>>(3)?,r.get::<_,bool>(4)?,r.get::<_,String>(5)?))).map_err(|e|e.to_string())?{let(id,name,description,design,enabled,category)=x.map_err(|e|e.to_string())?;let images=asset_images(&c,id,design)?;roles.push(json!({"id":id,"name":name,"description":description,"enabled":enabled,"category":category,"design_media_id":design,"images":images,"audios":role_audios(&c,id)?}));}
  result["assets"]=json!(roles); }
  if known["episodes"]!=versions["episodes"] || known.is_null() {
    result["episodes"]=json!(rest::list_episodes(&c)?);
@@ -220,8 +222,69 @@ fn project_id(v:&Value)->Result<String,String>{strv(v,"project_id")}
 fn insert_role(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let c=db(s,&pid)?;let name=strv(v,"name")?;let d=v.get("description").and_then(Value::as_str).unwrap_or("");let enabled=v.get("enabled").and_then(Value::as_bool).unwrap_or(true);let category=v.get("category").and_then(Value::as_str).unwrap_or("person");c.execute("INSERT INTO assets(name,description,enabled,category,created_at) VALUES(?,?,?,?,?)",params![name,d,enabled,category,now()]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"id":c.last_insert_rowid(),"name":name,"description":d,"enabled":enabled,"category":category,"design_media_id":null,"images":[],"audios":[]}))}
 fn update_role(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;db(s,&pid)?.execute("UPDATE assets SET name=?,description=?,design_media_id=?,enabled=COALESCE(?,enabled),category=COALESCE(?,category) WHERE id=?",params![strv(v,"name")?,v.get("description").and_then(Value::as_str).unwrap_or(""),opti(v,"design_media_id"),v.get("enabled").and_then(Value::as_bool),v.get("category").and_then(Value::as_str),intv(v,"id")?]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
 fn delete_role(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;db(s,&pid)?.execute("DELETE FROM assets WHERE id=?",[intv(v,"id")?]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
-fn link_role_media(c: &Connection, role_id: i64, media_id: i64) -> Result<(), String> {
-    let exists = c.query_row("SELECT EXISTS(SELECT 1 FROM assets WHERE id=?)", [role_id], |r| r.get::<_, bool>(0)).map_err(|e| e.to_string())?;
+fn migrate_role_media_names(c: &Connection) -> Result<(), String> {
+    c.execute_batch("BEGIN IMMEDIATE").map_err(|e| e.to_string())?;
+    let result = (|| -> rusqlite::Result<()> {
+        let version: i64 = c.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        if version < 18 {
+            c.execute_batch("ALTER TABLE role_media ADD COLUMN name TEXT NOT NULL DEFAULT '';
+                UPDATE role_media SET name=(SELECT m.name FROM media m WHERE m.id=role_media.media_id)
+                WHERE media_id IN (SELECT id FROM media WHERE deleted_at IS NULL);
+                INSERT INTO role_media(role_id,media_id,name)
+                SELECT a.id,m.id,m.name FROM assets a JOIN media m ON m.id=a.design_media_id
+                WHERE m.deleted_at IS NULL ON CONFLICT(role_id,media_id) DO NOTHING;")?;
+            for (event, suffix) in [("INSERT", "insert"), ("UPDATE OF design_media_id", "update")] {
+                c.execute_batch(&format!("CREATE TRIGGER link_asset_design_media_{suffix} AFTER {event} ON assets
+                    WHEN NEW.design_media_id IS NOT NULL
+                    BEGIN
+                        INSERT INTO role_media(role_id,media_id,name)
+                        SELECT NEW.id,id,name FROM media WHERE id=NEW.design_media_id
+                        ON CONFLICT(role_id,media_id) DO NOTHING;
+                    END;"))?;
+            }
+            c.execute_batch("PRAGMA user_version=18;")?;
+        }
+        c.execute_batch("COMMIT")
+    })();
+    if result.is_err() { let _ = c.execute_batch("ROLLBACK"); }
+    result.map_err(|e| e.to_string())
+}
+
+fn migrate_asset_media_table(c: &Connection) -> Result<(), String> {
+    c.execute_batch("BEGIN IMMEDIATE").map_err(|e| e.to_string())?;
+    let result = (|| {
+        let version: i64 = c.query_row("PRAGMA user_version", [], |row| row.get(0)).map_err(|e| e.to_string())?;
+        if version < 19 {
+            c.execute_batch("ALTER TABLE role_media RENAME TO asset_media;
+                ALTER TABLE asset_media RENAME COLUMN role_id TO asset_id;
+                DROP TRIGGER IF EXISTS revision_role_media_INSERT;
+                DROP TRIGGER IF EXISTS revision_role_media_UPDATE;
+                DROP TRIGGER IF EXISTS revision_role_media_DELETE;
+                DROP TRIGGER IF EXISTS active_role_media_media_id_INSERT;
+                DROP TRIGGER IF EXISTS active_role_media_media_id_UPDATE;").map_err(|e| e.to_string())?;
+            catalog::install(c)?;
+            c.execute_batch("PRAGMA user_version=19;").map_err(|e| e.to_string())?;
+        }
+        c.execute_batch("COMMIT").map_err(|e| e.to_string())
+    })();
+    if result.is_err() { let _ = c.execute_batch("ROLLBACK"); }
+    result
+}
+
+fn asset_images(c: &Connection, asset_id: i64, design: Option<i64>) -> Result<Vec<Value>, String> {
+    let mut query = c.prepare("SELECT m.id,COALESCE(NULLIF(am.name,''),m.name),m.path,m.kind,m.created_at
+        FROM media m LEFT JOIN asset_media am ON am.media_id=m.id AND am.asset_id=?1
+        WHERE m.deleted_at IS NULL AND (am.media_id IS NOT NULL OR m.id=?2)
+        ORDER BY CASE WHEN m.id=?2 THEN 0 ELSE 1 END,m.id DESC").map_err(|e| e.to_string())?;
+    let images = query.query_map(params![asset_id, design], |row| Ok(json!({
+        "id": row.get::<_,i64>(0)?, "name": row.get::<_,String>(1)?, "path": row.get::<_,String>(2)?,
+        "kind": row.get::<_,String>(3)?, "created_at": row.get::<_,String>(4)?
+    }))).map_err(|e| e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
+    Ok(images)
+}
+
+fn link_asset_media(c: &Connection, asset_id: i64, media_id: i64, name: Option<&str>) -> Result<(), String> {
+    let exists = c.query_row("SELECT EXISTS(SELECT 1 FROM assets WHERE id=?)", [asset_id], |r| r.get::<_, bool>(0)).map_err(|e| e.to_string())?;
     if !exists { return Err("资产不存在".into()); }
     let kind = c.query_row("SELECT kind FROM media WHERE id=? AND deleted_at IS NULL", [media_id], |r| r.get::<_, String>(0)).optional().map_err(|e| e.to_string())?;
     match kind.as_deref() {
@@ -229,10 +292,12 @@ fn link_role_media(c: &Connection, role_id: i64, media_id: i64) -> Result<(), St
         Some(_) => return Err("资产参考图必须是图片".into()),
         None => return Err("素材不存在".into()),
     }
-    c.execute("INSERT OR IGNORE INTO role_media(role_id,media_id) VALUES(?,?)", params![role_id, media_id]).map_err(|e| e.to_string())?;
+    c.execute("INSERT INTO asset_media(asset_id,media_id,name) SELECT ?1,id,COALESCE(?3,name) FROM media WHERE id=?2
+        ON CONFLICT(asset_id,media_id) DO UPDATE SET name=excluded.name WHERE ?3 IS NOT NULL",
+        params![asset_id, media_id, name]).map_err(|e| e.to_string())?;
     Ok(())
 }
-fn add_role_media(s: &AppState, v: &Value) -> Result<Value, String> {
+fn add_asset_media(s: &AppState, v: &Value) -> Result<Value, String> {
     let pid = project_id(v)?;
     let name = v.get("name").map(|_| strv(v, "name")).transpose()?;
     if name.as_ref().is_some_and(|name| name.trim().is_empty()) {
@@ -240,12 +305,20 @@ fn add_role_media(s: &AppState, v: &Value) -> Result<Value, String> {
     }
     let mut c = db(s, &pid)?;
     let tx = c.transaction().map_err(|e| e.to_string())?;
-    let media_id = intv(v, "media_id")?;
-    link_role_media(&tx, intv(v, "asset_id")?, media_id)?;
-    if let Some(name) = name {
-        tx.execute("UPDATE media SET name=? WHERE id=?", params![name.trim(), media_id]).map_err(|e| e.to_string())?;
-    }
+    link_asset_media(&tx, intv(v, "asset_id")?, intv(v, "media_id")?, name.as_deref().map(str::trim))?;
     tx.commit().map_err(|e| e.to_string())?;
+    touch(s, &pid);
+    Ok(json!({"ok": true}))
+}
+
+fn rename_asset_media(s: &AppState, v: &Value) -> Result<Value, String> {
+    let pid = project_id(v)?;
+    let name = strv(v, "name")?;
+    if name.trim().is_empty() { return Err("请输入资产图片名称".into()); }
+    let changed = db(s, &pid)?.execute("UPDATE asset_media SET name=? WHERE asset_id=? AND media_id=?
+        AND EXISTS(SELECT 1 FROM media WHERE id=asset_media.media_id AND deleted_at IS NULL)",
+        params![name.trim(), intv(v, "asset_id")?, intv(v, "media_id")?]).map_err(|e| e.to_string())?;
+    if changed == 0 { return Err("资产图片不存在".into()); }
     touch(s, &pid);
     Ok(json!({"ok": true}))
 }
@@ -263,7 +336,7 @@ fn manage_role_audio(s:&AppState,v:&Value,delete:bool)->Result<Value,String>{
  c.execute("INSERT INTO role_audio(role_id,media_id,name) VALUES(?,?,?) ON CONFLICT(role_id,media_id) DO UPDATE SET name=excluded.name",params![rid,mid,name.trim()]).map_err(|e|e.to_string())?;}
  touch(s,&pid);Ok(json!({"ok":true}))
 }
-fn delete_role_media(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let role_id=intv(v,"asset_id")?;let media_id=intv(v,"media_id")?;let mut c=db(s,&pid)?;let tx=c.transaction().map_err(|e|e.to_string())?;tx.execute("DELETE FROM role_media WHERE role_id=? AND media_id=?",params![role_id,media_id]).map_err(|e|e.to_string())?;tx.execute("UPDATE assets SET design_media_id=NULL WHERE id=? AND design_media_id=?",params![role_id,media_id]).map_err(|e|e.to_string())?;tx.commit().map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
+fn delete_asset_media(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let asset_id=intv(v,"asset_id")?;let media_id=intv(v,"media_id")?;let mut c=db(s,&pid)?;let tx=c.transaction().map_err(|e|e.to_string())?;tx.execute("DELETE FROM asset_media WHERE asset_id=? AND media_id=?",params![asset_id,media_id]).map_err(|e|e.to_string())?;tx.execute("UPDATE assets SET design_media_id=NULL WHERE id=? AND design_media_id=?",params![asset_id,media_id]).map_err(|e|e.to_string())?;tx.commit().map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
 fn insert_episode(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let c=db(s,&pid)?;let n:i64=c.query_row("SELECT COUNT(*) FROM episodes",[],|r|r.get(0)).map_err(|e|e.to_string())?;let title=strv(v,"title")?;let d=v.get("description").and_then(Value::as_str).unwrap_or("");c.execute("INSERT INTO episodes(title,description,sort_order,created_at,storyboard) VALUES(?,?,?,?,?)",params![title,d,n,now(),v.get("storyboard").unwrap_or(&Value::Null).to_string()]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"id":c.last_insert_rowid(),"title":title,"description":d}))}
 fn update_episode(s:&AppState,v:&Value)->Result<Value,String>{
  let pid=project_id(v)?;let mut c=db(s,&pid)?;let tx=c.transaction().map_err(|e|e.to_string())?;
@@ -426,7 +499,10 @@ fn import_pose_reference(s:&AppState,v:&Value)->Result<Value,String>{
  let id=c.last_insert_rowid();touch(s,&pid);
  Ok(json!({"id":id,"name":name,"path":out,"kind":"image","created_at":created}))
 }
-fn import_media(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let source=PathBuf::from(strv(v,"source_path")?);if !source.is_file(){return Err("导入文件不存在".into())}let ext=source.extension().and_then(|x|x.to_str()).unwrap_or("png");let ext=ext.to_ascii_lowercase();let kind=match ext.as_str(){"mp4"|"mov"|"webm"|"mkv"=>"video","png"|"jpg"|"jpeg"|"webp"|"gif"|"svg"=>"image","mp3"|"wav"|"m4a"|"aac"|"ogg"|"flac"=>"audio",_=>return Err("不支持的素材格式".into())};if ext=="svg"{svg::validate(&fs::read(&source).map_err(|e|e.to_string())?)?;}if kind!="image"&&opti(v,"asset_id").is_some(){return Err("资产参考图必须是图片".into())}let root=PathBuf::from(project(s,&pid)?["path"].as_str().ok_or("无效项目路径")?);let dir=root.join("assets").join(match kind{"video"=>"videos","audio"=>"audios",_=>"images"});fs::create_dir_all(&dir).map_err(|e|e.to_string())?;let out=dir.join(format!("{}.{}",Uuid::new_v4(),ext));fs::copy(&source,&out).map_err(|e|e.to_string())?;let c=db(s,&pid)?;let name=source.file_name().unwrap_or_default().to_string_lossy().to_string();c.execute("INSERT INTO media(name,path,kind,created_at) VALUES(?,?,?,?)",params![name,out.to_string_lossy(),kind,now()]).map_err(|e|e.to_string())?;let id=c.last_insert_rowid();if let Some(role)=opti(v,"asset_id"){c.execute("INSERT OR IGNORE INTO role_media(role_id,media_id) VALUES(?,?)",params![role,id]).map_err(|e|e.to_string())?;}touch(s,&pid);Ok(json!({"id":id,"name":name,"path":out,"kind":kind,"created_at":now()}))}
+fn import_media(s:&AppState,v:&Value)->Result<Value,String>{
+    import_media_with_name(s,v,None)
+}
+fn import_media_with_name(s:&AppState,v:&Value,display_name:Option<&str>)->Result<Value,String>{let pid=project_id(v)?;let source=PathBuf::from(strv(v,"source_path")?);if !source.is_file(){return Err("导入文件不存在".into())}let ext=source.extension().and_then(|x|x.to_str()).unwrap_or("png");let ext=ext.to_ascii_lowercase();let kind=match ext.as_str(){"mp4"|"mov"|"webm"|"mkv"=>"video","png"|"jpg"|"jpeg"|"webp"|"gif"|"svg"=>"image","mp3"|"wav"|"m4a"|"aac"|"ogg"|"flac"=>"audio",_=>return Err("不支持的素材格式".into())};if ext=="svg"{svg::validate(&fs::read(&source).map_err(|e|e.to_string())?)?;}if kind!="image"&&opti(v,"asset_id").is_some(){return Err("资产参考图必须是图片".into())}let root=PathBuf::from(project(s,&pid)?["path"].as_str().ok_or("无效项目路径")?);let dir=root.join("assets").join(match kind{"video"=>"videos","audio"=>"audios",_=>"images"});fs::create_dir_all(&dir).map_err(|e|e.to_string())?;let out=dir.join(format!("{}.{}",Uuid::new_v4(),ext));fs::copy(&source,&out).map_err(|e|e.to_string())?;let c=db(s,&pid)?;let name=display_name.map(str::to_owned).unwrap_or_else(||source.file_name().unwrap_or_default().to_string_lossy().into_owned());c.execute("INSERT INTO media(name,path,kind,created_at) VALUES(?,?,?,?)",params![name,out.to_string_lossy(),kind,now()]).map_err(|e|e.to_string())?;let id=c.last_insert_rowid();if let Some(role)=opti(v,"asset_id"){link_asset_media(&c,role,id,None)?;}touch(s,&pid);Ok(json!({"id":id,"name":name,"path":out,"kind":kind,"created_at":now()}))}
 fn export_media(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let media_id=opti(v,"media_id").ok_or("缺少媒体 ID")?;let destination=PathBuf::from(strv(v,"destination_path")?);let c=db(s,&pid)?;let source:String=c.query_row("SELECT path FROM media WHERE id=? AND purged_at IS NULL",params![media_id],|r|r.get(0)).map_err(|_|"媒体不存在".to_string())?;if !Path::new(&source).is_file(){return Err("媒体文件不存在".into())}fs::copy(source,&destination).map_err(|e|format!("保存媒体失败：{e}"))?;Ok(json!({"path":destination}))}
 #[allow(dead_code)]
 fn legacy_generate_image(s:&AppState,v:&Value)->Result<Value,String>{
@@ -983,7 +1059,7 @@ fn dispatch(state:&AppState,method:String,path:String,payload:Option<Value>)->Re
 ("POST","/media/purge")=>{let pid=project_id(&v)?;catalog::purge(&db(state,&pid)?,Path::new(&strv(&project(state,&pid)?,"path")?),intv(&v,"id")?)?;Ok(json!({"ok":true}))},
 ("POST","/storage/scan")=>{let pid=project_id(&v)?;catalog::disk_scan(&db(state,&pid)?,Path::new(&strv(&project(state,&pid)?,"path")?))},
 ("POST","/storage/cleanup")=>{let pid=project_id(&v)?;catalog::cleanup(&db(state,&pid)?,Path::new(&strv(&project(state,&pid)?,"path")?),&v)},
-("GET","/tasks")|("POST","/tasks")=>list_jobs(state,&v),("POST","/scripts/load")=>script_command(state,&v,"load"),("POST","/scripts/save")=>script_command(state,&v,"save"),("POST","/scripts/publish")=>script_command(state,&v,"publish"),("POST","/media/rename")=>manage_media(state,&v,false),("POST","/media/delete")=>manage_media(state,&v,true),("POST","/clips/delete")=>{db(state,&project_id(&v)?)?.execute("DELETE FROM clips WHERE id=?",[intv(&v,"id")?]).map_err(|e|e.to_string())?;Ok(json!({"ok":true}))},("POST","/clips/delete-video")=>delete_clip_video(state,&v),("GET","/projects")=>Ok(Value::Array(registry(&state)?)),("POST","/project")=>snapshot(&state,v.get("id").and_then(Value::as_str).ok_or("缺少项目 ID")?),("POST","/projects")=>create_project(&state,&v),("POST","/projects/open")=>open_project(&state,&v),("POST","/media/import")=>import_media(&state,&v),("POST","/media/pose-reference")=>import_pose_reference(&state,&v),("POST","/media/export")=>export_media(&state,&v),("POST","/generations/image")=>generate_image(&state,&v),("POST","/generations/video")=>generate_video(&state,&v),("POST","/assets")=>insert_role(&state,&v),("POST","/assets/update")=>update_role(&state,&v),("POST","/assets/delete")=>delete_role(&state,&v),("POST","/assets/audio/save")=>manage_role_audio(state,&v,false),("POST","/assets/audio/delete")=>manage_role_audio(state,&v,true),("POST","/assets/media/add")=>add_role_media(&state,&v),("POST","/assets/media/delete")=>delete_role_media(&state,&v),("POST","/episodes")=>insert_episode(&state,&v),("POST","/episodes/update")=>update_episode(&state,&v),("POST","/episodes/reorder")=>reorder_episodes(&state,&v),("POST","/episodes/delete")=>delete_episode(&state,&v),("POST","/clips")=>insert_clip(&state,&v),("POST","/clips/duplicate")=>duplicate_clip(&state,&v),("POST","/clips/update")=>update_clip(&state,&v),("POST","/scenes")=>scenes::create(state,&v),("POST","/scenes/duplicate")=>scenes::duplicate(state,&v),("POST","/scenes/update")=>scenes::update(state,&v),("POST","/scenes/delete")=>scenes::delete(state,&v),("POST","/scenes/ungroup")=>scenes::ungroup(state,&v),("POST","/scenes/merge")=>scenes::merge(state,&v),("POST","/scenes/reorder")=>scenes::reorder(state,&v),("POST","/scenes/select-video")=>scenes::select_video(state,&v),("POST","/scenes/delete-video")=>scenes::delete_video(state,&v),("POST","/clips/reorder")=>reorder_clips(&state,&v),("POST","/clips/select-video")=>select_clip_video(&state,&v),("POST","/episodes/merge")=>merge_episode(&state,&v),("POST","/prompts")=>insert_prompt(&state,&v),("POST","/prompts/update")=>update_prompt(&state,&v),("POST","/settings")=>save_settings(&state,&v),_=>Err(format!("未实现的本地命令：{method} {path}"))} }
+("GET","/tasks")|("POST","/tasks")=>list_jobs(state,&v),("POST","/scripts/load")=>script_command(state,&v,"load"),("POST","/scripts/save")=>script_command(state,&v,"save"),("POST","/scripts/publish")=>script_command(state,&v,"publish"),("POST","/media/rename")=>manage_media(state,&v,false),("POST","/media/delete")=>manage_media(state,&v,true),("POST","/clips/delete")=>{db(state,&project_id(&v)?)?.execute("DELETE FROM clips WHERE id=?",[intv(&v,"id")?]).map_err(|e|e.to_string())?;Ok(json!({"ok":true}))},("POST","/clips/delete-video")=>delete_clip_video(state,&v),("GET","/projects")=>Ok(Value::Array(registry(&state)?)),("POST","/project")=>snapshot(&state,v.get("id").and_then(Value::as_str).ok_or("缺少项目 ID")?),("POST","/projects")=>create_project(&state,&v),("POST","/projects/open")=>open_project(&state,&v),("POST","/media/import")=>import_media(&state,&v),("POST","/media/pose-reference")=>import_pose_reference(&state,&v),("POST","/media/export")=>export_media(&state,&v),("POST","/generations/image")=>generate_image(&state,&v),("POST","/generations/video")=>generate_video(&state,&v),("POST","/assets")=>insert_role(&state,&v),("POST","/assets/update")=>update_role(&state,&v),("POST","/assets/delete")=>delete_role(&state,&v),("POST","/assets/audio/save")=>manage_role_audio(state,&v,false),("POST","/assets/audio/delete")=>manage_role_audio(state,&v,true),("POST","/assets/media/add")=>add_asset_media(&state,&v),("POST","/assets/media/rename")=>rename_asset_media(state,&v),("POST","/assets/media/delete")=>delete_asset_media(&state,&v),("POST","/episodes")=>insert_episode(&state,&v),("POST","/episodes/update")=>update_episode(&state,&v),("POST","/episodes/reorder")=>reorder_episodes(&state,&v),("POST","/episodes/delete")=>delete_episode(&state,&v),("POST","/clips")=>insert_clip(&state,&v),("POST","/clips/duplicate")=>duplicate_clip(&state,&v),("POST","/clips/update")=>update_clip(&state,&v),("POST","/scenes")=>scenes::create(state,&v),("POST","/scenes/duplicate")=>scenes::duplicate(state,&v),("POST","/scenes/update")=>scenes::update(state,&v),("POST","/scenes/delete")=>scenes::delete(state,&v),("POST","/scenes/ungroup")=>scenes::ungroup(state,&v),("POST","/scenes/merge")=>scenes::merge(state,&v),("POST","/scenes/reorder")=>scenes::reorder(state,&v),("POST","/scenes/select-video")=>scenes::select_video(state,&v),("POST","/scenes/delete-video")=>scenes::delete_video(state,&v),("POST","/clips/reorder")=>reorder_clips(&state,&v),("POST","/clips/select-video")=>select_clip_video(&state,&v),("POST","/episodes/merge")=>merge_episode(&state,&v),("POST","/prompts")=>insert_prompt(&state,&v),("POST","/prompts/update")=>update_prompt(&state,&v),("POST","/settings")=>save_settings(&state,&v),_=>Err(format!("未实现的本地命令：{method} {path}"))} }
 
 #[cfg(test)]
 mod task_project_tests {
@@ -1269,31 +1345,76 @@ mod script_edit_tests {
 mod role_image_name_tests {
  use super::*;
  #[test]
- fn named_role_assignment_preserves_path_and_rejects_blank_or_invalid_targets() {
+ fn role_image_names_are_local_to_each_asset() {
   let root=std::env::temp_dir().join(format!("spielberg-role-name-test-{}",Uuid::new_v4()));
   storage::initialize_root(&root).unwrap();
   let state=AppState{root:root.clone(),guard:std::sync::Arc::new(Mutex::new(()))};
   let project=create_project(&state,&json!({"name":"Naming"})).unwrap();
   let pid=project["id"].as_str().unwrap();
   let role=insert_role(&state,&json!({"project_id":pid,"name":"Hero"})).unwrap();
+  let other=insert_role(&state,&json!({"project_id":pid,"name":"Other"})).unwrap();
   let c=db(&state,pid).unwrap();
   c.execute("INSERT INTO media(id,name,path,kind,created_at) VALUES(1,'original.png','/original.png','image','1')",[]).unwrap();
   let mut request=json!({"project_id":pid,"asset_id":role["id"],"media_id":1,"name":"   "});
-  assert!(add_role_media(&state,&request).is_err());
-  assert_eq!(c.query_row("SELECT COUNT(*) FROM role_media",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+  assert!(add_asset_media(&state,&request).is_err());
+  assert_eq!(c.query_row("SELECT COUNT(*) FROM asset_media",[],|r|r.get::<_,i64>(0)).unwrap(),0);
   request["asset_id"]=json!(999);request["name"]=json!("Front");
-  assert!(add_role_media(&state,&request).is_err());
+  assert!(add_asset_media(&state,&request).is_err());
   assert_eq!(media(&c,Some(1)).unwrap()["name"],"original.png");
   request["asset_id"]=role["id"].clone();request["name"]=json!("  正面  ");
   let before=catalog::revisions(&c).unwrap();
-  add_role_media(&state,&request).unwrap();
+  add_asset_media(&state,&request).unwrap();
   let result=media(&c,Some(1)).unwrap();
-  assert_eq!(result["name"],"正面");assert_eq!(result["path"],"/original.png");
-  assert_eq!(c.query_row("SELECT COUNT(*) FROM role_media",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+  assert_eq!(result["name"],"original.png");assert_eq!(result["path"],"/original.png");
+  assert_eq!(c.query_row("SELECT COUNT(*) FROM asset_media",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+  assert_eq!(asset_images(&c,role["id"].as_i64().unwrap(),None).unwrap()[0]["name"],"正面");
+  assert!(rest::action(&state,"/assets/media/rename",json!({"project_id":pid,"asset_id":other["id"],"media_id":1,"name":"Unlinked"})).is_err());
+  add_asset_media(&state,&json!({"project_id":pid,"asset_id":other["id"],"media_id":1})).unwrap();
+
+  request["name"]=json!("  侧面  ");
+  rest::action(&state,"/assets/media/rename",request).unwrap();
+  let changed=snapshot_changes(&state,pid,&before).unwrap();
+  assert_eq!(changed["assets"][0]["images"][0]["name"],"original.png");
+  assert_eq!(changed["assets"][1]["images"][0]["name"],"侧面");
+  assert!(changed.get("media").is_none());
+  let from_rest=rest::crud(&state,"GET",&format!("projects/{pid}/assets/{}",role["id"]),json!({})).unwrap();
+  assert_eq!(from_rest["images"],changed["assets"][1]["images"]);
   let after=catalog::revisions(&c).unwrap();
   assert!(after["assets"].as_i64().unwrap()>before["assets"].as_i64().unwrap());
-  assert!(after["media"].as_i64().unwrap()>before["media"].as_i64().unwrap());
+  assert_eq!(after["media"],before["media"]);
   drop(c);fs::remove_dir_all(root).unwrap();
+ }
+
+ #[test]
+ fn migration_backfills_and_renames_image_links_without_losing_reference_names() {
+  let c=Connection::open_in_memory().unwrap();
+  migrate_to(&c,17).unwrap();
+  c.execute_batch("INSERT INTO media(id,name,path,kind,created_at) VALUES(1,'旧名称','/original.png','image','1');
+      INSERT INTO assets(id,name,design_media_id,created_at) VALUES(1,'主图资产',1,'1'),(2,'参考图资产',NULL,'1');
+      INSERT INTO role_media(role_id,media_id) VALUES(2,1);").unwrap();
+  migrate_to(&c,18).unwrap();
+  c.execute("UPDATE role_media SET name='自定义参考图' WHERE role_id=2 AND media_id=1",[]).unwrap();
+  migrate(&c).unwrap();
+  migrate(&c).unwrap();
+  assert!(c.prepare("SELECT 1 FROM role_media").is_err());
+  assert_eq!(asset_images(&c,2,None).unwrap()[0]["name"],"自定义参考图");
+  assert_eq!(catalog::usages(&c,1).unwrap().len(),2);
+  c.execute_batch("DROP VIEW asset_usage;").unwrap();
+  catalog::install(&c).unwrap();
+  assert_eq!(catalog::usages(&c,1).unwrap().len(),2);
+  c.execute_batch("UPDATE media SET name='素材库新名称' WHERE id=1;
+      UPDATE assets SET design_media_id=1 WHERE id=2;
+      INSERT INTO assets(id,name,design_media_id,created_at) VALUES(3,'新主图资产',1,'1');").unwrap();
+  assert_eq!(asset_images(&c,1,Some(1)).unwrap()[0]["name"],"旧名称");
+  assert_eq!(asset_images(&c,2,Some(1)).unwrap()[0]["name"],"自定义参考图");
+  assert_eq!(asset_images(&c,3,Some(1)).unwrap()[0]["name"],"素材库新名称");
+  assert_eq!(c.query_row("SELECT COUNT(*) FROM asset_media",[],|r|r.get::<_,i64>(0)).unwrap(),3);
+  let before=catalog::revisions(&c).unwrap()["assets"].as_i64().unwrap();
+  c.execute("UPDATE asset_media SET name='新参考名' WHERE asset_id=2 AND media_id=1",[]).unwrap();
+  assert_eq!(catalog::revisions(&c).unwrap()["assets"],before+1);
+  c.execute("DELETE FROM assets WHERE id=2",[]).unwrap();
+  assert_eq!(c.query_row("SELECT COUNT(*) FROM asset_media",[],|r|r.get::<_,i64>(0)).unwrap(),2);
+  assert!(!c.prepare("PRAGMA foreign_key_check").unwrap().exists([]).unwrap());
  }
 }
 

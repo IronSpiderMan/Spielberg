@@ -25,7 +25,7 @@ pub(super) fn validate(c: &Connection, request: &Value, message: &str) -> Result
                 reference["asset_id"] = json!(asset);
                 ("SELECT EXISTS(SELECT 1 FROM media m JOIN assets a ON a.id=?2
                   WHERE m.id=?1 AND m.deleted_at IS NULL AND m.purged_at IS NULL AND a.enabled!=0 AND (
-                    a.design_media_id=m.id OR EXISTS(SELECT 1 FROM role_media WHERE role_id=a.id AND media_id=m.id)
+                    a.design_media_id=m.id OR EXISTS(SELECT 1 FROM asset_media WHERE asset_id=a.id AND media_id=m.id)
                     OR EXISTS(SELECT 1 FROM role_audio WHERE role_id=a.id AND media_id=m.id)))", vec![id, asset])
             }
             "scenes" => {

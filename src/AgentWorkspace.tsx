@@ -48,7 +48,7 @@ const statusText: Record<string, string> = { idle: "准备就绪", running: "执
 const toolText: Record<string, string> = { request_user_input: "请求用户决定", update_plan: "更新任务计划", get_project: "读取项目", search_conversation: "检索对话记录", list_skills: "查找技能", read_skill: "读取技能", app_describe: "查看操作说明", app_request: "操作项目数据", app_action: "执行创作操作", web_search: "联网搜索", fetch_webpage: "读取网页" };
 const toolTargetText: Record<string, string> = {
   assets: "资产库", media: "素材库", episodes: "剧集", scenes: "场景", clips: "片段", prompts: "提示词", screenplays: "剧本",
-  "assets/media/add": "关联资产图片", "assets/media/delete": "解除资产图片关联",
+  "assets/media/add": "关联资产图片", "assets/media/rename": "重命名资产图片", "assets/media/delete": "解除资产图片关联",
   "assets/audio/save": "保存资产音频引用", "assets/audio/delete": "解除资产音频关联",
   "generations/image": "生成图片", "generations/video": "生成视频", "generations/scene-video": "生成一镜到底", "generations/clip-preview": "预览片段生成", "generations/scene-preview": "预览场景生成", "generations/tts": "合成配音", "generations/asr": "识别语音",
 };
