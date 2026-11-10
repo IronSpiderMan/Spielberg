@@ -4,13 +4,19 @@ type Angles = [number, number, number];
 export const joints = ['腰部', '头部', '左肩', '左肘', '右肩', '右肘', '左髋', '左膝', '右髋', '右膝'] as const;
 type Joint = typeof joints[number];
 
-export type Person = {
-  id: string;
-  name: string;
+export type PoseTransform = {
   x: number;
   y: number;
   z: number;
   turn: number;
+  pitch?: number;
+  roll?: number;
+  size?: number;
+};
+
+export type Person = PoseTransform & {
+  id: string;
+  name: string;
   pose: Record<Joint, Angles>;
 };
 
@@ -58,11 +64,12 @@ const upperArm = .308;
 const forearm = .257;
 const shin = kneeHeight - ankleHeight;
 type Palette = { shell: THREE.MeshStandardMaterial; joint: THREE.MeshStandardMaterial; pin: THREE.MeshStandardMaterial; detail: THREE.MeshStandardMaterial };
+const woodJointColor = 0xe6cfae;
 
 export function createPoseFigure(grain: THREE.Texture) {
   const materials: Palette = {
     shell: new THREE.MeshStandardMaterial({ map: grain, bumpMap: grain, bumpScale: .003, roughness: .54 }),
-    joint: new THREE.MeshStandardMaterial({ color: 0xe6cfae, map: grain, roughness: .60 }),
+    joint: new THREE.MeshStandardMaterial({ color: woodJointColor, map: grain, roughness: .60 }),
     pin: new THREE.MeshStandardMaterial({ color: 0xa1754b, metalness: .34, roughness: .38 }),
     detail: new THREE.MeshStandardMaterial({ color: 0x3b2a21, roughness: .65 }),
   };
@@ -208,11 +215,11 @@ export function createPoseFigure(grain: THREE.Texture) {
 
 type Figure = ReturnType<typeof createPoseFigure>;
 
-export function applyPoseFigure(figure: Figure, person: Person) {
-  figure.root.position.set(person.x, person.y, person.z);
-  figure.root.rotation.y = THREE.MathUtils.degToRad(person.turn);
+export function applyPoseFigure(figure: Figure, pose: Person['pose'], tint: string) {
+  figure.materials.shell.color.set(tint);
+  figure.materials.joint.color.setHex(woodJointColor).multiply(figure.materials.shell.color);
   figure.pivots.forEach((pivot, joint) => {
-    const [x, y, z] = person.pose[joint];
+    const [x, y, z] = pose[joint];
     pivot.rotation.set(THREE.MathUtils.degToRad(x), THREE.MathUtils.degToRad(y), THREE.MathUtils.degToRad(z));
   });
 }
