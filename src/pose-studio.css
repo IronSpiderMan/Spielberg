@@ -1,1 +1,186 @@
-.pose-layout{display:grid;grid-template-columns:minmax(0,1fr) 240px;gap:20px;align-items:start}.pose-viewport{width:100%;background:var(--ui-subtle);border-radius:12px;overflow:hidden;touch-action:none}.pose-viewport canvas{display:block;width:100%;height:100%}.pose-settings{margin:0;padding:0 6px 0 0;border:0;min-width:0;max-height:65vh;overflow:auto}.pose-settings label{display:block;margin-bottom:14px;font-size:13px}.pose-settings select{display:block;width:100%;margin-top:6px;padding:7px;border:1px solid var(--color-border-2);border-radius:6px;background:var(--color-bg-2);color:var(--color-text-1)}.pose-range output{float:right;font-variant-numeric:tabular-nums;color:var(--color-text-3)}.pose-range input{display:block;width:100%;margin-top:8px;accent-color:var(--ui-primary)}.pose-actions,.pose-camera{display:flex;gap:8px}.pose-modal .arco-modal-body{max-height:78vh;overflow:auto}.pose-entry{margin-bottom:12px}@media(max-width:760px){.pose-layout{grid-template-columns:1fr}.pose-settings{max-height:none}.pose-viewport{min-height:180px}}
+.pose-modal .arco-modal-title {
+  text-align: left;
+}
+
+.pose-title, .pose-footer, .pose-preset-bar, .pose-view-bar, .pose-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pose-title-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  color: var(--ui-primary);
+  background: color-mix(in srgb, var(--ui-primary) 12%, var(--ui-surface));
+}
+
+.pose-title strong, .pose-title small { display: block; }
+.pose-title strong { font-size: 16px; }
+.pose-title small { margin-top: 3px; font-size: 12px; font-weight: 400; color: var(--ui-muted); }
+
+.pose-footer { flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.pose-footer .helper { margin: 0 auto 0 0; font-size: 12px; text-align: left; }
+
+.pose-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 290px;
+  align-items: start;
+  gap: 16px;
+}
+
+.pose-workspace, .pose-settings {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  background: var(--ui-bg);
+}
+
+.pose-workspace { overflow: hidden; }
+.pose-preset-bar, .pose-view-bar { flex-wrap: wrap; padding: 10px 12px; }
+.pose-preset-bar strong { font-size: 12px; color: var(--ui-secondary-text); }
+.pose-presets, .pose-camera, .pose-cast-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pose-presets .arco-btn, .pose-camera .arco-btn { min-width: 50px; }
+.pose-presets .arco-btn:hover { color: var(--ui-primary); }
+
+.pose-stage {
+  display: grid;
+  justify-items: center;
+  align-items: center;
+  min-height: clamp(190px, 43vh, 490px);
+  padding: 8px;
+  border-block: 1px solid var(--ui-border);
+  background: var(--ui-subtle);
+}
+
+.pose-frame {
+  position: relative;
+  width: min(100%, calc(clamp(190px, 56vh, 560px) * var(--pose-aspect)));
+  aspect-ratio: var(--pose-aspect);
+  overflow: hidden;
+  border-radius: 7px;
+  background: #e9e7e2;
+}
+
+.pose-viewport, .pose-markers { position: absolute; inset: 0; }
+.pose-viewport { touch-action: none; cursor: grab; }
+.pose-viewport:active { cursor: grabbing; }
+.pose-viewport canvas { display: block; width: 100%; height: 100%; }
+
+.pose-markers { pointer-events: none; }
+.pose-marker {
+  position: absolute;
+  visibility: hidden;
+  transform: translate(-50%, -50%);
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: move;
+}
+.pose-marker::after {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  background: #61524a;
+  box-shadow: 0 1px 3px #23170d80;
+}
+.pose-marker:is(:hover, [aria-pressed="true"])::after { inset: 4px; background: #bd644a; }
+.pose-marker:disabled { pointer-events: none; }
+
+.pose-view-bar { justify-content: space-between; gap: 8px; }
+.pose-view-hint, .pose-inspector-hint { font-size: 12px; color: var(--ui-muted); }
+.pose-error { position: absolute; inset: 0; display: grid; place-content: center; padding: 18px; margin: 0; color: #7d382a; }
+
+.pose-settings { padding: 12px; }
+.pose-cast { display: grid; gap: 8px; }
+.pose-section-heading { justify-content: space-between; min-height: 26px; font-size: 13px; color: var(--ui-text); }
+.pose-section-heading small { margin-left: 5px; font-weight: 400; color: var(--ui-muted); }
+.pose-person-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+
+.pose-panel-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin-top: 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: 9px;
+  background: var(--ui-subtle);
+}
+
+.pose-settings button[aria-pressed] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 3px;
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  background: var(--ui-surface);
+  color: var(--ui-secondary-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.pose-settings .pose-panel-switch button { border-color: transparent; background: transparent; }
+.pose-settings button[aria-pressed]:hover { color: var(--ui-primary); }
+.pose-settings button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--ui-primary) 45%, var(--ui-border));
+  background: color-mix(in srgb, var(--ui-primary) 12%, var(--ui-surface));
+  color: var(--ui-primary);
+  font-weight: 600;
+}
+
+.pose-inspector { padding-top: 10px; }
+.pose-inspector-hint { margin: 0 0 8px; line-height: 1.5; }
+.pose-joint-list, .pose-joint-list > div { display: grid; gap: 5px; }
+.pose-joint-list > div { grid-auto-flow: column; grid-auto-columns: 1fr; }
+.pose-adjust-heading { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--ui-border); }
+
+.pose-range {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  column-gap: 8px;
+  margin-top: 7px;
+  font-size: 12px;
+  color: var(--ui-secondary-text);
+}
+.pose-range output {
+  min-width: 40px;
+  padding: 1px 5px;
+  text-align: center;
+  border: 1px solid var(--ui-border);
+  border-radius: 5px;
+  font-variant-numeric: tabular-nums;
+}
+.pose-range input {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 3px 0;
+  accent-color: var(--ui-primary);
+  cursor: pointer;
+}
+
+.pose-entry { margin-bottom: 12px; }
+
+@media (max-width: 760px) {
+  .pose-layout { grid-template-columns: minmax(0, 1fr); }
+  .pose-stage { min-height: 0; }
+  .pose-frame { width: min(100%, calc(38vh * var(--pose-aspect))); }
+}

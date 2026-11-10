@@ -135,24 +135,6 @@
 .storyboard-columns .storyboard-task { gap: 12px; padding: 16px; border-style: solid; border-radius: 10px; background: var(--ui-bg); line-height: 1.7; }
 .storyboard-columns .storyboard-error { padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--ui-error) 20%, var(--ui-border)); border-radius: 8px; background: color-mix(in srgb, var(--ui-error) 6%, var(--ui-surface)); color: var(--ui-error); line-height: 1.8; }
 
-/* A small control rail makes pose adjustments easier to scan. */
-.pose-modal .pose-layout { gap: 24px; grid-template-columns: minmax(0, 1fr) 256px; }
-.pose-modal .pose-viewport { border: 1px solid var(--ui-border); border-radius: 14px; box-sizing: border-box; }
-.pose-modal .pose-layout > div:first-child > .helper { margin: 14px 0; font-size: 11px; line-height: 1.85; }
-.pose-modal .pose-settings { padding: 0 10px 0 0; scrollbar-width: thin; scrollbar-color: var(--ui-border) transparent; }
-.pose-modal .pose-settings label { margin-bottom: 18px; color: var(--ui-secondary-text); font-size: 12px; }
-.pose-modal .pose-settings select { margin-top: 9px; min-height: 36px; padding: 8px 10px; border-radius: 8px; background: var(--ui-surface); border-color: var(--ui-border); color: var(--ui-text); transition: border-color 160ms; }
-.pose-modal .pose-settings select:hover { border-color: var(--ui-muted); }
-.pose-modal .pose-actions { gap: 8px; }
-.pose-modal .pose-actions .arco-btn { flex: 1; min-width: 0; font-size: 12px; padding: 0 8px; }
-.pose-modal .pose-camera { display: inline-flex; gap: 4px; padding: 5px; background: var(--ui-bg); border: 1px solid var(--ui-border); border-radius: 10px; }
-.pose-modal .pose-camera .arco-btn { background: transparent; border-color: transparent; min-width: 68px; }
-.pose-modal .pose-camera .arco-btn:hover { background: var(--ui-surface); border-color: var(--ui-border); }
-.pose-modal .pose-control-group { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--ui-border); }
-.pose-modal .pose-control-group h4 { margin: 0 0 18px; color: var(--ui-text); font-size: 12px; font-weight: 600; }
-.pose-modal .pose-range output { min-width: 40px; padding: 2px 6px; margin-top: -3px; border: 1px solid var(--ui-border); border-radius: 5px; background: var(--ui-bg); color: var(--ui-secondary-text); text-align: center; font-size: 11px; box-sizing: border-box; }
-.pose-modal .pose-range input { margin-top: 12px; accent-color: var(--ui-primary); cursor: pointer; }
-
 /* Floating canvas chrome stays compact and usable at narrower widths. */
 .infinite-canvas { --ic-bg: var(--ui-surface); --ic-shadow: var(--editor-shadow); color: var(--ui-text); }
 .infinite-canvas .ic-heading { align-items: flex-start; }
@@ -194,7 +176,6 @@ html[data-theme="dark"] :is(.media-editor, .screenplay-page, .storyboard-columns
 html[data-theme="dark"] .media-editor .me-preview { background: #181a18; border-color: #353831; }
 html[data-theme="dark"] .media-editor .me-clip { background: var(--ui-accent-soft); color: var(--ui-primary); }
 html[data-theme="dark"] .media-editor .me-clip.audio { background: color-mix(in srgb, var(--ui-success) 14%, var(--ui-surface)); color: var(--ui-success); }
-html[data-theme="dark"] .pose-modal .pose-viewport { border-color: var(--ui-border); }
 html[data-theme="dark"] .infinite-canvas .ic-node-preview { background-color: var(--ui-bg); }
 html[data-theme="dark"] .infinite-canvas .ic-image .ic-node-preview { background-color: transparent; }
 html[data-theme="dark"] .infinite-canvas .ic-node header small { color: color-mix(in srgb, var(--ic-node-accent) 75%, #fff); }
@@ -228,9 +209,6 @@ html[data-theme="dark"] .infinite-canvas .ic-node header small { color: color-mi
   .media-editor .me-timeline { padding: 16px; }
   .media-editor .me-toolbar > span { width: 100%; margin: 4px 0 0; }
   .media-editor .me-notice { flex-wrap: wrap; }
-  .pose-modal .pose-layout { grid-template-columns: 1fr; gap: 20px; }
-  .pose-modal .pose-settings { padding-right: 0; }
-  .pose-modal .pose-control-group { padding: 18px 16px 0; border: 1px solid var(--ui-border); border-radius: 10px; }
 }
 @media (max-width: 700px) {
   .infinite-canvas .ic-heading { gap: 8px; }
