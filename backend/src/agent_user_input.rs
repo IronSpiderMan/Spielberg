@@ -50,8 +50,15 @@ fn validate(args: &Value) -> Result<(), String> {
         if questions.len() != 1 || questions[0]["type"] != "confirmation" {
             return Err("工具执行确认必须且只能包含一个 confirmation 问题".into());
         }
-        if !matches!(tool["name"].as_str(), Some("app_request" | "app_action")) || !tool["arguments"].is_object() {
-            return Err("工具确认仅支持 app_request 或 app_action 的具体参数".into());
+        let name = tool["name"].as_str().ok_or("请提供待确认的工具名")?;
+        let arguments = &tool["arguments"];
+        if !arguments.is_object() {
+            return Err("请提供待执行工具的完整参数对象".into());
+        }
+        if agent_production_tools::is_write(name) {
+            agent_production_tools::route(name, arguments).ok_or("待确认的工具不可执行")??;
+        } else if !matches!(name, "app_request" | "app_action") {
+            return Err("请指定可确认的业务写入工具、app_request 或 app_action".into());
         }
     }
     Ok(())
@@ -188,5 +195,18 @@ mod tests {
         let mut invalid = request.clone();invalid["tool"]=json!({"name":"app_action","arguments":{}});
         assert!(validate(&invalid).is_err());
         assert!(validate(&json!({"questions":[]})).is_err());
+    }
+
+    #[test]
+    fn production_approval_checks_the_exact_mutation_arguments_before_waiting() {
+        let mut request = json!({
+            "questions":[{"id":"approve","question":"删除场景？","type":"confirmation"}],
+            "tool":{"name":"delete_scene","arguments":{"id":7}}
+        });
+        validate(&request).unwrap();
+        request["tool"]["arguments"]["id"] = json!("7");
+        assert!(validate(&request).is_err());
+        request["tool"] = json!({"name":"get_scene","arguments":{"id":7}});
+        assert!(validate(&request).is_err());
     }
 }

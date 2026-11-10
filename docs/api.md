@@ -235,7 +235,7 @@ Agent 接口使用 `POST /api/v1/actions/agent/{动作}`，全部传入 `project
 
 模型请求启用 Chat Completions `stream=true`，按 SSE 拼接公开文本、工具参数与 usage，亦兼容忽略流式请求并返回完整 JSON 的渠道。SSE 必须收到合法 `finish_reason` 和 `[DONE]` 才能交给执行循环；长度截断、异常结束或断流不会执行该响应中的工具，不会自动重试已开始的流。
 
-模型工具包括 `update_plan`、`get_project`、`search_conversation`、`list_skills`、`read_skill`、`app_describe`、`app_request`、`app_action`、`web_search`、`fetch_webpage`。关闭联网时不向模型暴露网络工具，执行端仍强制校验联网权限。
+基础模型工具包括 `update_plan`、`get_project`、`read_project_config`、`read_project_timelines`、`read_project_document`、`read_resource_text`、`search_conversation`、`list_skills`、`read_skill`、`app_describe`、`app_request`、`app_action`、`web_search`、`fetch_webpage`。素材、剧集、场景和片段还有下列专用工具。关闭联网时不向模型暴露网络工具，执行端仍强制校验联网权限。
 
 `update_plan` 接收 `plan`（1–8 项 `{step,status}`）和可选 `explanation`（最多 1000 字）。步骤说明为 1–200 字，状态为 `pending/in_progress/completed`，最多一项 `in_progress`。参数完整校验后才替换计划，不能写入业务数据或改变权限。计划随执行记录持久化，并作为助手工作记录加入后续上下文。
 
@@ -243,7 +243,26 @@ Agent 接口使用 `POST /api/v1/actions/agent/{动作}`，全部传入 `project
 
 `app_request` 使用现有 REST 校验，`app_action` 使用白名单业务操作，项目 ID 由服务端绑定；模型不能跨项目访问、直接运行系统命令或读取任意本地文件。网页工具仅允许公开 HTTP/HTTPS 地址，并限制响应体和请求时长。搜索 Key 仅由后端用于搜索服务请求。
 
-`app_action` 的 `resource/text/read` 支持完整分页读取创作正文，`data` 必填 `resource,id,field`，可选 `offset`（默认 0，Unicode 字符下标）和 `max_chars`（1–1500，默认 1500）。支持 `screenplays/prompts.content`、`assets/episodes.description`、`scenes.description/shared_prompt`、`clips.description/prompt`，ID 必须为当前项目内对应资源的正整数。返回 `{resource,id,field,content,offset,total_chars,next_offset}`；按顺序拼接各页 `content`，直至 `next_offset` 为 null。普通资源查询仍有输出长度限制，按 ID 查询不能替代正文分页；修改前读取全文，保留未要求修改的内容，不用节选覆盖整个字段。
+`read_resource_text` 支持完整分页读取创作正文，必填 `resource`、`id`、`field`，可选 `offset`（默认 0，Unicode 字符下标）。后端固定每页最多 1500 个字符。支持 `screenplays/prompts.content`、`assets/episodes.description`、`scenes.description/shared_prompt`、`clips.description/prompt`，ID 必须为当前项目内对应资源的正整数。返回 `{resource,id,field,content,offset,total_chars,next_offset}`；按顺序拼接各页 `content`，直至 `next_offset` 为 null。普通资源查询仍有输出长度限制，按 ID 查询不能替代正文分页；修改前读取全文，保留未要求修改的内容，不用节选覆盖整个字段。
+
+### Agent 制作工具
+
+模型直接收到每个工具的 JSON Schema，其中包括参数名、类型、必填项、枚举和适用范围。调用时填写顶层参数，项目由服务端绑定。执行前校验工具参数，再由既有业务接口校验素材类型、归属和引用关系。
+
+| 资源 | 查询 | 写入与编排 |
+|---|---|---|
+| 素材 | `list_media`、`get_media`、`get_media_usage` | `rename_media`、`trash_media`、`restore_media` |
+| 剧集 | `list_episodes`、`get_episode` | `create_episode`、`update_episode`、`delete_episode`、`reorder_episodes`、`merge_episode_video` |
+| 场景 | `list_scenes`、`get_scene` | `create_scene`、`update_scene`、`delete_scene`、`set_scene_clips`、`merge_scenes`、`ungroup_scene`、`reorder_scenes`、`select_scene_video`、`remove_scene_video` |
+| 片段 | `list_clips`、`get_clip` | `create_clip`、`update_clip`、`delete_clip`、`duplicate_clip`、`reorder_clips`、`select_clip_video`、`remove_clip_video` |
+
+- `list_media` 支持 `kind`、`usage` 和文件名关键词 `query`。页码 `page` 从 1 开始，`limit` 默认为 24，允许 1–60。结果为 `{items,total}`。用 `get_media_usage` 查看引用，使用中的素材不能移入回收站。
+- `list_episodes`、`list_scenes` 和 `list_clips` 默认从 `offset=0` 读取 25 条，`limit` 允许 1–50。结果为 `{items,total,next_offset}`，沿 `next_offset` 读取后续列表。场景可按 `episode_id` 筛选，片段可按 `episode_id` 或 `scene_id` 筛选。列表条目包含 ID、标题摘要和适用的归属字段。按 ID 读取详情，再用 `read_resource_text` 读取需要完整保留的创作正文。
+- 新建场景或片段要指定目标剧集。新增片段可通过 `scene_id` 加入同集已有场景。调整现有片段的归属用 `set_scene_clips`，按剧集顺序提交同集、连续的完整成员 ID。移出目标场景的片段各自成为独立场景，被移空的场景会删除。合并同集相邻场景用 `merge_scenes`，拆成单片段场景用 `ungroup_scene`。
+- `update_episode` 可写封面素材 ID，`update_scene` 可写共享参考图片和音频 ID，`update_clip` 可写局部参考素材。替换场景或片段的 `generation_options` 前先读取现有对象，保留未要求修改的选项。视频播放版本通过相应的 `select_*` 和 `remove_*` 工具管理。移除候选版本会解除关联，素材库仍保留源文件。
+- 重排前先读完目标列表，再提交该范围内全部记录的有序 ID。重排片段时每个场景的成员须保持连续。删除场景会删除其成员片段，删除最后一个片段也会移除其父场景。删除剧集会级联删除该集的场景、片段和剧本等记录。
+
+已有 `app_request` 和 `app_action` 调用仍可执行。新增专用工具在常规操作中优先使用，批量更新继续使用 `app_request`。需要用户确认某次写入时，`request_user_input` 的 `tool` 可以携带专用工具的名称及完整参数，批准后执行这一具体调用。
 
 ## Skills
 
@@ -314,11 +333,14 @@ Agent 的 `list_skills` 工具读取当前启用目录（含内置技能），�
 
 时间线的 `title`、时间点的 `time`、事件的 `content` 必须是非空文本，`description` 是字符串且允许为空。`time` 为自由文本，可填写日期、故事年代或相对时间，不自动排序；事件顺序也按数组保留。时间线允许空 `entries`，已添加的时间点必须至少有一个事件。所有层级的 `id` 必须是非空字符串，且同级数组中不得重复。旧项目默认返回 `timelines: []`；时间线随项目数据库、备份与恢复保留。PATCH 省略 `timelines` 时保留已有时间线，传 `[]` 清空全部时间线。
 
-Agent 的 `app_action` 还支持以下当前项目内的操作（具体字段可用 `app_describe` 查询）：
+Agent 可直接调用两个只读工具，正文每页最多 1500 个 Unicode 字符。
 
-- `project/config/read`：读取名称、大纲分页、文档目录。`offset` / `max_chars` 控制大纲分页（每页 1–1500 个 Unicode 字符），`documents_offset` 控制文档目录分页（每页 10 份）；分别沿 `outline.next_offset` 和 `documents_next_offset` 继续读取。
-- `project/config/update`：只更新提供的 `name` / `outline`，保留所有文档。
-- `project/document/read`：提供字符串 `id`，可用 `offset` / `max_chars` 分页读取正文，直至 `next_offset` 为 null。
+- `read_project_config` 读取名称、大纲、时间线数量和文档目录。用 `outline.next_offset` 作为下一页大纲的 `offset`，用 `documents_next_offset` 作为下一页目录的 `documents_offset`。目录每页 10 份。
+- `read_project_document` 接收文档字符串 `id` 和可选 `offset`。沿 `next_offset` 读到 null，按顺序拼接正文。
+
+Agent 可通过 `app_action` 修改当前项目，具体字段由 `app_describe` 提供。
+
+- `project/config/update`：只更新提供的 `name`、`outline` 或 `timelines`，保留所有文档。
 - `project/document/save`：省略 `id` 新建文档，必须提供非空 `title`；提供已有 `id` 更新文档，未提交的 `title` / `content` 保持原值。`content` 是完整替换正文，不是增量追加；修改前须读完全文。
 - `project/document/delete`：提供当前项目文档的 `id`，只删除这一份文档。
 
@@ -327,6 +349,8 @@ Agent 的 `app_action` 还支持以下当前项目内的操作（具体字段可
 
 ### Agent 时间线工具
 
-Agent 通过 `app_action` 的 `project/config/read` 获取时间线数量，通过 `project/timelines/read` 读取完整时间线 JSON。读取接口接受 `offset` 和 `max_chars`（1–1500），需沿 `next_offset` 读取至 null，按顺序拼接 `content` 后解析 JSON；旧项目返回 `[]`。该读取操作按只读工具处理。
+Agent 通过 `read_project_config` 获取时间线数量，通过 `read_project_timelines` 分页读取时间线。首次调用可以省略 `offset`，翻页时传入返回的 `next_offset`，直到它为 null。按顺序拼接 `content` 后解析 JSON，旧项目返回 `[]`。
+
+为兼容历史调用，服务端仍接受 `app_action` 的 `project/config/read`、`project/document/read`、`project/timelines/read` 和 `resource/text/read`。旧入口允许 `max_chars` 为 1–1500，省略时默认 1500。
 
 `project/config/update` 支持 `timelines` 完整数组，可创建、修改、删除和重排时间线、时间点、事件，结构与项目 PATCH API 相同。修改前读取全部分页，保留无关内容和已有 ID；新建项使用唯一 ID。省略字段保留原值，显式 `[]` 清空时间线。更新复用项目 API 校验，不能跨项目操作，且不会修改项目文档或 Agent 规范。

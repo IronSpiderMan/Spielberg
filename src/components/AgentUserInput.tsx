@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { MessageSquare } from "lucide-react";
+import { productionToolLabels } from "../agent-production-tool-labels";
 import "./agent-user-input.css";
 
 type Option = { id: string; label: string; description?: string };
@@ -34,7 +35,7 @@ export function AgentUserInput({ request, disabled, onSubmit }: {
   };
   return <form className="agent-user-input" data-testid="agent-user-input" onSubmit={event => void submit(event)} aria-label="回答 Agent 问题">
     <div className="agent-user-input-heading"><MessageSquare size={16} /><strong>需要你的决定</strong></div>
-    {request.tool && <details className="agent-user-input-tool" open><summary>待执行工具 · {request.tool.name}</summary><pre>{JSON.stringify(request.tool.arguments, null, 2)}</pre></details>}
+    {request.tool && <details className="agent-user-input-tool" open><summary title={request.tool.name}>待执行工具 · {productionToolLabels[request.tool.name] || request.tool.name}</summary><pre>{JSON.stringify(request.tool.arguments, null, 2)}</pre></details>}
     {request.questions.map((question, index) => <fieldset key={question.id} disabled={locked}>
       <legend>{request.questions.length > 1 && `${index + 1}. `}{question.question}</legend>
       {question.type === "text" ? <textarea aria-label={question.question} value={typeof answers[question.id] === "string" ? answers[question.id] as string : ""} maxLength={4000} rows={3} placeholder="输入补充信息…" onChange={event => setAnswer(question.id, event.target.value)} />

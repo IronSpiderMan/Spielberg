@@ -118,6 +118,53 @@ pub(super) fn list_episodes(c: &Connection) -> Result<Vec<Value>,String> {
     episodes.sort_by_key(|episode|episode["sort_order"].as_i64().unwrap_or(0));
     episodes.into_iter().map(|episode|enrich(c,"episodes",episode).map_err(|e|e.1)).collect()
 }
+
+pub(super) fn production_page(
+    state: &AppState, pid: &str, resource: &str, filters: &Value, offset: i64, limit: i64,
+) -> ApiResult<Value> {
+    let _lock = state.guard.lock().map_err(|_| ApiError(StatusCode::INTERNAL_SERVER_ERROR, "数据锁不可用".into()))?;
+    let c = db(state, pid)?;
+    let episode = filters["episode_id"].as_i64();
+    let scene = filters["scene_id"].as_i64();
+    if let Some(id) = episode {
+        let exists = c.query_row("SELECT EXISTS(SELECT 1 FROM episodes WHERE id=?)", [id], |row| row.get::<_, bool>(0))
+            .map_err(sql_error)?;
+        if !exists { return Err(ApiError(StatusCode::NOT_FOUND, format!("当前项目中不存在 episode_id={id}"))); }
+    }
+    if let Some(id) = scene {
+        let parent = c.query_row("SELECT episode_id FROM scenes WHERE id=?", [id], |row| row.get::<_, i64>(0))
+            .optional().map_err(sql_error)?
+            .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, format!("当前项目中不存在 scene_id={id}")))?;
+        if episode.is_some_and(|id| id != parent) {
+            return Err(bad("scene_id 不属于指定的 episode_id；请先用 get_scene 核对场景归属"));
+        }
+    }
+
+    // Keep list results small and follow the same order used by the reorder operations.
+    let (table, episode_column, scene_column, order) = match resource {
+        "episodes" => ("episodes", "NULL", "NULL", "r.sort_order, r.id"),
+        "scenes" => ("scenes", "r.episode_id", "NULL",
+            "COALESCE((SELECT MIN(sort_order) FROM clips WHERE scene_id=r.id),0), r.id"),
+        "clips" => ("clips", "r.episode_id", "r.scene_id", "r.sort_order, r.id"),
+        _ => return Err(missing()),
+    };
+    let from = format!("FROM {table} r WHERE (?1 IS NULL OR {episode_column}=?1) AND (?2 IS NULL OR {scene_column}=?2)");
+    let total = c.query_row(&format!("SELECT COUNT(*) {from}"), params![episode, scene], |row| row.get::<_, i64>(0))
+        .map_err(sql_error)?;
+    let mut query = c.prepare(&format!(
+        "SELECT r.id, substr(r.title,1,80), {episode_column}, {scene_column} {from} ORDER BY {order} LIMIT ?3 OFFSET ?4"
+    )).map_err(sql_error)?;
+    let items = query.query_map(params![episode, scene, limit, offset], |row| {
+        let mut item = json!({"id":row.get::<_, i64>(0)?, "title":row.get::<_, String>(1)?});
+        for (index, key) in [(2, "episode_id"), (3, "scene_id")] {
+            if let Some(id) = row.get::<_, Option<i64>>(index)? { item[key] = json!(id); }
+        }
+        Ok(item)
+    }).map_err(sql_error)?.collect::<Result<Vec<_>, _>>().map_err(sql_error)?;
+    let end = offset.saturating_add(items.len() as i64);
+    Ok(json!({"items":items, "total":total, "next_offset":(end < total).then_some(end)}))
+}
+
 pub(super) fn get_clip(c: &Connection, id: i64) -> Result<Value,String> {
     get(c,"clips",id).map_err(|e|e.1)
 }

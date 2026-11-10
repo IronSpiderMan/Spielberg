@@ -1,4 +1,5 @@
 //! A bounded model view of a durable conversation; the stored transcript is never changed.
+use crate::agent_production_tools;
 use serde_json::{json, Value};
 use std::collections::HashSet;
 
@@ -113,7 +114,7 @@ fn shrink_json(value: &Value, depth: usize) -> Value {
 
 fn identity_fields(value: &Value, nested: bool) -> Value {
     let mut fields = serde_json::Map::new();
-    for key in ["id", "name", "title", "status", "error", "task_id", "episode_id", "scene_id", "clip_id"] {
+    for key in ["id", "name", "title", "status", "error", "task_id", "episode_id", "scene_id", "clip_id", "media_id", "target_scene_id"] {
         if let Some(value) = value.get(key) {
             let mut item = if value.is_number() || value.is_boolean() || value.is_null() { value.clone() }
                 else { json!(excerpt(value.as_str().unwrap_or("[对象内容略]"),128)) };
@@ -259,11 +260,10 @@ fn older_notes(messages: &[Value], starts: &[usize], omitted: usize) -> Value {
 // Keep execution evidence separately from prose excerpts. A turn may contain
 // many writes before its final reply (or an error); the last three tools alone
 // cannot tell a continuation which work has already succeeded.
-fn is_write(message: &Value) -> bool {
-    let args = &message["arguments"];
-    match message["tool_name"].as_str() {
-        Some("app_request") => matches!(args["method"].as_str(),Some("POST" | "PATCH" | "DELETE")),
-        Some("app_action") => {
+fn is_write_tool(name: &str, args: &Value) -> bool {
+    match name {
+        "app_request" => matches!(args["method"].as_str(),Some("POST" | "PATCH" | "DELETE")),
+        "app_action" => {
             let operation = args["operation"].as_str().unwrap_or("");
             // Action endpoints use POST for both reads and writes. Keep this
             // list aligned with agent_tools::OPERATIONS and its dispatch.
@@ -272,8 +272,20 @@ fn is_write(message: &Value) -> bool {
                     | "storage/scan" | "settings/read" | "media/usage" | "editor/projects"
                     | "project/config/read" | "project/timelines/read" | "project/document/read" | "storyboard/validate" | "generations/clip-preview" | "generations/scene-preview")
         },
-        _ => false,
+        _ => agent_production_tools::is_write(name),
     }
+}
+
+fn is_write(message: &Value) -> bool {
+    let name = message["tool_name"].as_str().unwrap_or_default();
+    let args = &message["arguments"];
+    if name == "request_user_input" {
+        let tool = &args["tool"];
+        return tool["name"].as_str().is_some_and(|name| is_write_tool(name, &tool["arguments"]))
+            && serde_json::from_str::<Value>(message["content"].as_str().unwrap_or_default())
+                .is_ok_and(|result| result["executed"] == true);
+    }
+    is_write_tool(name, args)
 }
 
 fn execution_notes(messages: &[Value], start: usize, end: usize, active: bool) -> Option<Value> {
@@ -287,13 +299,21 @@ fn execution_notes(messages: &[Value], start: usize, end: usize, active: bool) -
     candidates.sort_by(|a,b|b.2.cmp(&a.2).then_with(||b.0.cmp(&a.0)));
     let total = candidates.len();
     for (index, message, _) in candidates {
-        let args = &message["arguments"];
-        let name = message["tool_name"].as_str().unwrap_or("");
+        let mut args = &message["arguments"];
+        let mut name = message["tool_name"].as_str().unwrap_or("");
         let result = serde_json::from_str::<Value>(message["content"].as_str().unwrap_or("")).unwrap_or(Value::Null);
-        let row = json!({"message_index":index+1,"tool":name,"status":message["status"],
+        let mut outcome = &result;
+        let mut status = message["status"].as_str().unwrap_or_default();
+        if name == "request_user_input" && result["executed"] == true {
+            name = args["tool"]["name"].as_str().unwrap_or_default();
+            args = &args["tool"]["arguments"];
+            outcome = &result["tool_result"];
+            if result["tool_error"].is_string() { status = "failed"; }
+        }
+        let row = json!({"message_index":index+1,"tool":name,"status":status,
             "resource":args["resource"],"method":args["method"],"operation":args["operation"],
-            "id":args["id"],"target":identity_fields(&args["data"],false),
-            "result":identity_fields(&result,false)});
+            "id":args["id"],"target":identity_fields(if args["data"].is_object(){&args["data"]}else{args},false),
+            "result":identity_fields(outcome,false)});
         let size = encoded_len(&json!(row.to_string()));
         if bytes + size > 12_000 { continue; }
         bytes += size;
@@ -646,6 +666,27 @@ mod tests {
         assert!(!text.contains("GET"));
         assert_eq!(session,before);
         assert!(text_size(&wire)<160_000);
+    }
+
+    #[test]
+    fn production_write_evidence_keeps_typed_targets_and_confirmed_results() {
+        let messages = [
+            json!({"role":"tool","tool_name":"select_scene_video","status":"completed",
+                "arguments":{"scene_id":7,"media_id":22},"content":"{}"}),
+            json!({"role":"tool","tool_name":"list_scenes","status":"completed",
+                "arguments":{"episode_id":3},"content":"{}"}),
+            json!({"role":"tool","tool_name":"request_user_input","status":"completed",
+                "arguments":{"tool":{"name":"delete_scene","arguments":{"id":8}}},
+                "content":json!({"approved":true,"executed":true,"tool_result":{"deleted":true}}).to_string()}),
+            json!({"role":"tool","tool_name":"request_user_input","status":"completed",
+                "arguments":{"tool":{"name":"delete_episode","arguments":{"id":3}}},
+                "content":json!({"approved":false,"executed":false}).to_string()}),
+        ];
+        let notes = execution_notes(&messages, 0, messages.len(), false).unwrap();
+        let text = notes["content"].as_str().unwrap();
+        assert!(text.contains("select_scene_video") && text.contains("\"media_id\":22"));
+        assert!(text.contains("delete_scene") && text.contains("\"id\":8"));
+        assert!(!text.contains("list_scenes") && !text.contains("delete_episode"));
     }
 
     #[test]

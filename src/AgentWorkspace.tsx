@@ -19,6 +19,7 @@ import { channelsFor, selectionPayload, useGenerationSelection } from "./generat
 import { AgentUserInput, type UserInputRequest, type UserInputAnswers } from "./components/AgentUserInput";
 import { AgentComposerInput } from "./components/AgentComposerInput";
 import { agentMentions, referencedIn, type AgentReference } from "./agent-mentions";
+import { productionToolLabels } from "./agent-production-tool-labels";
 
 
 type AgentMessage = { role: "user" | "assistant" | "tool"; content: string; images?: string[]; image_media_ids?: number[]; tool_name?: string; tool_call_id?: string; arguments?: unknown; status?: string; tool_calls?: unknown[] };
@@ -45,7 +46,7 @@ type Config = { inherit_llm: boolean; base_url: string; model: string; has_api_k
 const initialConfig: Config = { inherit_llm: true, base_url: "", model: "", has_api_key: false, search_provider: "duckduckgo", has_search_api_key: false, max_steps: 16, request_timeout_seconds: 600 };
 const INDEPENDENT_CHANNEL = "__agent_independent__";
 const statusText: Record<string, string> = { idle: "准备就绪", running: "执行中", completed: "本轮结束", limited: "已暂停，可继续", failed: "执行失败", cancelled: "已停止" };
-const toolText: Record<string, string> = { request_user_input: "请求用户决定", update_plan: "更新任务计划", get_project: "读取项目", search_conversation: "检索对话记录", list_skills: "查找技能", read_skill: "读取技能", app_describe: "查看操作说明", app_request: "操作项目数据", app_action: "执行创作操作", web_search: "联网搜索", fetch_webpage: "读取网页" };
+const toolText: Record<string, string> = { ...productionToolLabels, request_user_input: "请求用户决定", update_plan: "更新任务计划", get_project: "读取项目", read_project_config: "读取项目配置", read_project_timelines: "读取项目时间线", read_project_document: "读取项目文档", read_resource_text: "读取创作正文", search_conversation: "检索对话记录", list_skills: "查找技能", read_skill: "读取技能", app_describe: "查看操作说明", app_request: "操作项目数据", app_action: "执行创作操作", web_search: "联网搜索", fetch_webpage: "读取网页" };
 const toolTargetText: Record<string, string> = {
   assets: "资产库", media: "素材库", episodes: "剧集", scenes: "场景", clips: "片段", prompts: "提示词", screenplays: "剧本",
   "assets/media/add": "关联资产图片", "assets/media/rename": "重命名资产图片", "assets/media/delete": "解除资产图片关联",

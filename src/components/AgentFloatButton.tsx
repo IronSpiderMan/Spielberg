@@ -16,6 +16,7 @@ import { AgentLivingOrb } from "./AgentLivingOrb";
 import "./agent-float.css";
 import { AgentUserInput, type UserInputRequest, type UserInputAnswers } from "./AgentUserInput";
 import { AgentComposerInput } from "./AgentComposerInput";
+import { productionToolLabels } from "../agent-production-tool-labels";
 
 type Position = { x: number; y: number };
 type Session = {
@@ -30,7 +31,11 @@ const SIZE = 64;
 const MARGIN = 16;
 const MAX_DRAFT = 16000;
 const emptySettings: ModelSettings = {};
-const toolLabels: Record<string, string> = { update_plan: "正在更新任务计划", get_project: "正在读取项目", search_conversation: "正在检索对话", list_skills: "正在查找技能", read_skill: "正在读取技能", app_describe: "正在查看操作说明", app_request: "正在操作项目数据", app_action: "正在执行创作操作", web_search: "正在联网搜索", fetch_webpage: "正在读取网页" };
+const toolLabels: Record<string, string> = { update_plan: "正在更新任务计划", get_project: "正在读取项目", read_project_config: "正在读取项目配置", read_project_timelines: "正在读取项目时间线", read_project_document: "正在读取项目文档", read_resource_text: "正在读取创作正文", search_conversation: "正在检索对话", list_skills: "正在查找技能", read_skill: "正在读取技能", app_describe: "正在查看操作说明", app_request: "正在操作项目数据", app_action: "正在执行创作操作", web_search: "正在联网搜索", fetch_webpage: "正在读取网页" };
+function activeToolLabel(name: string): string {
+  const productionLabel = productionToolLabels[name];
+  return productionLabel ? `正在${productionLabel}` : toolLabels[name] || "Agent 正在执行";
+}
 const isRunning = (session: Session | null) => session?.execution?.active ?? session?.status === "running";
 function lastReply(session: Session | null): string {
   if (!session) return "";
@@ -410,7 +415,7 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings, a
   const placement = panelPlacement(position, viewport, panelHeight);
   const speaking = narration.state !== "idle";
   const state = listening ? "listening" : sending || running ? "working" : speaking ? "speaking" : error || session?.status === "failed" ? "error" : "idle";
-  const status = speechState === "starting" ? "正在打开麦克风" : speechState === "finishing" ? "正在识别语音" : listening ? "我在听，说完即可（最长 60 秒）" : sending ? "正在发送指令" : cancelling ? "正在停止操作" : running ? (session?.execution?.phase === "waiting_input" ? "等待你的回答" : session?.execution?.phase === "streaming" ? "正在回复" : toolLabels[session?.execution?.active_tool || ""] || "Agent 正在执行") : restoring ? "正在恢复会话" : restoreFailed ? "对话恢复失败" : session?.status === "failed" ? "执行未完成" : session?.status === "completed" ? "已完成" : session?.status === "limited" ? "已暂停，可继续" : session?.status === "cancelled" ? "已停止" : "有什么我可以帮你？";
+  const status = speechState === "starting" ? "正在打开麦克风" : speechState === "finishing" ? "正在识别语音" : listening ? "我在听，说完即可（最长 60 秒）" : sending ? "正在发送指令" : cancelling ? "正在停止操作" : running ? (session?.execution?.phase === "waiting_input" ? "等待你的回答" : session?.execution?.phase === "streaming" ? "正在回复" : activeToolLabel(session?.execution?.active_tool || "")) : restoring ? "正在恢复会话" : restoreFailed ? "对话恢复失败" : session?.status === "failed" ? "执行未完成" : session?.status === "completed" ? "已完成" : session?.status === "limited" ? "已暂停，可继续" : session?.status === "cancelled" ? "已停止" : "有什么我可以帮你？";
   const lastUserIndex = session?.messages.map(message => message.role).lastIndexOf("user") ?? -1;
   const lastUser = lastUserIndex >= 0 ? session?.messages[lastUserIndex].content : "";
   const reply = session?.messages.slice(lastUserIndex + 1).filter(message => message.role === "assistant" && message.content).map(message => message.content).join("\n\n");

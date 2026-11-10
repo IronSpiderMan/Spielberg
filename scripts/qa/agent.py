@@ -55,6 +55,60 @@ def call(name, arguments, call_id):
     return {"id": call_id, "type": "function", "function": {"name": name, "arguments": json.dumps(arguments)}}
 
 
+def production_calls(body, tools, foreign_project_id):
+    definitions = {tool["function"]["name"]: tool["function"]["parameters"] for tool in body["tools"]}
+    assert definitions["list_media"]["properties"]["limit"]["maximum"] == 60
+    assert definitions["list_clips"]["properties"]["limit"]["maximum"] == 50
+    assert set(definitions["create_scene"]["required"]) == {"episode_id", "title"}
+    assert set(definitions["set_scene_clips"]["required"]) == {"scene_id", "clip_ids"}
+    assert "episode_id" not in definitions["update_clip"]["properties"]
+    assert all(not definitions[name]["additionalProperties"] for name in (
+        "list_media", "create_episode", "create_scene", "create_clip", "set_scene_clips"
+    ))
+    results = {tool["tool_call_id"]: json.loads(tool["content"]) for tool in tools}
+    if not results:
+        return [
+            call("list_media", {"kind": "image", "query": "station.png", "limit": 1}, "production-media"),
+            call("list_media", {"limit": 20000}, "production-limit"),
+            call("list_scenes", {"project_id": foreign_project_id}, "production-scope"),
+        ]
+    assert "limit" in results["production-limit"]["error"]
+    assert "error" in results["production-scope"]
+    media_id = results["production-media"]["items"][0]["id"]
+    if "production-episode" not in results:
+        return [call("create_episode", {"title": "具名工具测试剧集", "cover_media_id": media_id}, "production-episode")]
+    episode_id = results["production-episode"]["id"]
+    if "production-scene" not in results:
+        return [
+            call("create_scene", {"episode_id": episode_id, "title": "站台", "reference_media_ids": [media_id]}, "production-scene"),
+            call("create_clip", {"episode_id": episode_id, "title": "走向站台"}, "production-clip"),
+        ]
+    scene = results["production-scene"]
+    clip = results["production-clip"]
+    assert clip["scene_id"] != scene["id"]
+    if "production-members" not in results:
+        return [
+            call("set_scene_clips", {"scene_id": scene["id"], "clip_ids": [scene["clips"][0]["id"], clip["id"]]}, "production-members"),
+            call("set_scene_clips", {"scene_id": scene["id"], "clip_ids": [clip["id"], scene["clips"][0]["id"]]}, "production-invalid-order"),
+            call("update_scene", {"id": scene["id"], "shared_prompt": "连续的雨夜灯光"}, "production-scene-update"),
+            call("update_clip", {"id": clip["id"], "prompt": "由远及近的跟拍", "first_media_id": media_id}, "production-clip-update"),
+            call("update_episode", {"id": episode_id, "description": "夜班列车到站"}, "production-episode-update"),
+            call("rename_media", {"id": media_id, "name": "站台参考.png"}, "production-rename"),
+        ]
+    assert "error" in results["production-invalid-order"]
+    filters = {"episode_id": episode_id, "scene_id": scene["id"], "limit": 1}
+    if "production-list-clips" not in results:
+        return [
+            call("list_clips", filters, "production-list-clips"),
+            call("app_request", {"method": "GET", "resource": "scenes", "episode_id": episode_id}, "production-legacy-read"),
+        ]
+    if "production-list-clips-next" not in results:
+        page = results["production-list-clips"]
+        assert page["total"] == 2 and page["next_offset"] == 1
+        return [call("list_clips", {**filters, "offset": page["next_offset"]}, "production-list-clips-next")]
+    return []
+
+
 class Model(BaseHTTPRequestHandler):
     requests = []
     delayed = threading.Event()
@@ -210,13 +264,18 @@ class Model(BaseHTTPRequestHandler):
                      call("app_request", {"resource": "assets", "method": "POST", "data": {"name": "Must skip after question"}}, "skip-after-input")]
         elif "READ_LONG_TEXT:" in prompt:
             resource_id = int(prompt.split("READ_LONG_TEXT:", 1)[1])
-            assert "resource/text/read" in message_text(messages[0])
+            assert "read_resource_text" in message_text(messages[0])
+            definitions = {tool["function"]["name"]: tool["function"]["parameters"] for tool in body["tools"]}
+            assert set(definitions["read_resource_text"]["properties"]) == {"resource", "id", "field", "offset"}
+            assert set(definitions["read_resource_text"]["required"]) == {"resource", "id", "field"}
+            assert set(definitions["read_project_timelines"]["properties"]) == {"offset"}
+            assert "project/timelines/read" not in definitions["app_action"]["properties"]["operation"]["enum"]
             pages = [json.loads(item["content"]) for item in tools if item["tool_call_id"].startswith("text-page-")]
             if not pages or pages[-1]["next_offset"] is not None:
-                offset = pages[-1]["next_offset"] if pages else 0
-                calls = [call("app_action", {"operation": "resource/text/read", "data": {
-                    "resource": "screenplays", "id": resource_id, "field": "content", "offset": offset,
-                }}, "text-page-" + str(len(pages)))]
+                arguments = {"resource": "screenplays", "id": resource_id, "field": "content"}
+                if pages:
+                    arguments["offset"] = pages[-1]["next_offset"]
+                calls = [call("read_resource_text", arguments, "text-page-" + str(len(pages)))]
             elif not any(item["tool_call_id"] == "text-edit" for item in tools):
                 original = "".join(page["content"] for page in pages)
                 assert original == LONG_RESOURCE_TEXT, "Agent lost part of the long screenplay before editing"
@@ -251,6 +310,15 @@ class Model(BaseHTTPRequestHandler):
                     call("app_request", {"resource": "media", "method": "GET", "data": {"kind": "audio"}}, "library-media"),
                     call("get_project", {}, "library-verify"),
                 ]
+        elif prompt.startswith("TYPED_PRODUCTION:"):
+            calls = production_calls(body, tools, prompt.split(":", 1)[1])
+        elif prompt.startswith("TYPED_APPROVAL:") and not tools:
+            assert "delete_scene" in advertised
+            scene_id = int(prompt.split(":", 1)[1])
+            calls = [call("request_user_input", {
+                "questions": [{"id": "approve", "question": "是否删除此场景及其两个片段？", "type": "confirmation"}],
+                "tool": {"name": "delete_scene", "arguments": {"id": scene_id}},
+            }, "production-delete")]
         elif "PLAN_RESUME" in prompt:
             assert "核对当前角色后继续" in json.dumps(messages, ensure_ascii=False), "Unfinished plan lost on resume"
             if not tools:
@@ -850,6 +918,50 @@ def main():
             assert len(large_traces) == 1 and large_traces[0]["status"] == "completed"
             saved_scripts = api(scripts_path, method="GET")
             assert len(saved_scripts) == 1 and saved_scripts[0]["content"] == LARGE_STREAM_SCRIPT
+
+            production = agent("create", title="具名工具操作与归属关系")
+            agent("run", session_id=production["id"], message=f'TYPED_PRODUCTION:{other["id"]}')
+            result = wait(production)
+            assert result["status"] == "completed", result.get("error")
+            traces = {message["tool_call_id"]: message for message in result["messages"] if message["role"] == "tool"}
+            failed = {identifier for identifier, trace in traces.items() if trace["status"] == "failed"}
+            assert failed == {"production-limit", "production-scope", "production-invalid-order"}, traces
+            outputs = {identifier: json.loads(trace["content"]) for identifier, trace in traces.items()}
+            episode_id = outputs["production-episode"]["id"]
+            scene_id = outputs["production-scene"]["id"]
+            clip_ids = [outputs["production-scene"]["clips"][0]["id"], outputs["production-clip"]["id"]]
+            pages = [outputs["production-list-clips"], outputs["production-list-clips-next"]]
+            assert pages[-1]["next_offset"] is None
+            assert [item["id"] for page in pages for item in page["items"]] == clip_ids, pages
+            assert [scene["id"] for scene in outputs["production-legacy-read"]] == [scene_id]
+            media_id = image_media["id"]
+            scene_path = f"/projects/{pid}/scenes/{scene_id}"
+            saved_episode = api(f"/projects/{pid}/episodes/{episode_id}", method="GET")
+            assert saved_episode["description"] == "夜班列车到站" and saved_episode["cover_media_id"] == media_id
+            saved_scene = api(scene_path, method="GET")
+            assert saved_scene["shared_prompt"] == "连续的雨夜灯光" and saved_scene["reference_media_ids"] == [media_id]
+            assert [clip["id"] for clip in saved_scene["clips"]] == clip_ids
+            saved_clip = saved_scene["clips"][-1]
+            assert saved_clip["prompt"] == "由远及近的跟拍" and saved_clip["first_media_id"] == media_id
+            assert api(f'/projects/{other["id"]}/episodes', method="GET") == []
+            for approve in (False, True):
+                deletion = agent("create", title="确认场景删除")
+                agent("run", session_id=deletion["id"], message=f"TYPED_APPROVAL:{scene_id}")
+                pending = waiting_for_input(deletion)["execution"]["user_input"]
+                assert pending["tool"] == {"name": "delete_scene", "arguments": {"id": scene_id}}, pending
+                assert len(api(scene_path, method="GET")["clips"]) == 2
+                agent("respond", session_id=deletion["id"], request_id=pending["id"], answers={"approve": approve})
+                result = wait(deletion)
+                assert result["status"] == "completed", result.get("error")
+                trace = next(message for message in result["messages"] if message.get("tool_name") == "request_user_input")
+                response = json.loads(trace["content"])
+                assert response["executed"] == approve and "tool_error" not in response, response
+                api(scene_path, expected=404 if approve else 200, method="GET")
+            for clip_id in clip_ids:
+                api(f"/projects/{pid}/clips/{clip_id}", expected=404, method="GET")
+            assert api(f"/projects/{pid}/media/{media_id}", method="GET")["name"] == "站台参考.png"
+            print("PASS: named production tools publish bounded schemas, preserve scene and media links, page clips in order, and honor approval before cascading scene deletion")
+
             assert PRIVATE_STREAM_MARKER not in json.dumps(completed_large)
             assert all(PRIVATE_STREAM_MARKER not in json.dumps(request) for request in Model.requests)
             assert all(SECRET not in json.dumps(request) for request in Model.requests)

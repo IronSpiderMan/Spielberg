@@ -1,12 +1,13 @@
 # Spielberg 项目工具与交付格式
 
-通过 `read_skill` 读取本技能及参考文件；有 `next_offset` 时继续分页。以下为内置适配约定，实际操作前用 `app_describe` 查询所需资源或动作，以当前返回的 schema 为准。工具始终限定当前项目，不自行传 `project_id`。
+通过 `read_skill` 读取本技能及参考文件，有 `next_offset` 时继续分页。素材、剧集、场景和片段优先使用下列工具，按模型收到的参数定义直接调用。通过 `app_request` 或 `app_action` 操作其他资源和动作前，用 `app_describe` 查询参数。工具自动限定当前项目，省略 `project_id`。
 
 ## 读取创作依据
 
-- `app_action` 的 `project/config/read`：项目大纲和文档目录；分别沿 `outline.next_offset`、`documents_next_offset` 读完相关分页。`project/document/read` 读取相关文档正文，沿 `next_offset` 继续。时间线用 `project/timelines/read`，拼接分页内容后理解完整时间线。
-- `app_request` 的 `episodes` 查询目标剧集。`screenplays` 的 GET 用 `episode_id` 筛选，每集最多一份 `format=markdown` 剧本和一份 `format=csv` 分镜头剧本。`scenes` 是叙事场景，`clips` 是可以单独制作的片段，片段列表可按 `scene_id` 筛选。`assets` 是人物、地点、物件等创作资产，`asset-relations` 是资产关系，`media` 是图片、视频和音频文件。
-- `get_project` 和普通 GET 的长文本可能截断。剧本与分镜的 `content`、资产与剧集的 `description`、场景的 `description` 和 `shared_prompt`、片段的 `description` 和 `prompt`，均可用 `app_action` 的 `resource/text/read` 分页读取。传入 `resource`、真实 `id` 和 `field`，沿 `next_offset` 读到 null。
+- `read_project_config`：项目大纲和文档目录；分别沿 `outline.next_offset`、`documents_next_offset` 读完相关分页。`read_project_document` 读取相关文档正文，沿 `next_offset` 继续。时间线用 `read_project_timelines`，拼接分页内容后理解完整时间线。
+- 用 `list_episodes` 查询目标剧集，已有真实 ID 时用 `get_episode`。用 `list_scenes` 按 `episode_id` 查询叙事场景，用 `list_clips` 按 `episode_id` 或 `scene_id` 查询制作片段。列表有 `next_offset` 时可继续翻页，详情用 `get_scene` 或 `get_clip` 读取。通过 `app_request` 的 `screenplays` GET 按 `episode_id` 查询剧本，每集最多一份 `format=markdown` 剧本和一份 `format=csv` 分镜头剧本。
+- 用 `list_media` 过滤图片、视频或音频，用 `get_media` 读取已有素材。通过 `app_request` 的 `assets` 和 `asset-relations` 查询人物、地点、物件等资产及其关系。
+- `get_project` 和普通 GET 的长文本可能截断。剧本与分镜的 `content`、资产与剧集的 `description`、场景的 `description` 和 `shared_prompt`、片段的 `description` 和 `prompt`，均可用 `read_resource_text` 分页读取。传入 `resource`、真实 `id` 和 `field`，沿 `next_offset` 读到 null。
 - 资产引用仅使用启用的资产，读取其真实名称及关联图片。资产 ID 与素材 ID 不可混用；使用 `inspect_image` 传真实 `media_id` 视觉检查图片。缺图仍可写分镜，留空实际图片绑定并列出需补的画面。
 
 列表或结构化 `storyboard` 若出现截断标记，不把节选当成完整数据提交替换；先缩小读取范围。仍无法完整读取时报告这一限制并保留已有内容，不猜测缺失镜头。
@@ -41,7 +42,7 @@
 
 ## AI 分镜与片段制作
 
-用户要求可供“AI 分镜与片段制作”使用的规划时，通过 `app_request` PATCH `episodes` 的 `storyboard` 字段，沿用真实剧集 ID。根对象为 `{"clips":[...]}`，成员结构如下。
+用户要求可供“AI 分镜与片段制作”使用的规划时，用 `update_episode` 的 `storyboard` 字段保存，沿用真实剧集 ID。根对象为 `{"clips":[...]}`，成员结构如下。
 
 ```json
 {
@@ -64,10 +65,10 @@
 
 仅规划分镜时，不自动生图、生视频、改渠道或改世界观。用户已要求实际制作时，使用真实 `generations/image`、`generations/video`、`generations/tts` 等动作及已有授权；图片编辑用 `i2i` 和真实 `image_media_ids`，需要核验的生成图片再用 `inspect_image` 检查。未完成的任务、补图需求和成片区分报告。
 
-用户要求写入制作片段时，先查询目标 `clips`，再 POST/PATCH `description`、`prompt`、参考素材和生成选项。新增片段传入其父场景 `scene_id`。`scripts/publish` 会删除草稿中没有的已有片段，局部更新用片段 PATCH。
+用户要求写入制作片段时，先查询目标片段与其归属，再用 `create_clip` 或 `update_clip` 写入 `description`、`prompt` 和实际参考素材。新增片段时传入目标 `episode_id`，加入已有场景时同时传入该场景的 `scene_id`。修改 `generation_options` 前先读取现有选项，提交完整的新对象并保留无关设置。`scripts/publish` 会删除草稿中没有的已有片段，局部更新用 `update_clip`。
 
-用户要求编排场景时，先读 `scenes` 和本集片段顺序。通过场景的 `clip_ids` 归入连续片段，将时间地点、开场站位、造型、音色与环境写入 `shared_prompt`，把实际引用写入共享图片和音频 ID 列表。局部运镜、对白与动作放在各片段。逐片段生成前用 `generations/clip-preview` 核对继承后的请求，实际生成使用 `generations/video` 加 `clip_id`。
+用户要求编排场景时，先查询场景和本集片段顺序。用 `set_scene_clips` 将本集连续片段归入已有场景，用 `merge_scenes` 合并同集相邻场景。用 `update_scene` 把时间地点、开场站位、造型、音色与环境写入 `shared_prompt`，把实际引用写入共享图片和音频 ID 列表。局部运镜、对白与动作放在各片段。逐片段生成前用 `generations/clip-preview` 核对继承后的请求，实际生成使用 `generations/video` 加 `clip_id`。
 
-一镜到底使用 `generation_mode=one_take`，按连续运镜设计各片段的动作段落并给出具体时长。通过 `generations/scene-preview` 检查完整的连续动作和实际引用，用户要求生成时调用 `generations/scene-video`。用场景的 `videos` 查询结果，并通过 `scenes/select-video` 设置播放版本。剧集 `playback_units` 显示实际预览与合并的播放顺序。
+一镜到底用 `update_scene` 设置 `generation_mode=one_take`，按连续运镜设计各片段的动作段落并给出具体时长。通过 `generations/scene-preview` 检查完整的连续动作和实际引用，用户要求生成时调用 `generations/scene-video`。用 `get_scene` 查询 `videos`，通过 `select_scene_video` 设置播放版本。用 `get_episode` 读取 `playback_units` 核对实际播放与合并顺序。
 
 不要调用 Shell、Python、FFmpeg 命令或任意文件系统操作；此环境提供的是项目工具。用户要求只是分镜时无需初始化另一套工程或安装其他技能。

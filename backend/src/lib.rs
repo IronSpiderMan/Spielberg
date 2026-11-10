@@ -26,6 +26,7 @@ mod app_settings;
 mod thumbnails;
 mod svg;
 mod agent;
+mod agent_production_tools;
 mod agent_tools;
 mod skills;
 mod server_assets { include!(concat!(env!("OUT_DIR"), "/server_assets.rs")); }
