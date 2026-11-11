@@ -80,7 +80,7 @@ import { confirmDiscard,useEditGuard } from "./edit-guard";
 import { resolvePrompt, resolveH3Prompt } from "./resolve-prompt";
 import { type Storyboard } from "./StoryboardEditor";
 import { GenerationPreviewPanel, SceneSettings, type SceneInsertion } from "./SceneSettings";
-import { ClipCreationDialog, ClipEditorOrderActions, EpisodeOrderControls, placementActions } from "./components/EpisodeOrderControls";
+import { ClipCreationDialog, EpisodeOrderControls, placementActions } from "./components/EpisodeOrderControls";
 import { SceneMergeDialog } from "./SceneMergeDialog";
 import ScreenplayManager, { type ScreenplayEditorHandle } from "./ScreenplayManager";
 import { PromptInput } from "./PromptInput";
@@ -1388,7 +1388,6 @@ export function ClipEditor({
   onGenerateFrame,
   generatedFrame,
   onGeneratedApplied,
-  onClipCreated,
 }: {
   scene: Clip;
   isNew: boolean;
@@ -1398,7 +1397,6 @@ export function ClipEditor({
   onGenerateFrame?: (key: FrameKey) => void;
   generatedFrame?: { key: FrameKey; media: Media } | null;
   onGeneratedApplied?: () => void;
-  onClipCreated: (clip: Clip) => void;
 }) {
   const [title, setTitle] = useState(scene.title || "");
   const [description, setDescription] = useState(scene.description || "");
@@ -1744,11 +1742,6 @@ export function ClipEditor({
     catch(e) { Message.error(String(e)); }
     finally { setSavingClip(false); }
   };
-  const afterClipSave = (action: () => void) => {
-    if (!dirty) { action(); return; }
-    setSavingClip(true);
-    void persist().then(action).catch(error => Message.error(String(error))).finally(() => setSavingClip(false));
-  };
   const optimizationMenu = <Dropdown trigger={["hover","click"]} position="br" popupVisible={optimizationMenuOpen && !optimizationDisabled} onVisibleChange={setOptimizationMenuOpen} disabled={optimizationDisabled} droplist={<Menu onClickMenuItem={key=>{setOptimizationMenuOpen(false); if(key==="minimax-h3"||key==="wan3.0") void optimizeVideoPrompt(key);}}>
     <Menu.Item key="minimax-h3">优化成 minimax-h3 形式</Menu.Item>
     <Menu.Item key="wan3.0">优化成 wan3.0 形式</Menu.Item>
@@ -1778,9 +1771,6 @@ export function ClipEditor({
         </div>
         <Space wrap>
           <span className="subtle" role="status">{dirty ? (autoSaveStatus.includes("失败") ? autoSaveStatus : "待自动保存…") : autoSaveStatus}</span>
-          {episode && <ClipEditorOrderActions episode={episode} clip={scene} project={data.project} reload={reload}
-            disabled={savingClip || optimizingPrompt || videoGenerating || persistedVideoGenerating || imageGenerating || pastingImages || uploadingReferences}
-            afterSave={afterClipSave} onCreated={onClipCreated} />}
           <Button className="scene-writing-toggle" icon={writing ? <Minimize2 size={15}/> : <Maximize2 size={15}/>} aria-pressed={writing} onClick={() => changeWriting(!writing)}>
             {writing ? "退出对照" : "对照写作"}
           </Button>

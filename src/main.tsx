@@ -421,7 +421,6 @@ function App() {
               isNew={sceneEditing.isNew}
               data={data}
               onClose={() => setClipEditing(null)}
-              onClipCreated={scene => setClipEditing({scene, isNew: true})}
               reload={refresh}
               onGenerateFrame={key => { if (key === "reference") return; setClipImageFlow({ key }); setStudioTab("images"); }}
               generatedFrame={sceneImageFlow?.media ? { key: sceneImageFlow.key, media: sceneImageFlow.media } : null}
