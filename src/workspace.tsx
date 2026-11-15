@@ -870,9 +870,6 @@ function EpisodeEditor({
         content: "每个片段将成为独立场景并沿用共享设定。原场景及一镜到底视频的关联将移除。",
         okText: "拆分场景", onOk: () => updateGroup("ungroup", scene.id)}),
     }] : []),
-    { key: "delete", label: "删除场景", danger: true, run: () => confirmAction({intent: "danger",
-      title: "删除这个场景？", content: `将删除「${scene.title}」及其中 ${scene.clips.length} 个片段。`,
-      okText: "删除场景", onOk: () => updateGroup("delete", scene.id)}) },
   ];
 
   const [focusedSceneId, setFocusedSceneId] = useState(initialFocus);
@@ -955,12 +952,18 @@ function EpisodeEditor({
     return (sceneOrder[index + 1] || sceneOrder[index - 1])?.id;
   };
   const updateGroup = async (action: "delete" | "ungroup", sceneId: number) => {
-    const result = await post<{scene_ids?: number[]}>(`/scenes/${action}`, { project_id: project.id, scene_id: sceneId, id: sceneId });
+    const result = await post<{scene_ids?: number[]}>(`/scenes/${action}`, { project_id: project.id, scene_id: sceneId, id: sceneId })
+      .catch(error => { Message.error(String(error)); throw error; });
     const nextId = result.scene_ids?.[0] ?? nextSceneId(sceneId);
-    await reload();
+    const success = action === "delete" ? "场景已删除" : "场景已拆分";
+    try { await reload(); }
+    catch {
+      Message.warning(`${success}，列表刷新失败`);
+      return;
+    }
     setSceneQuery("");
     showSceneList(nextId);
-    Message.success(action === "delete" ? "场景已删除" : "场景已拆分");
+    Message.success(success);
   };
   const [previewTarget, setPreviewTarget] = useState<Pick<PlaybackUnit, "kind" | "id">>();
   const [previewVideoId, setPreviewVideoId] = useState<number | null>(null);
@@ -1159,6 +1162,12 @@ function EpisodeEditor({
                 {!selecting && currentEpisode && <div className="scene-workspace-card-actions">
                   <EpisodeOrderControls episode={currentEpisode} kind="scene" id={scene.id} project={project} reload={reload}
                     disabled={editorLocked || copyingScene} actions={sceneActions(scene)} />
+                  <Button size="mini" status="danger" icon={<Trash2 size={14}/>}
+                    aria-label={`删除场景「${scene.title}」`} disabled={editorLocked || copyingScene}
+                    onClick={() => confirmAction({intent: "danger", title: "删除这个场景？",
+                      content: `将删除「${scene.title}」及其中 ${scene.clips.length} 个片段。素材库中的原始媒体文件会保留。`,
+                      okText: "删除场景", onOk: () => updateGroup("delete", scene.id),
+                    })}>删除</Button>
                 </div>}
               </li>;
             })}

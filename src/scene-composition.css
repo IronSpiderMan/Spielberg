@@ -64,9 +64,14 @@
   border-color: var(--ui-primary);
 }
 .scene-workspace-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
   padding: 6px 8px;
   border-top: 1px solid var(--ui-border);
 }
+.scene-workspace-card-actions > .arco-btn { margin-inline-start: auto; }
 .scene-workspace-card-link {
   position: relative;
   display: flex;
