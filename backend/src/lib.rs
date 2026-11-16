@@ -524,15 +524,124 @@ fn update_prompt_fields(c:&Connection,v:&Value)->Result<(),String>{
     Ok(())
 }
 fn save_settings(s:&AppState,v:&Value)->Result<Value,String>{generation_channels::validate_settings(v.get("settings").unwrap_or(&json!({})))?;let pid=project_id(v)?;db(s,&pid)?.execute("INSERT INTO settings(key,value) VALUES('models',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[v.get("settings").unwrap_or(&json!({})).to_string()]).map_err(|e|e.to_string())?;touch(s,&pid);Ok(json!({"ok":true}))}
-fn llm_request_error(error:&reqwest::Error,endpoint:&str,context:&str,timeout_secs:Option<u64>)->String{
- let operation=if context=="structured"{"分镜模型请求"}else{"Prompt 优化请求"};
- let reason=if error.is_timeout(){timeout_secs.map(|seconds|format!("请求超时（最多等待 {seconds} 秒），请检查模型服务的处理速度及日志")).unwrap_or_else(||"连接模型服务超时，请检查网络及服务状态".into())}else if error.is_connect(){"连接模型服务失败，请检查服务是否运行及接口地址".to_string()}else{"模型连接中断或请求发送失败，请检查模型服务日志".to_string()};
- let mut details=vec![error.to_string()];
- let mut source=std::error::Error::source(error);
- while let Some(cause)=source{details.push(cause.to_string());source=cause.source();}
- format!("{operation}失败：{reason}。接口：{endpoint}；详情：{}",details.join(" → "))
+const LLM_CONNECT_TIMEOUT_SECONDS: u64 = 15;
+
+fn llm_request_error(
+    error: &reqwest::Error,
+    endpoint: &str,
+    context: &str,
+    timeout_secs: Option<u64>,
+    phase: &str,
+) -> String {
+    let operation = if context == "structured" { "分镜模型请求" } else { "Prompt 优化请求" };
+    let reason = match (error.is_connect(), error.is_timeout()) {
+        (true, true) => format!("连接模型服务超时（最多等待 {LLM_CONNECT_TIMEOUT_SECONDS} 秒），请检查网络及服务状态"),
+        (true, false) => "连接模型服务失败，请检查服务是否运行及接口地址".into(),
+        (false, true) => {
+            let limit = timeout_secs.map(|seconds| format!("（最多等待 {seconds} 秒）")).unwrap_or_default();
+            format!("{phase}超时{limit}，请检查网络及模型服务日志")
+        }
+        (false, false) => "模型连接中断或请求发送失败，请检查模型服务日志".into(),
+    };
+    let mut details = vec![error.to_string()];
+    let mut source = std::error::Error::source(error);
+    while let Some(cause) = source {
+        details.push(cause.to_string());
+        source = cause.source();
+    }
+    format!("{operation}失败：{reason}。接口：{endpoint}；详情：{}", details.join(" → "))
 }
-fn optimize_prompt(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let prompt=strv(v,"prompt")?;if prompt.trim().is_empty(){return Err("请先输入 Prompt".into())}let c=db(s,&pid)?;let raw:String=c.query_row("SELECT value FROM settings WHERE key='models'",[],|r|r.get(0)).optional().map_err(|e|e.to_string())?.ok_or("请先在统一渠道配置中添加 LLM 渠道")?;let settings:Value=serde_json::from_str(&raw).map_err(|e|e.to_string())?;let selected=generation_channels::resolve(&settings,v,"llm","chat")?;let model=&selected;let base=model["base_url"].as_str().filter(|x|!x.trim().is_empty()).or_else(||model["url"].as_str().filter(|x|!x.trim().is_empty())).unwrap_or("").trim_end_matches('/');if base.is_empty(){return Err("请先在统一渠道配置中添加 LLM 渠道".into())}let endpoint=if base.ends_with("/chat/completions"){base.to_string()}else{format!("{}/chat/completions",base)};let model_name=model["model"].as_str().filter(|x|!x.trim().is_empty()).unwrap_or("gpt-4o-mini");let context=v.get("kind").and_then(Value::as_str).unwrap_or("image");let default_instruction=if context=="video"{"结合用户提供的参考图片，优化为清晰、连贯、可用于 AI 视频生成的中文 Prompt。描述参考图中的主体、环境与视觉风格，并保留原意，强化主体动作、镜头运动和场景变化。保留所有 @ 引用标记及其名称不变。只返回优化后的 Prompt，不要解释。"}else{"结合用户提供的参考图片，优化为具体、可用于 AI 图片生成的中文 Prompt。描述参考图中的主体、构图、色彩与视觉风格，并保留原意，强化光线、材质和画面细节。保留所有 @ 引用标记及其名称不变。只返回优化后的 Prompt，不要解释。"};let custom_instruction=v.get("instruction").and_then(Value::as_str).unwrap_or("").trim();let h3=v["prompt_format"]=="minimax-h3";let instruction=if h3{h3_prompt::instruction(&c,v)?}else if v["prompt_format"]=="wan3.0"{wan_prompt::instruction(v)}else if context=="structured"{custom_instruction.to_string()}else if custom_instruction.is_empty(){default_instruction.to_string()}else{format!("{default_instruction}\n用户的额外优化要求：{custom_instruction}")};let mut content=vec![json!({"type":"text","text":prompt})];if let Some(ids)=v.get("image_media_ids").and_then(Value::as_array){for id in ids.iter().filter_map(Value::as_i64){let item=media(&c,Some(id)).ok_or("参考图片不存在")?;if item["kind"]!="image"{return Err("Prompt 优化参考图必须是图片".into())}let path=item["path"].as_str().ok_or("参考图片路径无效")?;let raster=svg::reference_path(Path::new(path))?;let path=raster.to_str().ok_or("参考图片路径无效")?;let bytes=fs::read(path).map_err(|e|format!("读取参考图片失败：{e}"))?;let mime=match Path::new(path).extension().and_then(|x|x.to_str()).unwrap_or("").to_ascii_lowercase().as_str(){"jpg"|"jpeg"=>"image/jpeg","webp"=>"image/webp","gif"=>"image/gif",_=>"image/png"};let encoded=base64::engine::general_purpose::STANDARD.encode(bytes);content.push(json!({"type":"image_url","image_url":{"url":format!("data:{mime};base64,{encoded}")}}));}}let timeout_secs=if context=="structured"||h3{None}else{Some(90)};let client=reqwest::blocking::Client::builder().connect_timeout(std::time::Duration::from_secs(15)).timeout(timeout_secs.map(std::time::Duration::from_secs)).build().map_err(|e|e.to_string())?;let user_content=if content.len()==1{json!(prompt)}else{json!(content)};let mut req=client.post(&endpoint).json(&json!({"model":model_name,"messages":[{"role":"system","content":instruction},{"role":"user","content":user_content}]}));if let Some(key)=model["api_key"].as_str().filter(|x|!x.is_empty()){req=req.bearer_auth(key)}let response=req.send().map_err(|e|llm_request_error(&e,&endpoint,context,timeout_secs))?;let status=response.status();let body:Value=response.json().map_err(|e|format!("无法解析 LLM 响应：{e}"))?;if !status.is_success(){return Err(format!("LLM 服务返回 {status}：{}",body))}let result=body.pointer("/choices/0/message/content").and_then(Value::as_str).map(str::trim).filter(|x|!x.is_empty()).ok_or("LLM 未返回优化后的 Prompt")?;if h3{h3_prompt::validate(result,v["h3_mode"].as_str().unwrap_or(""))?;}Ok(json!({"prompt":result}))}
+
+fn request_llm_completion(
+    request: reqwest::blocking::RequestBuilder,
+    endpoint: &str,
+    context: &str,
+    timeout_secs: Option<u64>,
+) -> Result<Value, String> {
+    let response = request.send().map_err(|error| {
+        llm_request_error(&error, endpoint, context, timeout_secs, "发送请求或等待模型响应")
+    })?;
+    let status = response.status();
+    let body: Value = response.json().map_err(|error| {
+        if error.is_timeout() {
+            llm_request_error(&error, endpoint, context, timeout_secs, "读取模型响应")
+        } else {
+            format!("无法解析 LLM 响应：{error}")
+        }
+    })?;
+    if !status.is_success() {
+        return Err(format!("LLM 服务返回 {status}：{body}"));
+    }
+    Ok(body)
+}
+
+fn optimize_prompt(s:&AppState,v:&Value)->Result<Value,String>{let pid=project_id(v)?;let prompt=strv(v,"prompt")?;if prompt.trim().is_empty(){return Err("请先输入 Prompt".into())}let c=db(s,&pid)?;let raw:String=c.query_row("SELECT value FROM settings WHERE key='models'",[],|r|r.get(0)).optional().map_err(|e|e.to_string())?.ok_or("请先在统一渠道配置中添加 LLM 渠道")?;let settings:Value=serde_json::from_str(&raw).map_err(|e|e.to_string())?;let selected=generation_channels::resolve(&settings,v,"llm","chat")?;let model=&selected;let base=model["base_url"].as_str().filter(|x|!x.trim().is_empty()).or_else(||model["url"].as_str().filter(|x|!x.trim().is_empty())).unwrap_or("").trim_end_matches('/');if base.is_empty(){return Err("请先在统一渠道配置中添加 LLM 渠道".into())}let endpoint=if base.ends_with("/chat/completions"){base.to_string()}else{format!("{}/chat/completions",base)};let model_name=model["model"].as_str().filter(|x|!x.trim().is_empty()).unwrap_or("gpt-4o-mini");let context=v.get("kind").and_then(Value::as_str).unwrap_or("image");let default_instruction=if context=="video"{"结合用户提供的参考图片，优化为清晰、连贯、可用于 AI 视频生成的中文 Prompt。描述参考图中的主体、环境与视觉风格，并保留原意，强化主体动作、镜头运动和场景变化。保留所有 @ 引用标记及其名称不变。只返回优化后的 Prompt，不要解释。"}else{"结合用户提供的参考图片，优化为具体、可用于 AI 图片生成的中文 Prompt。描述参考图中的主体、构图、色彩与视觉风格，并保留原意，强化光线、材质和画面细节。保留所有 @ 引用标记及其名称不变。只返回优化后的 Prompt，不要解释。"};let custom_instruction=v.get("instruction").and_then(Value::as_str).unwrap_or("").trim();let h3=v["prompt_format"]=="minimax-h3";let instruction=if h3{h3_prompt::instruction(&c,v)?}else if v["prompt_format"]=="wan3.0"{wan_prompt::instruction(v)}else if context=="structured"{custom_instruction.to_string()}else if custom_instruction.is_empty(){default_instruction.to_string()}else{format!("{default_instruction}\n用户的额外优化要求：{custom_instruction}")};let mut content=vec![json!({"type":"text","text":prompt})];if let Some(ids)=v.get("image_media_ids").and_then(Value::as_array){for id in ids.iter().filter_map(Value::as_i64){let item=media(&c,Some(id)).ok_or("参考图片不存在")?;if item["kind"]!="image"{return Err("Prompt 优化参考图必须是图片".into())}let path=item["path"].as_str().ok_or("参考图片路径无效")?;let raster=svg::reference_path(Path::new(path))?;let path=raster.to_str().ok_or("参考图片路径无效")?;let bytes=fs::read(path).map_err(|e|format!("读取参考图片失败：{e}"))?;let mime=match Path::new(path).extension().and_then(|x|x.to_str()).unwrap_or("").to_ascii_lowercase().as_str(){"jpg"|"jpeg"=>"image/jpeg","webp"=>"image/webp","gif"=>"image/gif",_=>"image/png"};let encoded=base64::engine::general_purpose::STANDARD.encode(bytes);content.push(json!({"type":"image_url","image_url":{"url":format!("data:{mime};base64,{encoded}")}}));}}
+    let timeout_secs = if context == "structured" || h3 { None } else { Some(90) };
+    let client = reqwest::blocking::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(LLM_CONNECT_TIMEOUT_SECONDS))
+        .timeout(timeout_secs.map(std::time::Duration::from_secs))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let user_content = if content.len() == 1 { json!(prompt) } else { json!(content) };
+    let mut request = client.post(&endpoint).json(&json!({
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": instruction},
+            {"role": "user", "content": user_content},
+        ],
+    }));
+    if let Some(key) = model["api_key"].as_str().filter(|x| !x.is_empty()) {
+        request = request.bearer_auth(key);
+    }
+    let body = request_llm_completion(request, &endpoint, context, timeout_secs)?;
+    let result = body.pointer("/choices/0/message/content")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|x| !x.is_empty())
+        .ok_or("LLM 未返回优化后的 Prompt")?;
+    if h3 {
+        h3_prompt::validate(result, v["h3_mode"].as_str().unwrap_or(""))?;
+    }
+    Ok(json!({"prompt": result}))
+}
+
+#[cfg(test)]
+mod llm_request_tests {
+    use super::*;
+    use std::{io::{Read, Write}, net::TcpListener, sync::mpsc, time::Duration};
+
+    #[test]
+    fn llm_timeouts_identify_the_failed_request_phase() {
+        for (scheme, response, expected) in [
+            ("https", "", "连接模型服务超时（最多等待 15 秒）"),
+            ("http", "", "发送请求或等待模型响应超时（最多等待 1 秒）"),
+            ("http", "HTTP/1.1 200 OK\r\nContent-Length: 20\r\n\r\n{", "读取模型响应超时（最多等待 1 秒）"),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let endpoint = format!("{scheme}://{}/v1/chat/completions", listener.local_addr().unwrap());
+            let (release, finished) = mpsc::channel();
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+                assert!(stream.read(&mut [0; 4096]).unwrap() > 0);
+                stream.write_all(response.as_bytes()).unwrap();
+                let _ = finished.recv_timeout(Duration::from_secs(3));
+            });
+            let client = reqwest::blocking::Client::builder()
+                .no_proxy()
+                .connect_timeout(Duration::from_millis(500))
+                .timeout(Duration::from_secs(1))
+                .build()
+                .unwrap();
+            let result = request_llm_completion(client.post(&endpoint), &endpoint, "image", Some(1));
+            let _ = release.send(());
+            server.join().unwrap();
+            let error = result.unwrap_err();
+            assert!(error.contains(expected), "unexpected diagnostic: {error}");
+        }
+    }
+}
+
 fn import_pose_reference(s:&AppState,v:&Value)->Result<Value,String>{
  let pid=project_id(v)?;
  let encoded=strv(v,"data_url")?;
