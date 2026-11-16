@@ -118,8 +118,6 @@
 .agent-float-panel footer button, .agent-float-settings, .agent-float-error button { display: inline-flex; align-items: center; gap: 4px; padding: 3px 0; color: var(--ui-muted); font-size: 11px; border: 0; background: transparent; }
 .agent-float-panel footer button:hover:not(:disabled), .agent-float-settings:hover { color: var(--ui-primary); }
 .agent-float-settings { margin: -5px 0 10px; color: var(--ui-primary); }
-/* Keep the existing image shortcut clear of the assistant's default position. */
-.floating-image-generator.arco-btn { right: 108px; }
 @keyframes agent-light-morph {
   0%, 100% { border-radius: 44% 56% 48% 52% / 43% 41% 59% 57%; transform: scale(.95) translate(-1px, 0); }
   50% { border-radius: 56% 44% 59% 41% / 54% 61% 39% 46%; transform: scale(1.06) translate(1px, -1px); }

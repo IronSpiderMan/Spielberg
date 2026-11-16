@@ -289,7 +289,6 @@
   .creation-split > .image-result { position: static; }
 }
 @media (max-width: 600px) {
-  .floating-image-generator.arco-btn { bottom: calc(80px + env(safe-area-inset-bottom)); }
   .creation-split { gap: 16px; }
   .creation-split > .creation-panel { padding: 18px; border-radius: 12px !important; }
   .generation-panel-heading { margin-bottom: 20px; padding-bottom: 18px; }

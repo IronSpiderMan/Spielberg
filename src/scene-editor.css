@@ -166,7 +166,6 @@
 .scene-writing-tabs { display: flex; gap: 4px; min-width: 0; }
 .scene-writing-toolbar > .arco-btn { flex-shrink: 0; }
 .scene-editor-page.is-writing .scene-writing-tabs .arco-btn[aria-pressed="true"] { color: var(--ui-primary); background: var(--ui-accent-soft); border-color: var(--ui-primary); }
-.app:has(.scene-editor-page.is-writing) .floating-image-generator { display: none; }
 body:has(.scene-editor-page.is-writing) .agent-float-button[aria-expanded="false"] { display: none; }
 .scene-editor-page.is-writing .scene-editor-content { grid-template-columns: minmax(0, 1fr); }
 .scene-editor-page.is-writing .scene-results,

@@ -1,4 +1,5 @@
 import { PreviewKeyboardNavigation } from "./PreviewKeyboardNavigation";
+import { openImageGenerator } from "./ImageGeneratorModal";
 import { RevealFileButton } from "./RevealFileButton";
 import { Button, Message, Modal } from "@arco-design/web-react";
 import { ChevronLeft, ChevronRight, Copy, Download, FolderOpen, Image as ImageIcon, Info, Maximize, Minus, Mouse, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, RotateCw, Undo2, WandSparkles } from "lucide-react";
@@ -186,7 +187,7 @@ export function ImagePreviewModal({ media, onClose, afterClose, title = "参考�
       }}>下载</Button>
       <Button type="primary" disabled={!media} icon={<WandSparkles size={16} />} onClick={() => {
         if (!media) return;
-        window.dispatchEvent(new CustomEvent("spielberg:image-to-image", { detail: media }));
+        openImageGenerator(media);
         onClose();
       }}>图生图</Button>
       </div>

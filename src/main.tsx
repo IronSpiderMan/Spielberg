@@ -57,7 +57,7 @@ import "./dialogs.css";
 
 
 import { PageHeading, PageLoading } from "./ui";
-import { FloatingImageGenerator } from "./components/FloatingImageGenerator";
+import { ImageGeneratorModal } from "./components/ImageGeneratorModal";
 import { agentFloatPreferencesKey, readAgentFloatPreferences } from "./agent-float-preferences";
 import { AgentFloatButton } from "./components/AgentFloatButton";
 import { StudioNavigation, studioNavigationId } from "./components/StudioNavigation";
@@ -492,9 +492,7 @@ function App() {
           )}
           </Suspense>
         </Layout.Content>
-        {(
-          <FloatingImageGenerator showButton={!!((sceneEditing && sceneEditing.scene.creation_mode !== "canvas") || page === "roles")} key={`floating-generator:${data.project.id}`} data={data} reload={refresh} />
-        )}
+        <ImageGeneratorModal key={`image-generator:${data.project.id}`} data={data} reload={refresh} />
         {agentFloat.visible && <AgentFloatButton appearance={agentFloat} modelSettings={data.settings} key={`agent-float:${data.project.id}`} project={data.project} reload={refresh} onSettings={() => navigate("settings")} onOpenSession={sessionId => navigate("agent", () => {
           localStorage.setItem(`spielberg-agent-session-${data.project.id}`, sessionId);
           setAgentViewVersion(value => value + 1);

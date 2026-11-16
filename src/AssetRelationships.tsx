@@ -1,4 +1,5 @@
 import { confirmAction } from "./components/ConfirmAction";
+import { ImageGeneratorButton } from "./components/ImageGeneratorModal";
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Button, Checkbox, Empty, Form, Input, Message, Modal, Select, Space, Spin, Tag } from "@arco-design/web-react";
 import { ArrowLeft, ArrowRight, GitBranch, Maximize, Minus, Pencil, Plus, RotateCcw, Save, Trash2, Users } from "lucide-react";
@@ -190,7 +191,12 @@ export default function AssetRelationships({ data, onClose }: { data: Snapshot; 
   return <section className="asset-relationships" aria-label="资产关系图">
     <div className="asset-graph-heading">
       <div><Button type="text" icon={<ArrowLeft size={16}/>} onClick={() => dirty ? confirmDiscard(onClose) : onClose()}>资产列表</Button><h1>资产关系图 <span>{data.assets.length} 个资产 · {relations.length} 条关系</span></h1><p>连起人物、地点与物品，梳理故事中的联系。</p></div>
-      <Space wrap><Button icon={<RotateCcw size={15}/>} disabled={loading || saving || relationBusy} onClick={() => dirty ? confirmDiscard(() => void load()) : void load()}>重新加载</Button><Button icon={<Save size={15}/>} loading={saving} disabled={loading || !dirty} onClick={() => void saveLayout()}>保存布局{dirty ? " ·" : ""}</Button><Button type="primary" icon={<Plus size={16}/>} disabled={loading || data.assets.length < 2} onClick={() => newRelation(selected || undefined)}>新建关系</Button></Space>
+      <Space wrap>
+        <ImageGeneratorButton />
+        <Button icon={<RotateCcw size={15}/>} disabled={loading || saving || relationBusy} onClick={() => dirty ? confirmDiscard(() => void load()) : void load()}>重新加载</Button>
+        <Button icon={<Save size={15}/>} loading={saving} disabled={loading || !dirty} onClick={() => void saveLayout()}>保存布局{dirty ? " ·" : ""}</Button>
+        <Button type="primary" icon={<Plus size={16}/>} disabled={loading || data.assets.length < 2} onClick={() => newRelation(selected || undefined)}>新建关系</Button>
+      </Space>
     </div>
     {error ? <div className="asset-graph-load-error" role="alert"><p>{error}</p><Button onClick={() => void load()}>重新加载</Button></div> : <Spin loading={loading} className="asset-graph-body">
       <div className="asset-graph-toolbar"><Input.Search aria-label="搜索关系图资产" placeholder="搜索资产名称或类别" value={query} onChange={value => { setQuery(value); setSelected(null); }} allowClear/><Checkbox checked={showDisabled} onChange={value => { setShowDisabled(value); setSelected(null); }}>显示已禁用资产</Checkbox><span className="asset-graph-hint">拖动资产调整位置；拖动或依次点击两个圆点建立关系。</span></div>

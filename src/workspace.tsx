@@ -17,6 +17,7 @@ import { buildVideoRequest } from "./generation-request";
 import { clipDefaultFields, sceneGenerationOptions, sceneVideos, sharedClipReferences } from "./scene-generation";
 import { RoleImagePicker } from "./components/RoleImagePicker";
 import { ImagePreviewModal, PreviewImage } from "./components/ImagePreviewModal";
+import { ImageGeneratorButton } from "./components/ImageGeneratorModal";
 import { usePromptOptimization } from "./hooks/usePromptOptimization";
 import { supportedPastedImages, useImageUpload } from "./hooks/useImageUpload";
 import { AssetImagePicker } from "./components/AssetImagePicker";
@@ -1780,6 +1781,7 @@ export function ClipEditor({
         </div>
         <Space wrap>
           <span className="subtle" role="status">{dirty ? (autoSaveStatus.includes("失败") ? autoSaveStatus : "待自动保存…") : autoSaveStatus}</span>
+          {!writing && <ImageGeneratorButton />}
           <Button className="scene-writing-toggle" icon={writing ? <Minimize2 size={15}/> : <Maximize2 size={15}/>} aria-pressed={writing} onClick={() => changeWriting(!writing)}>
             {writing ? "退出对照" : "对照写作"}
           </Button>
@@ -2186,6 +2188,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
           <Button  type="text" icon={<ArrowLeft size={16} />} onClick={closeRoleDetail}>资产列表</Button>
           <span>资产档案</span>
           <RevealFileButton path={detailImages[0]?.path || (supportsAudioReferences(detail.category) ? detail.audios?.[0]?.path : undefined)} />
+          <ImageGeneratorButton />
           <Button icon={<Pencil size={15} />} disabled={imageActionBusy} onClick={() => setEditing(detail)}>编辑设定</Button>
         </div>
         <div className="role-detail-hero">
@@ -2225,6 +2228,7 @@ export function Roles({ data, reload, initialRoleId }: { data: Snapshot; reload:
       <div className="section-title page-actions">
         <div className="page-intro"><h1>资产库</h1><p>管理人物、地点、物品、生物、载具等创作资产，保持故事中的视觉与设定一致。</p></div>
         <Space wrap>
+          <ImageGeneratorButton />
           <Button icon={<GitBranch size={16}/>} onClick={() => setGraphOpen(true)}>关系图</Button>
           <Button
             className="role-create-button"
