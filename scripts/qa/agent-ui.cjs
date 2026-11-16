@@ -47,7 +47,8 @@ const deferred = () => { let resolve; const promise=new Promise(done=>{resolve=d
    mentionPrompt=prompt;
    message={role:'assistant',content:'项目引用已收到。'};
   } else if(prompt.includes('渠道切换测试')) {
-   modelSelections.push({url:req.url,model:body.model,authorization:req.headers.authorization});
+   modelSelections.push({url:req.url,model:body.model,authorization:req.headers.authorization,
+    ...(body.reasoning_effort === undefined ? {} : {reasoning_effort:body.reasoning_effort})});
    message={role:'assistant',content:`渠道切换测试完成：${body.model}`};
   } else if(prompt.includes('TTS 测试')) {
    assert(body.tools.find(item=>item.function.name==='app_action').function.parameters.properties.operation.enum.includes('generations/tts'));
@@ -399,7 +400,8 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
   // Verify actual endpoint, model and credentials, without changing shared defaults.
   const modelBase=`http://127.0.0.1:${model.address().port}`;
   await api('/actions/settings',{project_id:project.id,settings:{llm:{default_channel_id:'llm-default',channels:[
-   {id:'llm-default',name:'默认渠道',provider:'openai',base_url:modelBase+'/default/v1',api_key:'default-model-key',models:[{id:'qa-default',name:'默认模型',profile:'openai-chat'}]},
+   {id:'llm-default',name:'默认渠道',provider:'openai',base_url:modelBase+'/default/v1',api_key:'default-model-key',
+    models:[{id:'qa-default',name:'默认模型',profile:'openai-chat',agent_reasoning_efforts:['none','high']}]},
    {id:'llm-other',name:'备用渠道',provider:'deepseek',base_url:modelBase+'/other/v1',api_key:'selected-model-key',default_model_id:'qa-first',models:[
     {id:'qa-first',name:'备用模型',profile:'deepseek-chat'},
     {id:'qa-selected',name:'指定模型',profile:'deepseek-chat',base_url:modelBase+'/model/v1'},
@@ -408,9 +410,19 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
   await page.reload();await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
   const picker=page.getByRole('button',{name:'Agent渠道与模型',exact:true});
   const cascade=page.getByRole('dialog',{name:'Agent渠道与模型',exact:true});
+  const thinking=page.getByTestId('agent-workspace').getByRole('combobox',{name:'思考强度',exact:true});
+  const thinkingMenu=page.locator('.agent-reasoning-options');
   await picker.getByText('默认模型',{exact:true}).waitFor();
+  await thinking.waitFor();
+  await thinking.click();
+  await thinkingMenu.waitFor();
+  assert.deepEqual(await thinkingMenu.getByRole('option').allTextContents(),['默认思考','关闭思考','高强度']);
+  assert.equal(await thinkingMenu.getByRole('option',{selected:true}).textContent(),'默认思考');
+  await thinkingMenu.getByRole('option',{name:'高强度',exact:true}).click();
+  await thinkingMenu.waitFor({state:'hidden'});
   for(const width of [1440,390,320]) {
    await page.setViewportSize({width,height:900});
+   assert(await thinking.evaluate(select=>{const rect=select.getBoundingClientRect();return rect.x>=0 && rect.right<=innerWidth;}));
    await picker.click();await cascade.waitFor();
    await cascade.getByRole('button',{name:'备用渠道',exact:true}).click();
    await cascade.getByText('指定模型',{exact:true}).waitFor();
@@ -435,6 +447,7 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
    assert.equal(await picker.isDisabled(),false);
   };
   await pickModel('备用渠道','指定模型');
+  await thinking.waitFor({state:'hidden'});
   await page.getByTestId('agent-settings').click();
   await page.getByLabel('模型请求等待时间（秒）',{exact:true}).fill('120');
   const settingsResponse=page.waitForResponse(response=>response.url().endsWith('/agent/config/save'));
@@ -444,7 +457,18 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
   await picker.getByText('指定模型',{exact:true}).waitFor();
   await runSelection('qa-selected');
   assert.equal((await api('/actions/agent/config',{project_id:project.id})).model,'qa-default');
-  await pickModel('默认渠道','默认模型');await runSelection('qa-default');
+  await pickModel('默认渠道','默认模型');
+  await thinking.waitFor();
+  assert.equal(await thinking.locator('.arco-select-view-value').textContent(),'高强度');
+  await runSelection('qa-default');
+  await page.getByTestId('agent-float-button').click();
+  const floatPanel=page.getByTestId('agent-float-panel');
+  await floatPanel.getByRole('combobox',{name:'思考强度',exact:true}).click();
+  await thinkingMenu.getByRole('option',{name:'关闭思考',exact:true}).click();
+  await thinkingMenu.waitFor({state:'hidden'});
+  assert(await floatPanel.isVisible());
+  await thinking.getByText('关闭思考',{exact:true}).waitFor();
+  await floatPanel.getByRole('button',{name:'收起语音助手',exact:true}).click();
   await api('/actions/agent/config/save',{project_id:project.id,config:{inherit_llm:false,base_url:modelBase+'/independent/v1',model:'qa-own',api_key:'own-model-key'}});
   await page.reload();await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
   await picker.getByText('Agent 独立配置',{exact:true}).waitFor();
@@ -452,7 +476,7 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
   await pickModel('Agent 独立配置','qa-own');await runSelection('qa-own');
   assert.deepEqual(modelSelections,[
    {url:'/model/v1/chat/completions',model:'qa-selected',authorization:'Bearer selected-model-key'},
-   {url:'/default/v1/chat/completions',model:'qa-default',authorization:'Bearer default-model-key'},
+   {url:'/default/v1/chat/completions',model:'qa-default',authorization:'Bearer default-model-key',reasoning_effort:'high'},
    {url:'/other/v1/chat/completions',model:'qa-first',authorization:'Bearer selected-model-key'},
    {url:'/independent/v1/chat/completions',model:'qa-own',authorization:'Bearer own-model-key'},
   ]);

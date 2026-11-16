@@ -1,5 +1,5 @@
 import { confirmAction } from "./components/ConfirmAction";
-import { Button, Input, Message, Modal, Select, Spin, Switch } from "@arco-design/web-react";
+import { Button, Input, Message, Modal, Select, Spin } from "@arco-design/web-react";
 import { ArrowUp, ArrowUpRight, CircleAlert, LoaderCircle, Pause, Circle, Clapperboard, Folder, PencilLine, Search, Bot, Check, ChevronDown, Globe, MessageSquare, Plus, Settings2, Sparkles, Square, Trash2, Wrench, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -18,6 +18,7 @@ import { GenerationSelector } from "./components/generation/GenerationSelector";
 import { channelsFor, selectionPayload, useGenerationSelection } from "./generation-channels";
 import { AgentUserInput, type UserInputRequest, type UserInputAnswers } from "./components/AgentUserInput";
 import { AgentComposerInput } from "./components/AgentComposerInput";
+import { AgentReasoningSelect, useAgentReasoning } from "./components/AgentReasoningSelect";
 import { agentMentions, referencedIn, type AgentReference } from "./agent-mentions";
 import { productionToolLabels } from "./agent-production-tool-labels";
 
@@ -106,6 +107,8 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
     ] } };
   }, [data.settings, config.inherit_llm, config.base_url, config.model]);
   const modelSelection = useGenerationSelection(modelSettings, "llm", "chat");
+  const modelPayload = modelSelection.choice?.channel.id === INDEPENDENT_CHANNEL ? {} : selectionPayload(modelSelection.choice);
+  const reasoning = useAgentReasoning(pid, modelPayload, !!modelSelection.choice, modelSettings);
   useEffect(() => modelSelection.setValue({}), [pid]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [form, setForm] = useState<Config>(initialConfig);
@@ -147,6 +150,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
   const running = hasActiveRun(selected);
   const cancelling = running && (selected?.status === "cancelled" || selected?.execution?.phase === "stopping");
   const execution = selected?.execution;
+  const composerLocked = loading || loadFailed || running || sending || creating || saving;
   const configured = !!modelSelection.choice;
   const anyRunning = sessions.some(hasActiveRun);
   const updateDraft = (text: string, mention?: AgentReference) => setDrafts(items => {
@@ -268,8 +272,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
         session = created;
       }
       const key = session.id;
-      const model = modelSelection.choice?.channel.id === INDEPENDENT_CHANNEL ? {} : selectionPayload(modelSelection.choice);
-      const result = await call<Session>("run", { session_id: session.id, message: text, ...(references.length ? { references } : {}), images: images.map(image => image.url), image_media_ids: images.map(image => image.mediaId), web_enabled: online, ...model });
+      const result = await call<Session>("run", { session_id: session.id, message: text, ...(references.length ? { references } : {}), images: images.map(image => image.url), image_media_ids: images.map(image => image.mediaId), web_enabled: online, ...modelPayload, ...reasoning.payload });
       if (!mounted.current) return;
       setImageDrafts(items => ({ ...items, [key]: [] }));
       setDrafts(items => ({ ...items, [key]: items[key]?.text.trim() === text ? emptyDraft : items[key] }));
@@ -381,7 +384,27 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
           <div className="agent-composer">
             {!!images.length && <div className="agent-image-previews">{images.map((image, i) => <div key={i}><img src={image.url} alt={`待发送图片 ${i + 1}（已加入素材）`} /><button type="button" aria-label={`移除图片 ${i + 1}`} disabled={sending} onClick={() => setImageDrafts(items => ({ ...items, [draftKey]: images.filter((_, index) => index !== i) }))}><X size={14} /></button></div>)}</div>}
             <AgentComposerInput key={draftKey} inputRef={composer} data-testid="agent-composer" aria-label="向 Agent 发送消息" value={draft} mentions={mentions} maxLength={16000} disabled={loading || sending || creating} placeholder="输入 @ 引用项目内容，或 / 选择技能…" onPaste={event => { if (readingImages) return; const files = Array.from(event.clipboardData.items).filter(item => item.type.startsWith("image/")).map(item => item.getAsFile()).filter((file): file is File => !!file); if (files.length) { event.preventDefault(); void pasteImages(files); } }} onChange={updateDraft} onSend={() => void send()} />
-            <div className="agent-composer-actions"><label className={`agent-web-toggle${online ? " is-online" : ""}`}><Globe size={14} /><span>联网搜索</span><Switch size="small" checked={online} onChange={setOnline} disabled={running || sending} aria-label="联网搜索" /></label><GenerationSelector compact settings={modelSettings} kind="llm" operation="chat" value={modelSelection.value} onChange={modelSelection.setValue} disabled={loading || loadFailed || running || sending || creating || saving} />{running ? <Button data-testid="agent-stop" aria-label={cancelling ? "正在停止" : "停止执行"} status="danger" icon={<Square size={14} />} loading={stopping || cancelling} disabled={cancelling} onClick={() => void stop()}>{cancelling ? "正在停止" : "停止"}</Button> : <Button type="primary" data-testid="agent-send" aria-label="发送消息" icon={<ArrowUp size={19} />} loading={sending} disabled={(!draft.trim() && !images.length) || readingImages || loading || loadFailed || creating} onClick={() => void send()} />}</div>
+            <div className="agent-composer-actions">
+              <div className="agent-composer-models">
+                <GenerationSelector compact align="start" settings={modelSettings} kind="llm" operation="chat" value={modelSelection.value} onChange={modelSelection.setValue} disabled={composerLocked} />
+                <AgentReasoningSelect reasoning={reasoning} disabled={composerLocked} />
+              </div>
+              <div className="agent-composer-command">
+                <button type="button" className="agent-web-toggle" role="switch" aria-checked={online}
+                  aria-label="联网搜索" title={online ? "联网搜索已开启" : "联网搜索已关闭"}
+                  disabled={running || sending} onClick={() => setOnline(current => !current)}>
+                  <Globe size={15} aria-hidden="true" /><span>联网</span>
+                </button>
+                {running
+                  ? <Button className="agent-composer-submit" data-testid="agent-stop" aria-label={cancelling ? "正在停止" : "停止执行"}
+                    status="danger" icon={<Square size={14} />} loading={stopping || cancelling} disabled={cancelling} onClick={() => void stop()}>
+                    <span className="agent-stop-label">{cancelling ? "正在停止" : "停止"}</span>
+                  </Button>
+                  : <Button className="agent-composer-submit" type="primary" data-testid="agent-send" aria-label="发送消息"
+                    icon={<ArrowUp size={18} />} loading={sending} disabled={(!draft.trim() && !images.length) || readingImages || loading || loadFailed || creating}
+                    onClick={() => void send()} />}
+              </div>
+            </div>
           </div>
           {empty && <>
             <div className="agent-starters-heading">也可以从这里开始</div>
@@ -403,7 +426,7 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
         {form.search_provider !== "duckduckgo" && <label>搜索 API Key<Input.Password aria-label="搜索 API Key" value={searchKey} disabled={saving} placeholder={config.has_search_api_key ? "已保存，留空保留" : "输入搜索服务 API Key"} onChange={setSearchKey} /></label>}
         <label>模型请求等待时间（秒）<input aria-label="模型请求等待时间（秒）" type="number" min={30} max={1800} value={form.request_timeout_seconds ?? 600} disabled={saving} onChange={event => setForm(item => ({ ...item, request_timeout_seconds: Math.min(1800, Math.max(30, Number(event.target.value) || 30)) }))} /></label>
         <label>最多执行步数（1–{maxToolSteps}）<input aria-label="最多执行步数" type="number" min={1} max={maxToolSteps} value={form.max_steps} disabled={saving} onChange={event => setForm(item => ({ ...item, max_steps: Math.min(maxToolSteps, Math.max(1, Math.trunc(event.target.valueAsNumber) || 1)) }))} /></label>
-        <p>模型服务需要支持 OpenAI Chat Completions 工具调用。项目内容和检索资料会发送至该服务；密钥仅保存在后端。停止后已完成的修改会保留，正在执行的生成或导出可能继续完成。</p>
+        <p>模型服务需要支持 Agent 所用接口的工具调用。项目内容和检索资料会发送至该服务；密钥仅保存在后端。停止后已完成的修改会保留，正在执行的生成或导出可能继续完成。</p>
       </div>
     </Modal>
   </section>;

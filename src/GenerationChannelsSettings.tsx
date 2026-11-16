@@ -5,6 +5,7 @@ import { ChevronDown, Cpu, Plus, Search, Server, Star, Trash2 } from "lucide-rea
 import type { ModelSettings } from "./core";
 import { localId } from "./id";
 import { channelBaseUrl, channelsFor, MODEL_PROFILES, presetsFor, profilesFor, type ChannelProvider, type GenerationChannel, type GenerationKind, type GenerationModel } from "./generation-channels";
+import { agentReasoningOptions } from "./components/AgentReasoningSelect";
 import { EmptyState } from "./ui";
 import "./generation-channels.css";
 
@@ -153,6 +154,12 @@ function ChannelEditor({ kind, channel, isDefault, disabled, onChange, onDefault
                 <Form.Item label="显示名称"><Input aria-label={`${label}模型名称`} value={model.name} onChange={name => set({ name })} /></Form.Item>
                 {kind !== "llm" && <Form.Item label="参数能力"><Select aria-label={`${label}模型参数能力`} value={model.profile} disabled={channel.provider === "qianwen-token-plan"} options={profilesFor(kind, channel.provider).map(([value, profile]) => ({ label: profile.label, value }))} onChange={profile => set({ profile })} /></Form.Item>}
               </div>
+              {kind === "llm" && channel.provider === "openai" && !!channel.base_url.trim() && !/^https:\/\/api\.openai\.com(?:\/|$)/i.test(channel.base_url.trim()) &&
+                <Form.Item label="兼容接口的思考档位" extra="按服务文档选择该模型在调用工具时支持的 reasoning_effort 值。">
+                  <Select mode="multiple" allowClear aria-label="兼容接口的思考档位" disabled={disabled}
+                    options={agentReasoningOptions.map(({value}) => ({value, label: value}))}
+                    value={model.agent_reasoning_efforts ?? []} onChange={agent_reasoning_efforts => set({agent_reasoning_efforts})} />
+                </Form.Item>}
               <div className="generation-model-summary">{cap?.label}{cap?.min_duration ? ` · ${cap.min_duration}–${cap.max_duration} 秒` : ""}{cap?.smart_duration ? " · 智能时长" : ""}{cap?.max_images ? ` · 最多 ${cap.max_images} 张参考图` : ""}{cap?.last_frame ? " · 支持尾帧" : ""}</div>
               {channel.provider === "cast" && <div className="generation-model-route"><Form.Item label="模型服务地址（可选）" extra="模型由不同服务提供时，填写该模型的完整服务地址。"><Input aria-label={`${label}模型服务地址`} value={model.base_url || ""} onChange={base_url => set({ base_url })} placeholder="留空使用渠道地址" /></Form.Item><label><Switch size="small" checked={!!model.send_model} disabled={disabled} onChange={send_model => set({ send_model })} />接口接收 model 参数</label><p className="helper">{kind === "video" ? "标准 20 步、Turbo 8 步和 Pika 4 步预设已开启此选项；固定模型的旧版服务保持关闭。" : "固定模型的 RunningHub 适配服务保持关闭；支持按 model 分发的服务可开启。"}</p></div>}
             </div>}
@@ -161,6 +168,6 @@ function ChannelEditor({ kind, channel, isDefault, disabled, onChange, onDefault
         {!matches.length && <div className="settings-model-empty"><p>{modelQuery.trim() ? "没有匹配的模型，试试其他关键词。" : "还没有模型，从预设添加或创建自定义模型。"}</p>{modelQuery.trim() && <Button type="text" size="small" onClick={() => setModelQuery("")}>清空搜索</Button>}</div>}
       </div>
     </Form>
-    <details className="settings-connection-help"><summary>接口说明与调用约定</summary><p>{kind === "llm" ? <>默认渠道与模型用于分镜、Prompt 优化及 Agent，通过 OpenAI 兼容的 <code>/chat/completions</code> 调用。</> : kind === "image" ? <>OpenAI 模式根据 Base URL 调用 <code>/images/generations</code>（文生图）或 <code>/images/edits</code>（图生图），并将画面比例映射为模型支持的尺寸。旧 CAST 接口会按生成方式补全路径。</> : kind === "video" ? <>千问 Token Plan 使用专属视频接口，自动查询进度并下载入库。RunningHub / ComfyUI 兼容接口会按生成方式补全 <code>/v1/generations/t2v</code>、<code>ref2v</code> 或 <code>fl2v</code> 路径。</> : <>OpenAI 兼容服务使用 <code>/audio/speech</code>；可用音色、格式及语速参数由所选模型决定。</>}</p></details>
+    <details className="settings-connection-help"><summary>接口说明与调用约定</summary><p>{kind === "llm" ? <>默认渠道与模型用于分镜、Prompt 优化及 Agent。支持思考档位的 OpenAI 官方 Agent 模型使用 <code>/responses</code>，其余渠道通过 <code>/chat/completions</code> 调用。</> : kind === "image" ? <>OpenAI 模式根据 Base URL 调用 <code>/images/generations</code>（文生图）或 <code>/images/edits</code>（图生图），并将画面比例映射为模型支持的尺寸。旧 CAST 接口会按生成方式补全路径。</> : kind === "video" ? <>千问 Token Plan 使用专属视频接口，自动查询进度并下载入库。RunningHub / ComfyUI 兼容接口会按生成方式补全 <code>/v1/generations/t2v</code>、<code>ref2v</code> 或 <code>fl2v</code> 路径。</> : <>OpenAI 兼容服务使用 <code>/audio/speech</code>；可用音色、格式及语速参数由所选模型决定。</>}</p></details>
   </article>;
 }

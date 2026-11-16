@@ -12,6 +12,7 @@ import { startSpeechRecognition as startCloudSpeechRecognition } from "../asr-re
 import { useAgentFloatSpeechPreferences, type AgentFloatPreferences } from "../agent-float-preferences";
 import { stopAgentSpeechPlayback, useAgentReplySpeech } from "../agent-reply-speech";
 import { generationChoice, selectionPayload } from "../generation-channels";
+import { AgentReasoningSelect, useAgentReasoning } from "./AgentReasoningSelect";
 import { AgentLivingOrb } from "./AgentLivingOrb";
 import "./agent-float.css";
 import { AgentUserInput, type UserInputRequest, type UserInputAnswers } from "./AgentUserInput";
@@ -96,6 +97,7 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings, a
   const [position, setPosition] = useState(initialPosition);
   const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [open, setOpen] = useState(false);
+  const reasoning = useAgentReasoning(pid, {}, open, modelSettings);
   const [speechState, setSpeechState] = useState<ListeningState>("idle");
   const [draft, setDraft] = useState(() => readStorage(draftKey)?.slice(0, MAX_DRAFT) || "");
   const [error, setError] = useState("");
@@ -284,7 +286,7 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings, a
         if (!currentRequest()) return;
         accept(current);
       }
-      const result = await call<Session>("run", { session_id: current.id, message, web_enabled: true });
+      const result = await call<Session>("run", { session_id: current.id, message, web_enabled: true, ...reasoning.payload });
       if (currentRequest()) { accept(result); setDraft(""); }
     } catch (e) { failed = true; if (currentRequest()) setError(String(e).replace(/^Error: /, "")); }
     finally {
@@ -355,6 +357,7 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings, a
     };
     const outside = (event: PointerEvent) => {
       if (!(event.target instanceof Node) || panel.current?.contains(event.target) || button.current?.contains(event.target)) return;
+      if (event.target instanceof Element && event.target.closest(".agent-float-reasoning-popup")) return;
       cancelSpeech(); setOpen(false);
     };
     document.addEventListener("keydown", escape);
@@ -475,6 +478,7 @@ export function AgentFloatButton({ project, reload, onOpenSession, onSettings, a
       <form onSubmit={event => { event.preventDefault(); if (!listening) void send(draft); }}>
         <AgentComposerInput inputRef={input} data-testid="agent-float-input" value={draft} onChange={setDraft} onSend={() => { if (!listening) void send(draft); }} readOnly={listening} disabled={!pid || locked} rows={2} maxLength={MAX_DRAFT} aria-label="Agent 指令" placeholder={listening ? "正在聆听…" : "告诉我你想做什么，或输入 / 选择技能…"} />
         <div className="agent-float-composer-actions"><span>{listening ? appearance.speechAutoSend ? "说完自动发送 · 最长 60 秒" : "说完先校对，再发送" : "Enter 发送 · Shift+Enter 换行"}</span><div>
+          {!listening && <AgentReasoningSelect reasoning={reasoning} disabled={locked} popupClassName="agent-float-reasoning-popup" />}
           {listening ? <button type="button" className="agent-float-icon" aria-label="取消听写，改用文字" title="取消听写，恢复原稿" onClick={() => { cancelSpeech(); input.current?.focus(); }}><Keyboard size={17} /></button> : <button type="button" className="agent-float-icon" aria-label="开始语音输入" title="开始语音输入" disabled={!pid || locked} onClick={() => void startListening()}><Mic size={17} /></button>}
           {running ? <button type="button" data-testid="agent-float-stop" className="agent-float-submit" aria-label="停止 Agent 执行" disabled={cancelling} onClick={() => void stopAgent()}><Square size={14} /></button> : listening ? <button type="button" className="agent-float-submit" aria-label={finishLabel} disabled={speechState !== "listening"} onClick={finishListening}><Check size={18} /></button> : <button type="submit" data-testid="agent-float-send" className="agent-float-submit" aria-label="执行指令" disabled={!pid || !draft.trim() || locked}>{sending ? <LoaderCircle size={18} className="agent-float-spinner" /> : <ArrowUp size={18} />}</button>}
         </div></div>

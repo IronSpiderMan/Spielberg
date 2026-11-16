@@ -8,6 +8,10 @@ mod conversation_context;
 mod conversation_history;
 #[path = "agent_model.rs"]
 mod model_transport;
+#[path = "agent_reasoning.rs"]
+mod reasoning;
+#[path = "agent_responses.rs"]
+mod responses;
 #[path = "agent_execution.rs"]
 mod execution;
 #[path = "agent_resource_names.rs"]
@@ -65,10 +69,17 @@ fn config_with_selection(c:&Connection,selection:&Value)->Result<Value,String>{
  let saved=setting(c,"agent")?;let mut result=json!({"inherit_llm":true,"base_url":"","model":"","api_key":"","search_provider":"duckduckgo","search_api_key":"","max_steps":DEFAULT_TOOL_STEPS,"request_timeout_seconds":600});
  for key in ["inherit_llm","base_url","model","api_key","search_provider","search_api_key","max_steps","request_timeout_seconds"]{if let Some(v)=saved.get(key){result[key]=v.clone();}}
  let explicit=["channel_id","model"].iter().any(|key|selection.get(key).is_some_and(|v|!v.is_null()));
- if explicit||result["inherit_llm"].as_bool().unwrap_or(true){let models=setting(c,"models")?;let selected=if explicit{generation_channels::resolve(&models,selection,"llm","chat")?}else{generation_channels::llm_config(&models)?};let llm=&selected;result["provider"]=llm["provider"].clone();result["base_url"]=json!(llm["base_url"].as_str().filter(|s|!s.trim().is_empty()).or_else(||llm["url"].as_str()).unwrap_or(""));result["model"]=json!(llm["model"].as_str().unwrap_or(""));result["api_key"]=json!(llm["api_key"].as_str().unwrap_or(""));}
+ if explicit||result["inherit_llm"].as_bool().unwrap_or(true){
+  let models=setting(c,"models")?;
+  let llm=if explicit{generation_channels::resolve(&models,selection,"llm","chat")?}else{generation_channels::llm_config(&models)?};
+  for key in ["provider","agent_reasoning_efforts","_channel_id"] {if let Some(value)=llm.get(key){result[key]=value.clone();}}
+  result["base_url"]=json!(llm["base_url"].as_str().filter(|s|!s.trim().is_empty()).or_else(||llm["url"].as_str()).unwrap_or(""));
+  result["model"]=json!(llm["model"].as_str().unwrap_or(""));
+  result["api_key"]=json!(llm["api_key"].as_str().unwrap_or(""));
+ }
  Ok(result)
 }
-fn public_config(c:&Connection)->Result<Value,String>{let mut cfg=config(c)?;for (key,flag) in [("api_key","has_api_key"),("search_api_key","has_search_api_key")]{cfg[flag]=json!(!cfg[key].as_str().unwrap_or("").is_empty());cfg.as_object_mut().unwrap().remove(key);}cfg.as_object_mut().unwrap().remove("provider");cfg["max_steps_limit"]=json!(MAX_TOOL_STEPS);Ok(cfg)}
+fn public_config(c:&Connection)->Result<Value,String>{let mut cfg=config(c)?;for (key,flag) in [("api_key","has_api_key"),("search_api_key","has_search_api_key")]{cfg[flag]=json!(!cfg[key].as_str().unwrap_or("").is_empty());cfg.as_object_mut().unwrap().remove(key);}for key in ["provider","agent_reasoning_efforts","_channel_id"]{cfg.as_object_mut().unwrap().remove(key);}cfg["max_steps_limit"]=json!(MAX_TOOL_STEPS);Ok(cfg)}
 fn tool_step_limit(cfg:&Value)->usize {
  cfg["max_steps"].as_u64().unwrap_or(DEFAULT_TOOL_STEPS).clamp(1,MAX_TOOL_STEPS) as usize
 }
@@ -141,21 +152,35 @@ fn recover(s:&AppState,pid:&str,c:&Connection)->Result<(),String>{
  for id in ids{let active=runs().lock().map_err(|_|"Agent 运行锁不可用")?.contains_key(&run_key(s,pid,&id));if !active{let mut session=read_session(c,&id)?;let reason="应用已重启，上次 Agent 执行已中断。已完成的操作和记录已保留，可继续发送消息。";session["status"]=json!("failed");session["execution"]["phase"]=json!("failed");session["error"]=json!(reason);close_pending(&mut session,reason);save_session(c,&mut session)?;}}
  Ok(())
 }
-fn endpoint(cfg:&Value)->Result<String,String>{let base=cfg["base_url"].as_str().unwrap_or("").trim().trim_end_matches('/');if base.is_empty(){return Err("请先在工作室设置的统一渠道配置中配置 Base URL".into())}if cfg["model"].as_str().unwrap_or("").trim().is_empty(){return Err("请先配置支持工具调用的 Agent 模型名称".into())}let url=reqwest::Url::parse(base).map_err(|_|"Agent Base URL 无效")?;if !["http","https"].contains(&url.scheme())||!url.username().is_empty()||url.password().is_some()||url.query().is_some()||url.fragment().is_some(){return Err("Agent Base URL 必须为不含账号、查询参数和片段的 HTTP(S) 地址".into())}Ok(if base.ends_with("/chat/completions"){base.into()}else{format!("{base}/chat/completions")})}
+fn endpoint(cfg: &Value, protocol: reasoning::Protocol) -> Result<String, String> {
+ let base = cfg["base_url"].as_str().unwrap_or("").trim().trim_end_matches('/');
+ if base.is_empty() { return Err("请先在工作室设置的统一渠道配置中配置 Base URL".into()); }
+ if cfg["model"].as_str().unwrap_or("").trim().is_empty() { return Err("请先配置支持工具调用的 Agent 模型名称".into()); }
+ let mut url = reqwest::Url::parse(base).map_err(|_|"Agent Base URL 无效")?;
+ if !["http", "https"].contains(&url.scheme()) || !url.username().is_empty() || url.password().is_some() || url.query().is_some() || url.fragment().is_some() {
+  return Err("Agent Base URL 必须为不含账号、查询参数和片段的 HTTP(S) 地址".into());
+ }
+ if protocol == reasoning::Protocol::Responses {
+  url.set_path("/v1/responses");
+  return Ok(url.into());
+ }
+ Ok(if base.ends_with("/chat/completions") { base.into() } else { format!("{base}/chat/completions") })
+}
 
 pub(super) fn command(s:&AppState,path:&str,v:&Value)->Result<Value,String>{
  let pid=project_id(v)?;let _lock=s.guard.lock().map_err(|_|"项目数据锁不可用")?;let c=db(s,&pid)?;install(&c)?;recover(s,&pid,&c)?;
  let result:Result<Value,String>=match path{
   "/agent/config"=>public_config(&c),"/agent/config/save"=>save_config(&c,v),
+  "/agent/reasoning"=>{let cfg=config_with_selection(&c,v)?;Ok(json!({"levels":reasoning::levels(&cfg),"channel_id":cfg["_channel_id"],"model":cfg["model"]}))},
   "/agent/sessions"=>{let mut q=c.prepare("SELECT id,title,status,error,updated_at,execution FROM agent_sessions ORDER BY CAST(created_at AS INTEGER) DESC,rowid DESC LIMIT 100").map_err(|e|e.to_string())?;let items=q.query_map([],|r|{let execution:Value=serde_json::from_str(&r.get::<_,String>(5)?).unwrap_or(json!({}));Ok(json!({"id":r.get::<_,String>(0)?,"title":r.get::<_,String>(1)?,"status":r.get::<_,String>(2)?,"error":r.get::<_,Option<String>>(3)?,"updated_at":r.get::<_,String>(4)?,"execution":{"phase":execution["phase"]},"messages":[]}))}).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;Ok(json!({"items":items}))},
   "/agent/respond"=>user_input::respond(s,&pid,&c,v),
   "/agent/create"=>{let id=Uuid::new_v4().to_string();let title=clipped(v["title"].as_str().filter(|s|!s.trim().is_empty()).unwrap_or("新对话").trim(),80);let date=now();c.execute("INSERT INTO agent_sessions(id,title,status,messages,created_at,updated_at,resource_names_version) VALUES(?,?,'idle','[]',?,?,3)",params![id,title,date,date]).map_err(|e|e.to_string())?;read_session(&c,&id)},
   "/agent/session"=>read_session(&c,&strv(v,"session_id")?),
   "/agent/delete"=>{let id=strv(v,"session_id")?;read_session(&c,&id)?;if runs().lock().map_err(|_|"Agent 运行锁不可用")?.contains_key(&run_key(s,&pid,&id)){return Err("Agent 仍在执行或停止中，请稍后删除会话".into())}c.execute("DELETE FROM agent_sessions WHERE id=?",[id]).map_err(|e|e.to_string())?;Ok(json!({"ok":true}))},
   "/agent/cancel"=>{let id=strv(v,"session_id")?;let mut session=read_session(&c,&id)?;if let Some(flag)=runs().lock().map_err(|_|"Agent 运行锁不可用")?.get(&run_key(s,&pid,&id)){flag.store(true,Ordering::SeqCst);}if session["status"]=="running"{session["status"]=json!("cancelled");session["execution"]["phase"]=json!("cancelled");session["error"]=json!("执行已取消，已完成的操作已保留。");close_pending(&mut session,"用户已取消执行");save_session(&c,&mut session)?;}Ok(session)},
-  "/agent/run"=>{let id=strv(v,"session_id")?;let message=strv(v,"message")?;let images=input_images(v)?;let image_media_ids=input_image_media_ids(&c,v,images.len())?;if message.trim().is_empty()&&images.is_empty(){return Err("请输入消息或粘贴图片".into())}if message.chars().count()>16_000{return Err("消息过长，请限制在 16000 字以内".into())}let references=references::validate(&c,v,&message)?;let mut session=read_session(&c,&id)?;let cfg=config_with_selection(&c,v)?;endpoint(&cfg)?;let mut secrets=Vec::new();collect_secrets(&setting(&c,"models")?,&mut secrets);collect_secrets(&cfg,&mut secrets);let key=run_key(s,&pid,&id);let flag=Arc::new(AtomicBool::new(false));{let mut all=runs().lock().map_err(|_|"Agent 运行锁不可用")?;if all.contains_key(&key){return Err("此 Agent 会话仍在执行或停止中".into())}if all.len()>=8{return Err("Agent 并发会话已达上限，请稍后重试".into())}all.insert(key.clone(),flag.clone());}
+  "/agent/run"=>{let id=strv(v,"session_id")?;let message=strv(v,"message")?;let images=input_images(v)?;let image_media_ids=input_image_media_ids(&c,v,images.len())?;if message.trim().is_empty()&&images.is_empty(){return Err("请输入消息或粘贴图片".into())}if message.chars().count()>16_000{return Err("消息过长，请限制在 16000 字以内".into())}let references=references::validate(&c,v,&message)?;let mut session=read_session(&c,&id)?;let cfg=config_with_selection(&c,v)?;let options=reasoning::Options::resolve(&cfg,&v["reasoning_effort"])?;endpoint(&cfg,options.protocol)?;let mut secrets=Vec::new();collect_secrets(&setting(&c,"models")?,&mut secrets);collect_secrets(&cfg,&mut secrets);let key=run_key(s,&pid,&id);let flag=Arc::new(AtomicBool::new(false));{let mut all=runs().lock().map_err(|_|"Agent 运行锁不可用")?;if all.contains_key(&key){return Err("此 Agent 会话仍在执行或停止中".into())}if all.len()>=8{return Err("Agent 并发会话已达上限，请稍后重试".into())}all.insert(key.clone(),flag.clone());}
    if session["title"]=="新对话"{session["title"]=json!(clipped(if message.trim().is_empty(){"图片创作"}else{message.trim()},40));}session["status"]=json!("running");session["error"]=Value::Null;execution::start(&mut session,tool_step_limit(&cfg));let mut user_message=json!({"role":"user","content":message.trim(),"images":images,"image_media_ids":image_media_ids,"created_at":now()});if !references.is_empty(){user_message["references"]=json!(references);}if let Err(e)=start_turn(&c,&mut session,user_message){runs().lock().unwrap().remove(&key);return Err(e)}let state=s.clone();let pid=pid.clone();let saved=session.clone();let saved_id=id.clone();let web=v["web_enabled"].as_bool().unwrap_or(false);
-   if std::thread::Builder::new().name("spielberg-agent".into()).spawn(move||{let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||run_loop(&state,&pid,saved,&cfg,web,&flag,&secrets)));let error=match result{Ok(Ok(()))=>None,Ok(Err(e))=>Some(e),Err(_)=>Some("Agent 执行意外中断，请重试。已完成的操作已保留。".into())};finish(&state,&pid,&saved_id,&flag,error.as_deref(),&secrets);if let Ok(mut all)=runs().lock(){all.remove(&key);}}).is_err(){runs().lock().unwrap().remove(&run_key(s,&project_id(v)?,&id));session["status"]=json!("failed");session["error"]=json!("无法启动 Agent 后台任务");save_session(&c,&mut session)?;return Err("无法启动 Agent 后台任务".into())}Ok(session)
+   if std::thread::Builder::new().name("spielberg-agent".into()).spawn(move||{let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||run_loop(&state,&pid,saved,&cfg,&options,web,&flag,&secrets)));let error=match result{Ok(Ok(()))=>None,Ok(Err(e))=>Some(e),Err(_)=>Some("Agent 执行意外中断，请重试。已完成的操作已保留。".into())};finish(&state,&pid,&saved_id,&flag,error.as_deref(),&secrets);if let Ok(mut all)=runs().lock(){all.remove(&key);}}).is_err(){runs().lock().unwrap().remove(&run_key(s,&project_id(v)?,&id));session["status"]=json!("failed");session["error"]=json!("无法启动 Agent 后台任务");save_session(&c,&mut session)?;return Err("无法启动 Agent 后台任务".into())}Ok(session)
   },_=>Err("未知 Agent 操作".into())
  };
  result.map(|mut value|{
@@ -253,8 +278,8 @@ fn context(session:&Value,instruction:&str)->Vec<Value>{
  conversation_context::context(session,instruction)
 }
 fn request_timeout_seconds(cfg:&Value)->u64{cfg["request_timeout_seconds"].as_u64().unwrap_or(600).clamp(30,1800)}
-fn run_loop(s:&AppState,pid:&str,mut session:Value,cfg:&Value,web:bool,cancel:&AtomicBool,secrets:&[String])->Result<(),String>{
- let url=endpoint(cfg)?;
+fn run_loop(s:&AppState,pid:&str,mut session:Value,cfg:&Value,options:&reasoning::Options,web:bool,cancel:&AtomicBool,secrets:&[String])->Result<(),String>{
+ let url=endpoint(cfg,options.protocol)?;
  let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|_|"无法初始化 Agent 运行环境")?;
  let client=reqwest::Client::builder().connect_timeout(Duration::from_secs(10)).timeout(Duration::from_secs(request_timeout_seconds(cfg))).redirect(reqwest::redirect::Policy::none()).build().map_err(|_|"无法初始化 Agent 网络服务")?;
  // Do not advertise capabilities the user disabled. Execution checks remain authoritative.
@@ -264,6 +289,7 @@ fn run_loop(s:&AppState,pid:&str,mut session:Value,cfg:&Value,web:bool,cancel:&A
  let mut executed=0;
  let mut inspected_image=None;
  let mut repeated_failures:HashMap<String,usize>=HashMap::new();
+ let mut continuations = HashMap::<String, model_transport::Continuation>::new();
  loop {
   if cancel.load(Ordering::SeqCst){return Err("执行已取消".into())}
   let stopping=session["execution"]["stop_reason"].as_str().map(str::to_owned);
@@ -271,6 +297,18 @@ fn run_loop(s:&AppState,pid:&str,mut session:Value,cfg:&Value,web:bool,cancel:&A
   if finalizing&&stopping.is_none(){session["execution"]["stop_reason"]=json!("budget_exhausted");}
   let instruction=system_prompt(s,pid,web)?;
   let mut messages=context(&session,&instruction);
+  // Reasoning belongs to the provider's tool exchange and stays in memory
+  // for this run. The durable/public transcript holds only visible messages.
+  let active = messages.iter().rposition(|message| message["role"] == "user").map_or(0, |index| index + 1);
+  let mut replayed = std::collections::HashSet::new();
+  for message in &mut messages[active..] {
+   if let Some(id) = message["tool_calls"][0]["id"].as_str().filter(|id| continuations.contains_key(*id)).map(str::to_owned) {
+    continuations[&id].apply(message);
+    replayed.insert(id);
+   }
+  }
+  continuations.retain(|id, _| replayed.contains(id));
+  options.prepare_history(&mut messages);
   if let Some((media_id, image_url))=&inspected_image {
    // Chat Completions accepts image parts in user messages. Append after all
    // tool responses so their protocol pairing stays intact.
@@ -285,7 +323,7 @@ fn run_loop(s:&AppState,pid:&str,mut session:Value,cfg:&Value,web:bool,cancel:&A
   let available=if finalizing{json!([])}else{tools.clone()};
   let mut streaming_index=None;
   let mut last_snapshot=None::<std::time::Instant>;
-  let response=runtime.block_on(model_transport::completion(&client,&url,cfg,messages,&available,cancel,|event|{
+  let response=runtime.block_on(model_transport::completion(&client,&url,cfg,options,messages,&available,cancel,|event|{
    match event {
     model_transport::Event::Attempt|model_transport::Event::Retrying=>{
      let retrying=matches!(event,model_transport::Event::Retrying);
@@ -330,6 +368,12 @@ fn run_loop(s:&AppState,pid:&str,mut session:Value,cfg:&Value,web:bool,cancel:&A
    if !ids.insert(id){return Err("模型返回了重复工具调用 ID".into())}
    if call["type"]!="function"||!call["function"]["name"].is_string(){return Err("模型返回了不支持的工具调用格式".into())}
    if call.to_string().len()>64_000{return Err("模型工具参数过大，请拆分任务。".into())}
+  }
+  if let Some(continuation) = response.continuation {
+   let id = calls[0]["id"].as_str().unwrap().to_owned();
+   if continuations.insert(id, continuation).is_some() {
+    return Err("模型返回了重复工具调用 ID".into());
+   }
   }
   let safe_calls=Value::Array(calls.iter().map(|call|{let mut call=call.clone();if let Some(text)=call["function"]["arguments"].as_str(){let safe=serde_json::from_str::<Value>(text).ok().map(|v|safe_value(&v,secrets,0).to_string()).unwrap_or_else(||clipped(&redact(text,secrets),12_000));call["function"]["arguments"]=json!(safe);}call}).collect());
   assistant_message(&mut session,streaming_index,json!({"role":"assistant","content":content,"tool_calls":safe_calls,"status":"completed","created_at":now()}));progress(s,pid,&mut session,cancel)?;
@@ -379,6 +423,131 @@ fn run_loop(s:&AppState,pid:&str,mut session:Value,cfg:&Value,web:bool,cancel:&A
 #[cfg(test)]
 mod tests{
  use super::*;
+
+ #[test]
+ fn reasoning_levels_follow_the_resolved_model_and_endpoint() {
+  let f = Fixture::new();
+  save_settings(&f.state, &json!({"project_id":f.pid,"settings":{"llm":{"channels":[
+   {"id":"official","name":"Official","provider":"openai","base_url":"https://api.openai.com/v1/chat/completions","models":[
+    {"id":"gpt-6-astra","profile":"openai-chat"},{"id":"gpt-4.1","profile":"openai-chat"}]},
+   {"id":"proxy","name":"Proxy","provider":"openai","base_url":"https://proxy.example/v1","api_key":"private-test-key","models":[
+    {"id":"gpt-6-astra","profile":"openai-chat"},
+    {"id":"custom","profile":"openai-chat","agent_reasoning_efforts":["none","high"]}]}
+  ]}}})).unwrap();
+  let levels = |selection| f.command("/agent/reasoning", selection).unwrap();
+  assert_eq!(levels(json!({}))["levels"], json!(["low","medium","high","xhigh","max"]));
+  assert_eq!(levels(json!({"channel_id":"official","model":"gpt-4.1"}))["levels"], json!([]));
+  assert_eq!(levels(json!({"channel_id":"proxy","model":"gpt-6-astra"}))["levels"], json!([]));
+  let custom = levels(json!({"channel_id":"proxy","model":"custom"}));
+  assert_eq!(custom, json!({"channel_id":"proxy","model":"custom","levels":["none","high"]}));
+  let session = f.command("/agent/create", json!({})).unwrap();
+  assert!(f.command("/agent/run", json!({"session_id":session["id"],"message":"hello","reasoning_effort":"none"}))
+   .unwrap_err().contains("不支持此思考强度"));
+  let current = f.command("/agent/session", json!({"session_id":session["id"]})).unwrap();
+  assert_eq!(current["status"], "idle");
+  assert_eq!(current["messages"], json!([]));
+ }
+
+ #[test]
+ fn thinking_round_trips_tool_results_without_persisting_private_reasoning() {
+  use axum::{http::{header, Uri}, routing::post, Json, Router};
+  use reasoning::Protocol;
+  let call = json!({"id":"call_test","type":"function","function":{"name":"get_project","arguments":"{}"}});
+  let phase = |event: Value| format!("data: {event}\n\n");
+  for (model, provider, base, protocol) in [
+   ("gpt-6-astra", "openai", "https://api.openai.com/v1", Protocol::Responses),
+   ("deepseek-flash", "deepseek", "https://api.deepseek.com", Protocol::DeepSeek),
+   ("qwen3.8-max", "qianwen-token-plan", "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1", Protocol::Qwen),
+  ] {
+   let mut cfg = json!({"model":model,"provider":provider,"base_url":base,"max_steps":2});
+   let options = reasoning::Options::resolve(&cfg, &json!("low")).unwrap();
+   assert!(options.protocol == protocol);
+   let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+   listener.set_nonblocking(true).unwrap();
+   cfg["base_url"] = json!(format!("http://{}/v1", listener.local_addr().unwrap()));
+   let captures = Arc::new(Mutex::new(Vec::<(String, Value)>::new()));
+   let captured = captures.clone();
+   let call = call.clone();
+   let (shutdown, stopped) = tokio::sync::oneshot::channel::<()>();
+   let server = std::thread::spawn(move || {
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    runtime.block_on(async move {
+     let listener = tokio::net::TcpListener::from_std(listener).unwrap();
+     let router = Router::new().fallback(post(move |uri: Uri, Json(body): Json<Value>| {
+      let captured = captured.clone();
+      let call = call.clone();
+      async move {
+       let mut captured = captured.lock().unwrap();
+       let first = captured.is_empty();
+       captured.push((uri.path().to_owned(), body));
+       let response = if protocol == Protocol::Responses {
+        let output = if first {
+         json!([{"type":"reasoning","id":"rs_test","summary":[],"encrypted_content":"private-packet"},
+           {"type":"function_call","status":"completed","id":"fc_test","call_id":"call_test","name":"get_project","arguments":"{}"}])
+        } else { json!([{"type":"message","role":"assistant","content":[{"type":"output_text","text":"完成"}]}]) };
+        phase(json!({"type":"response.completed","response":{"status":"completed","output":output,"usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}}}))
+       } else {
+        let mut delta = if first { call } else { Value::Null };
+        if first { delta["index"] = json!(0); }
+        let chunks = if first {
+         vec![(json!({"reasoning_content":"private-"}), Value::Null),
+              (json!({"reasoning_content":"packet","tool_calls":[delta]}), json!("tool_calls"))]
+        } else { vec![(json!({"content":"完成"}), json!("stop"))] };
+        chunks.into_iter().map(|(delta, finish_reason)| phase(json!({"choices":[{"index":0,"delta":delta,"finish_reason":finish_reason}]})))
+         .collect::<String>() + "data: [DONE]\n\n"
+       };
+       ([(header::CONTENT_TYPE, "text/event-stream")], response)
+      }
+     }));
+     axum::serve(listener, router).with_graceful_shutdown(async { let _ = stopped.await; }).await.unwrap();
+    });
+   });
+   let f = Fixture::new();
+   let mut session = f.command("/agent/create", json!({})).unwrap();
+   let session_id = session["id"].as_str().unwrap().to_owned();
+   execution::start(&mut session, 2);
+   session["messages"] = json!([{"role":"user","content":"以前的问题"},{"role":"assistant","content":"历史回答"},
+    {"role":"user","content":"读取项目"}]);
+   let result = run_loop(&f.state, &f.pid, session, &cfg, &options, false, &AtomicBool::new(false), &[]);
+   let _ = shutdown.send(());
+   server.join().unwrap();
+   result.unwrap();
+   let requests = captures.lock().unwrap();
+   assert_eq!(requests.len(), 2, "{model}");
+   let (path, first) = &requests[0];
+   let (_, second) = &requests[1];
+   if protocol == Protocol::Responses {
+    assert_eq!(path, "/v1/responses");
+    assert_eq!(first["store"], false);
+    assert_eq!(first["reasoning"]["effort"], "low");
+    assert!(first["tools"].as_array().unwrap().iter().any(|tool| tool["name"] == "get_project"));
+    let input = second["input"].as_array().unwrap();
+    assert!(input.iter().any(|item| item["encrypted_content"] == "private-packet"));
+    assert!(input.iter().any(|item| item["type"] == "function_call_output" && item["call_id"] == "call_test"));
+    assert!(!second["tools"].as_array().unwrap().is_empty());
+   } else {
+    assert_eq!(path, "/v1/chat/completions");
+    assert_eq!(first["reasoning_effort"], "low");
+    if protocol == Protocol::DeepSeek {
+     assert_eq!(first["thinking"]["type"], "enabled");
+     assert!(first.get("tool_choice").is_none());
+     assert!(!first["messages"].as_array().unwrap().iter().any(|message| message["role"] == "assistant"));
+    } else {
+     assert_eq!(first["enable_thinking"], true);
+     assert_eq!(first["preserve_thinking"], false);
+    }
+    let messages = second["messages"].as_array().unwrap();
+    let index = messages.iter().position(|message| message["tool_calls"][0]["id"] == "call_test").unwrap();
+    assert_eq!(messages[index]["reasoning_content"], "private-packet");
+    assert_eq!(messages[index + 1]["tool_call_id"], "call_test");
+    assert!(!second["tools"].as_array().unwrap().is_empty());
+   }
+   let c = db(&f.state, &f.pid).unwrap();
+   let saved = read_session(&c, &session_id).unwrap();
+   assert!(!saved.to_string().contains("private-packet"));
+   assert_eq!(saved["messages"].as_array().unwrap().last().unwrap()["content"], "完成");
+  }
+ }
  #[test]
  fn user_decisions_gate_exact_tools_and_reject_stale_duplicate_and_cancelled_answers(){
   for choice in [Some(false),Some(true),None] {
@@ -466,14 +635,14 @@ mod tests{
   let settings=json!({"llm":{"base_url":"https://stale.example/v1","api_key":"stale-key","model":"stale-model","default_channel_id":"chosen","channels":[{"id":"chosen","name":"Chosen","provider":"deepseek","base_url":"https://api.deepseek.com","api_key":"chosen-key","default_model_id":"model-b","models":[{"id":"model-a","profile":"deepseek-chat"},{"id":"model-b","profile":"deepseek-chat"}]}]}});
   save_settings(&f.state,&json!({"project_id":f.pid,"settings":settings})).unwrap();
   let inherited=config(&c).unwrap();assert_eq!(inherited["model"],"model-b");assert_eq!(inherited["api_key"],"chosen-key");
-  assert_eq!(endpoint(&inherited).unwrap(),"https://api.deepseek.com/chat/completions");
+  assert_eq!(endpoint(&inherited,reasoning::Protocol::Chat).unwrap(),"https://api.deepseek.com/chat/completions");
   let public=public_config(&c).unwrap();assert!(public.get("api_key").is_none());assert_eq!(public["has_api_key"],true);
   save_config(&c,&json!({"config":public})).unwrap();
   save_config(&c,&json!({"config":{"inherit_llm":false,"base_url":"https://own.example/v1","model":"own","api_key":"own-key"}})).unwrap();
   let independent=config(&c).unwrap();assert_eq!(independent["model"],"own");assert_eq!(independent["api_key"],"own-key");
   save_settings(&f.state,&json!({"project_id":f.pid,"settings":{"llm":{"channels":[],"default_channel_id":""}}})).unwrap();
   save_config(&c,&json!({"config":{"inherit_llm":true}})).unwrap();
-  let empty=config(&c).unwrap();assert_eq!(empty["api_key"],"");assert!(endpoint(&empty).is_err());
+  let empty=config(&c).unwrap();assert_eq!(empty["api_key"],"");assert!(endpoint(&empty,reasoning::Protocol::Chat).is_err());
  }
  #[test]
  fn agent_selection_routes_to_channel_and_model_without_changing_defaults() {
@@ -485,7 +654,7 @@ mod tests{
   save_settings(&f.state,&json!({"project_id":f.pid,"settings":settings})).unwrap();
   save_config(&c,&json!({"config":{"search_provider":"brave","search_api_key":"search-key","max_steps":7,"request_timeout_seconds":90}})).unwrap();
   let selected=config_with_selection(&c,&json!({"channel_id":"other","model":"second"})).unwrap();
-  assert_eq!(endpoint(&selected).unwrap(),"https://second.example/v1/chat/completions");
+  assert_eq!(endpoint(&selected,reasoning::Protocol::Chat).unwrap(),"https://second.example/v1/chat/completions");
   assert_eq!(selected["provider"],"deepseek");assert_eq!(selected["api_key"],"other-key");assert_eq!(selected["model"],"second");
   assert_eq!(selected["search_api_key"],"search-key");assert_eq!(selected["max_steps"],7);assert_eq!(selected["request_timeout_seconds"],90);
   assert_eq!(config(&c).unwrap()["model"],"default-model");assert_eq!(setting(&c,"models").unwrap(),settings);

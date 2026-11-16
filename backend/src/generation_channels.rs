@@ -13,6 +13,12 @@ fn builtin(id: &str) -> Option<Value> {
     catalog()["models"].as_array()?.iter().find(|m| m["id"] == id).cloned()
 }
 
+pub(super) fn agent_reasoning(id: &str, profile: &str) -> Option<&'static Value> {
+    catalog()["models"].as_array()?.iter()
+        .find(|model| model["id"] == id && model["profile"] == profile)?
+        .get("agent_reasoning")
+}
+
 fn llm_defaults(provider: &str) -> (&'static str, &'static str, &'static str) {
     match provider {
         "deepseek" => ("deepseek-chat", "deepseek-flash", "https://api.deepseek.com"),
@@ -93,6 +99,14 @@ pub(super) fn validate_settings(settings: &Value) -> Result<(), String> {
                 let p = profile(&strv(model,"profile")?)?;
                 if p["kind"]!=kind || !p["providers"].as_array().is_some_and(|xs|xs.contains(&json!(provider))) {return Err("模型能力配置与渠道类型不匹配".into())}
                 if kind!="llm" && provider=="qianwen-token-plan" && !builtin(&id).is_some_and(|b| b["profile"]==model["profile"]) {return Err(format!("Token Plan 模型 ID 与能力不匹配：{id}"))}
+                if let Some(levels) = model.get("agent_reasoning_efforts") {
+                    const EFFORTS: [&str; 7] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+                    let mut seen = std::collections::HashSet::new();
+                    if kind != "llm" || provider != "openai" || !levels.as_array().is_some_and(|levels|
+                        levels.iter().all(|level| level.as_str().is_some_and(|level| EFFORTS.contains(&level) && seen.insert(level)))) {
+                        return Err("自定义 Agent 思考强度必须是 OpenAI 兼容渠道支持的有效档位".into());
+                    }
+                }
             }
             if let Some(default) = channel["default_model_id"].as_str().filter(|s|!s.is_empty()) {
                 if !model_ids.contains(default) {return Err("默认模型不在渠道模型列表中".into())}
@@ -136,6 +150,7 @@ pub(super) fn resolve(settings: &Value, v: &Value, kind: &str, operation: &str) 
     if let Some(url)=model["base_url"].as_str().filter(|s|!s.trim().is_empty()){config["base_url"]=json!(url.trim());}
     config["send_model"]=model["send_model"].clone();
     if kind == "llm" {
+        config["agent_reasoning_efforts"] = model["agent_reasoning_efforts"].clone();
         let (_, _, default_base) = llm_defaults(config["provider"].as_str().unwrap_or("openai"));
         let mut base = config["base_url"].as_str().filter(|s| !s.trim().is_empty()).unwrap_or(default_base).trim().trim_end_matches('/').to_string();
         if config["provider"] == "qianwen-token-plan" && reqwest::Url::parse(&base).is_ok_and(|u| u.path().is_empty() || u.path() == "/") {

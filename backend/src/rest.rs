@@ -495,7 +495,7 @@ pub(crate) fn action(state:&AppState,path:&str,value:Value)->ApiResult<Value>{
     if let Some(action)=path.strip_prefix("/skills/") {
         return Ok(skills::command(state, action, &value)?);
     }
-    if ["/agent/config", "/agent/config/save", "/agent/sessions", "/agent/create", "/agent/session", "/agent/run", "/agent/cancel", "/agent/delete", "/agent/respond"].contains(&path) {
+    if ["/agent/config", "/agent/config/save", "/agent/reasoning", "/agent/sessions", "/agent/create", "/agent/session", "/agent/run", "/agent/cancel", "/agent/delete", "/agent/respond"].contains(&path) {
         return Ok(agent::command(state, path, &value)?);
     }
     if let Some(resource)=["scenes","clips"].into_iter().find(|resource| path==format!("/{resource}") || path==format!("/{resource}/update") || path==format!("/{resource}/delete")) {

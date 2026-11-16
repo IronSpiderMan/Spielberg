@@ -5,7 +5,7 @@ import type { ModelSettings } from "./core";
 
 export type GenerationKind = "image" | "video" | "tts" | "asr" | "llm";
 export type ChannelProvider = "openai" | "cast" | "qianwen-token-plan" | "deepseek";
-export type GenerationModel = { id: string; name: string; profile: string; base_url?: string; send_model?: boolean };
+export type GenerationModel = { id: string; name: string; profile: string; base_url?: string; send_model?: boolean; agent_reasoning_efforts?: string[] };
 export type GenerationChannel = { id: string; name: string; provider: ChannelProvider; base_url: string; api_key: string; models: GenerationModel[]; default_model_id?: string; resolution?: string; operation_urls?: Record<string,string>; operation_api_keys?: Record<string,string> };
 export type GenerationSelection = { channel_id?: string; model?: string };
 export type ModelCapabilities = { label: string; kind: GenerationKind; providers: string[]; modes: string[]; mask?: boolean; last_frame?: boolean; max_images?: number; max_videos?: number; max_audios?: number; size_mode: string; min_pixels?: number; max_pixels?: number; ratios?: string[]; resolutions?: string[]; min_duration?: number; max_duration?: number; smart_duration?: boolean; audio?: boolean; default_voice?: string; formats?: string[]; max_text?: number; speed?: boolean; instructions?: boolean };

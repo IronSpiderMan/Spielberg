@@ -7,7 +7,7 @@ import "../../generation-channels.css";
 
 const MODE_LABELS: Record<string, string> = { asr: "语音识别", chat: "对话", tts: "语音合成", t2i: "文生图", i2i: "图生图", t2v: "文生视频", fl2v: "首尾帧", ref2v: "参考生视频" };
 
-export function GenerationSelector({settings,kind,value,onChange,disabled,operation,compact=false}: {settings:ModelSettings;kind:GenerationKind;value:GenerationSelection;onChange:(value:GenerationSelection)=>void;disabled?:boolean;operation?:string;compact?:boolean}) {
+export function GenerationSelector({settings,kind,value,onChange,disabled,operation,compact=false,align="end"}: {settings:ModelSettings;kind:GenerationKind;value:GenerationSelection;onChange:(value:GenerationSelection)=>void;disabled?:boolean;operation?:string;compact?:boolean;align?:"start"|"end"}) {
   const channels = channelsFor(settings,kind), choice = generationChoice(settings,kind,value,operation);
   const [open,setOpen] = useState(false), [browsing,setBrowsing] = useState<string>(), [filter,setFilter] = useState("");
   const trigger = useRef<HTMLButtonElement>(null);
@@ -28,7 +28,7 @@ export function GenerationSelector({settings,kind,value,onChange,disabled,operat
   const models = active ? modelsFor(active.id).filter(m=>!filter || modesFor(active.id,m.id).includes(filter)) : [];
   const label = kind === "llm" ? "Agent" : kind === "image" ? "图片" : kind === "asr" ? "ASR" : kind === "tts" ? "TTS" : "视频", Icon = kind === "llm" ? Bot : kind === "image" ? Image : (kind === "tts" || kind === "asr") ? Mic : Film;
   const close = () => {setOpen(false);trigger.current?.focus({preventScroll:true});};
-  const picker = <Trigger escToClose updateOnScroll trigger="click" position={compact ? "tr" : "bl"} popupVisible={open && !disabled} onVisibleChange={visible=>{
+  const picker = <Trigger escToClose updateOnScroll trigger="click" position={compact ? (align === "start" ? "tl" : "tr") : "bl"} popupVisible={open && !disabled} onVisibleChange={visible=>{
         setOpen(visible); if(visible){setBrowsing(choice?.channel.id || value.channel_id);setFilter("");}
       }} popup={()=> <div ref={menu} id={menuId} className={`generation-cascade generation-cascade-${kind}`} role="dialog" tabIndex={-1} aria-label={`${label}渠道与模型`} onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();close();}}}>
         {modes.length>1 && <div className="generation-model-filters" aria-label="按生成方式筛选">
