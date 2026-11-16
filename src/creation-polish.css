@@ -240,15 +240,6 @@
 .scene-editor-page .scene-image-preview { border-radius: 10px; }
 .scene-editor-page .scene-video-panel { margin-top: 22px; }
 .scene-editor-page .scene-video-action { margin-top: 20px; gap: 12px; }
-.scene-editor-page .scene-results > h2 { padding: 4px 0 12px; border-bottom: 1px solid var(--ui-border); }
-.scene-editor-page .scene-results > h2 span { color: var(--ui-primary); background: var(--ui-accent-soft); border-radius: 6px; }
-.scene-editor-page .scene-results-empty {
-  min-height: 280px;
-  border-radius: 14px;
-  border-style: solid;
-  background: var(--ui-surface);
-}
-.scene-editor-page .scene-results-icon { width: 60px; height: 60px; border-radius: 18px; color: var(--ui-primary); background: var(--ui-accent-soft); }
 .scene-editor-page .video-version { overflow: hidden; border-radius: 12px; }
 .scene-editor-page .scene-reference-thumb { border-radius: 9px; }
 .scene-creation-options > button { transition: background-color 180ms, border-color 180ms, box-shadow 180ms; }
@@ -301,7 +292,6 @@
   .script-studio .script-scene-head { margin: -18px -18px 20px; padding: 12px 18px; flex-wrap: wrap; }
   .script-studio .script-frames-pair { grid-template-columns: minmax(0, 1fr); }
   .scene-editor-page .scene-composer { padding: 18px; }
-  .scene-editor-page .scene-results-empty { min-height: 240px; padding: 24px 18px; }
   .scene-creation-options { grid-template-columns: minmax(0, 1fr); }
 }
 @container (max-width: 520px) {

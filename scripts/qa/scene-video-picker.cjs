@@ -33,6 +33,9 @@ const { spawnSync } = require('node:child_process');
       else if (pathname.endsWith('/screenplays')) result = [];
       else if (pathname.endsWith('/scripts/load')) result = null;
       else if (pathname.endsWith('/skills/list')) result = { items: [], directory: '/fixture' };
+      else if (pathname.endsWith(`/clips/${scene.id}`) && route.request().method() === 'PATCH') {
+        scene.description = route.request().postDataJSON().description;
+      }
       else if (pathname.endsWith('/media/thumbnail')) result = { path: '/fixture-thumb.svg' };
       else if (pathname.endsWith('/media/upload')) {
         if (failUpload) return route.fulfill({ status: 500, json: { error: '测试上传失败' } });
@@ -67,6 +70,51 @@ const { spawnSync } = require('node:child_process');
     await page.getByRole('tab', { name: '场景', exact: true }).click();
     await page.getByRole('button', { name: '查看场景「教室重逢」', exact: true }).click();
     await page.getByRole('button', { name: '编辑片段：教室重逢', exact: true }).click();
+    const editor = page.locator('.scene-editor-page');
+    const composer = editor.locator('.scene-composer');
+    const versionsToggle = editor.getByRole('button', { name: /^视频版本/ });
+    const versions = editor.getByRole('complementary', { name: '视频版本', exact: true });
+    const closeVersions = versions.getByRole('button', { name: '收起视频版本', exact: true });
+    const description = editor.getByRole('textbox', { name: '片段描述', exact: true });
+    const prompt = editor.getByRole('textbox', { name: '视频 Prompt', exact: true });
+    await versionsToggle.waitFor();
+    const panelId = await versionsToggle.getAttribute('aria-controls');
+    assert(panelId, 'The toggle identifies its panel');
+    const expectDock = narrow => page.waitForFunction(({ panelId, narrow }) => {
+      const panel = document.getElementById(panelId)?.getBoundingClientRect();
+      const editor = document.querySelector('.scene-editor-page')?.getBoundingClientRect();
+      const composer = document.querySelector('.scene-composer')?.getBoundingClientRect();
+      if (!panel || !editor || !composer || panel.width <= 0 || panel.right > editor.right + 1) return false;
+      return narrow ? panel.top >= composer.bottom - 1 : panel.left >= composer.right - 1;
+    }, { panelId, narrow });
+
+    assert.equal(await versionsToggle.getAttribute('aria-expanded'), 'false');
+    assert.equal(await editor.getByRole('button', { name: '对照写作', exact: true }).count(), 0);
+    await versions.waitFor({ state: 'hidden' });
+    await versionsToggle.getByText('2', { exact: true }).waitFor();
+    const collapsedComposer = await composer.boundingBox();
+    const closedDescription = await description.boundingBox();
+    const closedPrompt = await prompt.boundingBox();
+    assert(closedPrompt.x >= closedDescription.x + closedDescription.width && Math.abs(closedPrompt.y - closedDescription.y) < 2,
+      'Description and video Prompt share a row when there is room');
+    await editor.screenshot({ path: path.join(output, 'clip-editor-closed.png') });
+    await versionsToggle.click();
+    await closeVersions.waitFor();
+    await expectDock(false);
+    assert.equal(await versionsToggle.getAttribute('aria-expanded'), 'true');
+    assert((await composer.boundingBox()).width < collapsedComposer.width, 'The closed panel gives its space back to the editor');
+    await editor.screenshot({ path: path.join(output, 'clip-editor-open.png') });
+    const draftDescription = '展开视频版本时继续编辑片段';
+    await description.click();
+    await description.fill(draftDescription);
+    assert.equal(await versionsToggle.getAttribute('aria-expanded'), 'true', 'Editing outside the versions panel keeps it open');
+    assert.equal(await prompt.isEditable(), true, 'The video Prompt remains editable while the panel is open');
+    await closeVersions.press('Escape');
+    await versions.waitFor({ state: 'hidden' });
+    await page.waitForFunction(id => document.activeElement?.getAttribute('aria-controls') === id, panelId);
+    assert.equal(await versionsToggle.getAttribute('aria-expanded'), 'false');
+    assert.equal(await description.inputValue(), draftDescription, 'Closing versions preserves edits');
+
     const open = () => page.getByRole('button', { name: '选择已有视频', exact: true }).click();
     const modal = page.locator('.scene-video-picker:visible');
     const cards = modal.locator('.scene-video-picker-card');
@@ -126,6 +174,8 @@ const { spawnSync } = require('node:child_process');
     await modal.waitFor({ state: 'hidden' });
     assert.equal(scene.video_media_id, 27);
     assert(scene.videos.some(video => video.id === 29), 'Previous primary remains a candidate');
+    await versionsToggle.getByText('3', { exact: true }).waitFor();
+    assert.equal(await versionsToggle.getAttribute('aria-expanded'), 'false', 'Adding a version updates the count without opening the panel');
     await open(); await cards.nth(11).waitFor();
     assert.equal(await confirm().isDisabled(), true, 'Reopening resets temporary selection');
     const upload = async () => {
@@ -163,8 +213,18 @@ const { spawnSync } = require('node:child_process');
     assert(buttonBounds.y >= 0 && buttonBounds.y + buttonBounds.height <= 844, 'Confirmation stays within the viewport');
     await modal.getByRole('button', { name: '取消', exact: true }).click();
     assert.equal(attachments.length, 2, 'Cancel does not change the primary');
+    await versionsToggle.click();
+    await closeVersions.waitFor();
+    await expectDock(true);
+    assert.equal(await versions.locator('.video-version').count(), 3);
+    await editor.screenshot({ path: path.join(output, 'clip-editor-mobile.png') });
+    await description.click();
+    assert.equal(await versionsToggle.getAttribute('aria-expanded'), 'true', 'The stacked layout keeps the editor interactive');
+    assert.equal(await description.inputValue(), draftDescription);
+    await closeVersions.click();
+    await versions.waitFor({ state: 'hidden' });
     assert.deepEqual(errors, []);
-    console.log(`PASS: full-library search, pagination, retained selection, preview metadata, stale-response protection, empty/error recovery, current-primary guard, submit retry/deduplication, busy lock, upload failure/retry and explicit confirmation, cancellation, responsive layout. Screenshots: ${output}`);
+    console.log(`PASS: non-modal video versions, desktop and mobile docking, draft and focus preservation, version count updates, full-library search, pagination, retained selection, preview metadata, stale-response protection, empty/error recovery, current-primary guard, submit retry/deduplication, busy lock, upload failure/retry and explicit confirmation, cancellation, responsive layout. Screenshots: ${output}`);
   } catch (error) {
     await page.screenshot({ path: path.join(output, 'failure.png'), fullPage: true });
     console.error({ output, requests, errors, modal: await page.locator('.scene-video-picker').textContent().catch(() => '') });

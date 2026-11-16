@@ -8,7 +8,7 @@ import { ClipFramePicker } from "../ClipFramePicker";
 import { ImagePreviewModal } from "../ImagePreviewModal";
 import { RoleImagePicker } from "../RoleImagePicker";
 
-export function ClipReferenceImagePicker({ data, value, onChange, reload, label = "参考图片", maxImages, extraMedia = [], writing, supportsPaste, disabled, onUploading, onAnnotate }: {
+export function ClipReferenceImagePicker({ data, value, onChange, reload, label = "参考图片", maxImages, extraMedia = [], supportsPaste, disabled, onUploading, onAnnotate }: {
   data: Snapshot;
   value: number[];
   onChange: (update: (ids: number[]) => number[]) => void;
@@ -16,7 +16,6 @@ export function ClipReferenceImagePicker({ data, value, onChange, reload, label 
   label?: string;
   maxImages?: number;
   extraMedia?: Media[];
-  writing?: boolean;
   supportsPaste?: boolean;
   disabled?: boolean;
   onUploading?: (busy: boolean) => void;
@@ -101,7 +100,7 @@ export function ClipReferenceImagePicker({ data, value, onChange, reload, label 
           {item && <button type="button" className="scene-reference-preview" onClick={() => setPreview(item)} aria-label={`预览参考图 ${name}`}>
             <img src={imageUrl(item)} alt={name} draggable={false}/>
           </button>}
-          <span className="scene-reference-index" aria-label={`参考图 ${index + 1}`}>{writing ? `图 ${index + 1}` : index + 1}</span>
+          <span className="scene-reference-index" aria-label={`参考图 ${index + 1}`}>{index + 1}</span>
           <button type="button" className="scene-reference-remove" disabled={locked} onClick={() => toggle(id)} aria-label={`移除参考图 ${name}`} title="移除">×</button>
           <figcaption title={`拖动调整顺序：${name}`} onPointerDown={event => {
             if (locked || event.button !== 0) return;
