@@ -1,6 +1,6 @@
 import { Button, Form, Input, Message, Modal, Select, Space, Switch, Tag } from "@arco-design/web-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Film, Play, Save } from "lucide-react";
+import { Bot, Film, Play, Save } from "lucide-react";
 import { ConfirmPopover } from "./components/ConfirmAction";
 import { GenerationSelector } from "./components/generation/GenerationSelector";
 import { ClipReferenceImagePicker } from "./components/generation/ClipReferenceImagePicker";
@@ -11,6 +11,7 @@ import { VideoPreviewModal } from "./components/VideoPreviewModal";
 import { GENERATION_SIZES, imageUrl, normalizeGenerationSize, post, type Episode, type GenerationOptions, type GenerationPreview, type Media, type Scene, type Snapshot } from "./core";
 import { generationChoice, modelRatio } from "./generation-channels";
 import { confirmDiscard } from "./edit-guard";
+import { editedFields, useEditorDraft } from "./hooks/useEditorDraft";
 import { PromptInput } from "./PromptInput";
 import "./scene-composition.css";
 
@@ -45,7 +46,19 @@ export function GenerationPreviewPanel({ preview, media }: { preview: Generation
 
 export type SceneInsertion = { anchor_scene_id: number; position: "before" | "after" };
 
-export function SceneSettings({ data, episode, scene, clipIds, insertion, reload, close, onSaved, onStatus, backButton, renderClips }: {
+function sceneEditorFields(scene: Scene | undefined, defaultTitle: string) {
+  return {
+    title: scene?.title || defaultTitle,
+    description: scene?.description || "",
+    prompt: scene?.shared_prompt || "",
+    imageIds: scene?.reference_media_ids || [],
+    audioIds: scene?.reference_audio_media_ids || [],
+    mode: scene?.generation_mode || "clips",
+    options: scene?.generation_options || {},
+  };
+}
+
+export function SceneSettings({ data, episode, scene, clipIds, insertion, reload, close, onSaved, onStatus, backButton, renderClips, onOpenAgent }: {
   data: Snapshot;
   episode: Episode;
   scene?: Scene;
@@ -55,16 +68,13 @@ export function SceneSettings({ data, episode, scene, clipIds, insertion, reload
   close?: () => void;
   onStatus?: (dirty: boolean, busy: boolean) => void;
   backButton?: ReactNode;
+  onOpenAgent?: (trigger: EventTarget | null) => void;
   renderClips?: (afterSave: (action: () => void) => void, busy: boolean) => ReactNode;
   onSaved?: (scene: Scene) => void;
 }) {
-  const [title, setTitle] = useState(scene?.title || `场景 ${episode.scenes.length + 1}`);
-  const [description, setDescription] = useState(scene?.description || "");
-  const [prompt, setPrompt] = useState(scene?.shared_prompt || "");
-  const [imageIds, setImageIds] = useState(scene?.reference_media_ids || []);
-  const [audioIds, setAudioIds] = useState(scene?.reference_audio_media_ids || []);
-  const [mode, setMode] = useState<Scene["generation_mode"]>(scene?.generation_mode || "clips");
-  const [options, setOptions] = useState<Partial<GenerationOptions>>(scene?.generation_options || {});
+  const [defaultTitle] = useState(() => `场景 ${episode.scenes.length + 1}`);
+  const { draft: fields, saved, edit, markSaved } = useEditorDraft(sceneEditorFields(scene, defaultTitle));
+  const { title, description, prompt, imageIds, audioIds, mode, options } = fields;
   const [busy, setBusy] = useState("");
   const [uploadingImages, setUploadingImages] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
@@ -89,9 +99,7 @@ export function SceneSettings({ data, episode, scene, clipIds, insertion, reload
   const ratios = choice?.capabilities.ratios || GENERATION_SIZES.map(item => item.ratio);
   const sizes = GENERATION_SIZES.find(item => item.ratio === ratio)?.sizes || [];
   const project_id = data.project.id;
-  const signature = JSON.stringify({ title, description, prompt, imageIds, audioIds, mode, options });
-  const [savedSignature, setSavedSignature] = useState(signature);
-  const dirty = signature !== savedSignature;
+  const dirty = JSON.stringify(fields) !== JSON.stringify(saved);
   useEffect(() => { onStatus?.(dirty, locked); }, [dirty, locked, onStatus]);
   useEffect(() => () => onStatus?.(false, false), [onStatus]);
   const closeSettings = () => {
@@ -101,16 +109,23 @@ export function SceneSettings({ data, episode, scene, clipIds, insertion, reload
   };
 
   const updateOptions = (values: Partial<GenerationOptions>) => {
-    setOptions(previous => ({ ...previous, ...values }));
+    edit("options", previous => ({ ...previous, ...values }));
     setPreview(undefined);
   };
   const save = async () => {
     if (!title.trim()) throw new Error("请输入场景名称");
-    const values = { project_id, title: title.trim(), description, shared_prompt: prompt, reference_media_ids: imageIds, reference_audio_media_ids: audioIds, generation_mode: mode,
-      generation_options: mode === "one_take" ? { ...options, audio: choice?.capabilities.audio ? options.audio : undefined } : options };
+    const changes = scene ? editedFields(saved, fields) : { ...fields };
+    if (mode === "one_take" && !choice?.capabilities.audio && options.audio !== undefined) changes.options = options;
+    if (scene && !Object.keys(changes).length) return scene;
+    const values = {
+      project_id, title: changes.title?.trim(), description: changes.description, shared_prompt: changes.prompt,
+      reference_media_ids: changes.imageIds, reference_audio_media_ids: changes.audioIds, generation_mode: changes.mode,
+      generation_options: changes.options && mode === "one_take" && !choice?.capabilities.audio
+        ? { ...changes.options, audio: undefined } : changes.options,
+    };
     const result = scene ? await post<Scene>("/scenes/update", { ...values, id: scene.id })
       : await post<Scene>("/scenes", { ...values, episode_id: episode.id, clip_ids: clipIds, ...insertion });
-    setSavedSignature(signature);
+    markSaved(changes, { ...fields, title: title.trim(), options: values.generation_options ?? options });
     return result;
   };
   const run = async (action: string, work: () => Promise<void>) => {
@@ -174,29 +189,29 @@ export function SceneSettings({ data, episode, scene, clipIds, insertion, reload
     }}/>;
   const form = <>
     <Form layout="vertical" disabled={locked}>
-      <Form.Item label="场景名称" required><Input aria-label="场景名称" value={title} onChange={setTitle} /></Form.Item>
-      <Form.Item label="场景描述"><Input.TextArea aria-label="场景描述" rows={4} value={description} onChange={value => { setDescription(value); setPreview(undefined); }} /></Form.Item>
+      <Form.Item label="场景名称" required><Input aria-label="场景名称" value={title} onChange={value => edit("title", value)} /></Form.Item>
+      <Form.Item label="场景描述"><Input.TextArea aria-label="场景描述" rows={4} value={description} onChange={value => { edit("description", value); setPreview(undefined); }} /></Form.Item>
       {!!clipIds?.length && <>
         <p className="helper">纳入 {clipIds.length} 个片段 · {clips.map(clip => clip.title).join(" → ")}</p>
         <p className="helper">片段将继承下方设定。原场景的片段全部移出后，将移除该场景的共享设定和场景视频关联。</p>
       </>}
       <Form.Item label="共享 Prompt" extra="场景描述和共享 Prompt 为片段提供通用背景。生成时会与片段自己的 Prompt 合用。">
-        <PromptInput ariaLabel="共享 Prompt" value={prompt} onChange={value => { setPrompt(value); setPreview(undefined); }} roles={data.assets} data={data}
+        <PromptInput ariaLabel="共享 Prompt" value={prompt} onChange={value => { edit("prompt", value); setPreview(undefined); }} roles={data.assets} data={data}
           prompts={data.prompts} disabled={locked} placeholder="描述时间地点、画面风格、人物音色、环境声和开场站位，使用 @ 引用资产或提示词" />
       </Form.Item>
       <ClipReferenceImagePicker data={data} label="共享参考图" value={imageIds} reload={reload}
         disabled={!!busy || uploadingMedia} onUploading={setUploadingImages}
-        onChange={update => { setImageIds(update); setPreview(undefined); }} />
+        onChange={update => { edit("imageIds", update); setPreview(undefined); }} />
       <ReferenceMediaPicker shared projectId={project_id} media={data.media} assets={data.assets}
         videoIds={options.reference_video_media_ids} audioIds={audioIds} reload={reload}
         disabled={!!busy || uploadingImages} onUploading={setUploadingMedia}
         onChange={(kind, ids) => {
           if (kind === "video") updateOptions({ reference_video_media_ids: ids });
-          else { setAudioIds(ids); setPreview(undefined); }
+          else { edit("audioIds", ids); setPreview(undefined); }
         }} />
       <p className="helper">共享素材用于片段的全能参考模式。片段可以添加自己的素材或排除指定共享素材。</p>
       <Form.Item label="场景生成方式">
-        <Select aria-label="场景生成方式" value={mode} onChange={value => { setMode(value); setPreview(undefined); }}
+        <Select aria-label="场景生成方式" value={mode} onChange={value => { edit("mode", value); setPreview(undefined); }}
           options={[{ label: "逐片段生成", value: "clips" }, { label: "一镜到底", value: "one_take" }]} />
       </Form.Item>
       <section className="scene-one-take">
@@ -274,7 +289,10 @@ export function SceneSettings({ data, episode, scene, clipIds, insertion, reload
   if (renderClips) return <section className="scene-settings-page">
     <div className="scene-settings-page-heading">
       <div className="scene-settings-page-title">{backButton}<h2>编辑场景</h2></div>
-      <Space><Tag color={dirty ? "orange" : "green"}>{dirty ? "未保存" : "已保存"}</Tag>{saveButton}</Space>
+      <Space>
+        {onOpenAgent && <Button icon={<Bot size={16}/>} disabled={locked} aria-haspopup="dialog" onClick={event => onOpenAgent(event.currentTarget)}>打开 Agent</Button>}
+        <Tag color={dirty ? "orange" : "green"}>{dirty ? "未保存" : "已保存"}</Tag>{saveButton}
+      </Space>
     </div>
     <div className="scene-editor-content">
       <div className="scene-composer"><div className="scene-form-card">{form}</div></div>

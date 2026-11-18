@@ -1,6 +1,24 @@
 use super::*;
 use std::collections::HashSet;
 
+pub(super) fn editor_target(c: &Connection, request: &Value) -> Result<Option<Value>, String> {
+    let Some(target) = request.get("editor_target") else { return Ok(None) };
+    let id = target["id"].as_i64().filter(|id| *id > 0).ok_or("当前编辑对象的 ID 无效")?;
+    let episode_id = target["episode_id"].as_i64().filter(|id| *id > 0).ok_or("当前编辑对象的剧集 ID 无效")?;
+    let resource = target["resource"].as_str().unwrap_or_default();
+    let sql = match resource {
+        "scenes" => "SELECT id FROM scenes WHERE id=?1 AND episode_id=?2",
+        "clips" => "SELECT scene_id FROM clips WHERE id=?1 AND episode_id=?2",
+        _ => return Err("当前编辑对象必须是场景或片段".into()),
+    };
+    let scene_id: i64 = c.query_row(sql, params![id, episode_id], |row| row.get(0))
+        .optional().map_err(|error| error.to_string())?
+        .ok_or("当前编辑对象已移除或不属于该剧集，请重新打开编辑页")?;
+    let mut resolved = json!({"resource": resource, "id": id, "episode_id": episode_id});
+    if resource == "clips" { resolved["scene_id"] = json!(scene_id); }
+    Ok(Some(resolved))
+}
+
 pub(super) fn validate(c: &Connection, request: &Value, message: &str) -> Result<Vec<Value>, String> {
     let Some(value) = request.get("references") else { return Ok(vec![]) };
     let references = value.as_array().ok_or("项目引用必须是数组")?;

@@ -53,6 +53,20 @@
   background: color-mix(in srgb, var(--ui-surface) 96%, transparent); backdrop-filter: blur(28px);
   box-shadow: 0 16px 64px #17162125, 0 2px 8px #1716210d; outline: none; animation: agent-panel-appear .18s ease-out;
 }
+.agent-editor-panel {
+  inset: 64px 12px 12px auto;
+  width: min(440px, calc(100vw - 24px));
+}
+.agent-editor-panel .agent-float-content { flex: 1 1 auto; min-height: 0; max-height: none; }
+.agent-editor-panel .agent-float-project { margin-bottom: 14px; color: var(--ui-secondary-text); font-size: 12px; }
+@media (min-width: 1100px) {
+  :root { --editor-agent-space: 464px; }
+  .app.editor-agent-open #workspace-content { width: calc(100% - var(--editor-agent-space)); }
+  .app.editor-agent-open.canvas-mode .infinite-canvas { width: calc(100vw - var(--editor-agent-space)); }
+}
+@media (max-width: 600px) {
+  .agent-editor-panel { inset: auto 8px 8px; width: auto; height: min(580px, 78dvh); }
+}
 .agent-float-panel header, .agent-float-heading, .agent-float-composer-actions, .agent-float-composer-actions > div, .agent-float-panel footer, .agent-float-status { display: flex; align-items: center; }
 .agent-float-panel header { justify-content: space-between; gap: 8px; }
 .agent-float-panel > header, .agent-float-panel > form, .agent-float-panel > footer, .agent-float-speech-provider { flex-shrink: 0; }

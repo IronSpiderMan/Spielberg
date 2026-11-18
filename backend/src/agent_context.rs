@@ -153,13 +153,18 @@ fn compact_json(raw: &str) -> String {
     value.to_string()
 }
 
-fn input_note(message:&Value)->String {
+fn input_note(message:&Value, historical:bool)->String {
  let mut note = match message["image_media_ids"].as_array().filter(|ids|!ids.is_empty()) {
   Some(ids)=>format!("\n[粘贴图片已加入当前项目素材库，按图片顺序 image_media_ids={}；图生图请使用 operation=i2i 和这些素材 ID。]",json!(ids)),
   None=>String::new()
  };
  if let Some(references) = message["references"].as_array().filter(|items| !items.is_empty()) {
      note.push_str(&format!("\n[本条消息的 @ 项目引用。按 resource 和 id 读取当前项目中的对象；media 的 id 是素材 ID，需要查看图片时用 inspect_image。引用名称仅用于对应原文。]\n{}", json!(references)));
+ }
+ if let Some(target) = message.get("editor_target").filter(|value| value.is_object()) {
+     let label = if historical { "本条历史消息关联的编辑对象，仅作为历史记录" }
+         else { "当前编辑对象。将本条消息中的“这个”“当前场景”“当前片段”等指代解析为相应对象，按 resource 和 id 操作。用户明确指定其他对象时以其要求为准" };
+     note.push_str(&format!("\n[{label}]\n{target}"));
  }
  note
 }
@@ -187,7 +192,7 @@ fn wire_message(message: &Value, historical: bool) -> Option<Value> {
     if role == "user" {
         // This conservative placeholder is used for the text budget. Real images
         // are attached afterwards and their base64 never consumes that budget.
-        wire["content"] = json!(format!("{text}{}{}", image_note(message),input_note(message)));
+        wire["content"] = json!(format!("{text}{}{}", image_note(message),input_note(message,historical)));
     } else if role == "assistant" {
         if let Some(calls) = message["tool_calls"].as_array().filter(|calls| !calls.is_empty()) {
             let mut calls = calls.clone();
@@ -500,7 +505,7 @@ fn project(session: &Value) -> View {
             if let Some(images) = message["images"].as_array().filter(|images|!images.is_empty()) {
                 let kept: Vec<_> = images.iter().enumerate().filter(|(i,_)|retained.contains(&(index,*i))).collect();
                 let text = message["content"].as_str().filter(|text|!text.is_empty()).unwrap_or("请根据图片完成分析。");
-                let note = format!("{}{}",if kept.len() < images.len() { image_note(message) } else { String::new() },input_note(message));
+                let note = format!("{}{}",if kept.len() < images.len() { image_note(message) } else { String::new() },input_note(message,index != current_start));
                 if kept.is_empty() { wire["content"] = json!(format!("{text}{note}")); }
                 else {
                     let mut parts = vec![json!({"type":"text","text":format!("{text}{note}")})];

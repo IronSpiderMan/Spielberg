@@ -60,6 +60,7 @@ import { PageHeading, PageLoading } from "./ui";
 import { ImageGeneratorModal } from "./components/ImageGeneratorModal";
 import { agentFloatPreferencesKey, readAgentFloatPreferences } from "./agent-float-preferences";
 import { AgentFloatButton } from "./components/AgentFloatButton";
+import { editorTargetLabel, type AgentEditorTarget } from "./agent-editor-target";
 import { StudioNavigation, studioNavigationId } from "./components/StudioNavigation";
 const CreationDesk=lazy(()=>import("./creation").then(m=>({default:m.CreationDesk})));
 const InfiniteCanvas=lazy(()=>import("./InfiniteCanvas"));
@@ -131,6 +132,10 @@ function App() {
   const activeRef = useRef<string | null>(null);
   const [page, setPage] = useState("studio");
   const [agentViewVersion, setAgentViewVersion] = useState(0);
+  const [focusedScene, setFocusedScene] = useState<AgentEditorTarget | null>(null);
+  const [editorAgent, setEditorAgent] = useState<{ key: number; target: AgentEditorTarget } | null>(null);
+  const editorAgentSequence = useRef(0);
+  const editorAgentTrigger = useRef<HTMLElement | null>(null);
   const [studioTab, setStudioTab] = useState("images");
   const [imageSource, setImageSource] = useState<Media | undefined>();
   const [sceneEditing, setClipEditing] = useState<{
@@ -153,6 +158,26 @@ function App() {
     if (editorDirty.current) confirmDiscard(action, afterLeave);
     else { action(); afterLeave?.(); }
   };
+  const clipId = sceneEditing?.scene.id;
+  const clipEpisode = clipId === undefined ? undefined : data?.episodes.find(episode => episode.clips.some(clip => clip.id === clipId));
+  const editorTarget: AgentEditorTarget | null = sceneEditing
+    ? clipEpisode && !sceneImageFlow ? { resource: "clips", id: sceneEditing.scene.id, episode_id: clipEpisode.id } : null
+    : page === "episodes" || (page === "studio" && studioTab === "sequence") ? focusedScene : null;
+  const panelTarget = editorAgent?.target;
+  const editorAgentOpen = !!panelTarget && panelTarget.resource === editorTarget?.resource
+    && panelTarget.id === editorTarget.id && panelTarget.episode_id === editorTarget.episode_id;
+  useEffect(() => {
+    if (!editorAgentOpen) setEditorAgent(null);
+  }, [editorAgentOpen]);
+  const openEditorAgent = (trigger: EventTarget | null) => {
+    if (!editorTarget || editorAgentOpen) return;
+    editorAgentTrigger.current = trigger instanceof HTMLElement ? trigger : null;
+    setEditorAgent({ key: ++editorAgentSequence.current, target: editorTarget });
+  };
+  const closeEditorAgent = () => {
+    setEditorAgent(null);
+    editorAgentTrigger.current?.focus({ preventScroll: true });
+  };
   const load = async (id?: string) => {
     const version = ++loadVersion.current;
     const ps = await api<Project[]>("/projects");
@@ -166,6 +191,7 @@ function App() {
       if (activeRef.current !== s.project.id) {
         setClipEditing(null);
         setEpisodeClipReturn(null);
+        setEditorAgent(null);
         setStudioTab("images");
         setPage("studio");
       }
@@ -324,12 +350,19 @@ function App() {
   const navigate = (next: string, afterNavigate?: () => void) => {
     setMobileNavOpen(false);
     if (next === page && !sceneEditing) { afterNavigate?.(); return; }
-    leaveEditor(() => { setLocate(null);setEpisodeClipReturn(null);setImageSource(undefined);setClipEditing(null);setClipImageFlow(null); setPage(next); }, afterNavigate);
+    leaveEditor(() => {
+      setEditorAgent(null);
+      setLocate(null);setEpisodeClipReturn(null);setImageSource(undefined);setClipEditing(null);setClipImageFlow(null);setPage(next);
+    }, afterNavigate);
   };
+  const panelEpisode = panelTarget && data.episodes.find(episode => episode.id === panelTarget.episode_id);
+  const panelObject = panelTarget && (panelTarget.resource === "clips" ? panelEpisode?.clips : panelEpisode?.scenes)
+    ?.find(item => item.id === panelTarget.id);
+  const currentClip = clipEpisode?.clips.find(clip => clip.id === clipId) || sceneEditing?.scene;
 
   return (
     <EditGuardContext.Provider value={registerDirty}>
-    <Layout hasSider className={`app${mobileNavOpen ? " mobile-nav-open" : ""}${page === "agent" && !sceneEditing ? " agent-page" : ""}${agentFloat.visible ? " agent-float-visible" : ""}${darkMode ? " dark-theme" : ""}${sceneEditing?.scene.creation_mode === "canvas" ? " canvas-mode" : ""}`}>
+    <Layout hasSider className={`app${mobileNavOpen ? " mobile-nav-open" : ""}${page === "agent" && !sceneEditing ? " agent-page" : ""}${agentFloat.visible ? " agent-float-visible" : ""}${editorAgentOpen ? " editor-agent-open" : ""}${darkMode ? " dark-theme" : ""}${sceneEditing?.scene.creation_mode === "canvas" ? " canvas-mode" : ""}`}>
       <a className="skip-to-content" href="#workspace-content" tabIndex={mobileNavOpen ? -1 : undefined}>跳转到工作区</a>
       {mobileNavOpen && <div className="mobile-nav-backdrop" aria-hidden="true" onClick={() => setMobileNavOpen(false)} />}
       <StudioNavigation
@@ -413,14 +446,15 @@ function App() {
         >
           <Suspense fallback={<PageLoading/>}>
           {sceneEditing ? (
-            sceneEditing.scene.creation_mode === "canvas" ? <InfiniteCanvas key={`${data.project.id}:${sceneEditing.scene.id}`} data={data} scene={data.episodes.flatMap(e=>e.clips).find(s=>s.id===sceneEditing.scene.id)||sceneEditing.scene} reload={refresh} onClose={()=>leaveEditor(()=>setClipEditing(null))} onClipCreated={scene => setClipEditing({scene, isNew: true})} /> : <>
+            sceneEditing.scene.creation_mode === "canvas" ? <InfiniteCanvas key={`${data.project.id}:${sceneEditing.scene.id}`} data={data} scene={currentClip ?? sceneEditing.scene} reload={refresh} onClose={()=>leaveEditor(()=>setClipEditing(null))} onClipCreated={scene => setClipEditing({scene, isNew: true})} onOpenAgent={editorTarget ? openEditorAgent : undefined} /> : <>
             <div className="scene-editor-host" hidden={!!sceneImageFlow}>
             <ClipEditor
               key={`${data.project.id}:${sceneEditing.scene.id}`}
-              scene={sceneEditing.scene}
+              scene={currentClip ?? sceneEditing.scene}
               isNew={sceneEditing.isNew}
               data={data}
               onClose={() => setClipEditing(null)}
+              onOpenAgent={editorTarget ? openEditorAgent : undefined}
               reload={refresh}
               onGenerateFrame={key => { if (key === "reference") return; setClipImageFlow({ key }); setStudioTab("images"); }}
               generatedFrame={sceneImageFlow?.media ? { key: sceneImageFlow.key, media: sceneImageFlow.media } : null}
@@ -442,7 +476,8 @@ function App() {
                   key={data.project.id}
                   activeTab={studioTab}
                   onTabChange={setStudioTab}
-                  renderSequence={() => <Studio data={data} reload={refresh} changePage={navigate} editClip={scene => setClipEditing({scene, isNew: false})} />}
+                  renderSequence={() => <Studio data={data} reload={refresh} changePage={navigate} editClip={scene => setClipEditing({scene, isNew: false})}
+                    onFocusedSceneChange={setFocusedScene} onOpenAgent={openEditorAgent} />}
                   data={data}
                   reload={refresh}
                   changePage={navigate}
@@ -461,6 +496,8 @@ function App() {
                   initialView={episodeClipReturn !== null || locate?.kind==="scene" ? "scenes" : undefined}
                   data={data}
                   reload={refresh}
+                  onFocusedSceneChange={setFocusedScene}
+                  onOpenAgent={openEditorAgent}
                   editClip={(scene, isNew, episodeId) => {
                     setLocate(null);
                     setEpisodeClipReturn({episodeId,sceneId:scene.scene_id});
@@ -493,7 +530,11 @@ function App() {
           </Suspense>
         </Layout.Content>
         <ImageGeneratorModal key={`image-generator:${data.project.id}`} data={data} reload={refresh} />
-        {agentFloat.visible && <AgentFloatButton appearance={agentFloat} modelSettings={data.settings} key={`agent-float:${data.project.id}`} project={data.project} reload={refresh} onSettings={() => navigate("settings")} onOpenSession={sessionId => navigate("agent", () => {
+        {editorAgentOpen && editorAgent && <AgentFloatButton key={`editor-agent:${data.project.id}:${editorAgent.key}`}
+          appearance={agentFloat} modelSettings={data.settings} project={data.project} reload={refresh}
+          editorPanel={{ target: editorAgent.target, label: editorTargetLabel(editorAgent.target, panelObject?.title ?? "已移除"), close: closeEditorAgent }} />}
+        {agentFloat.visible && <AgentFloatButton hidden={editorAgentOpen} appearance={agentFloat} modelSettings={data.settings} key={`agent-float:${data.project.id}`} project={data.project} reload={refresh}
+          onSettings={() => navigate("settings")} onOpenSession={sessionId => navigate("agent", () => {
           localStorage.setItem(`spielberg-agent-session-${data.project.id}`, sessionId);
           setAgentViewVersion(value => value + 1);
         })} />}

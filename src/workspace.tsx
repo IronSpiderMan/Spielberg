@@ -19,6 +19,8 @@ import { RoleImagePicker } from "./components/RoleImagePicker";
 import { ImagePreviewModal, PreviewImage } from "./components/ImagePreviewModal";
 import { ImageGeneratorButton } from "./components/ImageGeneratorModal";
 import { usePromptOptimization } from "./hooks/usePromptOptimization";
+import { editedFields, useEditorDraft } from "./hooks/useEditorDraft";
+import type { AgentEditorTarget } from "./agent-editor-target";
 import { supportedPastedImages, useImageUpload } from "./hooks/useImageUpload";
 import { AssetImagePicker } from "./components/AssetImagePicker";
 import "./role-editor.css";
@@ -50,6 +52,7 @@ import {
 ArrowDown,
 ArrowLeft,
 ArrowUp,
+Bot,
 GitBranch,
 GitMerge,
 PanelRight,
@@ -124,11 +127,15 @@ export function Studio({
   reload,
   changePage,
   editClip,
+  onFocusedSceneChange,
+  onOpenAgent,
 }: {
   data: Snapshot;
   reload: () => void;
   changePage: (v: string) => void;
   editClip: (scene: Clip) => void;
+  onFocusedSceneChange: (target: AgentEditorTarget | null) => void;
+  onOpenAgent: (trigger: EventTarget | null) => void;
 }) {
   const [episodeId, setEpisodeId] = useState<number | undefined>(
     data.episodes[0]?.id,
@@ -199,7 +206,8 @@ export function Studio({
       setMerging(false);
     }
   };
-  if (editing) return <EpisodeEditor episode={editing} initialSceneId={initialSceneId} project={data.project} data={data} editClip={editClip} onClose={() => { setEditing(null); setInitialSceneId(undefined); }} reload={reload}/>;
+  if (editing) return <EpisodeEditor episode={editing} initialSceneId={initialSceneId} project={data.project} data={data} editClip={editClip} onClose={() => { setEditing(null); setInitialSceneId(undefined); }} reload={reload}
+    onFocusedSceneChange={onFocusedSceneChange} onOpenAgent={onOpenAgent} />;
   return (
     <section className="studio">
       <div className="cut-toolbar">
@@ -510,6 +518,8 @@ export function Episodes({
   data,
   reload,
   editClip,
+  onFocusedSceneChange,
+  onOpenAgent,
 }: {
   data: Snapshot;
   reload: () => void;
@@ -518,6 +528,8 @@ export function Episodes({
   initialSceneId?: number;
   initialFocusedSceneId?: number;
   initialView?: "markdown" | "scenes";
+  onFocusedSceneChange: (target: AgentEditorTarget | null) => void;
+  onOpenAgent: (trigger: EventTarget | null) => void;
 }) {
 
   const [episode, setEpisode] = useState<{
@@ -607,7 +619,8 @@ export function Episodes({
     await reload();
     setEpisode(x as typeof episode);
   };
-  if (episode) return <EpisodeEditor episode={episode} initialView={episode.id === initialEpisodeId ? initialView : undefined} initialSceneId={episode.id === initialEpisodeId ? initialSceneId : undefined} initialFocusedSceneId={episode.id === initialEpisodeId ? initialFocusedSceneId : undefined} project={data.project} data={data} editClip={(scene, isNew = false) => editClip(scene, isNew, episode.id)} onClose={() => setEpisode(null)} reload={reload}/>;
+  if (episode) return <EpisodeEditor episode={episode} initialView={episode.id === initialEpisodeId ? initialView : undefined} initialSceneId={episode.id === initialEpisodeId ? initialSceneId : undefined} initialFocusedSceneId={episode.id === initialEpisodeId ? initialFocusedSceneId : undefined} project={data.project} data={data} editClip={(scene, isNew = false) => editClip(scene, isNew, episode.id)} onClose={() => setEpisode(null)} reload={reload}
+    onFocusedSceneChange={onFocusedSceneChange} onOpenAgent={onOpenAgent} />;
   return (
     <section ref={episodeLibraryRef} className="episode-library" aria-label="剧集管理">
       <div className="section-title page-actions">
@@ -763,6 +776,8 @@ function EpisodeEditor({
   onClose,
   reload,
   editClip,
+  onFocusedSceneChange,
+  onOpenAgent,
 }: {
   data: Snapshot;
   episode: { id: number; title: string; description: string; cover_media?: Media; clips?: Clip[]; storyboard?: Storyboard } | null;
@@ -773,6 +788,8 @@ function EpisodeEditor({
   onClose: () => void;
   reload: () => void;
   editClip: (scene: Clip, isNew?: boolean) => void;
+  onFocusedSceneChange?: (target: AgentEditorTarget | null) => void;
+  onOpenAgent?: (trigger: EventTarget | null) => void;
 }) {
   const [view, setView] = useState<"markdown" | "csv" | "details" | "scenes">(initialView);
   const scriptEditor = useRef<ScreenplayEditorHandle>(null);
@@ -902,6 +919,13 @@ function EpisodeEditor({
   const focusedScene = focusedRow?.scene;
   const showingDetail = sceneView === "detail" && !!focusedScene && !selectingScenes;
   const editingSceneDetail = view === "scenes" && showingDetail && !selecting;
+  const activeSceneId = editingSceneDetail ? focusedScene?.id : undefined;
+  const episodeId = currentEpisode?.id;
+  useEffect(() => {
+    if (!onFocusedSceneChange || activeSceneId === undefined || episodeId === undefined) return;
+    onFocusedSceneChange({ resource: "scenes", id: activeSceneId, episode_id: episodeId });
+    return () => onFocusedSceneChange(null);
+  }, [activeSceneId, episodeId, onFocusedSceneChange]);
   useEffect(() => {
     sceneDetailRef.current?.scrollTo({ top: 0 });
   }, [focusedScene?.id]);
@@ -1173,7 +1197,7 @@ function EpisodeEditor({
         </>}
         {showingDetail && currentEpisode && focusedScene && (selecting ? renderSceneClips() : <SceneSettings
           key={focusedScene.id} data={data} episode={currentEpisode} scene={focusedScene} reload={reload}
-          onStatus={onSceneStatus} backButton={sceneBackButton} renderClips={renderSceneClips} />)}
+          onStatus={onSceneStatus} backButton={sceneBackButton} renderClips={renderSceneClips} onOpenAgent={onOpenAgent} />)}
       </div>
       {currentEpisode && editingScene && <SceneSettings
         key={typeof editingScene === "object" ? "insert" : editingScene} data={data} episode={currentEpisode} reload={reload}
@@ -1386,11 +1410,29 @@ function ClipImageField({
     </div>
   );
 }
+function clipEditorFields(clip: Clip) {
+  const options: Partial<GenerationOptions> = {
+    ...clip.generation_options,
+    ...(clip.generation_options?.video_mode === "ref2v" ? { video_mode: "i2v" as const } : {}),
+    reference_media_ids: clip.generation_options?.reference_media_ids ?? (clip.reference_media_id ? [clip.reference_media_id] : undefined),
+  };
+  return {
+    title: clip.title || "",
+    description: clip.description || "",
+    prompt: clip.prompt || "",
+    first: clip.first_media_id || null,
+    last: clip.last_media_id || null,
+    reference: clip.reference_media_id || null,
+    options,
+  };
+}
+
 export function ClipEditor({
   scene,
   isNew,
   data,
   onClose,
+  onOpenAgent,
   reload,
   onGenerateFrame,
   generatedFrame,
@@ -1400,14 +1442,19 @@ export function ClipEditor({
   isNew: boolean;
   data: Snapshot;
   onClose: () => void;
+  onOpenAgent?: (trigger: EventTarget | null) => void;
   reload: () => void;
   onGenerateFrame?: (key: FrameKey) => void;
   generatedFrame?: { key: FrameKey; media: Media } | null;
   onGeneratedApplied?: () => void;
 }) {
-  const [title, setTitle] = useState(scene.title || "");
-  const [description, setDescription] = useState(scene.description || "");
-  const [prompt, setPrompt] = useState(scene.prompt || "");
+  const { draft: fields, saved, edit, markSaved } = useEditorDraft(clipEditorFields(scene));
+  const { title, description, prompt, first, last, reference, options: localOptions } = fields;
+  const frames = { first, last, reference };
+  const setTitle = (value: string) => edit("title", value);
+  const setDescription = (value: string) => edit("description", value);
+  const setPrompt = (value: string) => edit("prompt", value);
+  const setOptions = (update: React.SetStateAction<Partial<GenerationOptions>>) => edit("options", update);
   const [videoVersionsOpen, setVideoVersionsOpen] = useState(false);
   const videoVersionsId = React.useId();
   const videoVersionsToggle = useRef<HTMLButtonElement>(null);
@@ -1428,16 +1475,6 @@ export function ClipEditor({
   const [uploadingImageReferences, setUploadingImageReferences] = useState(false);
   const uploadingReferences = uploadingMediaReferences || uploadingImageReferences;
   const [pastedMedia, setPastedMedia] = useState<Media[]>([]);
-  const [frames, setFrames] = useState<Record<FrameKey, number | null>>({
-    first: scene.first_media_id || null,
-    last: scene.last_media_id || null,
-    reference: scene.reference_media_id || null,
-  });
-  const [localOptions, setOptions] = useState<Partial<GenerationOptions>>(() => ({
-    ...scene.generation_options,
-    ...(scene.generation_options?.video_mode === "ref2v" ? { video_mode: "i2v" as const } : {}),
-    reference_media_ids: scene.generation_options?.reference_media_ids ?? (scene.reference_media_id ? [scene.reference_media_id] : undefined),
-  }));
   const options = sceneGenerationOptions({ ...scene, first_media_id: frames.first, generation_options: localOptions }, parentScene);
   const ratio = options.aspect_ratio;
   const hasSceneDefaults = clipDefaultFields.some(key => parentScene?.generation_options?.[key] !== undefined);
@@ -1487,8 +1524,8 @@ export function ClipEditor({
       }));
     }
   }, [mentionedReferenceIds, options.video_mode, pastingImages]);
-  const signature = JSON.stringify({title, description, prompt, frames, localOptions});
-  const [savedSignature, setSavedSignature] = useState(signature);
+  const signature = JSON.stringify(fields);
+  const savedSignature = JSON.stringify(saved);
   const dirty = signature !== savedSignature;
   useEditGuard(dirty);
   const closeEditor = () => {
@@ -1546,7 +1583,7 @@ export function ClipEditor({
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
   const [imageGenerating, setImageGenerating] = useState(false);
   const choose = (key: FrameKey, id: number | null) =>
-    setFrames((current) => ({ ...current, [key]: id }));
+    edit(key, id);
   const pasteReferenceImages = async (files: File[]) => {
     if (pasteInProgress.current || uploadingImageReferences || savingClip || videoGenerating || persistedVideoGenerating) return;
     const remaining = Math.max(0, 9 - (options.reference_media_ids || []).length);
@@ -1654,13 +1691,27 @@ export function ClipEditor({
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const [autoSaveStatus, setAutoSaveStatus] = useState("");
   const persist = () => {
-    const payload = { project_id: data.project.id, ...draft(), title: title.trim() };
-    const saved = signature;
+    const changes = editedFields(saved, fields);
+    if (scene.generation_options?.video_mode === "ref2v" ||
+      (scene.reference_media_id && scene.generation_options?.reference_media_ids === undefined)) {
+      changes.options = localOptions;
+    }
     const run = async () => {
-      if (!payload.title) throw new Error("请输入片段标题");
+      if (!title.trim()) throw new Error("请输入片段标题");
+      if (!Object.keys(changes).length) return;
       setAutoSaveStatus("正在保存…");
-      await post("/clips/update", payload);
-      setSavedSignature(saved);
+      await post("/clips/update", {
+        project_id: data.project.id,
+        id: scene.id,
+        title: changes.title?.trim(),
+        description: changes.description,
+        prompt: changes.prompt,
+        first_media_id: changes.first,
+        last_media_id: changes.last,
+        reference_media_id: changes.reference,
+        generation_options: changes.options,
+      });
+      markSaved(changes, { ...fields, title: title.trim() });
       setAutoSaveStatus("已自动保存");
     };
     const next = saveQueue.current.catch(() => {}).then(run);
@@ -1762,6 +1813,8 @@ export function ClipEditor({
           <span className="subtle" role="status">{dirty ? (autoSaveStatus.includes("失败") ? autoSaveStatus : "待自动保存…") : autoSaveStatus}</span>
         </div>
         <div className="scene-editor-actions">
+          {onOpenAgent && <Button icon={<Bot size={16}/>} disabled={savingClip || optimizingPrompt || pastingImages || uploadingReferences}
+            aria-haspopup="dialog" onClick={event => onOpenAgent(event.currentTarget)}>打开 Agent</Button>}
           <ImageGeneratorButton />
           <Button ref={videoVersionsToggle} className="scene-results-toggle" icon={<PanelRight size={15}/>} aria-expanded={videoVersionsOpen}
             aria-controls={videoVersionsId} onClick={() => videoVersionsOpen ? closeVideoVersions() : setVideoVersionsOpen(true)}>

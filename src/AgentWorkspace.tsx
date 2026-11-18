@@ -53,6 +53,7 @@ const toolTargetText: Record<string, string> = {
   "assets/media/add": "关联资产图片", "assets/media/rename": "重命名资产图片", "assets/media/delete": "解除资产图片关联",
   "assets/audio/save": "保存资产音频引用", "assets/audio/delete": "解除资产音频关联",
   "generations/image": "生成图片", "generations/video": "生成视频", "generations/scene-video": "生成一镜到底", "generations/clip-preview": "预览片段生成", "generations/scene-preview": "预览场景生成", "generations/tts": "合成配音", "generations/asr": "识别语音",
+  "prompts/optimize": "优化 Prompt",
 };
 function toolTarget(args: unknown): string {
   if (!args || typeof args !== "object") return "";
@@ -272,7 +273,9 @@ export default function AgentWorkspace({ data, reload, onNavigate }: { data: Sna
         session = created;
       }
       const key = session.id;
-      const result = await call<Session>("run", { session_id: session.id, message: text, ...(references.length ? { references } : {}), images: images.map(image => image.url), image_media_ids: images.map(image => image.mediaId), web_enabled: online, ...modelPayload, ...reasoning.payload });
+      const result = await call<Session>("run", { session_id: session.id, message: text,
+        ...(references.length ? { references } : {}),
+        images: images.map(image => image.url), image_media_ids: images.map(image => image.mediaId), web_enabled: online, ...modelPayload, ...reasoning.payload });
       if (!mounted.current) return;
       setImageDrafts(items => ({ ...items, [key]: [] }));
       setDrafts(items => ({ ...items, [key]: items[key]?.text.trim() === text ? emptyDraft : items[key] }));

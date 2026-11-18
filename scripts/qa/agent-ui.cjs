@@ -39,7 +39,39 @@ const deferred = () => { let resolve; const promise=new Promise(done=>{resolve=d
    res.end('data: [DONE]\n\n');return;
   }
   let message;
-  if(body.tool_choice==='none') {
+  if(body.messages[0].content.startsWith('你是 Wan 3.0 视频提示词编辑器。')) {
+   assert(body.messages[0].content.includes('本次视频总时长：8 秒'));
+   assert.equal(prompt,'旧视频 Prompt');
+   message={role:'assistant',content:'中景跟拍旅人走进车站，雨滴落在檐下。'};
+  } else if(prompt.startsWith('优化这个片段的 Prompt 成 wan3.0 的格式')) {
+   const target=JSON.parse(prompt.split('\n').at(-1));
+   assert.equal(target.resource,'clips');
+   assert(prompt.includes('[当前编辑对象。'));
+   const field={resource:'clips',id:target.id,field:'prompt'};
+   if(!results.length) {
+    message={role:'assistant',tool_calls:[tool('read_resource_text',field,'read-clip-prompt')]};
+   } else if(results.length===1) {
+    message={role:'assistant',tool_calls:[tool('app_action',{operation:'prompts/optimize',data:{
+     kind:'video',prompt_format:'wan3.0',duration:8,video_mode:'t2v',prompt:JSON.parse(results[0].content).content
+    }},'format-clip-prompt')]};
+   } else if(results.length===2) {
+    message={role:'assistant',tool_calls:[tool('update_clip',{id:target.id,prompt:JSON.parse(results[1].content).prompt},'save-clip-prompt')]};
+   } else if(results.length===3) {
+    message={role:'assistant',tool_calls:[tool('read_resource_text',field,'verify-clip-prompt')]};
+   } else {
+    assert.equal(JSON.parse(results[3].content).content,'中景跟拍旅人走进车站，雨滴落在檐下。');
+    message={role:'assistant',content:'已保存当前片段的 Wan 3.0 Prompt。'};
+   }
+  } else if(prompt.startsWith('更新当前场景的共享 Prompt')) {
+   const target=JSON.parse(prompt.split('\n').at(-1));
+   assert.equal(target.resource,'scenes');
+   if(!results.length) message={role:'assistant',tool_calls:[tool('read_resource_text',{resource:'scenes',id:target.id,field:'shared_prompt'},'read-current-scene')]};
+   else if(results.length===1) message={role:'assistant',tool_calls:[tool('update_scene',{id:target.id,shared_prompt:'雨夜车站 · 暖色灯光'},'write-current-scene')]};
+   else message={role:'assistant',content:'已更新当前场景的共享 Prompt。'};
+  } else if(prompt==='这个场景是哪个？') {
+   assert(body.messages.some(item=>item.role==='user' && item.content.includes('本条历史消息关联的编辑对象')));
+   message={role:'assistant',content:'请指定要查看的场景。'};
+  } else if(body.tool_choice==='none') {
    message={role:'assistant',content:'本轮执行已暂停，已完成的操作已保留。'};
   } else if(prompt.includes('导航后台执行测试')) {
    message={role:'assistant',content:'导航后的后台执行已完成。'};
@@ -471,7 +503,7 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
   await floatPanel.getByRole('button',{name:'收起语音助手',exact:true}).click();
   await api('/actions/agent/config/save',{project_id:project.id,config:{inherit_llm:false,base_url:modelBase+'/independent/v1',model:'qa-own',api_key:'own-model-key'}});
   await page.reload();await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
-  await picker.getByText('Agent 独立配置',{exact:true}).waitFor();
+  await picker.getByText('qa-own',{exact:true}).waitFor();
   await pickModel('备用渠道','备用模型');await runSelection('qa-first');
   await pickModel('Agent 独立配置','qa-own');await runSelection('qa-own');
   assert.deepEqual(modelSelections,[
@@ -564,7 +596,8 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
   const episode=await api(scope+'/episodes',{title:'引用剧集'});
   const scene=await api(`${scope}/episodes/${episode.id}/scenes`,{title:'车站 内景'});
   const clip=await api(`${scope}/episodes/${episode.id}/clips`,{scene_id:scene.id,title:'进站'});
-  const otherClip=await api(`${scope}/episodes/${episode.id}/clips`,{scene_id:scene.id,title:'进站'});
+  const otherClip=await api(`${scope}/episodes/${episode.id}/clips`,{scene_id:scene.id,title:'进站',description:'旅人走进车站。',prompt:'旧视频 Prompt'});
+  await api(`${scope}/episodes/${episode.id}/clips`,{scene_id:scene.id,title:'画布验证',creation_mode:'canvas'});
   await page.reload();
   await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
   await page.getByTestId('agent-session-'+navigationSession.id).click();
@@ -605,8 +638,102 @@ c.execute('UPDATE agent_sessions SET messages=? WHERE id=?',(json.dumps(messages
   assert.deepEqual(stored.references,expected);
   assert(mentionPrompt.startsWith(stored.content));
   assert.deepEqual(JSON.parse(mentionPrompt.split('\n').at(-1)),expected);
+
+  await page.getByRole('menuitem',{name:'剧集',exact:true}).click();
+  await page.locator('.episode-card').filter({hasText:episode.title}).getByRole('button',{name:'编辑',exact:true}).click();
+  await page.getByRole('tab',{name:'场景',exact:true}).click();
+  await page.getByRole('button',{name:`查看场景「${scene.title}」`,exact:true}).click();
+  await page.getByRole('button',{name:'编辑片段：进站',exact:true}).last().click();
+  const editorAgent=page.getByTestId('editor-agent-panel');
+  const editorComposer=editorAgent.getByTestId('agent-float-input');
+  const listSessions=async()=> (await api('/actions/agent/sessions',{project_id:project.id})).items;
+  const openEditorAgent=async(label)=>{
+   const previous=new Set((await listSessions()).map(item=>item.id));
+   await page.getByRole('button',{name:'打开 Agent',exact:true}).click();
+   await editorAgent.getByText(label,{exact:true}).waitFor();
+   await editorAgent.getByText('新对话',{exact:true}).waitFor();
+   assert.equal(await page.getByTestId('agent-workspace').count(),0,'Opening the editor panel navigated to the main Agent page');
+   const created=(await listSessions()).filter(item=>!previous.has(item.id));
+   assert.equal(created.length,1,'Opening the editor panel should create exactly one conversation before sending');
+   assert.equal(created[0].title,'新对话');
+   assert.equal(await editorComposer.inputValue(),'');
+   return created[0];
+  };
+  const clipEditor=page.locator('.scene-editor-page');
+  const firstEditorSession=await openEditorAgent('片段 · 进站');
+  await clipEditor.getByRole('textbox',{name:'视频 Prompt',exact:true}).waitFor();
+  const contentBox=await page.locator('#workspace-content').boundingBox();
+  const panelBox=await editorAgent.boundingBox();
+  assert(contentBox.x+contentBox.width<=panelBox.x,'The desktop panel should leave the editor unobstructed');
+  await editorAgent.getByRole('button',{name:'关闭 Agent 面板',exact:true}).click();
+  await editorAgent.waitFor({state:'detached'});
+  await page.waitForFunction(()=>document.activeElement?.textContent?.trim()==='打开 Agent');
+  const clipSession=await openEditorAgent('片段 · 进站');
+  assert.notEqual(clipSession.id,firstEditorSession.id);
+  await editorComposer.fill('优化这个片段的 Prompt 成 wan3.0 的格式');
+  const clipRun=page.waitForRequest(request=>request.url().endsWith('/agent/run'));
+  await editorAgent.getByTestId('agent-float-send').click();
+  const clipInput=(await clipRun).postDataJSON();
+  assert.equal(clipInput.session_id,clipSession.id);
+  assert.deepEqual(clipInput.editor_target,{resource:'clips',id:otherClip.id,episode_id:episode.id});
+  await editorAgent.getByText('已保存当前片段的 Wan 3.0 Prompt。',{exact:true}).waitFor();
+  const updatedClip=await api(`${scope}/clips/${otherClip.id}`,undefined,'GET');
+  assert.equal(updatedClip.prompt,'中景跟拍旅人走进车站，雨滴落在檐下。');
+  assert.equal(updatedClip.description,'旅人走进车站。');
+  const unchangedClip=await api(`${scope}/clips/${clip.id}`,undefined,'GET');
+  assert.equal(unchangedClip.prompt,'');
+  await page.waitForFunction(expected=>document.querySelectorAll('.scene-editor-page textarea')[1]?.value===expected,updatedClip.prompt);
+  await page.screenshot({path:path.join(screenshots,'editor-agent.png'),animations:'disabled'});
+  await editorAgent.getByRole('button',{name:'关闭 Agent 面板',exact:true}).click();
+  await page.locator('.scene-editor-heading').getByRole('button',{name:'← 返回',exact:true}).click();
+  const sceneDescription=page.getByRole('textbox',{name:'场景描述',exact:true});
+  await sceneDescription.fill('还未保存的场景描述');
+  const sceneSession=await openEditorAgent(`场景 · ${scene.title}`);
+  assert.equal(await sceneDescription.inputValue(),'还未保存的场景描述');
+  await page.evaluate(() => {
+   window.SpeechRecognition = class {
+    start() { window.testRecognition = this; this.onstart?.(); }
+    stop() { this.onend?.(); }
+    abort() { this.onend?.(); }
+   };
+  });
+  await editorAgent.getByRole('button',{name:'开始语音输入',exact:true}).click();
+  await page.waitForFunction(() => !!window.testRecognition);
+  await page.evaluate(() => {
+   window.testRecognition.onresult({resultIndex:0,results:[Object.assign([{transcript:'更新当前场景的共享 Prompt'}],{isFinal:true})]});
+   window.testRecognition.onend();
+  });
+  const sceneRun=page.waitForRequest(request=>request.url().endsWith('/agent/run'));
+  await editorAgent.getByTestId('agent-float-send').click();
+  const sceneInput=(await sceneRun).postDataJSON();
+  assert.equal(sceneInput.session_id,sceneSession.id);
+  assert.deepEqual(sceneInput.editor_target,{resource:'scenes',id:scene.id,episode_id:episode.id});
+  await editorAgent.getByText('已更新当前场景的共享 Prompt。',{exact:true}).waitFor();
+  await page.waitForFunction(()=>document.querySelector('textarea[aria-label="共享 Prompt"]')?.value==='雨夜车站 · 暖色灯光');
+  assert.equal(await sceneDescription.inputValue(),'还未保存的场景描述');
+  await editorComposer.press('Escape');
+  await editorAgent.waitFor({state:'detached'});
+  await page.getByRole('button',{name:'保存场景',exact:true}).click();
+  await page.getByText('场景已保存',{exact:true}).waitFor();
+  const updatedScene=await api(`${scope}/scenes/${scene.id}`,undefined,'GET');
+  assert.equal(updatedScene.shared_prompt,'雨夜车站 · 暖色灯光');
+  assert.equal(updatedScene.description,'还未保存的场景描述');
+  await page.getByRole('button',{name:'编辑片段：画布验证',exact:true}).click();
+  await openEditorAgent('片段 · 画布验证');
+  await page.getByRole('textbox',{name:'画布片段名称',exact:true}).waitFor();
+  await page.setViewportSize({width:390,height:844});
+  const mobilePanel=await editorAgent.boundingBox();
+  assert(mobilePanel.x>=0 && mobilePanel.x+mobilePanel.width<=390 && mobilePanel.y+mobilePanel.height<=844);
+  await page.setViewportSize({width:1440,height:1000});
+  await page.getByRole('button',{name:'返回片段列表',exact:true}).click();
+  await editorAgent.waitFor({state:'detached'});
+  await page.getByRole('menuitem',{name:'Agent 助手',exact:true}).click();
+  await page.getByTestId(`agent-session-${sceneSession.id}`).click();
+  await composer.fill('这个场景是哪个？');
+  await page.getByTestId('agent-send').click();
+  await page.getByText('请指定要查看的场景。',{exact:true}).waitFor();
   assert.deepEqual(failures,[]);
-  console.log('PASS: Agent streaming and interrupted replies; first-run retry without duplicate sessions; navigation during initial send; load recovery and draft retention; cancellation during selection, draining and final tool results; channel/model routing; generation previews; TTS; SVG; project mentions; session order, plans and desktop/mobile/dark themes');
+  console.log('PASS: Agent streaming and interrupted replies; first-run retry without duplicate sessions; navigation during initial send; load recovery and draft retention; cancellation during selection, draining and final tool results; channel/model routing; generation previews; TTS; SVG; project mentions; new in-place sessions for scenes and clips with voice and Wan 3.0 writeback; session order, plans and desktop/mobile/dark themes');
   console.log('Screenshots: '+screenshots);
  } catch(error) {
   if(page && !page.isClosed()) {

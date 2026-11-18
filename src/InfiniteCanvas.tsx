@@ -6,7 +6,7 @@ import { PreviewVideo } from "./components/VideoPreviewModal";
 import { PreviewImage } from "./components/ImagePreviewModal";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Button, Form, Input, Message, Modal, Select } from "@arco-design/web-react";
-import { Plus, Save, Undo2, Redo2, Maximize, Download, StickyNote, Trash2, ArrowLeft, Image, Film, Music, Upload, RotateCcw } from "lucide-react";
+import { Plus, Save, Undo2, Redo2, Maximize, Download, StickyNote, Trash2, ArrowLeft, Image, Film, Music, Upload, RotateCcw, Bot } from "lucide-react";
 import { defaultGenerationSize, normalizeGenerationSize, imageUrl, post, type Media, type Clip, type Snapshot } from "./core";
 import { uploadMedia } from "./api";
 import { buildVideoRequest } from "./generation-request";
@@ -35,8 +35,8 @@ const mediaKind = (kind: Kind): kind is MediaKind => ["image", "video", "audio"]
 const uid = () => crypto.randomUUID();
 const clamp = (n: number) => Math.max(.2, Math.min(2, n));
 const WIDTH = 300;
-export default function InfiniteCanvas({ data, scene, reload, onClose, onClipCreated }: {
-  data: Snapshot; scene: Clip; reload: () => Promise<void>; onClose: () => void; onClipCreated: (clip: Clip) => void;
+export default function InfiniteCanvas({ data, scene, reload, onClose, onClipCreated, onOpenAgent }: {
+  data: Snapshot; scene: Clip; reload: () => Promise<void>; onClose: () => void; onClipCreated: (clip: Clip) => void; onOpenAgent?: (trigger: EventTarget | null) => void;
 }) {
   const [draft, setDraft] = useState<Draft>(empty), [saved, setSaved] = useState("");
   const [title, setTitle] = useState(scene.title), [savedTitle, setSavedTitle] = useState(scene.title);
@@ -69,6 +69,10 @@ export default function InfiniteCanvas({ data, scene, reload, onClose, onClipCre
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   };
   useEffect(() => { void load(); }, [data.project.id, scene.id]);
+  useEffect(() => {
+    if (title === savedTitle) setTitle(scene.title);
+    setSavedTitle(scene.title);
+  }, [scene.title]);
   useEffect(() => {
     const unload = (e: BeforeUnloadEvent) => { if (dirty || busyNode) { e.preventDefault(); e.returnValue = ""; } };
     window.addEventListener("beforeunload", unload); return () => window.removeEventListener("beforeunload", unload);
@@ -227,6 +231,7 @@ export default function InfiniteCanvas({ data, scene, reload, onClose, onClipCre
   const exportDraft = () => { const url = URL.createObjectURL(new Blob([JSON.stringify({ ...payload, ...draft }, null, 2)], { type: "application/json" })); const a = document.createElement("a"); a.href = url; a.download = `spielberg-clip-${scene.id}-canvas.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); };
   return <section className="infinite-canvas">
     <header className="ic-heading"><div><Button type="text" title="返回片段列表" aria-label="返回片段列表" icon={<ArrowLeft size={15} />} disabled={!!busyNode} onClick={onClose}>返回片段列表</Button><h1>画布片段</h1><Input aria-label="画布片段名称" value={title} onChange={setTitle} disabled={!!busyNode} /><p>右键添加节点 · 图片 / 音频 / 视频 → 视频</p></div><div className="ic-actions">
+      {onOpenAgent && <Button icon={<Bot size={16}/>} disabled={saving || !!busyNode} aria-haspopup="dialog" onClick={event => onOpenAgent(event.currentTarget)}>打开 Agent</Button>}
       {episode && <ClipEditorOrderActions episode={episode} clip={scene} project={data.project} reload={reload}
         disabled={loading || saving || !!error || !!busyNode}
         afterSave={action => { if (dirty) void save(action); else action(); }} onCreated={onClipCreated} />}
